@@ -20,28 +20,28 @@ class HomeScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(child: _buildHeader(context, provider)),
-            SliverToBoxAdapter(child: _buildStats(context, provider)),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-                child: const DateSelector(),
-              ),
+        child: Column(
+          children: [
+            // Fixed top section
+            _buildHeader(context, provider),
+            _buildStats(context, provider),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              child: const DateSelector(),
             ),
-            SliverToBoxAdapter(child: _buildSectionTitle(context)),
-            if (words.isEmpty)
-              const SliverToBoxAdapter(child: EmptyState())
-            else
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
-                sliver: SliverList.builder(
-                  itemCount: words.length,
-                  itemBuilder: (context, index) =>
-                      WordCard(word: words[index]),
-                ),
-              ),
+            _buildSectionTitle(context),
+
+            // Scrollable word list
+            Expanded(
+              child: words.isEmpty
+                  ? const EmptyState()
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+                      itemCount: words.length,
+                      itemBuilder: (context, index) =>
+                          WordCard(word: words[index]),
+                    ),
+            ),
           ],
         ),
       ),
