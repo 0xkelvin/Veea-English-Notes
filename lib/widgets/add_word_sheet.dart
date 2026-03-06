@@ -2,10 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
+import '../models/vocabulary_word.dart';
 import '../providers/vocabulary_provider.dart';
 
 class AddWordSheet extends StatefulWidget {
-  const AddWordSheet({super.key});
+  final VocabularyWord? existingWord;
+
+  const AddWordSheet({super.key, this.existingWord});
+
+  bool get isEditing => existingWord != null;
 
   @override
   State<AddWordSheet> createState() => _AddWordSheetState();
@@ -16,6 +21,21 @@ class _AddWordSheetState extends State<AddWordSheet> {
   final _meaningController = TextEditingController();
   final List<TextEditingController> _exampleControllers = [];
   bool _saving = false;
+
+  bool get _isEditing => widget.isEditing;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.existingWord != null) {
+      final w = widget.existingWord!;
+      _wordController.text = w.word;
+      _meaningController.text = w.vietnameseMeaning;
+      for (final example in w.examples) {
+        _exampleControllers.add(TextEditingController(text: example));
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -48,11 +68,24 @@ class _AddWordSheetState extends State<AddWordSheet> {
     if (!_isValid || _saving) return;
     setState(() => _saving = true);
 
-    await context.read<VocabularyProvider>().addWord(
-      word: _wordController.text,
-      vietnameseMeaning: _meaningController.text,
-      examples: _exampleControllers.map((c) => c.text).toList(),
-    );
+    final provider = context.read<VocabularyProvider>();
+    final examples = _exampleControllers.map((c) => c.text).toList();
+
+    if (_isEditing) {
+      await provider.updateWord(
+        widget.existingWord!.copyWith(
+          word: _wordController.text.trim(),
+          vietnameseMeaning: _meaningController.text.trim(),
+          examples: examples.where((e) => e.trim().isNotEmpty).map((e) => e.trim()).toList(),
+        ),
+      );
+    } else {
+      await provider.addWord(
+        word: _wordController.text,
+        vietnameseMeaning: _meaningController.text,
+        examples: examples,
+      );
+    }
 
     if (mounted) Navigator.of(context).pop();
   }
@@ -92,14 +125,18 @@ class _AddWordSheetState extends State<AddWordSheet> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    gradient: AppColors.primaryGradient,
+                    gradient: _isEditing ? AppColors.accentGradient : AppColors.primaryGradient,
                     borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                   ),
-                  child: const Icon(Icons.auto_awesome, size: 18, color: Colors.white),
+                  child: Icon(
+                    _isEditing ? Icons.edit_rounded : Icons.auto_awesome,
+                    size: 18,
+                    color: Colors.white,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Text(
-                  'Add New Word',
+                  _isEditing ? 'Edit Word' : 'Add New Word',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -320,10 +357,10 @@ class _AddWordSheetState extends State<AddWordSheet> {
                           : Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                const Icon(Icons.save_rounded, size: 18),
+                                Icon(_isEditing ? Icons.check_rounded : Icons.save_rounded, size: 18),
                                 const SizedBox(width: 8),
                                 Text(
-                                  'Save to Vocabulary',
+                                  _isEditing ? 'Update Word' : 'Save to Vocabulary',
                                   style: Theme.of(context)
                                       .textTheme
                                       .labelLarge
