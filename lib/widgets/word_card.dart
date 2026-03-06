@@ -4,6 +4,7 @@ import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
 import '../models/vocabulary_word.dart';
 import '../providers/vocabulary_provider.dart';
+import '../services/tts_service.dart';
 import 'add_word_sheet.dart';
 
 class WordCard extends StatelessWidget {
@@ -50,10 +51,20 @@ class WordCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                _ActionButton(
-                  icon: Icons.volume_up_rounded,
-                  onTap: () {
-                    // TODO: text-to-speech
+                Builder(
+                  builder: (context) {
+                    final tts = context.watch<TtsService>();
+                    final isSpeakingThis = tts.isSpeaking && tts.currentWord == word.word;
+                    return _ActionButton(
+                      icon: isSpeakingThis
+                          ? Icons.graphic_eq_rounded
+                          : Icons.volume_up_rounded,
+                      onTap: () => context.read<TtsService>().speak(word.word),
+                      color: isSpeakingThis
+                          ? AppColors.primary.withValues(alpha: 0.2)
+                          : null,
+                      iconColor: isSpeakingThis ? AppColors.primary : null,
+                    );
                   },
                 ),
                 const SizedBox(width: 8),

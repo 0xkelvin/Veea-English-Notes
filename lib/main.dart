@@ -6,6 +6,7 @@ import 'core/theme/app_theme.dart';
 import 'providers/vocabulary_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/storage_service.dart';
+import 'services/tts_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,8 +32,15 @@ class VeeaEnglishApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => VocabularyProvider(storageService),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(
+          create: (_) => VocabularyProvider(storageService),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => TtsService(),
+        ),
+      ],
       child: MaterialApp(
         title: 'Veea English',
         debugShowCheckedModeBanner: false,
