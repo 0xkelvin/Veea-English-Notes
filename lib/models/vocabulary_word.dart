@@ -58,6 +58,28 @@ class VocabularyWord {
     );
   }
 
+  Map<String, dynamic> toDbMap() => {
+    'id': id,
+    'word': word,
+    'vietnamese_meaning': vietnameseMeaning,
+    'examples': json.encode(examples),
+    'date': date,
+    'created_at': createdAt.toIso8601String(),
+  };
+
+  factory VocabularyWord.fromDbMap(Map<String, dynamic> map) {
+    return VocabularyWord(
+      id: map['id'] as String,
+      word: map['word'] as String,
+      vietnameseMeaning: map['vietnamese_meaning'] as String,
+      examples: (json.decode(map['examples'] as String? ?? '[]') as List<dynamic>)
+          .map((e) => e as String)
+          .toList(),
+      date: map['date'] as String,
+      createdAt: DateTime.parse(map['created_at'] as String),
+    );
+  }
+
   static String encode(List<VocabularyWord> words) =>
       json.encode(words.map((w) => w.toJson()).toList());
 
