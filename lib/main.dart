@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'core/theme/app_theme.dart';
 import 'providers/vocabulary_provider.dart';
 import 'screens/home_screen.dart';
@@ -19,27 +18,24 @@ void main() async {
     ),
   );
 
-  final prefs = await SharedPreferences.getInstance();
-  final storageService = StorageService(prefs);
+  final storageService = StorageService();
+  final vocabProvider = VocabularyProvider(storageService);
+  await vocabProvider.init();
 
-  runApp(VeeaEnglishApp(storageService: storageService));
+  runApp(VeeaEnglishApp(vocabProvider: vocabProvider));
 }
 
 class VeeaEnglishApp extends StatelessWidget {
-  final StorageService storageService;
+  final VocabularyProvider vocabProvider;
 
-  const VeeaEnglishApp({super.key, required this.storageService});
+  const VeeaEnglishApp({super.key, required this.vocabProvider});
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-          create: (_) => VocabularyProvider(storageService),
-        ),
-        ChangeNotifierProvider(
-          create: (_) => TtsService(),
-        ),
+        ChangeNotifierProvider.value(value: vocabProvider),
+        ChangeNotifierProvider(create: (_) => TtsService()),
       ],
       child: MaterialApp(
         title: 'Veea English',
