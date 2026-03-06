@@ -4,6 +4,7 @@ import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
 import '../models/vocabulary_word.dart';
 import '../providers/vocabulary_provider.dart';
+import 'add_word_sheet.dart';
 
 class WordCard extends StatelessWidget {
   final VocabularyWord word;
@@ -57,6 +58,13 @@ class WordCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 _ActionButton(
+                  icon: Icons.edit_outlined,
+                  onTap: () => _showEdit(context),
+                  color: AppColors.accent.withValues(alpha: 0.15),
+                  iconColor: AppColors.accent,
+                ),
+                const SizedBox(width: 8),
+                _ActionButton(
                   icon: Icons.delete_outline_rounded,
                   onTap: () => _confirmDelete(context),
                   color: AppColors.destructive.withValues(alpha: 0.15),
@@ -88,6 +96,18 @@ class WordCard extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  void _showEdit(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ChangeNotifierProvider.value(
+        value: context.read<VocabularyProvider>(),
+        child: AddWordSheet(existingWord: word),
       ),
     );
   }
