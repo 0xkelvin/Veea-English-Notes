@@ -1,0 +1,14 @@
+target/
+.git/
+.gitignore
+.env
+.env.*
+!.env.example
+Dockerfile
+docker-compose*.yml
+Makefile
+README.md
+*.py
+*.md
+.github/
+.vscode/
