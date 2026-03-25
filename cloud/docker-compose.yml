@@ -1,6 +1,6 @@
 services:
   # ── Application ──────────────────────────────────────────────────────────
-  app:
+  cloud:
     build:
       context: .
       dockerfile: Dockerfile
