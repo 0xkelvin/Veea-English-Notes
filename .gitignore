@@ -45,5 +45,5 @@ app.*.map.json
 /android/app/release
 
 # Cloud
-/target
+cloud/target
 .env

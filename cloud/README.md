@@ -57,7 +57,7 @@ make docker-up
 make dev
 ```
 
-The server starts at `http://localhost:8080`.
+The server starts at `http://localhost:8386`.
 
 ### Useful Commands
 
@@ -131,7 +131,7 @@ docker compose logs -f app
 
 | Service | Port | Description |
 |---------|------|-------------|
-| `app` | 8080 | Application server |
+| `app` | 8386 | Application server |
 | `postgres` | 5432 | PostgreSQL 17 |
 | `redis` | 6379 | Redis 7 |
 | `nats` | 4222 / 8222 | NATS with JetStream + monitoring |

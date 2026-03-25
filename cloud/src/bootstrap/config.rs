@@ -118,7 +118,7 @@ impl AppConfig {
                     _ => AppEnvironment::Development,
                 },
                 host: env_or("APP_HOST", "0.0.0.0"),
-                port: env_or("APP_PORT", "8080").parse()?,
+                port: env_or("APP_PORT", "8386").parse()?,
                 workers: env_or("APP_WORKERS", "4").parse()?,
                 request_timeout_secs: env_or("APP_REQUEST_TIMEOUT_SECS", "30").parse()?,
                 body_limit_bytes: env_or("APP_BODY_LIMIT_BYTES", "1048576").parse()?,

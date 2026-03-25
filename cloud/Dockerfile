@@ -42,7 +42,7 @@ COPY --from=builder /app/migrations ./migrations
 
 USER app
 
-EXPOSE 8080
+EXPOSE 8386
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
   CMD ["/app/english-notes-cloud", "--health-check"] || exit 1
