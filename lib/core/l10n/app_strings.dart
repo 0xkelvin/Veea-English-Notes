@@ -93,4 +93,35 @@ class AppStrings {
   String get gotIt => vi ? 'Đã thuộc' : 'Got it';
   String get continueStudy => vi ? 'Học tiếp' : 'Continue';
   String get finish => vi ? 'Hoàn thành' : 'Done';
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  String get loginTitle => vi ? 'Xin chào!' : 'Welcome back!';
+  String get loginSubtitle =>
+      vi ? 'Đăng nhập để tiếp tục học từ vựng' : 'Sign in to continue learning';
+  String get registerTitle => vi ? 'Tạo tài khoản' : 'Create account';
+  String get registerSubtitle =>
+      vi ? 'Đăng ký để bắt đầu học từ vựng' : 'Sign up to start learning';
+  String get email => 'Email';
+  String get emailHint => 'example@email.com';
+  String get emailEmpty => vi ? 'Vui lòng nhập email' : 'Please enter your email';
+  String get emailInvalid => vi ? 'Email không hợp lệ' : 'Invalid email address';
+  String get password => vi ? 'Mật khẩu' : 'Password';
+  String get confirmPassword => vi ? 'Xác nhận mật khẩu' : 'Confirm password';
+  String get passwordEmpty => vi ? 'Vui lòng nhập mật khẩu' : 'Please enter your password';
+  String get passwordTooShort6 =>
+      vi ? 'Mật khẩu phải có ít nhất 6 ký tự' : 'Password must be at least 6 characters';
+  String get passwordTooShort8 =>
+      vi ? 'Mật khẩu phải có ít nhất 8 ký tự' : 'Password must be at least 8 characters';
+  String get passwordTooLong => vi ? 'Mật khẩu quá dài' : 'Password is too long';
+  String get passwordMismatch =>
+      vi ? 'Mật khẩu xác nhận không khớp' : 'Passwords do not match';
+  String get forgotPassword => vi ? 'Quên mật khẩu?' : 'Forgot password?';
+  String get loginButton => vi ? 'Đăng nhập' : 'Sign In';
+  String get registerButton => vi ? 'Đăng ký' : 'Sign Up';
+  String get noAccount => vi ? 'Chưa có tài khoản? ' : "Don't have an account? ";
+  String get hasAccount => vi ? 'Đã có tài khoản? ' : 'Already have an account? ';
+  String get signUpLink => vi ? 'Đăng ký' : 'Sign up';
+  String get signInLink => vi ? 'Đăng nhập' : 'Sign in';
+  String get connectionError =>
+      vi ? 'Không thể kết nối đến máy chủ.' : 'Could not connect to the server.';
 }

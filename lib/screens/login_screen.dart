@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../core/l10n/app_strings.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
 import '../models/auth_models.dart';
 import '../providers/auth_provider.dart';
+import '../providers/locale_provider.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -20,6 +22,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   bool _isLoading = false;
   String? _errorMessage;
+  late AppStrings _s;
 
   @override
   void dispose() {
@@ -47,7 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _errorMessage = e.message);
     } catch (_) {
       if (!mounted) return;
-      setState(() => _errorMessage = 'Không thể kết nối đến máy chủ.');
+      setState(() => _errorMessage = _s.connectionError);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -55,6 +58,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    _s = AppStrings(context.watch<LocaleProvider>().isVietnamese);
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -117,14 +121,14 @@ class _LoginScreenState extends State<LoginScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Xin chào!',
+          _s.loginTitle,
           style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
         ),
         const SizedBox(height: 6),
         Text(
-          'Đăng nhập để tiếp tục học từ vựng',
+          _s.loginSubtitle,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: AppColors.mutedForeground,
               ),
@@ -146,11 +150,11 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
       validator: (value) {
         if (value == null || value.trim().isEmpty) {
-          return 'Vui lòng nhập email';
+          return _s.emailEmpty;
         }
         final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
         if (!emailRegex.hasMatch(value.trim())) {
-          return 'Email không hợp lệ';
+          return _s.emailInvalid;
         }
         return null;
       },
@@ -165,7 +169,7 @@ class _LoginScreenState extends State<LoginScreen> {
       textInputAction: TextInputAction.done,
       onFieldSubmitted: (_) => _onLogin(),
       decoration: InputDecoration(
-        labelText: 'Mật khẩu',
+        labelText: _s.password,
         hintText: '••••••••',
         prefixIcon: const Icon(Icons.lock_outline),
         suffixIcon: IconButton(
@@ -177,10 +181,10 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
       validator: (value) {
         if (value == null || value.isEmpty) {
-          return 'Vui lòng nhập mật khẩu';
+          return _s.passwordEmpty;
         }
         if (value.length < 6) {
-          return 'Mật khẩu phải có ít nhất 6 ký tự';
+          return _s.passwordTooShort6;
         }
         return null;
       },
@@ -198,7 +202,7 @@ class _LoginScreenState extends State<LoginScreen> {
           foregroundColor: AppColors.primary,
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
         ),
-        child: const Text('Quên mật khẩu?'),
+        child: Text(_s.forgotPassword),
       ),
     );
   }
@@ -235,7 +239,7 @@ class _LoginScreenState extends State<LoginScreen> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Text(
-          'Chưa có tài khoản? ',
+          _s.noAccount,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: AppColors.mutedForeground,
               ),
@@ -246,7 +250,7 @@ class _LoginScreenState extends State<LoginScreen> {
             MaterialPageRoute(builder: (_) => const RegisterScreen()),
           ),
           child: Text(
-            'Đăng ký',
+            _s.signUpLink,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: AppColors.accent,
                   fontWeight: FontWeight.w600,
@@ -284,9 +288,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     color: AppColors.primaryForeground,
                   ),
                 )
-              : const Text(
-                  'Đăng nhập',
-                  style: TextStyle(
+              : Text(
+                  _s.loginButton,
+                  style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),

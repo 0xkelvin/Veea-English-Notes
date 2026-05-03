@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../core/l10n/app_strings.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
 import '../models/auth_models.dart';
 import '../providers/auth_provider.dart';
+import '../providers/locale_provider.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -21,6 +23,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _obscureConfirm = true;
   bool _isLoading = false;
   String? _errorMessage;
+  late AppStrings _s;
 
   @override
   void dispose() {
@@ -49,7 +52,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       setState(() => _errorMessage = e.message);
     } catch (_) {
       if (!mounted) return;
-      setState(() => _errorMessage = 'Không thể kết nối đến máy chủ.');
+      setState(() => _errorMessage = _s.connectionError);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -57,6 +60,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    _s = AppStrings(context.watch<LocaleProvider>().isVietnamese);
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -119,14 +123,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Tạo tài khoản',
+          _s.registerTitle,
           style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
         ),
         const SizedBox(height: 6),
         Text(
-          'Đăng ký để bắt đầu học từ vựng',
+          _s.registerSubtitle,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: AppColors.mutedForeground,
               ),
@@ -148,11 +152,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ),
       validator: (value) {
         if (value == null || value.trim().isEmpty) {
-          return 'Vui lòng nhập email';
+          return _s.emailEmpty;
         }
         final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
         if (!emailRegex.hasMatch(value.trim())) {
-          return 'Email không hợp lệ';
+          return _s.emailInvalid;
         }
         return null;
       },
@@ -166,7 +170,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       autofillHints: const [AutofillHints.newPassword],
       textInputAction: TextInputAction.next,
       decoration: InputDecoration(
-        labelText: 'Mật khẩu',
+        labelText: _s.password,
         hintText: '••••••••',
         prefixIcon: const Icon(Icons.lock_outline),
         suffixIcon: IconButton(
@@ -178,9 +182,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
       ),
       validator: (value) {
-        if (value == null || value.isEmpty) return 'Vui lòng nhập mật khẩu';
-        if (value.length < 8) return 'Mật khẩu phải có ít nhất 8 ký tự';
-        if (value.length > 128) return 'Mật khẩu quá dài';
+        if (value == null || value.isEmpty) return _s.passwordEmpty;
+        if (value.length < 8) return _s.passwordTooShort8;
+        if (value.length > 128) return _s.passwordTooLong;
         return null;
       },
     );
@@ -193,7 +197,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       textInputAction: TextInputAction.done,
       onFieldSubmitted: (_) => _onRegister(),
       decoration: InputDecoration(
-        labelText: 'Xác nhận mật khẩu',
+        labelText: _s.confirmPassword,
         hintText: '••••••••',
         prefixIcon: const Icon(Icons.lock_outline),
         suffixIcon: IconButton(
@@ -206,7 +210,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ),
       validator: (value) {
         if (value != _passwordController.text) {
-          return 'Mật khẩu xác nhận không khớp';
+          return _s.passwordMismatch;
         }
         return null;
       },
@@ -267,9 +271,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     color: Colors.white,
                   ),
                 )
-              : const Text(
-                  'Đăng ký',
-                  style: TextStyle(
+              : Text(
+                  _s.registerButton,
+                  style: const TextStyle(
                       fontSize: 16, fontWeight: FontWeight.w600),
                 ),
         ),
@@ -282,7 +286,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Text(
-          'Đã có tài khoản? ',
+          _s.hasAccount,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: AppColors.mutedForeground,
               ),
@@ -290,7 +294,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         GestureDetector(
           onTap: () => Navigator.pop(context),
           child: Text(
-            'Đăng nhập',
+            _s.signInLink,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: AppColors.primary,
                   fontWeight: FontWeight.w600,
