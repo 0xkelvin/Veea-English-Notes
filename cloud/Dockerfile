@@ -30,6 +30,7 @@ FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
+  curl \
   libssl3 \
   && rm -rf /var/lib/apt/lists/*
 
@@ -42,9 +43,9 @@ COPY --from=builder /app/migrations ./migrations
 
 USER app
 
-EXPOSE 8080
+EXPOSE ${APP_PORT:-8080}
 
-HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
-  CMD ["/app/english-notes-cloud", "--health-check"] || exit 1
+HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=3 \
+  CMD curl -sf http://localhost:${APP_PORT:-8080}/health/live || exit 1
 
 ENTRYPOINT ["/app/english-notes-cloud"]

@@ -44,6 +44,12 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# macos
+/macos
+
+# linux
+/linux
+
 # Cloud
-/target
+/cloud/target
 .env

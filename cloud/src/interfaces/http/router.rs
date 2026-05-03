@@ -1,10 +1,12 @@
-use axum::routing::{get, post, put};
-use axum::{middleware, Router};
+use axum::routing::{delete, get, post, put};
+use axum::{Router, middleware};
 use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::bootstrap::app_state::AppState;
 
-use super::handlers::{admin_handler, auth_handler, health_handler, user_handler};
+use super::handlers::{
+    admin_handler, auth_handler, health_handler, user_handler, vocabulary_handler,
+};
 use super::middleware as mw;
 use super::openapi;
 
@@ -19,6 +21,15 @@ pub fn build_router(state: AppState) -> Router {
         .route("/auth/logout", post(auth_handler::logout))
         // ── Protected user routes ───────────────────────────
         .route("/users/me", get(user_handler::get_my_profile))
+        // ── Vocabulary routes ───────────────────────────────
+        .route("/vocabulary", get(vocabulary_handler::list_words))
+        .route("/vocabulary/due", get(vocabulary_handler::list_due))
+        .route("/vocabulary/suggest", post(vocabulary_handler::suggest_word))
+        .route("/vocabulary", post(vocabulary_handler::create_word))
+        .route("/vocabulary/{id}", get(vocabulary_handler::get_word))
+        .route("/vocabulary/{id}", put(vocabulary_handler::update_word))
+        .route("/vocabulary/{id}", delete(vocabulary_handler::delete_word))
+        .route("/vocabulary/{id}/review", post(vocabulary_handler::apply_review))
         // ── Admin routes ────────────────────────────────────
         .route("/admin/users", get(admin_handler::list_users))
         .route(
