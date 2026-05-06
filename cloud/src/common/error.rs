@@ -32,6 +32,9 @@ pub enum AppError {
     #[error("Request timeout")]
     Timeout,
 
+    #[error("External service error: {0}")]
+    ExternalService(String),
+
     #[error("Internal server error")]
     Internal(#[source] anyhow::Error),
 }
@@ -82,6 +85,11 @@ impl IntoResponse for AppError {
                 StatusCode::GATEWAY_TIMEOUT,
                 "TIMEOUT",
                 "Request timed out".to_string(),
+            ),
+            AppError::ExternalService(msg) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "EXTERNAL_SERVICE_ERROR",
+                msg.clone(),
             ),
             AppError::Internal(err) => {
                 // Log the full error chain internally; never expose it to the client.

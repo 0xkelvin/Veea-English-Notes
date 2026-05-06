@@ -7,7 +7,7 @@ import '../models/vocabulary_word.dart';
 class StorageService {
   static const String _dbName = 'veea_english.db';
   static const String _tableName = 'words';
-  static const int _dbVersion = 1;
+  static const int _dbVersion = 2;
 
   static const String _migrationKey = 'sqlite_migration_done';
 
@@ -33,12 +33,32 @@ class StorageService {
             vietnamese_meaning TEXT NOT NULL,
             examples TEXT NOT NULL DEFAULT '[]',
             date TEXT NOT NULL,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            review_count INTEGER NOT NULL DEFAULT 0,
+            ease_factor REAL NOT NULL DEFAULT 2.5,
+            interval_days INTEGER NOT NULL DEFAULT 0,
+            next_review_date TEXT
           )
         ''');
         await db.execute(
           'CREATE INDEX idx_words_date ON $_tableName(date)',
         );
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute(
+            'ALTER TABLE $_tableName ADD COLUMN review_count INTEGER NOT NULL DEFAULT 0',
+          );
+          await db.execute(
+            'ALTER TABLE $_tableName ADD COLUMN ease_factor REAL NOT NULL DEFAULT 2.5',
+          );
+          await db.execute(
+            'ALTER TABLE $_tableName ADD COLUMN interval_days INTEGER NOT NULL DEFAULT 0',
+          );
+          await db.execute(
+            'ALTER TABLE $_tableName ADD COLUMN next_review_date TEXT',
+          );
+        }
       },
     );
   }

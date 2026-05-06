@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
 import '../models/vocabulary_word.dart';
+import '../providers/auth_provider.dart';
 import '../providers/vocabulary_provider.dart';
+import '../services/vocabulary_api_service.dart';
 
 class AddWordSheet extends StatefulWidget {
   final VocabularyWord? existingWord;
@@ -19,8 +21,10 @@ class AddWordSheet extends StatefulWidget {
 class _AddWordSheetState extends State<AddWordSheet> {
   final _wordController = TextEditingController();
   final _meaningController = TextEditingController();
+  final _phoneticController = TextEditingController();
   final List<TextEditingController> _exampleControllers = [];
   bool _saving = false;
+  bool _suggesting = false;
 
   bool get _isEditing => widget.isEditing;
 
@@ -31,6 +35,7 @@ class _AddWordSheetState extends State<AddWordSheet> {
       final w = widget.existingWord!;
       _wordController.text = w.word;
       _meaningController.text = w.vietnameseMeaning;
+      _phoneticController.text = w.phonetic ?? '';
       for (final example in w.examples) {
         _exampleControllers.add(TextEditingController(text: example));
       }
@@ -41,6 +46,7 @@ class _AddWordSheetState extends State<AddWordSheet> {
   void dispose() {
     _wordController.dispose();
     _meaningController.dispose();
+    _phoneticController.dispose();
     for (final c in _exampleControllers) {
       c.dispose();
     }
@@ -64,6 +70,42 @@ class _AddWordSheetState extends State<AddWordSheet> {
       _wordController.text.trim().isNotEmpty &&
       _meaningController.text.trim().isNotEmpty;
 
+  Future<void> _suggestWithAi() async {
+    final word = _wordController.text.trim();
+    if (word.isEmpty || _suggesting) return;
+    setState(() => _suggesting = true);
+    try {
+      final token = context.read<AuthProvider>().accessToken;
+      if (token == null) return;
+      final api = VocabularyApiService();
+      final suggestion = await api.suggest(accessToken: token, word: word);
+      setState(() {
+        _meaningController.text = suggestion.vietnameseMeaning;
+        _phoneticController.text = suggestion.phonetic;
+        // Replace example controllers with AI suggestions
+        for (final c in _exampleControllers) {
+          c.dispose();
+        }
+        _exampleControllers
+          ..clear()
+          ..addAll(suggestion.examples
+              .map((e) => TextEditingController(text: e))
+              .toList());
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('AI suggestion failed: $e'),
+            backgroundColor: AppColors.destructive,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _suggesting = false);
+    }
+  }
+
   Future<void> _save() async {
     if (!_isValid || _saving) return;
     setState(() => _saving = true);
@@ -76,6 +118,9 @@ class _AddWordSheetState extends State<AddWordSheet> {
         widget.existingWord!.copyWith(
           word: _wordController.text.trim(),
           vietnameseMeaning: _meaningController.text.trim(),
+          phonetic: _phoneticController.text.trim().isEmpty
+              ? null
+              : _phoneticController.text.trim(),
           examples: examples.where((e) => e.trim().isNotEmpty).map((e) => e.trim()).toList(),
         ),
       );
@@ -83,6 +128,9 @@ class _AddWordSheetState extends State<AddWordSheet> {
       await provider.addWord(
         word: _wordController.text,
         vietnameseMeaning: _meaningController.text,
+        phonetic: _phoneticController.text.trim().isEmpty
+            ? null
+            : _phoneticController.text.trim(),
         examples: examples,
       );
     }
@@ -168,14 +216,73 @@ class _AddWordSheetState extends State<AddWordSheet> {
                 children: [
                   _buildLabel(context, 'English Word'),
                   const SizedBox(height: 8),
-                  TextField(
-                    controller: _wordController,
-                    onChanged: (_) => setState(() {}),
-                    style: const TextStyle(color: AppColors.foreground),
-                    decoration: const InputDecoration(
-                      hintText: 'Enter an English word',
-                    ),
-                    textCapitalization: TextCapitalization.sentences,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _wordController,
+                          onChanged: (_) => setState(() {}),
+                          style: const TextStyle(color: AppColors.foreground),
+                          decoration: const InputDecoration(
+                            hintText: 'Enter an English word',
+                          ),
+                          textCapitalization: TextCapitalization.sentences,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: _wordController.text.trim().isNotEmpty
+                            ? _suggestWithAi
+                            : null,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          height: 52,
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          decoration: BoxDecoration(
+                            gradient: _wordController.text.trim().isNotEmpty
+                                ? AppColors.primaryGradient
+                                : null,
+                            color: _wordController.text.trim().isEmpty
+                                ? AppColors.secondary
+                                : null,
+                            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                          ),
+                          child: _suggesting
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.auto_awesome,
+                                      size: 16,
+                                      color: _wordController.text.trim().isNotEmpty
+                                          ? Colors.white
+                                          : AppColors.mutedForeground,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'AI',
+                                      style: TextStyle(
+                                        color: _wordController.text.trim().isNotEmpty
+                                            ? Colors.white
+                                            : AppColors.mutedForeground,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        ),
+                      ),
+                    ],
                   ),
 
                   const SizedBox(height: 20),
@@ -208,6 +315,21 @@ class _AddWordSheetState extends State<AddWordSheet> {
                       hintText: 'Enter Vietnamese meaning',
                     ),
                     textCapitalization: TextCapitalization.sentences,
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  _buildLabel(context, 'Phonetic (IPA)'),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _phoneticController,
+                    style: const TextStyle(
+                      color: AppColors.foreground,
+                      fontFamily: 'monospace',
+                    ),
+                    decoration: const InputDecoration(
+                      hintText: 'e.g. /æmˈbɪʃəs/',
+                    ),
                   ),
 
                   const SizedBox(height: 20),

@@ -4,6 +4,7 @@ import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
 import '../models/vocabulary_word.dart';
 import '../providers/vocabulary_provider.dart';
+import '../screens/word_study_screen.dart';
 import '../services/tts_service.dart';
 import 'add_word_sheet.dart';
 
@@ -14,7 +15,21 @@ class WordCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(
+                  value: context.read<VocabularyProvider>()),
+              ChangeNotifierProvider.value(value: context.read<TtsService>()),
+            ],
+            child: WordStudyScreen(word: word),
+          ),
+        ),
+      ),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: AppColors.card,
@@ -108,7 +123,8 @@ class WordCard extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ), // Container
+    ); // GestureDetector
   }
 
   void _showEdit(BuildContext context) {

@@ -5,13 +5,14 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "${APP_PORT:-8080}:8080"
+      - "${APP_PORT:-8080}:${APP_PORT:-8080}"
     env_file:
       - .env
     environment:
       DATABASE_URL: postgres://app_user:app_password@postgres:5432/english_notes
       REDIS_URL: redis://redis:6379
       NATS_URL: nats://nats:4222
+      # Set OPENAI_API_KEY in .env file
     depends_on:
       postgres:
         condition: service_healthy
@@ -33,7 +34,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app_user -d english_notes"]
+      test: [ "CMD-SHELL", "pg_isready -U app_user -d english_notes" ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -47,7 +48,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -59,7 +60,7 @@ services:
     ports:
       - "4222:4222"
       - "8222:8222"
-    command: ["--js", "--http_port", "8222"]
+    command: [ "--js", "--http_port", "8222" ]
     restart: unless-stopped
 
 volumes:
