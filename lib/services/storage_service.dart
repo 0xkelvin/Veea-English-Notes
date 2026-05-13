@@ -52,27 +52,35 @@ class StorageService {
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
-          await _safeAddColumn(db, 'context_sentence TEXT NOT NULL DEFAULT \'\'');
-          await _safeAddColumn(db, 'synonyms TEXT NOT NULL DEFAULT \'[]\'');
-          await _safeAddColumn(db, 'antonyms TEXT NOT NULL DEFAULT \'[]\'');
-          await _safeAddColumn(db, 'idioms TEXT NOT NULL DEFAULT \'[]\'');
-          await _safeAddColumn(db, 'phrases TEXT NOT NULL DEFAULT \'[]\'');
-          await _safeAddColumn(db, 'image_url TEXT');
-          await _safeAddColumn(db, 'mastery_level TEXT NOT NULL DEFAULT \'new\'');
-          await _safeAddColumn(db, 'last_reviewed_at TEXT');
-          await _safeAddColumn(db, 'next_review_at TEXT');
-          await _safeAddColumn(db, 'review_count INTEGER NOT NULL DEFAULT 0');
+          await _safeAddColumn(db, 'context_sentence', 'TEXT NOT NULL DEFAULT \'\'');
+          await _safeAddColumn(db, 'synonyms', 'TEXT NOT NULL DEFAULT \'[]\'');
+          await _safeAddColumn(db, 'antonyms', 'TEXT NOT NULL DEFAULT \'[]\'');
+          await _safeAddColumn(db, 'idioms', 'TEXT NOT NULL DEFAULT \'[]\'');
+          await _safeAddColumn(db, 'phrases', 'TEXT NOT NULL DEFAULT \'[]\'');
+          await _safeAddColumn(db, 'image_url', 'TEXT');
+          await _safeAddColumn(db, 'mastery_level', 'TEXT NOT NULL DEFAULT \'new\'');
+          await _safeAddColumn(db, 'last_reviewed_at', 'TEXT');
+          await _safeAddColumn(db, 'next_review_at', 'TEXT');
+          await _safeAddColumn(db, 'review_count', 'INTEGER NOT NULL DEFAULT 0');
         }
       },
     );
   }
 
-  Future<void> _safeAddColumn(Database db, String statement) async {
+  Future<void> _safeAddColumn(
+    Database db,
+    String columnName,
+    String columnDefinition,
+  ) async {
+    final validColumn = RegExp(r'^[a-z_]+$').hasMatch(columnName);
+    if (!validColumn) return;
     try {
-      await db.execute('ALTER TABLE $_tableName ADD COLUMN $statement');
+      await db.execute(
+        'ALTER TABLE $_tableName ADD COLUMN $columnName $columnDefinition',
+      );
     } catch (error) {
       // Column may already exist if migration was interrupted or partially completed.
-      debugPrint('Skipping column add "$statement": $error');
+      debugPrint('Skipping column add "$columnName": $error');
     }
   }
 

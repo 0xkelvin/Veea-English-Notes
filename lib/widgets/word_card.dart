@@ -8,6 +8,10 @@ import '../services/tts_service.dart';
 import 'add_word_sheet.dart';
 
 class WordCard extends StatelessWidget {
+  static const Set<String> _trustedImageHosts = {
+    'image.pollinations.ai',
+  };
+
   final VocabularyWord word;
 
   const WordCard({super.key, required this.word});
@@ -164,7 +168,7 @@ class WordCard extends StatelessWidget {
     if (value == null || value.isEmpty) return null;
     final uri = Uri.tryParse(value);
     if (uri == null) return null;
-    if (uri.scheme != 'https' || uri.host != 'image.pollinations.ai') {
+    if (uri.scheme != 'https' || !_trustedImageHosts.contains(uri.host)) {
       return null;
     }
     return value;

@@ -37,7 +37,9 @@ class AiEnrichmentService {
     final root = cleanWord.length > 3 ? cleanWord.substring(0, cleanWord.length - 1) : cleanWord;
     final imagePrompt = Uri.encodeComponent('$cleanWord, $context, cinematic lighting');
     final imageUri = Uri.parse('https://image.pollinations.ai/prompt/$imagePrompt');
-    final random = Random(cleanWord.codeUnits.fold<int>(0, (a, b) => a + b));
+    final random = Random(
+      cleanWord.codeUnits.fold<int>(0, (a, b) => (a + b) & 0x7fffffff),
+    );
 
     final synonymSeeds = <String>[
       'useful',
