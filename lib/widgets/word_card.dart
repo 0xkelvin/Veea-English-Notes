@@ -48,6 +48,8 @@ class WordCard extends StatelessWidget {
                           fontWeight: FontWeight.w500,
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      _MasteryBadge(level: word.masteryLevel),
                     ],
                   ),
                 ),
@@ -105,6 +107,52 @@ class WordCard extends StatelessWidget {
                 ),
               ),
             ],
+            if (word.contextSentence.trim().isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.secondary,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                ),
+                child: Text(
+                  '"${word.contextSentence}"',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.foreground,
+                    fontStyle: FontStyle.italic,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+            if (word.imageUrl != null && word.imageUrl!.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                child: Image.network(
+                  word.imageUrl!,
+                  height: 150,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Container(
+                    height: 80,
+                    color: AppColors.secondary,
+                    alignment: Alignment.center,
+                    child: Text(
+                      'Image unavailable',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.mutedForeground,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            _AiTagGroup(title: 'Synonyms', values: word.synonyms),
+            _AiTagGroup(title: 'Antonyms', values: word.antonyms),
+            _AiTagGroup(title: 'Idioms', values: word.idioms),
+            _AiTagGroup(title: 'Phrases', values: word.phrases),
           ],
         ),
       ),
@@ -181,6 +229,81 @@ class _ActionButton extends StatelessWidget {
           icon,
           size: 18,
           color: iconColor ?? AppColors.mutedForeground,
+        ),
+      ),
+    );
+  }
+}
+
+class _AiTagGroup extends StatelessWidget {
+  final String title;
+  final List<String> values;
+
+  const _AiTagGroup({
+    required this.title,
+    required this.values,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (values.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: AppColors.mutedForeground,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: values
+                .map(
+                  (value) => Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.secondary,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Text(
+                      value,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MasteryBadge extends StatelessWidget {
+  final MasteryLevel level;
+
+  const _MasteryBadge({required this.level});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.accent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        level.label,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: AppColors.accent,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

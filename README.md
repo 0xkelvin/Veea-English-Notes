@@ -13,6 +13,17 @@
 
 <img width="303" height="632" alt="image" src="https://github.com/user-attachments/assets/31fd8522-05d3-48b6-be79-0d4d37fb85cc" />
 
+## Phase 1 (Mobile MVP) implemented in app
+
+- Save word with **full context sentence**
+- Auto-enrich each saved word with **synonyms, antonyms, idioms, and phrases**
+- Generate an **AI image URL** for each word
+- **Daily review queue** with spaced repetition progression
+- **Mastery levels**: New → Learning → Familiar → Mastered
+- **TTS pronunciation** for each word card
+
+<img width="900" height="900" alt="Lexio ecosystem" src="https://github.com/user-attachments/assets/c426ea35-e9cc-464e-a8dc-f98ad990f1a4" />
+
 
 
 
@@ -31,7 +42,6 @@ A few resources to get you started if this is your first Flutter project:
 For help getting started with Flutter development, view the
 [online documentation](https://docs.flutter.dev/), which offers tutorials,
 samples, guidance on mobile development, and a full API reference.
-
 
 
 

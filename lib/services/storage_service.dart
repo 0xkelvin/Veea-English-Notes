@@ -7,7 +7,7 @@ import '../models/vocabulary_word.dart';
 class StorageService {
   static const String _dbName = 'veea_english.db';
   static const String _tableName = 'words';
-  static const int _dbVersion = 1;
+  static const int _dbVersion = 2;
 
   static const String _migrationKey = 'sqlite_migration_done';
 
@@ -31,7 +31,17 @@ class StorageService {
             id TEXT PRIMARY KEY,
             word TEXT NOT NULL,
             vietnamese_meaning TEXT NOT NULL,
+            context_sentence TEXT NOT NULL DEFAULT '',
             examples TEXT NOT NULL DEFAULT '[]',
+            synonyms TEXT NOT NULL DEFAULT '[]',
+            antonyms TEXT NOT NULL DEFAULT '[]',
+            idioms TEXT NOT NULL DEFAULT '[]',
+            phrases TEXT NOT NULL DEFAULT '[]',
+            image_url TEXT,
+            mastery_level TEXT NOT NULL DEFAULT 'new',
+            last_reviewed_at TEXT,
+            next_review_at TEXT,
+            review_count INTEGER NOT NULL DEFAULT 0,
             date TEXT NOT NULL,
             created_at TEXT NOT NULL
           )
@@ -40,7 +50,29 @@ class StorageService {
           'CREATE INDEX idx_words_date ON $_tableName(date)',
         );
       },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await _safeAddColumn(db, 'context_sentence TEXT NOT NULL DEFAULT \'\'');
+          await _safeAddColumn(db, 'synonyms TEXT NOT NULL DEFAULT \'[]\'');
+          await _safeAddColumn(db, 'antonyms TEXT NOT NULL DEFAULT \'[]\'');
+          await _safeAddColumn(db, 'idioms TEXT NOT NULL DEFAULT \'[]\'');
+          await _safeAddColumn(db, 'phrases TEXT NOT NULL DEFAULT \'[]\'');
+          await _safeAddColumn(db, 'image_url TEXT');
+          await _safeAddColumn(db, 'mastery_level TEXT NOT NULL DEFAULT \'new\'');
+          await _safeAddColumn(db, 'last_reviewed_at TEXT');
+          await _safeAddColumn(db, 'next_review_at TEXT');
+          await _safeAddColumn(db, 'review_count INTEGER NOT NULL DEFAULT 0');
+        }
+      },
     );
+  }
+
+  Future<void> _safeAddColumn(Database db, String statement) async {
+    try {
+      await db.execute('ALTER TABLE $_tableName ADD COLUMN $statement');
+    } catch (_) {
+      // Column may already exist for some local states.
+    }
   }
 
   /// Migrate existing SharedPreferences data to SQLite (runs once)

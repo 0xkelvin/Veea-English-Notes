@@ -19,6 +19,7 @@ class AddWordSheet extends StatefulWidget {
 class _AddWordSheetState extends State<AddWordSheet> {
   final _wordController = TextEditingController();
   final _meaningController = TextEditingController();
+  final _contextController = TextEditingController();
   final List<TextEditingController> _exampleControllers = [];
   bool _saving = false;
 
@@ -31,6 +32,7 @@ class _AddWordSheetState extends State<AddWordSheet> {
       final w = widget.existingWord!;
       _wordController.text = w.word;
       _meaningController.text = w.vietnameseMeaning;
+      _contextController.text = w.contextSentence;
       for (final example in w.examples) {
         _exampleControllers.add(TextEditingController(text: example));
       }
@@ -41,6 +43,7 @@ class _AddWordSheetState extends State<AddWordSheet> {
   void dispose() {
     _wordController.dispose();
     _meaningController.dispose();
+    _contextController.dispose();
     for (final c in _exampleControllers) {
       c.dispose();
     }
@@ -62,7 +65,8 @@ class _AddWordSheetState extends State<AddWordSheet> {
 
   bool get _isValid =>
       _wordController.text.trim().isNotEmpty &&
-      _meaningController.text.trim().isNotEmpty;
+      _meaningController.text.trim().isNotEmpty &&
+      _contextController.text.trim().isNotEmpty;
 
   Future<void> _save() async {
     if (!_isValid || _saving) return;
@@ -76,6 +80,7 @@ class _AddWordSheetState extends State<AddWordSheet> {
         widget.existingWord!.copyWith(
           word: _wordController.text.trim(),
           vietnameseMeaning: _meaningController.text.trim(),
+          contextSentence: _contextController.text.trim(),
           examples: examples.where((e) => e.trim().isNotEmpty).map((e) => e.trim()).toList(),
         ),
       );
@@ -83,6 +88,7 @@ class _AddWordSheetState extends State<AddWordSheet> {
       await provider.addWord(
         word: _wordController.text,
         vietnameseMeaning: _meaningController.text,
+        contextSentence: _contextController.text,
         examples: examples,
       );
     }
@@ -206,6 +212,22 @@ class _AddWordSheetState extends State<AddWordSheet> {
                     style: const TextStyle(color: AppColors.foreground),
                     decoration: const InputDecoration(
                       hintText: 'Enter Vietnamese meaning',
+                    ),
+                    textCapitalization: TextCapitalization.sentences,
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  _buildLabel(context, 'Context Sentence'),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _contextController,
+                    onChanged: (_) => setState(() {}),
+                    style: const TextStyle(color: AppColors.foreground),
+                    maxLines: 3,
+                    minLines: 2,
+                    decoration: const InputDecoration(
+                      hintText: 'Write the full sentence where you saw this word',
                     ),
                     textCapitalization: TextCapitalization.sentences,
                   ),
