@@ -2,17 +2,29 @@ import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import '../models/vocabulary_word.dart';
+import '../services/ai_enrichment_service.dart';
 import '../services/storage_service.dart';
 
 class VocabularyProvider extends ChangeNotifier {
+  static const Map<MasteryLevel, int> _reviewIntervalsInDays = {
+    MasteryLevel.newWord: 0,
+    MasteryLevel.learning: 1,
+    MasteryLevel.familiar: 3,
+    MasteryLevel.mastered: 7,
+  };
+
   final StorageService _storage;
+  final AiEnrichmentService _aiEnrichmentService;
   final _uuid = const Uuid();
 
   List<VocabularyWord> _words = [];
   DateTime _selectedDate = DateTime.now();
   bool _isLoaded = false;
 
-  VocabularyProvider(this._storage);
+  VocabularyProvider(
+    this._storage, {
+    AiEnrichmentService? aiEnrichmentService,
+  }) : _aiEnrichmentService = aiEnrichmentService ?? AiEnrichmentService();
 
   bool get isLoaded => _isLoaded;
   List<VocabularyWord> get allWords => List.unmodifiable(_words);
@@ -24,6 +36,12 @@ class VocabularyProvider extends ChangeNotifier {
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
   int get totalWords => _words.length;
+
+  List<VocabularyWord> get dueWords {
+    final now = DateTime.now();
+    return _words.where((w) => !w.nextReviewAt.isAfter(now)).toList()
+      ..sort((a, b) => a.nextReviewAt.compareTo(b.nextReviewAt));
+  }
 
   int get streakDays {
     if (_words.isEmpty) return 0;
@@ -77,12 +95,14 @@ class VocabularyProvider extends ChangeNotifier {
   Future<void> addWord({
     required String word,
     required String vietnameseMeaning,
+    required String contextSentence,
     List<String> examples = const [],
   }) async {
     final newWord = VocabularyWord(
       id: _uuid.v4(),
       word: word.trim(),
       vietnameseMeaning: vietnameseMeaning.trim(),
+      contextSentence: contextSentence.trim(),
       examples: examples
           .where((e) => e.trim().isNotEmpty)
           .map((e) => e.trim())
@@ -92,6 +112,28 @@ class VocabularyProvider extends ChangeNotifier {
     _words.add(newWord);
     notifyListeners();
     await _storage.insertWord(newWord);
+
+    try {
+      final enrichment = await _aiEnrichmentService.enrichWord(
+        word: newWord.word,
+        contextSentence: newWord.contextSentence,
+      );
+      final enriched = newWord.copyWith(
+        synonyms: enrichment.synonyms,
+        antonyms: enrichment.antonyms,
+        idioms: enrichment.idioms,
+        phrases: enrichment.phrases,
+        imageUrl: enrichment.imageUrl,
+      );
+      final index = _words.indexWhere((w) => w.id == newWord.id);
+      if (index != -1) {
+        _words[index] = enriched;
+        notifyListeners();
+        await _storage.updateWord(enriched);
+      }
+    } catch (_) {
+      // Keep save flow resilient even when enrichment fails.
+    }
   }
 
   Future<void> deleteWord(String id) async {
@@ -107,5 +149,46 @@ class VocabularyProvider extends ChangeNotifier {
       notifyListeners();
       await _storage.updateWord(updated);
     }
+  }
+
+  Future<void> setMasteryLevel(String wordId, MasteryLevel masteryLevel) async {
+    final index = _words.indexWhere((w) => w.id == wordId);
+    if (index == -1) return;
+
+    final current = _words[index];
+    final updated = current.copyWith(
+      masteryLevel: masteryLevel,
+      nextReviewAt: _nextReviewDate(masteryLevel),
+    );
+    _words[index] = updated;
+    notifyListeners();
+    await _storage.updateWord(updated);
+  }
+
+  Future<void> markWordReviewed(String wordId) async {
+    final index = _words.indexWhere((w) => w.id == wordId);
+    if (index == -1) return;
+
+    final now = DateTime.now();
+    final current = _words[index];
+    final nextMastery = current.masteryLevel.next;
+    final updated = current.copyWith(
+      masteryLevel: nextMastery,
+      reviewCount: current.reviewCount + 1,
+      lastReviewedAt: now,
+      nextReviewAt: _nextReviewDate(nextMastery, reference: now),
+    );
+    _words[index] = updated;
+    notifyListeners();
+    await _storage.updateWord(updated);
+  }
+
+  DateTime _nextReviewDate(
+    MasteryLevel masteryLevel, {
+    DateTime? reference,
+  }) {
+    final from = reference ?? DateTime.now();
+    final days = _reviewIntervalsInDays[masteryLevel] ?? 1;
+    return from.add(Duration(days: days));
   }
 }

@@ -26,9 +26,10 @@ class TtsService extends ChangeNotifier {
     }
 
     await _tts.setLanguage('en-US');
-    await _tts.setSpeechRate(Platform.isIOS ? 0.5 : 0.5);
+    await _tts.setSpeechRate(Platform.isIOS ? 0.48 : 0.5);
     await _tts.setPitch(1.0);
     await _tts.setVolume(1.0);
+    await _tts.awaitSpeakCompletion(true);
 
     _tts.setStartHandler(() {
       _isSpeaking = true;
@@ -58,13 +59,15 @@ class TtsService extends ChangeNotifier {
   }
 
   Future<void> speak(String text) async {
+    final cleaned = text.trim();
+    if (cleaned.isEmpty) return;
     await _ensureInitialized();
     await _tts.stop();
-    _currentWord = text;
+    _currentWord = cleaned;
     _isSpeaking = true;
     notifyListeners();
-    final result = await _tts.speak(text);
-    debugPrint('TTS speak("$text") result: $result');
+    final result = await _tts.speak(cleaned);
+    debugPrint('TTS speak("$cleaned") result: $result');
   }
 
   Future<void> stop() async {

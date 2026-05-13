@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
+import '../models/vocabulary_word.dart';
 import '../providers/vocabulary_provider.dart';
 import '../widgets/add_word_sheet.dart';
 import '../widgets/date_selector.dart';
@@ -28,6 +29,10 @@ class HomeScreen extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
               child: const DateSelector(),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              child: _buildDailyReview(context, provider),
             ),
             _buildSectionTitle(context),
 
@@ -147,6 +152,94 @@ class HomeScreen extends StatelessWidget {
         style: Theme.of(context).textTheme.titleMedium?.copyWith(
           fontWeight: FontWeight.w600,
         ),
+      ),
+    );
+  }
+
+  Widget _buildDailyReview(BuildContext context, VocabularyProvider provider) {
+    final dueWords = provider.dueWords;
+    if (dueWords.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.secondary,
+          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.check_circle_outline, color: AppColors.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Daily review complete. Great consistency!',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppColors.mutedForeground,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Daily Review (${dueWords.length})',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...dueWords.take(3).map((word) => _buildDueWordRow(context, provider, word)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDueWordRow(
+    BuildContext context,
+    VocabularyProvider provider,
+    VocabularyWord word,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '${word.word} • ${word.masteryLevel.label}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+          TextButton(
+            onPressed: () => provider.markWordReviewed(word.id),
+            child: const Text('Review'),
+          ),
+          PopupMenuButton<MasteryLevel>(
+            tooltip: 'Set mastery',
+            onSelected: (value) => provider.setMasteryLevel(word.id, value),
+            itemBuilder: (_) => MasteryLevel.values
+                .map(
+                  (level) => PopupMenuItem(
+                    value: level,
+                    child: Text(level.label),
+                  ),
+                )
+                .toList(),
+            icon: const Icon(Icons.flag_outlined, size: 18),
+          ),
+        ],
       ),
     );
   }
