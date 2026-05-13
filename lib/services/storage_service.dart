@@ -71,7 +71,7 @@ class StorageService {
     try {
       await db.execute('ALTER TABLE $_tableName ADD COLUMN $statement');
     } catch (_) {
-      // Column may already exist for some local states.
+      // Column may already exist if migration was interrupted or partially completed.
     }
   }
 
