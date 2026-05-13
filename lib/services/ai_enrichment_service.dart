@@ -35,7 +35,10 @@ class AiEnrichmentService {
     final context = contextSentence.trim();
     final cleanWord = normalizedWord;
     final root = cleanWord.length > 3 ? cleanWord.substring(0, cleanWord.length - 1) : cleanWord;
-    final imagePrompt = Uri.encodeComponent('$cleanWord, $context, cinematic lighting');
+    final imageUri = Uri.https(
+      'image.pollinations.ai',
+      '/prompt/$cleanWord, $context, cinematic lighting',
+    );
     final random = Random(cleanWord.codeUnits.fold<int>(0, (a, b) => a + b));
 
     final synonymSeeds = <String>[
@@ -68,7 +71,7 @@ class AiEnrichmentService {
       antonyms: antonymSeeds.take(3).toList(),
       idioms: idiomSeeds.take(2).toList(),
       phrases: phraseSeeds.take(3).toList(),
-      imageUrl: 'https://image.pollinations.ai/prompt/$imagePrompt',
+      imageUrl: imageUri.toString(),
     );
   }
 }

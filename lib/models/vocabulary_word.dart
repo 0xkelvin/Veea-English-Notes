@@ -35,6 +35,8 @@ extension MasteryLevelX on MasteryLevel {
 }
 
 class VocabularyWord {
+  static const Object _noValue = Object();
+
   final String id;
   final String word;
   final String vietnameseMeaning;
@@ -82,9 +84,9 @@ class VocabularyWord {
     List<String>? antonyms,
     List<String>? idioms,
     List<String>? phrases,
-    String? imageUrl,
+    Object? imageUrl = _noValue,
     MasteryLevel? masteryLevel,
-    DateTime? lastReviewedAt,
+    Object? lastReviewedAt = _noValue,
     DateTime? nextReviewAt,
     int? reviewCount,
     String? date,
@@ -100,9 +102,11 @@ class VocabularyWord {
       antonyms: antonyms ?? this.antonyms,
       idioms: idioms ?? this.idioms,
       phrases: phrases ?? this.phrases,
-      imageUrl: imageUrl ?? this.imageUrl,
+      imageUrl: imageUrl == _noValue ? this.imageUrl : imageUrl as String?,
       masteryLevel: masteryLevel ?? this.masteryLevel,
-      lastReviewedAt: lastReviewedAt ?? this.lastReviewedAt,
+      lastReviewedAt: lastReviewedAt == _noValue
+          ? this.lastReviewedAt
+          : lastReviewedAt as DateTime?,
       nextReviewAt: nextReviewAt ?? this.nextReviewAt,
       reviewCount: reviewCount ?? this.reviewCount,
       date: date ?? this.date,
