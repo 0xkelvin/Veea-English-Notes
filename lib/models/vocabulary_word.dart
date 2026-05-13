@@ -35,7 +35,7 @@ extension MasteryLevelX on MasteryLevel {
 }
 
 class VocabularyWord {
-  static const Object _noValue = Object();
+  static const Object _unspecifiedValue = Object();
 
   final String id;
   final String word;
@@ -84,9 +84,9 @@ class VocabularyWord {
     List<String>? antonyms,
     List<String>? idioms,
     List<String>? phrases,
-    Object? imageUrl = _noValue,
+    Object? imageUrl = _unspecifiedValue,
     MasteryLevel? masteryLevel,
-    Object? lastReviewedAt = _noValue,
+    Object? lastReviewedAt = _unspecifiedValue,
     DateTime? nextReviewAt,
     int? reviewCount,
     String? date,
@@ -102,9 +102,9 @@ class VocabularyWord {
       antonyms: antonyms ?? this.antonyms,
       idioms: idioms ?? this.idioms,
       phrases: phrases ?? this.phrases,
-      imageUrl: imageUrl == _noValue ? this.imageUrl : imageUrl as String?,
+      imageUrl: imageUrl == _unspecifiedValue ? this.imageUrl : imageUrl as String?,
       masteryLevel: masteryLevel ?? this.masteryLevel,
-      lastReviewedAt: lastReviewedAt == _noValue
+      lastReviewedAt: lastReviewedAt == _unspecifiedValue
           ? this.lastReviewedAt
           : lastReviewedAt as DateTime?,
       nextReviewAt: nextReviewAt ?? this.nextReviewAt,

@@ -88,12 +88,12 @@ class _FakeAiEnrichmentService extends AiEnrichmentService {
     required String word,
     required String contextSentence,
   }) async {
-    return const WordAiEnrichment(
-      synonyms: ['hardworking', 'industrious'],
-      antonyms: ['lazy'],
+    return WordAiEnrichment(
+      synonyms: ['$word-synonym-1', '$word-synonym-2'],
+      antonyms: ['$word-opposite'],
       idioms: ['hit the books'],
-      phrases: ['stay diligent every day'],
-      imageUrl: 'https://example.com/image.png',
+      phrases: ['practice $word daily'],
+      imageUrl: 'https://example.com/$word.png',
     );
   }
 }

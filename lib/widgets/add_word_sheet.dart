@@ -66,7 +66,7 @@ class _AddWordSheetState extends State<AddWordSheet> {
   bool get _isValid =>
       _wordController.text.trim().isNotEmpty &&
       _meaningController.text.trim().isNotEmpty &&
-      _contextController.text.trim().isNotEmpty;
+      (_contextController.text.trim().isNotEmpty || _isEditing);
 
   Future<void> _save() async {
     if (!_isValid || _saving) return;
