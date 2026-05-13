@@ -6,6 +6,13 @@ import '../services/ai_enrichment_service.dart';
 import '../services/storage_service.dart';
 
 class VocabularyProvider extends ChangeNotifier {
+  static const Map<MasteryLevel, int> _reviewIntervalsInDays = {
+    MasteryLevel.newWord: 0,
+    MasteryLevel.learning: 1,
+    MasteryLevel.familiar: 3,
+    MasteryLevel.mastered: 7,
+  };
+
   final StorageService _storage;
   final AiEnrichmentService _aiEnrichmentService;
   final _uuid = const Uuid();
@@ -181,12 +188,7 @@ class VocabularyProvider extends ChangeNotifier {
     DateTime? reference,
   }) {
     final from = reference ?? DateTime.now();
-    final days = switch (masteryLevel) {
-      MasteryLevel.newWord => 0,
-      MasteryLevel.learning => 1,
-      MasteryLevel.familiar => 3,
-      MasteryLevel.mastered => 7,
-    };
+    final days = _reviewIntervalsInDays[masteryLevel] ?? 1;
     return from.add(Duration(days: days));
   }
 }

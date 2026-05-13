@@ -135,7 +135,7 @@ class WordCard extends StatelessWidget {
                   height: 150,
                   width: double.infinity,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => Container(
+                  errorBuilder: (context, error, stackTrace) => Container(
                     height: 80,
                     color: AppColors.secondary,
                     alignment: Alignment.center,

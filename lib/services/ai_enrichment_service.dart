@@ -16,14 +16,24 @@ class WordAiEnrichment {
   });
 }
 
+/// Lightweight local placeholder for enrichment until remote AI API is wired in.
 class AiEnrichmentService {
   Future<WordAiEnrichment> enrichWord({
     required String word,
     required String contextSentence,
   }) async {
     final normalizedWord = word.trim().toLowerCase();
+    if (normalizedWord.isEmpty) {
+      return const WordAiEnrichment(
+        synonyms: [],
+        antonyms: [],
+        idioms: [],
+        phrases: [],
+        imageUrl: '',
+      );
+    }
     final context = contextSentence.trim();
-    final cleanWord = normalizedWord.isEmpty ? 'word' : normalizedWord;
+    final cleanWord = normalizedWord;
     final root = cleanWord.length > 3 ? cleanWord.substring(0, cleanWord.length - 1) : cleanWord;
     final imagePrompt = Uri.encodeComponent('$cleanWord, $context, cinematic lighting');
     final random = Random(cleanWord.codeUnits.fold<int>(0, (a, b) => a + b));
