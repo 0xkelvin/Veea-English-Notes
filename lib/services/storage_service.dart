@@ -70,8 +70,9 @@ class StorageService {
   Future<void> _safeAddColumn(Database db, String statement) async {
     try {
       await db.execute('ALTER TABLE $_tableName ADD COLUMN $statement');
-    } catch (_) {
+    } catch (error) {
       // Column may already exist if migration was interrupted or partially completed.
+      debugPrint('Skipping column add "$statement": $error');
     }
   }
 

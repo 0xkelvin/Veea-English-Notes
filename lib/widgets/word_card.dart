@@ -14,6 +14,7 @@ class WordCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final trustedImageUrl = _trustedImageUrl(word.imageUrl);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -126,12 +127,12 @@ class WordCard extends StatelessWidget {
                 ),
               ),
             ],
-            if (word.imageUrl != null && word.imageUrl!.isNotEmpty) ...[
+            if (trustedImageUrl != null) ...[
               const SizedBox(height: 12),
               ClipRRect(
                 borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                 child: Image.network(
-                  word.imageUrl!,
+                  trustedImageUrl,
                   height: 150,
                   width: double.infinity,
                   fit: BoxFit.cover,
@@ -157,6 +158,16 @@ class WordCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String? _trustedImageUrl(String? value) {
+    if (value == null || value.isEmpty) return null;
+    final uri = Uri.tryParse(value);
+    if (uri == null) return null;
+    if (uri.scheme != 'https' || uri.host != 'image.pollinations.ai') {
+      return null;
+    }
+    return value;
   }
 
   void _showEdit(BuildContext context) {
