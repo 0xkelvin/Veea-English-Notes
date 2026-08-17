@@ -9,7 +9,7 @@ use crate::application::identity::ports::clock::SystemClock;
 use crate::application::identity::ports::id_generator::UuidGenerator;
 use crate::infrastructure::cache::RedisCacheService;
 use crate::infrastructure::persistence::postgres::{
-    PgOutboxRepository, PgRefreshTokenRepository, PgUserRepository,
+    PgOutboxRepository, PgRefreshTokenRepository, PgUserRepository, PgWordRepository,
 };
 use crate::infrastructure::security::{Argon2PasswordHasher, JwtServiceImpl};
 
@@ -30,6 +30,7 @@ pub struct AppState {
     pub user_repo: Arc<PgUserRepository>,
     pub refresh_token_repo: Arc<PgRefreshTokenRepository>,
     pub outbox_repo: Arc<PgOutboxRepository>,
+    pub word_repo: Arc<PgWordRepository>,
     pub password_hasher: Arc<Argon2PasswordHasher>,
     pub jwt_service: Arc<JwtServiceImpl>,
     pub cache_service: Arc<RedisCacheService>,
@@ -47,6 +48,7 @@ impl AppState {
         let user_repo = Arc::new(PgUserRepository::new(db.clone()));
         let refresh_token_repo = Arc::new(PgRefreshTokenRepository::new(db.clone()));
         let outbox_repo = Arc::new(PgOutboxRepository::new(db.clone()));
+        let word_repo = Arc::new(PgWordRepository::new(db.clone()));
         let password_hasher = Arc::new(Argon2PasswordHasher::new());
         let jwt_service = Arc::new(JwtServiceImpl::new(
             &config.jwt.secret,
@@ -63,6 +65,7 @@ impl AppState {
             user_repo,
             refresh_token_repo,
             outbox_repo,
+            word_repo,
             password_hasher,
             jwt_service,
             cache_service,

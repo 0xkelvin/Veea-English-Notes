@@ -4,7 +4,9 @@ use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::bootstrap::app_state::AppState;
 
-use super::handlers::{admin_handler, auth_handler, health_handler, user_handler};
+use super::handlers::{
+    admin_handler, auth_handler, health_handler, user_handler, vocabulary_handler,
+};
 use super::middleware as mw;
 use super::openapi;
 
@@ -19,6 +21,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/auth/logout", post(auth_handler::logout))
         // ── Protected user routes ───────────────────────────
         .route("/users/me", get(user_handler::get_my_profile))
+        // ── Protected vocabulary routes ─────────────────────
+        .route("/vocabulary/sync", post(vocabulary_handler::sync))
+        .route("/vocabulary/words", get(vocabulary_handler::list))
         // ── Admin routes ────────────────────────────────────
         .route("/admin/users", get(admin_handler::list_users))
         .route(

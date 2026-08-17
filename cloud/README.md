@@ -84,9 +84,36 @@ make migrate       # Run migrations manually
 | `POST` | `/api/v1/auth/refresh` | No | Refresh access token |
 | `POST` | `/api/v1/auth/logout` | Yes | Revoke refresh token |
 | `GET` | `/api/v1/users/me` | Yes | Get current user profile |
+| `POST` | `/api/v1/vocabulary/sync` | Yes | Push local changes and pull remote ones in one round trip |
+| `GET` | `/api/v1/vocabulary/words` | Yes | List the caller's vocabulary (paginated) |
 | `GET` | `/api/v1/admin/users` | Admin | List all users (paginated) |
 | `PUT` | `/api/v1/admin/users/:id/role` | Admin | Change a user's role |
 | `GET` | `/api/v1/openapi.json` | No | OpenAPI 3.0 specification |
+
+### Vocabulary sync
+
+The mobile client is offline-first: words are written to local SQLite and
+uploaded later, so the protocol has to survive a device that has been offline
+for a week and a user editing the same word on two phones.
+
+- **Client-generated ids.** A word captured with no network still needs one
+  stable identity, so the client mints the UUID. Ownership therefore cannot be
+  inferred from the id: every query is scoped by `user_id`, and the sync upsert
+  refuses to touch a row owned by anyone else.
+- **Conflicts resolve last-write-wins** on the client's `updatedAt`. Equal
+  timestamps keep the stored row, so a retried upload is a no-op.
+- **Deletes are tombstones.** A hard delete would be undone by the next device
+  to sync, which still has the word and would upload it again.
+- **The pull cursor is a server timestamp** (`server_updated_at`), not the
+  client's `updatedAt`. A device with a skewed clock could otherwise write a row
+  timestamped in the past, which would sit behind every other client's cursor
+  and never be delivered.
+- **Push and pull share one request** so nothing can be written in the gap
+  between them, and a client immediately sees the canonical result of its own
+  upload — including any write that lost a conflict.
+
+Advance the local cursor to `serverTime` only once every returned change has
+been applied, and repeat the call while `hasMore` is true.
 
 ## Environment Variables
 

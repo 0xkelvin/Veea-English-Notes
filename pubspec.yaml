@@ -1,5 +1,5 @@
 name: veea_english_app
-description: "Veea English - A vocabulary learning app"
+description: "Veea English - notes for the English words you meet each day"
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -16,13 +16,28 @@ dependencies:
   intl: ^0.20.0
   uuid: ^4.5.1
   provider: ^6.1.2
-  google_fonts: ^6.2.1
   flutter_tts: ^4.2.5
+  # Cloud sync
+  http: ^1.2.2
+  # Refresh tokens are long-lived credentials, so they go to the platform
+  # keychain/keystore rather than SharedPreferences.
+  flutter_secure_storage: ^9.2.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  # Runs the real SQLite schema in unit tests, so migrations are covered.
+  sqflite_common_ffi: ^2.3.3
 
 flutter:
   uses-material-design: true
+
+  fonts:
+    # Handjet is bundled rather than fetched at runtime (as google_fonts did)
+    # so the app renders offline and on first launch. It is one of only two
+    # pixel families on Google Fonts with complete Vietnamese diacritics.
+    # Variable axes: wght 100-900, ELGR 1-2, ELSH 0-16.
+    - family: Handjet
+      fonts:
+        - asset: assets/fonts/Handjet.ttf
