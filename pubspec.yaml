@@ -33,6 +33,13 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
+  assets:
+    # Bundled IPA dictionary, so pronunciation can be filled in automatically —
+    # a phone keyboard cannot type it. Regenerate with
+    # tool/build_pronunciation_dictionary.py. See PronunciationService.
+    - assets/pronunciation/en_us_ipa.txt.gz
+    - assets/pronunciation/CMUDICT-LICENSE.txt
+
   fonts:
     # Handjet is bundled rather than fetched at runtime (as google_fonts did)
     # so the app renders offline and on first launch. It is one of only two

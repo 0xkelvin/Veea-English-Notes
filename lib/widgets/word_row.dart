@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../core/theme/pixel_metrics.dart';
 import '../core/theme/pixel_palette.dart';
 import '../models/vocabulary_word.dart';
+import '../services/pronunciation_service.dart';
 import '../services/tts_service.dart';
 import 'pixel/pixel_button.dart';
 import 'pixel/pixel_icon.dart';
@@ -123,6 +124,13 @@ class _WordHeadline extends StatelessWidget {
     final theme = Theme.of(context);
     final palette = context.palette;
 
+    // Stored transcriptions are canonical — no slashes — so they are wrapped
+    // for display here. Normalising first also drops values that are nothing
+    // but punctuation, which early hand-typed entries can be.
+    final raw = word.pronunciation;
+    final normalised = raw == null ? '' : PronunciationService.normalise(raw);
+    final pronunciation = normalised.isEmpty ? null : normalised;
+
     return Wrap(
       crossAxisAlignment: WrapCrossAlignment.end,
       spacing: PixelMetrics.space2,
@@ -138,10 +146,13 @@ class _WordHeadline extends StatelessWidget {
               ),
             ),
           ),
-        if (word.pronunciation != null)
+        if (pronunciation != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 2),
-            child: Text(word.pronunciation!, style: theme.textTheme.labelSmall),
+            child: Text(
+              PronunciationService.format(pronunciation),
+              style: theme.textTheme.labelSmall,
+            ),
           ),
       ],
     );

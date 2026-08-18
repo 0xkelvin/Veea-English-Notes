@@ -16,6 +16,9 @@ words themselves.
   tag, from any day. Accents are optional — `kien cuong` finds `kiên cường`.
 - **Local first.** Everything is written to SQLite on the device and works with
   no account and no network. Signing in only adds sync between devices.
+- **Pronunciation writes itself.** Type the word and the IPA appears — no
+  phone keyboard can produce `/rɪˈzɪljənt/`, so the app never asks you for it.
+  Words captured before this existed get filled in on first launch.
 - **An account is an email address or a phone number.** One field; the app
   works out which and labels itself accordingly. From the account screen you
   can change either, change your password, export every word as JSON, or
@@ -142,6 +145,23 @@ each row.
 **Deletes are soft.** A hard delete would be undone by the next device to sync,
 which still holds the word and would upload it again. Tombstones are kept until
 the server acknowledges them, which also makes undo a real restore.
+
+**Pronunciation is looked up, not typed.** Every character in an IPA
+transcription is off a phone keyboard, so a field asking for one stays empty on
+every word forever. A 126k-entry dictionary ships with the app — 802KB gzipped,
+General American, derived from CMUdict — and is queried locally, because
+capturing a word usually happens mid-conversation and waiting on a network (or
+failing without one) defeats the point. The free dictionary APIs were also
+unreliable: `dictionaryapi.dev` returns no phonetic text at all for `resilient`.
+
+The dictionary lives in SQLite rather than a Dart `Map`: 126k entries in memory
+costs tens of megabytes, an indexed table costs almost nothing and answers in
+microseconds. Import takes under a second on a phone and runs behind the first
+frame. Regenerate the asset with `tool/build_pronunciation_dictionary.py`.
+
+Unknown words say so rather than showing a blank line, and an override is there
+for the rare case the dictionary is wrong — but it is a dialog, not a field, so
+it never competes with the word and its meaning.
 
 **Writes are not optimistic.** Every mutation writes to SQLite and then re-reads
 the affected view, so the screen can never show a word that failed to save.

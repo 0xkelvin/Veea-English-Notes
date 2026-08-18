@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../../models/text_normalizer.dart';
@@ -18,6 +19,10 @@ class SqliteVocabularyRepository implements VocabularyRepository {
     : _now = now ?? DateTime.now;
 
   final DateTime Function() _now;
+
+  /// The open connection, shared with services that own their own tables —
+  /// currently the bundled pronunciation dictionary.
+  Database get database => _db;
 
   static const String _table = AppDatabase.wordsTable;
 
@@ -249,6 +254,57 @@ class SqliteVocabularyRepository implements VocabularyRepository {
         );
       }
     });
+  }
+
+  /// Fills in pronunciation for words that have none.
+  ///
+  /// Words captured before the dictionary shipped have an empty transcription,
+  /// and the editor only fills one in when a word is opened. This gives them
+  /// all one on the first launch after upgrading.
+  ///
+  /// Rows are marked dirty so the transcription reaches the user's other
+  /// devices; the alternative is every device deriving it separately, which
+  /// would differ whenever the bundled dictionaries differ.
+  ///
+  /// Returns whether anything changed, so the caller knows to reload.
+  Future<bool> backfillPronunciations(
+    Future<String?> Function(String word) lookup,
+  ) async {
+    final rows = await _db.query(
+      _table,
+      columns: ['id', 'word'],
+      where: "is_deleted = 0 AND (pronunciation IS NULL OR pronunciation = '')",
+    );
+    if (rows.isEmpty) return false;
+
+    var updated = 0;
+    final stamp = _now().toUtc().toIso8601String();
+
+    for (final row in rows) {
+      final ipa = await lookup(row['word']! as String);
+      if (ipa == null) continue;
+
+      // Written column-wise rather than through the model so search_text is
+      // recomputed without loading and re-encoding the whole row.
+      final word = await findById(row['id']! as String);
+      if (word == null) continue;
+
+      await _db.update(
+        _table,
+        {
+          ...word.copyWith(pronunciation: ipa, isDirty: true).toDbMap(),
+          'updated_at': stamp,
+        },
+        where: 'id = ?',
+        whereArgs: [word.id],
+      );
+      updated++;
+    }
+
+    if (updated > 0) {
+      debugPrint('Backfilled pronunciation for $updated word(s)');
+    }
+    return updated > 0;
   }
 
   @override

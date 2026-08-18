@@ -6,6 +6,7 @@ import '../core/theme/pixel_palette.dart';
 import '../models/part_of_speech.dart';
 import '../models/vocabulary_word.dart';
 import '../providers/vocabulary_provider.dart';
+import '../services/pronunciation_service.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_field.dart';
 import '../widgets/pixel/pixel_icon.dart';
@@ -29,7 +30,6 @@ class WordEditorScreen extends StatefulWidget {
 class _WordEditorScreenState extends State<WordEditorScreen> {
   late final TextEditingController _word;
   late final TextEditingController _meaning;
-  late final TextEditingController _pronunciation;
   late final TextEditingController _source;
   late final TextEditingController _tags;
   final List<TextEditingController> _examples = [];
@@ -37,31 +37,44 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
   PartOfSpeech? _partOfSpeech;
   bool _saving = false;
 
+  /// Looked up from the bundled dictionary as the word is typed.
+  String? _pronunciation;
+
+  /// Set when the user has overridden the automatic value, which then stops
+  /// being replaced on every keystroke.
+  bool _pronunciationIsManual = false;
+
+  /// Guards against an earlier, slower lookup landing after a later one and
+  /// showing the pronunciation of a word that has since been edited.
+  int _lookupToken = 0;
+
   @override
   void initState() {
     super.initState();
     final existing = widget.existing;
     _word = TextEditingController(text: existing?.word ?? '');
     _meaning = TextEditingController(text: existing?.meaning ?? '');
-    _pronunciation = TextEditingController(text: existing?.pronunciation ?? '');
     _source = TextEditingController(text: existing?.source ?? '');
     _tags = TextEditingController(text: existing?.tags.join(', ') ?? '');
     _partOfSpeech = existing?.partOfSpeech;
     for (final example in existing?.examples ?? const <String>[]) {
       _examples.add(TextEditingController(text: example));
     }
+
+    _pronunciation = existing?.pronunciation;
+    // An existing word already carries a transcription, but it may predate the
+    // dictionary, so treat it as automatic and let a fresh lookup refresh it.
+    _pronunciationIsManual = false;
+    if (existing != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _refreshPronunciation(existing.word),
+      );
+    }
   }
 
   @override
   void dispose() {
-    for (final controller in [
-      _word,
-      _meaning,
-      _pronunciation,
-      _source,
-      _tags,
-      ..._examples,
-    ]) {
+    for (final controller in [_word, _meaning, _source, _tags, ..._examples]) {
       controller.dispose();
     }
     super.dispose();
@@ -78,6 +91,40 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
       .map((t) => t.replaceAll('#', '').trim())
       .where((t) => t.isNotEmpty)
       .toList(growable: false);
+
+  /// Fills the pronunciation from the bundled dictionary.
+  ///
+  /// A manual override wins: once the user has corrected it, typing in the
+  /// word field must not silently undo their correction.
+  Future<void> _refreshPronunciation(String word) async {
+    if (_pronunciationIsManual) return;
+
+    final token = ++_lookupToken;
+    final found = await context.read<PronunciationService>().lookup(word);
+
+    // A later keystroke already started its own lookup; this result is stale.
+    if (!mounted || token != _lookupToken) return;
+    setState(() => _pronunciation = found);
+  }
+
+  /// Lets the user type a transcription themselves.
+  ///
+  /// Rarely needed, so it is a dialog rather than a permanent field competing
+  /// with the word and its meaning.
+  Future<void> _editPronunciation() async {
+    final result = await showDialog<String>(
+      context: context,
+      builder: (_) => _PronunciationDialog(initialValue: _pronunciation ?? ''),
+    );
+
+    if (result == null || !mounted) return;
+    setState(() {
+      // Users type the slashes they see; store the canonical form without.
+      final trimmed = PronunciationService.normalise(result);
+      _pronunciation = trimmed.isEmpty ? null : trimmed;
+      _pronunciationIsManual = trimmed.isNotEmpty;
+    });
+  }
 
   void _addExample() {
     setState(() => _examples.add(TextEditingController()));
@@ -98,7 +145,7 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
       await provider.addWord(
         word: _word.text,
         meaning: _meaning.text,
-        pronunciation: _pronunciation.text,
+        pronunciation: _pronunciation,
         partOfSpeech: _partOfSpeech,
         source: _source.text,
         examples: _exampleValues,
@@ -109,7 +156,7 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
         existing,
         word: _word.text,
         meaning: _meaning.text,
-        pronunciation: _pronunciation.text,
+        pronunciation: _pronunciation,
         partOfSpeech: _partOfSpeech,
         source: _source.text,
         examples: _exampleValues,
@@ -165,7 +212,26 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                     hint: 'resilient',
                     autofocus: !widget.isEditing,
                     textInputAction: TextInputAction.next,
-                    onChanged: (_) => setState(() {}),
+                    onChanged: (value) {
+                      setState(() {});
+                      _refreshPronunciation(value);
+                    },
+                  ),
+                  const SizedBox(height: PixelMetrics.space2),
+                  _PronunciationLine(
+                    ipa: _pronunciation,
+                    isManual: _pronunciationIsManual,
+                    hasWord: _word.text.trim().isNotEmpty,
+                    onEdit: _editPronunciation,
+                    onReset: _pronunciationIsManual
+                        ? () {
+                            setState(() {
+                              _pronunciationIsManual = false;
+                              _pronunciation = null;
+                            });
+                            _refreshPronunciation(_word.text);
+                          }
+                        : null,
                   ),
                   const SizedBox(height: PixelMetrics.space4),
                   PixelField(
@@ -180,13 +246,6 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                     selected: _partOfSpeech,
                     onSelected: (value) =>
                         setState(() => _partOfSpeech = value),
-                  ),
-                  const SizedBox(height: PixelMetrics.space4),
-                  PixelField(
-                    controller: _pronunciation,
-                    label: 'Pronunciation',
-                    hint: '/rɪˈzɪliənt/',
-                    optional: true,
                   ),
                   const SizedBox(height: PixelMetrics.space4),
                   PixelField(
@@ -247,6 +306,79 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Shows the pronunciation the app worked out, rather than asking for it.
+///
+/// Every character in an IPA transcription is off a phone keyboard, so a text
+/// field here would sit empty on nearly every word. The override exists only
+/// for the cases the dictionary misses or gets wrong.
+class _PronunciationLine extends StatelessWidget {
+  const _PronunciationLine({
+    required this.ipa,
+    required this.isManual,
+    required this.hasWord,
+    required this.onEdit,
+    required this.onReset,
+  });
+
+  final String? ipa;
+  final bool isManual;
+  final bool hasWord;
+  final VoidCallback onEdit;
+  final VoidCallback? onReset;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final theme = Theme.of(context);
+    final value = ipa;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isManual
+                    ? 'PRONUNCIATION · YOURS'
+                    : 'PRONUNCIATION · AUTOMATIC',
+                style: theme.textTheme.labelSmall,
+              ),
+              const SizedBox(height: 2),
+              if (value != null && value.isNotEmpty)
+                Text(
+                  PronunciationService.format(value),
+                  style: theme.textTheme.bodyLarge,
+                )
+              else
+                Text(
+                  hasWord ? 'Not in the dictionary' : '—',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: palette.inkFaint,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        if (onReset != null) ...[
+          PixelIconButton(
+            glyph: PixelGlyph.close,
+            semanticLabel: 'Use the automatic pronunciation',
+            onPressed: onReset,
+          ),
+          const SizedBox(width: PixelMetrics.space1),
+        ],
+        PixelIconButton(
+          glyph: PixelGlyph.pencil,
+          semanticLabel: 'Set the pronunciation by hand',
+          onPressed: onEdit,
+        ),
+      ],
     );
   }
 }
@@ -426,6 +558,86 @@ class _ErrorBanner extends StatelessWidget {
             onPressed: onDismiss,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Owns its own controller.
+///
+/// The parent used to create one and dispose it as soon as `showDialog`
+/// returned, which tore the field down while the dialog was still on screen.
+class _PronunciationDialog extends StatefulWidget {
+  const _PronunciationDialog({required this.initialValue});
+
+  final String initialValue;
+
+  @override
+  State<_PronunciationDialog> createState() => _PronunciationDialogState();
+}
+
+class _PronunciationDialogState extends State<_PronunciationDialog> {
+  late final TextEditingController controller = TextEditingController(
+    text: widget.initialValue,
+  );
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+
+    return Dialog(
+      backgroundColor: palette.surface,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: palette.border, width: PixelMetrics.border),
+        borderRadius: BorderRadius.zero,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(PixelMetrics.space4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'PRONUNCIATION',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: PixelMetrics.space2),
+            Text(
+              'Only if the automatic one is wrong. Leave it empty to go back '
+              'to automatic.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: PixelMetrics.space4),
+            PixelField(
+              controller: controller,
+              label: 'Your transcription',
+              hint: 'rɪˈzɪljənt',
+              autofocus: true,
+            ),
+            const SizedBox(height: PixelMetrics.space4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                PixelButton(
+                  label: 'Cancel',
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                const SizedBox(width: PixelMetrics.space2),
+                PixelButton(
+                  label: 'Use this',
+                  filled: true,
+                  onPressed: () => Navigator.of(context).pop(controller.text),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

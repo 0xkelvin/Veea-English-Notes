@@ -14,6 +14,7 @@ import 'data/remote/vocabulary_api.dart';
 import 'providers/auth_provider.dart';
 import 'providers/vocabulary_provider.dart';
 import 'screens/home_screen.dart';
+import 'services/pronunciation_service.dart';
 import 'services/sync_service.dart';
 import 'services/tts_service.dart';
 import 'widgets/pixel/pixel_field.dart';
@@ -23,6 +24,7 @@ Future<void> main() async {
 
   final repository = await SqliteVocabularyRepository.open();
   await LegacyImport(repository).runIfNeeded();
+  final pronunciation = PronunciationService(repository.database);
 
   final vocabulary = VocabularyProvider(repository);
   await vocabulary.init();
@@ -46,10 +48,23 @@ Future<void> main() async {
   // The app is usable immediately; the session and any sync catch up behind
   // the first frame rather than blocking it.
   unawaited(
-    _startBackgroundWork(auth: auth, sync: sync, vocabulary: vocabulary),
+    _startBackgroundWork(
+      auth: auth,
+      sync: sync,
+      vocabulary: vocabulary,
+      pronunciation: pronunciation,
+      repository: repository,
+    ),
   );
 
-  runApp(VeeaEnglishApp(vocabulary: vocabulary, auth: auth, sync: sync));
+  runApp(
+    VeeaEnglishApp(
+      vocabulary: vocabulary,
+      auth: auth,
+      sync: sync,
+      pronunciation: pronunciation,
+    ),
+  );
 }
 
 /// Restores the session and performs an opening sync, if a server is
@@ -58,7 +73,16 @@ Future<void> _startBackgroundWork({
   required AuthProvider auth,
   required SyncService sync,
   required VocabularyProvider vocabulary,
+  required PronunciationService pronunciation,
+  required SqliteVocabularyRepository repository,
 }) async {
+  // Importing 126k dictionary rows takes a second or two, so it happens behind
+  // the first frame rather than delaying the journal.
+  await pronunciation.importIfNeeded();
+  if (await repository.backfillPronunciations(pronunciation.lookup)) {
+    await vocabulary.init();
+  }
+
   await auth.restore();
   if (!AppConfig.isCloudEnabled || !auth.isSignedIn) return;
 
@@ -75,11 +99,13 @@ class VeeaEnglishApp extends StatelessWidget {
     required this.vocabulary,
     required this.auth,
     required this.sync,
+    required this.pronunciation,
   });
 
   final VocabularyProvider vocabulary;
   final AuthProvider auth;
   final SyncService sync;
+  final PronunciationService pronunciation;
 
   @override
   Widget build(BuildContext context) {
@@ -89,6 +115,7 @@ class VeeaEnglishApp extends StatelessWidget {
         ChangeNotifierProvider.value(value: auth),
         ChangeNotifierProvider.value(value: sync),
         ChangeNotifierProvider(create: (_) => TtsService()),
+        Provider<PronunciationService>.value(value: pronunciation),
       ],
       child: MaterialApp(
         title: 'Veea English',
