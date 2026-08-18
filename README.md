@@ -23,15 +23,65 @@ words themselves.
 
 ## Running it
 
+Local-only — no backend, no account, everything on the device:
+
 ```bash
 flutter pub get
 flutter run
 ```
 
-To build against the cloud service in `cloud/`:
+### With the backend
+
+Two terminals. First the server and its infrastructure:
+
+```bash
+cd cloud
+cp .env.example .env          # first time only
+docker compose up -d postgres redis nats
+cargo run                     # migrations run automatically on startup
+```
+
+Check it came up:
+
+```bash
+curl localhost:8080/health/ready
+# {"status":"healthy","checks":{"database":"up","redis":"up"}}
+```
+
+Then the app, pointed at it:
 
 ```bash
 flutter run --dart-define=VEEA_API_BASE_URL=http://localhost:8080
+```
+
+Open the cloud button in the top bar, create an account with either an email or
+a phone number, and add a word — it uploads on the next sync.
+
+**Port already in use?** Run the server somewhere else and point the app to
+match:
+
+```bash
+APP_PORT=8081 cargo run
+flutter run --dart-define=VEEA_API_BASE_URL=http://localhost:8081
+```
+
+**On the Android emulator**, `localhost` is the emulator itself. Use
+`http://10.0.2.2:8080`, which is how it reaches the host machine.
+
+**On a physical device**, use your machine's LAN address (`ipconfig getifaddr
+en0` on macOS), e.g. `http://192.168.1.20:8080`, with both on the same network.
+
+Cleartext HTTP to a local address is allowed on both platforms for development:
+iOS via a localhost-scoped ATS exception in `ios/Runner/Info.plist`, Android via
+a network security config under `android/app/src/debug/`, which is not merged
+into release builds. Neither opens up arbitrary HTTP.
+
+### Tearing down
+
+```bash
+cd cloud
+docker compose down       # keep the data
+docker compose down -v    # wipe the database too
 ```
 
 With no `VEEA_API_BASE_URL` the app is entirely local and the account screen

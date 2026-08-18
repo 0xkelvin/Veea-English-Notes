@@ -66,5 +66,23 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- App Transport Security blocks plain HTTP, which would stop the app
+	     reaching a backend running on the development machine. The exception is
+	     scoped to localhost and local networking only: NSAllowsArbitraryLoads
+	     is deliberately absent, so every other host still requires HTTPS and
+	     release builds stay strict. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
 </dict>
 </plist>

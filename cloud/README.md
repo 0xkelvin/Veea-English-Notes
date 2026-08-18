@@ -57,7 +57,40 @@ make docker-up
 make dev
 ```
 
-The server starts at `http://localhost:8080`.
+The server starts at `http://localhost:8080`. Confirm it is ready:
+
+```bash
+curl localhost:8080/health/ready
+# {"status":"healthy","checks":{"database":"up","redis":"up"}}
+```
+
+`make docker-up` needs the Compose plugin. On macOS with Homebrew Docker that
+is `brew install docker-compose`, plus this in `~/.docker/config.json` so the
+CLI can find it:
+
+```json
+{ "cliPluginsExtraDirs": ["/opt/homebrew/lib/docker/cli-plugins"] }
+```
+
+If port 8080 is taken, `APP_PORT=8081 cargo run` moves it, and the Flutter
+client follows with `--dart-define=VEEA_API_BASE_URL=http://localhost:8081`.
+
+### Smoke test
+
+```bash
+API=http://localhost:8080/api/v1
+
+# Register with a phone number (an email works the same way)
+curl -sX POST $API/auth/register -H 'content-type: application/json' \
+  -d '{"identifier":"+84 90 123 4567","password":"hunter22pass"}'
+
+# Sign in — the number normalises, so any spelling of it reaches the account
+TOKEN=$(curl -sX POST $API/auth/login -H 'content-type: application/json' \
+  -d '{"identifier":"+84-901-234-567","password":"hunter22pass"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["access_token"])')
+
+curl -s $API/users/me -H "authorization: Bearer $TOKEN"
+```
 
 ### Useful Commands
 
