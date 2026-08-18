@@ -26,11 +26,14 @@ words themselves.
 
 ## Running it
 
+A `Makefile` at the root wraps the commands below — `make help` lists every
+target. Plain `flutter`/`cargo`/`docker` also work directly if you'd rather
+skip it.
+
 Local-only — no backend, no account, everything on the device:
 
 ```bash
-flutter pub get
-flutter run
+make run
 ```
 
 ### With the backend
@@ -38,41 +41,44 @@ flutter run
 Two terminals. First the server and its infrastructure:
 
 ```bash
-cd cloud
-cp .env.example .env          # first time only
-docker compose up -d postgres redis nats
-cargo run                     # migrations run automatically on startup
+make backend-up    # postgres, redis, nats — creates cloud/.env first time
+make backend-run   # migrations run automatically on startup
 ```
 
 Check it came up:
 
 ```bash
-curl localhost:8080/health/ready
+make backend-health
 # {"status":"healthy","checks":{"database":"up","redis":"up"}}
 ```
 
 Then the app, pointed at it:
 
 ```bash
-flutter run --dart-define=VEEA_API_BASE_URL=http://localhost:8080
+make run-cloud
 ```
 
 Open the cloud button in the top bar, create an account with either an email or
 a phone number, and add a word — it uploads on the next sync.
 
-**Port already in use?** Run the server somewhere else and point the app to
-match:
+**Port already in use?** Point both sides at another port:
 
 ```bash
-APP_PORT=8081 cargo run
-flutter run --dart-define=VEEA_API_BASE_URL=http://localhost:8081
+make backend-run APP_PORT=8081
+make run-cloud APP_PORT=8081
 ```
 
-**On the Android emulator**, `localhost` is the emulator itself. Use
-`http://10.0.2.2:8080`, which is how it reaches the host machine.
+**On the Android emulator**, `localhost` is the emulator itself, so
+`make run-cloud` won't reach it — build the URL by hand with `10.0.2.2`, which
+is how the emulator reaches the host machine:
 
-**On a physical device**, use your machine's LAN address (`ipconfig getifaddr
-en0` on macOS), e.g. `http://192.168.1.20:8080`, with both on the same network.
+```bash
+flutter run --dart-define=VEEA_API_BASE_URL=http://10.0.2.2:18386
+```
+
+**On a physical device**, use your machine's LAN address the same way
+(`ipconfig getifaddr en0` on macOS), e.g. `http://192.168.1.20:18386`, with both
+on the same network.
 
 Cleartext HTTP to a local address is allowed on both platforms for development:
 iOS via a localhost-scoped ATS exception in `ios/Runner/Info.plist`, Android via
@@ -82,9 +88,8 @@ into release builds. Neither opens up arbitrary HTTP.
 ### Tearing down
 
 ```bash
-cd cloud
-docker compose down       # keep the data
-docker compose down -v    # wipe the database too
+make backend-down      # keep the data
+make backend-down-v    # wipe the database too
 ```
 
 With no `VEEA_API_BASE_URL` the app is entirely local and the account screen
@@ -93,8 +98,7 @@ says so.
 ## Checks
 
 ```bash
-flutter analyze
-flutter test                      # unit, widget and golden tests
+make check                        # flutter analyze + flutter test
 flutter test --update-goldens     # after an intentional visual change
 ```
 

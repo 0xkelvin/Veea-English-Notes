@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 /// server, staging or production without a code change:
 ///
 /// ```
-/// flutter run --dart-define=VEEA_API_BASE_URL=http://localhost:8080
+/// flutter run --dart-define=VEEA_API_BASE_URL=http://localhost:18386
 /// ```
 class AppConfig {
   AppConfig._();

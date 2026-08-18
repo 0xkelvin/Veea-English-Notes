@@ -49,3 +49,8 @@ app.*.map.json
 .env
 # Diff artifacts written by failing golden tests.
 test/golden/failures/
+
+# Desktop platform scaffolds: not officially supported, kept local-only for
+# `flutter run` on macOS during development.
+/linux/
+/macos/

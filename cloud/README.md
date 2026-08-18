@@ -57,10 +57,10 @@ make docker-up
 make dev
 ```
 
-The server starts at `http://localhost:8080`. Confirm it is ready:
+The server starts at `http://localhost:18386`. Confirm it is ready:
 
 ```bash
-curl localhost:8080/health/ready
+curl localhost:18386/health/ready
 # {"status":"healthy","checks":{"database":"up","redis":"up"}}
 ```
 
@@ -72,13 +72,13 @@ CLI can find it:
 { "cliPluginsExtraDirs": ["/opt/homebrew/lib/docker/cli-plugins"] }
 ```
 
-If port 8080 is taken, `APP_PORT=8081 cargo run` moves it, and the Flutter
-client follows with `--dart-define=VEEA_API_BASE_URL=http://localhost:8081`.
+If port 18386 is taken, `APP_PORT=18387 cargo run` moves it, and the Flutter
+client follows with `--dart-define=VEEA_API_BASE_URL=http://localhost:18387`.
 
 ### Smoke test
 
 ```bash
-API=http://localhost:8080/api/v1
+API=http://localhost:18386/api/v1
 
 # Register with a phone number (an email works the same way)
 curl -sX POST $API/auth/register -H 'content-type: application/json' \
@@ -224,7 +224,7 @@ docker compose logs -f app
 
 | Service | Port | Description |
 |---------|------|-------------|
-| `app` | 8080 | Application server |
+| `app` | 18386 | Application server |
 | `postgres` | 5432 | PostgreSQL 17 |
 | `redis` | 6379 | Redis 7 |
 | `nats` | 4222 / 8222 | NATS with JetStream + monitoring |
