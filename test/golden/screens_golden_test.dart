@@ -20,6 +20,7 @@ import 'package:veea_english_app/screens/search_screen.dart';
 import 'package:veea_english_app/screens/account_screen.dart';
 import 'package:veea_english_app/screens/home_screen.dart';
 import 'package:veea_english_app/screens/word_editor_screen.dart';
+import 'package:veea_english_app/services/pronunciation_service.dart';
 import 'package:veea_english_app/services/sync_service.dart';
 import 'package:veea_english_app/services/tts_service.dart';
 import 'package:veea_english_app/widgets/pixel/pixel_field.dart';
@@ -45,6 +46,7 @@ void main() {
 
   late SqliteVocabularyRepository repo;
   late VocabularyProvider provider;
+  late PronunciationService pronunciation;
 
   setUp(() async {
     repo = await SqliteVocabularyRepository.open(
@@ -118,6 +120,11 @@ void main() {
 
     provider = VocabularyProvider(repo, now: () => today);
     await provider.init();
+
+    // The editor looks pronunciation up as the word is typed; importing here
+    // means the goldens show what the user actually sees.
+    pronunciation = PronunciationService(repo.database);
+    await pronunciation.importIfNeeded();
   });
 
   tearDown(() => repo.close());
@@ -136,6 +143,7 @@ void main() {
       providers: [
         ChangeNotifierProvider.value(value: provider),
         ChangeNotifierProvider(create: (_) => TtsService()),
+        Provider<PronunciationService>.value(value: pronunciation),
         ChangeNotifierProvider(create: (_) => syncService),
         ChangeNotifierProvider(
           create: (_) => AuthProvider(
@@ -156,6 +164,16 @@ void main() {
         home: child,
       ),
     );
+  }
+
+  /// Pumps, then gives the pronunciation lookup — a real SQLite query, which
+  /// runs off the test clock — actual time to come back.
+  Future<void> settleWithLookup(WidgetTester tester) async {
+    await tester.pumpAndSettle();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
+    await tester.pumpAndSettle();
   }
 
   Future<void> sizeToPhone(WidgetTester tester) async {
@@ -191,7 +209,7 @@ void main() {
     await tester.pumpWidget(
       wrap(WordEditorScreen(existing: provider.words.first), Brightness.light),
     );
-    await tester.pumpAndSettle();
+    await settleWithLookup(tester);
 
     await expectLater(
       find.byType(WordEditorScreen),
@@ -204,7 +222,7 @@ void main() {
     await tester.pumpWidget(
       wrap(WordEditorScreen(existing: provider.words.first), Brightness.dark),
     );
-    await tester.pumpAndSettle();
+    await settleWithLookup(tester);
 
     await expectLater(
       find.byType(WordEditorScreen),

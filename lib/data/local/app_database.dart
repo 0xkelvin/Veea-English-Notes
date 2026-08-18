@@ -15,8 +15,12 @@ class AppDatabase {
   static const String fileName = 'veea_english.db';
   static const String wordsTable = 'words';
 
+  /// Bundled IPA lookup table, imported from an asset rather than typed by the
+  /// user; see [PronunciationService].
+  static const String pronunciationsTable = 'pronunciations';
+
   /// Bump this and add a branch to [_upgrade] whenever the schema changes.
-  static const int version = 2;
+  static const int version = 3;
 
   /// Opens the database, creating or migrating the schema as needed.
   ///
@@ -43,12 +47,33 @@ class AppDatabase {
 
   static Future<void> _create(Database db, int version) async {
     await _createV2Schema(db, wordsTable);
+    await _createPronunciationsTable(db);
   }
 
   static Future<void> _upgrade(Database db, int from, int to) async {
     if (from < 2) {
       await _migrateV1ToV2(db);
     }
+    if (from < 3) {
+      await _createPronunciationsTable(db);
+    }
+  }
+
+  /// Lookup table for automatic pronunciation.
+  ///
+  /// Held in SQLite rather than an in-memory map: 126k entries as a Dart `Map`
+  /// costs tens of megabytes of resident memory, while an indexed table costs
+  /// almost none and answers a lookup in microseconds.
+  ///
+  /// The rows are reference data, not user data — they are never synced, and
+  /// they are rebuilt from the bundled asset rather than migrated.
+  static Future<void> _createPronunciationsTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS $pronunciationsTable (
+        word TEXT PRIMARY KEY,
+        ipa  TEXT NOT NULL
+      )
+    ''');
   }
 
   /// v1 stored only `vietnamese_meaning` and had no sync bookkeeping.
