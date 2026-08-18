@@ -1,3 +1,4 @@
+use crate::application::identity::commands::support::{hash_refresh_token};
 use tracing::instrument;
 
 use crate::application::identity::ports::clock::Clock;
@@ -36,8 +37,3 @@ where
     Ok(())
 }
 
-fn hash_refresh_token(token: &str) -> String {
-    use sha2::Digest;
-    let hash = sha2::Sha256::digest(token.as_bytes());
-    hex::encode(hash)
-}

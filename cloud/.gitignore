@@ -1,0 +1,6 @@
+# Rust build output. The root .gitignore only matches `/target` at the repo
+# root, so the crate needs its own rule.
+/target
+
+# Local environment
+.env

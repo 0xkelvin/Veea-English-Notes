@@ -1,3 +1,4 @@
+use crate::application::identity::commands::support::{generate_refresh_token, hash_refresh_token};
 use tracing::instrument;
 
 use crate::application::identity::dto::auth_dto::AuthTokensResponse;
@@ -11,23 +12,24 @@ use crate::application::identity::transaction::{
 use crate::common::error::AppError;
 use crate::common::result::AppResult;
 use crate::domain::identity::repositories::user_repository::UserRepository;
-use crate::domain::identity::value_objects::email::Email;
+use crate::domain::identity::value_objects::identifier::Identifier;
 use crate::domain::identity::value_objects::refresh_token::RefreshToken;
 
 #[derive(Debug)]
 pub struct LoginUserCommand {
-    pub email: String,
+    /// An email address or a phone number.
+    pub identifier: String,
     pub password: String,
 }
 
 /// Authenticate a user and issue tokens.
 ///
-/// 1. Validate email format
-/// 2. Look up user by email
+/// 1. Validate the identifier's format
+/// 2. Look up the user by email or phone
 /// 3. Verify password
 /// 4. Check account is active
 /// 5. Issue access + refresh tokens
-#[instrument(skip_all, fields(email = %cmd.email))]
+#[instrument(skip_all, fields(identifier_kind = tracing::field::Empty))]
 pub async fn handle(
     cmd: LoginUserCommand,
     user_repo: &impl UserRepository,
@@ -38,11 +40,14 @@ pub async fn handle(
     clock: &impl Clock,
     id_gen: &impl IdGenerator,
 ) -> AppResult<AuthTokensResponse> {
-    let email = Email::new(&cmd.email).map_err(|e| AppError::Validation(e.to_string()))?;
+    let identifier =
+        Identifier::parse(&cmd.identifier).map_err(|e| AppError::Validation(e.to_string()))?;
+    // The kind is safe to log; the identifier itself is personal data.
+    tracing::Span::current().record("identifier_kind", identifier.kind());
 
     // Find user — return generic "invalid credentials" to avoid user enumeration
     let user = user_repo
-        .find_by_email(&email)
+        .find_by_identifier(&identifier)
         .await?
         .ok_or(AppError::Unauthorized)?;
 
@@ -64,7 +69,7 @@ pub async fn handle(
 
     let claims = AccessTokenClaims {
         sub: user.id,
-        email: user.email.as_str().to_string(),
+        email: user.primary_identifier(),
         role: user.role.as_str().to_string(),
         jti: token_id,
         iat: now,
@@ -91,15 +96,4 @@ pub async fn handle(
     Ok(AuthTokensResponse::new(access_token, refresh_token_raw, 900))
 }
 
-fn generate_refresh_token() -> String {
-    use base64::Engine;
-    let mut bytes = [0u8; 32];
-    rand::fill(&mut bytes);
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
-}
 
-fn hash_refresh_token(token: &str) -> String {
-    use sha2::Digest;
-    let hash = sha2::Sha256::digest(token.as_bytes());
-    hex::encode(hash)
-}

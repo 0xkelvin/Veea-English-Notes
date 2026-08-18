@@ -47,3 +47,5 @@ app.*.map.json
 # Cloud
 /target
 .env
+# Diff artifacts written by failing golden tests.
+test/golden/failures/

@@ -57,7 +57,40 @@ make docker-up
 make dev
 ```
 
-The server starts at `http://localhost:8080`.
+The server starts at `http://localhost:8080`. Confirm it is ready:
+
+```bash
+curl localhost:8080/health/ready
+# {"status":"healthy","checks":{"database":"up","redis":"up"}}
+```
+
+`make docker-up` needs the Compose plugin. On macOS with Homebrew Docker that
+is `brew install docker-compose`, plus this in `~/.docker/config.json` so the
+CLI can find it:
+
+```json
+{ "cliPluginsExtraDirs": ["/opt/homebrew/lib/docker/cli-plugins"] }
+```
+
+If port 8080 is taken, `APP_PORT=8081 cargo run` moves it, and the Flutter
+client follows with `--dart-define=VEEA_API_BASE_URL=http://localhost:8081`.
+
+### Smoke test
+
+```bash
+API=http://localhost:8080/api/v1
+
+# Register with a phone number (an email works the same way)
+curl -sX POST $API/auth/register -H 'content-type: application/json' \
+  -d '{"identifier":"+84 90 123 4567","password":"hunter22pass"}'
+
+# Sign in — the number normalises, so any spelling of it reaches the account
+TOKEN=$(curl -sX POST $API/auth/login -H 'content-type: application/json' \
+  -d '{"identifier":"+84-901-234-567","password":"hunter22pass"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["access_token"])')
+
+curl -s $API/users/me -H "authorization: Bearer $TOKEN"
+```
 
 ### Useful Commands
 
@@ -84,9 +117,69 @@ make migrate       # Run migrations manually
 | `POST` | `/api/v1/auth/refresh` | No | Refresh access token |
 | `POST` | `/api/v1/auth/logout` | Yes | Revoke refresh token |
 | `GET` | `/api/v1/users/me` | Yes | Get current user profile |
+| `DELETE` | `/api/v1/users/me` | Yes | Permanently delete the account (password required) |
+| `PUT` | `/api/v1/users/me/password` | Yes | Change password (revokes every session) |
+| `PUT` | `/api/v1/users/me/identifier` | Yes | Set the account's email address or phone number |
+| `GET` | `/api/v1/users/me/export` | Yes | Export every word on the account |
+| `POST` | `/api/v1/vocabulary/sync` | Yes | Push local changes and pull remote ones in one round trip |
+| `GET` | `/api/v1/vocabulary/words` | Yes | List the caller's vocabulary (paginated) |
 | `GET` | `/api/v1/admin/users` | Admin | List all users (paginated) |
 | `PUT` | `/api/v1/admin/users/:id/role` | Admin | Change a user's role |
 | `GET` | `/api/v1/openapi.json` | No | OpenAPI 3.0 specification |
+
+### Accounts
+
+An account is identified by an **email address, a phone number, or both**.
+Clients send one `identifier` field and the server decides which it is from the
+shape of the input — there is no toggle to get wrong, and a mistyped phone
+number reports a phone error rather than "invalid email".
+
+- **Phone numbers are stored E.164-normalised**, so `+84 90 123 4567` and
+  `+84-901-234-567` are one account rather than two. An international prefix is
+  required: a bare `0901234567` is rejected, because resolving it means
+  guessing a country and guessing wrong hands someone else's number to the
+  caller.
+- **Changing an identifier replaces only its own kind.** Setting a phone on an
+  email account keeps the email, so the account stays reachable both ways. A
+  database `CHECK` guarantees an account can never end up with neither, which
+  would make it impossible to sign into.
+- **Password confirmation answers 403 `INVALID_PASSWORD`, not 401.** A 401
+  tells a client its *session* is bad, and a well-behaved client responds by
+  refreshing and then signing the user out. On these endpoints the session is
+  fine and only the typed password was wrong, so the distinction is what stops
+  a typo from logging the user out.
+- **Deletion is immediate and permanent.** Vocabulary and refresh tokens go
+  with the account via `ON DELETE CASCADE`, and a `UserDeleted` event carries
+  the identifier in its payload because there is nothing left to look it up
+  from afterwards.
+- **Changing a password revokes every refresh token**, the caller's included.
+  A password change is usually a reaction to suspecting someone else has the
+  account, so leaving the existing sessions alive would defeat it.
+
+### Vocabulary sync
+
+The mobile client is offline-first: words are written to local SQLite and
+uploaded later, so the protocol has to survive a device that has been offline
+for a week and a user editing the same word on two phones.
+
+- **Client-generated ids.** A word captured with no network still needs one
+  stable identity, so the client mints the UUID. Ownership therefore cannot be
+  inferred from the id: every query is scoped by `user_id`, and the sync upsert
+  refuses to touch a row owned by anyone else.
+- **Conflicts resolve last-write-wins** on the client's `updatedAt`. Equal
+  timestamps keep the stored row, so a retried upload is a no-op.
+- **Deletes are tombstones.** A hard delete would be undone by the next device
+  to sync, which still has the word and would upload it again.
+- **The pull cursor is a server timestamp** (`server_updated_at`), not the
+  client's `updatedAt`. A device with a skewed clock could otherwise write a row
+  timestamped in the past, which would sit behind every other client's cursor
+  and never be delivered.
+- **Push and pull share one request** so nothing can be written in the gap
+  between them, and a client immediately sees the canonical result of its own
+  upload — including any write that lost a conflict.
+
+Advance the local cursor to `serverTime` only once every returned change has
+been applied, and repeat the call while `hasMore` is true.
 
 ## Environment Variables
 

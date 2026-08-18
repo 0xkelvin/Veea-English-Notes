@@ -1,3 +1,4 @@
+use crate::application::identity::commands::support::{generate_refresh_token, hash_refresh_token};
 use tracing::instrument;
 
 use crate::application::identity::dto::auth_dto::AuthTokensResponse;
@@ -82,7 +83,7 @@ pub async fn handle(
     let access_expiry = now + chrono::Duration::seconds(900);
     let claims = AccessTokenClaims {
         sub: user.id,
-        email: user.email.as_str().to_string(),
+        email: user.primary_identifier(),
         role: user.role.as_str().to_string(),
         jti: token_id,
         iat: now,
@@ -93,15 +94,4 @@ pub async fn handle(
     Ok(AuthTokensResponse::new(access_token, new_refresh_raw, 900))
 }
 
-fn generate_refresh_token() -> String {
-    use base64::Engine;
-    let mut bytes = [0u8; 32];
-    rand::fill(&mut bytes);
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
-}
 
-fn hash_refresh_token(token: &str) -> String {
-    use sha2::Digest;
-    let hash = sha2::Sha256::digest(token.as_bytes());
-    hex::encode(hash)
-}

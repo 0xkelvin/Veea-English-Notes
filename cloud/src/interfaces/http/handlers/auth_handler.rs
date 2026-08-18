@@ -24,7 +24,7 @@ pub async fn register(
         .map_err(|e| AppError::Validation(e.to_string()))?;
 
     let cmd = register_user::RegisterUserCommand {
-        email: body.email,
+        identifier: body.identifier,
         password: body.password,
     };
 
@@ -54,7 +54,7 @@ pub async fn login(
         .map_err(|e| AppError::Validation(e.to_string()))?;
 
     let cmd = login_user::LoginUserCommand {
-        email: body.email,
+        identifier: body.identifier,
         password: body.password,
     };
 

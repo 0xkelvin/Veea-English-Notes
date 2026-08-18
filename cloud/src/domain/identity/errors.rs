@@ -1,4 +1,5 @@
 use super::value_objects::email::EmailError;
+use super::value_objects::identifier::IdentifierError;
 use super::value_objects::password_hash::PasswordHashError;
 use super::value_objects::user_role::{UserRoleError, UserStatusError};
 
@@ -11,8 +12,14 @@ pub enum IdentityError {
     #[error("user not found")]
     UserNotFound,
 
-    #[error("email already registered: {0}")]
-    EmailAlreadyExists(String),
+    #[error("that email or phone number is already registered")]
+    IdentifierAlreadyExists(String),
+
+    #[error("an account must keep at least one email address or phone number")]
+    LastIdentifierRemoved,
+
+    #[error("invalid identifier: {0}")]
+    InvalidIdentifier(#[from] IdentifierError),
 
     #[error("invalid credentials")]
     InvalidCredentials,

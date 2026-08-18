@@ -17,6 +17,16 @@ pub enum AppError {
     #[error("Insufficient permissions")]
     Forbidden,
 
+    /// The caller is authenticated but re-entered the wrong password on an
+    /// action that demands confirmation.
+    ///
+    /// Deliberately 403 and not 401: a 401 tells the client its *session* is
+    /// bad, and a client that sees one will try to refresh and then sign the
+    /// user out. Here the session is perfectly good — only the typed password
+    /// was wrong.
+    #[error("Password confirmation failed")]
+    InvalidPassword,
+
     #[error("Resource not found: {0}")]
     NotFound(String),
 
@@ -63,6 +73,11 @@ impl IntoResponse for AppError {
                 StatusCode::FORBIDDEN,
                 "FORBIDDEN",
                 "Insufficient permissions".to_string(),
+            ),
+            AppError::InvalidPassword => (
+                StatusCode::FORBIDDEN,
+                "INVALID_PASSWORD",
+                "That password is not right".to_string(),
             ),
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", msg.clone()),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, "CONFLICT", msg.clone()),
