@@ -84,11 +84,44 @@ make migrate       # Run migrations manually
 | `POST` | `/api/v1/auth/refresh` | No | Refresh access token |
 | `POST` | `/api/v1/auth/logout` | Yes | Revoke refresh token |
 | `GET` | `/api/v1/users/me` | Yes | Get current user profile |
+| `DELETE` | `/api/v1/users/me` | Yes | Permanently delete the account (password required) |
+| `PUT` | `/api/v1/users/me/password` | Yes | Change password (revokes every session) |
+| `PUT` | `/api/v1/users/me/identifier` | Yes | Set the account's email address or phone number |
+| `GET` | `/api/v1/users/me/export` | Yes | Export every word on the account |
 | `POST` | `/api/v1/vocabulary/sync` | Yes | Push local changes and pull remote ones in one round trip |
 | `GET` | `/api/v1/vocabulary/words` | Yes | List the caller's vocabulary (paginated) |
 | `GET` | `/api/v1/admin/users` | Admin | List all users (paginated) |
 | `PUT` | `/api/v1/admin/users/:id/role` | Admin | Change a user's role |
 | `GET` | `/api/v1/openapi.json` | No | OpenAPI 3.0 specification |
+
+### Accounts
+
+An account is identified by an **email address, a phone number, or both**.
+Clients send one `identifier` field and the server decides which it is from the
+shape of the input — there is no toggle to get wrong, and a mistyped phone
+number reports a phone error rather than "invalid email".
+
+- **Phone numbers are stored E.164-normalised**, so `+84 90 123 4567` and
+  `+84-901-234-567` are one account rather than two. An international prefix is
+  required: a bare `0901234567` is rejected, because resolving it means
+  guessing a country and guessing wrong hands someone else's number to the
+  caller.
+- **Changing an identifier replaces only its own kind.** Setting a phone on an
+  email account keeps the email, so the account stays reachable both ways. A
+  database `CHECK` guarantees an account can never end up with neither, which
+  would make it impossible to sign into.
+- **Password confirmation answers 403 `INVALID_PASSWORD`, not 401.** A 401
+  tells a client its *session* is bad, and a well-behaved client responds by
+  refreshing and then signing the user out. On these endpoints the session is
+  fine and only the typed password was wrong, so the distinction is what stops
+  a typo from logging the user out.
+- **Deletion is immediate and permanent.** Vocabulary and refresh tokens go
+  with the account via `ON DELETE CASCADE`, and a `UserDeleted` event carries
+  the identifier in its payload because there is nothing left to look it up
+  from afterwards.
+- **Changing a password revokes every refresh token**, the caller's included.
+  A password change is usually a reaction to suspecting someone else has the
+  account, so leaving the existing sessions alive would defeat it.
 
 ### Vocabulary sync
 

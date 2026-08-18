@@ -36,6 +36,14 @@ pub trait TransactionalUserRepository: Send + Sync {
         tx: &mut PgTransaction<'a>,
         user: &crate::domain::identity::entities::user::User,
     ) -> impl Future<Output = Result<(), anyhow::Error>> + Send;
+
+    /// Deletes the user inside the caller's transaction, so the row and the
+    /// outbox event announcing its removal commit together.
+    fn delete_tx<'a>(
+        &self,
+        tx: &mut PgTransaction<'a>,
+        id: uuid::Uuid,
+    ) -> impl Future<Output = Result<(), anyhow::Error>> + Send;
 }
 
 pub trait TransactionalOutboxRepository: Send + Sync {

@@ -1,3 +1,4 @@
+use crate::application::identity::commands::support::{build_outbox_event};
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -9,8 +10,6 @@ use crate::application::identity::transaction::{
 };
 use crate::common::error::AppError;
 use crate::common::result::AppResult;
-use crate::domain::identity::events::IdentityDomainEvent;
-use crate::domain::identity::repositories::outbox_repository::{OutboxEvent, OutboxStatus};
 use crate::domain::identity::repositories::user_repository::UserRepository;
 use crate::domain::identity::services::identity_policy::IdentityPolicy;
 use crate::domain::identity::value_objects::user_role::UserRole;
@@ -77,21 +76,3 @@ pub async fn handle(
     Ok(UserProfileResponse::from(&user))
 }
 
-fn build_outbox_event(
-    event: &IdentityDomainEvent,
-    id_gen: &impl IdGenerator,
-    now: chrono::DateTime<chrono::Utc>,
-) -> Result<OutboxEvent, anyhow::Error> {
-    Ok(OutboxEvent {
-        id: id_gen.new_id(),
-        aggregate_type: event.aggregate_type().to_string(),
-        aggregate_id: event.aggregate_id(),
-        event_type: event.event_type().to_string(),
-        payload: serde_json::to_value(event)?,
-        metadata: serde_json::json!({}),
-        status: OutboxStatus::Pending,
-        occurred_at: now,
-        published_at: None,
-        retry_count: 0,
-    })
-}

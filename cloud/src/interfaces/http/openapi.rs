@@ -51,6 +51,42 @@ pub async fn openapi_spec() -> impl IntoResponse {
                     "summary": "Get current user profile",
                     "security": [{ "bearerAuth": [] }],
                     "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" } }
+                },
+                "delete": {
+                    "tags": ["account"],
+                    "summary": "Permanently delete the caller's account",
+                    "description": "Irreversible. Vocabulary and refresh tokens are removed with the account by ON DELETE CASCADE. The current password is required again because an access token alone is a weaker signal for an action with no way back.",
+                    "security": [{ "bearerAuth": [] }],
+                    "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DeleteAccountRequest" } } } },
+                    "responses": { "204": { "description": "Account deleted" }, "401": { "description": "Wrong password" } }
+                }
+            },
+            "/users/me/password": {
+                "put": {
+                    "tags": ["account"],
+                    "summary": "Change the caller's password",
+                    "description": "Revokes every refresh token, including the caller's own, so the client must sign in again with the new password.",
+                    "security": [{ "bearerAuth": [] }],
+                    "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChangePasswordRequest" } } } },
+                    "responses": { "204": { "description": "Password changed; all sessions revoked" }, "400": { "description": "New password rejected" }, "401": { "description": "Wrong current password" } }
+                }
+            },
+            "/users/me/identifier": {
+                "put": {
+                    "tags": ["account"],
+                    "summary": "Set the caller's email address or phone number",
+                    "description": "Replaces only the matching kind: setting a phone on an email account keeps the email, so the account stays reachable both ways. An account can never be left with neither.",
+                    "security": [{ "bearerAuth": [] }],
+                    "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChangeIdentifierRequest" } } } },
+                    "responses": { "200": { "description": "Updated profile" }, "401": { "description": "Wrong password" }, "409": { "description": "Already registered to another account" } }
+                }
+            },
+            "/users/me/export": {
+                "get": {
+                    "tags": ["account"],
+                    "summary": "Export every word the account holds",
+                    "security": [{ "bearerAuth": [] }],
+                    "responses": { "200": { "description": "OK" }, "401": { "description": "Unauthorized" } }
                 }
             },
             "/admin/users": {
@@ -103,8 +139,12 @@ pub async fn openapi_spec() -> impl IntoResponse {
                 "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
             },
             "schemas": {
-                "RegisterUserRequest": { "type": "object", "required": ["email", "password"], "properties": { "email": { "type": "string", "format": "email" }, "password": { "type": "string", "minLength": 8 } } },
-                "LoginRequest": { "type": "object", "required": ["email", "password"], "properties": { "email": { "type": "string" }, "password": { "type": "string" } } },
+                "RegisterUserRequest": { "type": "object", "required": ["identifier", "password"], "properties": { "identifier": { "$ref": "#/components/schemas/Identifier" }, "password": { "type": "string", "minLength": 8, "maxLength": 128 } } },
+                "LoginRequest": { "type": "object", "required": ["identifier", "password"], "properties": { "identifier": { "$ref": "#/components/schemas/Identifier" }, "password": { "type": "string" } } },
+                "Identifier": { "type": "string", "maxLength": 254, "description": "An email address or a phone number; the server decides which from its shape. Phone numbers require an international prefix and are stored E.164-normalised, so +84 90 123 4567 and +84-901-234-567 are the same account. A bare national number such as 0901234567 is rejected, since resolving it would mean guessing a country.", "example": "+84901234567" },
+                "DeleteAccountRequest": { "type": "object", "required": ["password"], "properties": { "password": { "type": "string" } } },
+                "ChangePasswordRequest": { "type": "object", "required": ["current_password", "new_password"], "properties": { "current_password": { "type": "string" }, "new_password": { "type": "string", "minLength": 8, "maxLength": 128 } } },
+                "ChangeIdentifierRequest": { "type": "object", "required": ["identifier", "password"], "properties": { "identifier": { "$ref": "#/components/schemas/Identifier" }, "password": { "type": "string" } } },
                 "RefreshTokenRequest": { "type": "object", "required": ["refresh_token"], "properties": { "refresh_token": { "type": "string" } } },
                 "LogoutRequest": { "type": "object", "required": ["refresh_token"], "properties": { "refresh_token": { "type": "string" } } },
                 "ChangeUserRoleRequest": { "type": "object", "required": ["role"], "properties": { "role": { "type": "string", "enum": ["user", "admin", "moderator"] } } },

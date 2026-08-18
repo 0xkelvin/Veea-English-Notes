@@ -5,7 +5,8 @@ use tower_http::limit::RequestBodyLimitLayer;
 use crate::bootstrap::app_state::AppState;
 
 use super::handlers::{
-    admin_handler, auth_handler, health_handler, user_handler, vocabulary_handler,
+    account_handler, admin_handler, auth_handler, health_handler, user_handler,
+    vocabulary_handler,
 };
 use super::middleware as mw;
 use super::openapi;
@@ -20,7 +21,21 @@ pub fn build_router(state: AppState) -> Router {
         // ── Protected auth routes ───────────────────────────
         .route("/auth/logout", post(auth_handler::logout))
         // ── Protected user routes ───────────────────────────
-        .route("/users/me", get(user_handler::get_my_profile))
+        // Both methods are attached to one MethodRouter; registering the same
+        // path twice makes axum panic at startup.
+        .route(
+            "/users/me",
+            get(user_handler::get_my_profile).delete(account_handler::delete_me),
+        )
+        .route(
+            "/users/me/password",
+            put(account_handler::change_my_password),
+        )
+        .route(
+            "/users/me/identifier",
+            put(account_handler::change_my_identifier),
+        )
+        .route("/users/me/export", get(account_handler::export_my_words))
         // ── Protected vocabulary routes ─────────────────────
         .route("/vocabulary/sync", post(vocabulary_handler::sync))
         .route("/vocabulary/words", get(vocabulary_handler::list))

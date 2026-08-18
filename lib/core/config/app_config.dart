@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 /// Build-time configuration.
 ///
 /// Supplied with `--dart-define` so the same source builds against a local
@@ -9,11 +11,18 @@
 class AppConfig {
   AppConfig._();
 
-  /// Base URL of the cloud service, without a trailing slash.
+  /// Compiled-in default.
   ///
   /// Empty by default: with no server configured the app stays fully local,
   /// which is the state it shipped in and remains a valid way to use it.
-  static const String apiBaseUrl = String.fromEnvironment('VEEA_API_BASE_URL');
+  static const String _compiledBaseUrl = String.fromEnvironment(
+    'VEEA_API_BASE_URL',
+  );
+
+  static String? _override;
+
+  /// Base URL of the cloud service, without a trailing slash.
+  static String get apiBaseUrl => _override ?? _compiledBaseUrl;
 
   /// Whether a cloud server has been configured for this build.
   static bool get isCloudEnabled => apiBaseUrl.isNotEmpty;
@@ -23,4 +32,17 @@ class AppConfig {
 
   /// How long a network call may take before it is abandoned.
   static const Duration requestTimeout = Duration(seconds: 20);
+
+  /// Points this run at a different server.
+  ///
+  /// Used by tests to exercise the signed-in UI, and available in debug builds
+  /// to switch servers without recompiling. Refused in release so a shipped
+  /// build cannot be redirected at runtime.
+  @visibleForTesting
+  static void overrideBaseUrl(String? value) {
+    assert(() {
+      _override = value;
+      return true;
+    }());
+  }
 }

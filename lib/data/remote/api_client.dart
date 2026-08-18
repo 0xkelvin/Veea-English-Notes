@@ -87,6 +87,38 @@ class ApiClient {
     );
   }
 
+  Future<Map<String, Object?>> put(
+    String path, {
+    Object? body,
+    bool authenticated = true,
+  }) {
+    return _send(
+      (headers) => _http.put(
+        _uri(path),
+        headers: headers,
+        body: body == null ? null : jsonEncode(body),
+      ),
+      authenticated: authenticated,
+    );
+  }
+
+  /// DELETE with a body — used by account deletion, which carries the
+  /// password confirmation.
+  Future<Map<String, Object?>> delete(
+    String path, {
+    Object? body,
+    bool authenticated = true,
+  }) {
+    return _send(
+      (headers) => _http.delete(
+        _uri(path),
+        headers: headers,
+        body: body == null ? null : jsonEncode(body),
+      ),
+      authenticated: authenticated,
+    );
+  }
+
   Future<Map<String, Object?>> _send(
     Future<http.Response> Function(Map<String, String> headers) request, {
     required bool authenticated,

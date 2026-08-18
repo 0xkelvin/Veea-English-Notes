@@ -1,7 +1,29 @@
 import 'api_client.dart';
 import 'token_store.dart';
 
-/// Sign-up, sign-in and sign-out against the cloud service.
+/// The signed-in account as the server sees it.
+class AccountProfile {
+  const AccountProfile({this.email, this.phone});
+
+  /// Null on an account identified only by a phone number.
+  final String? email;
+
+  /// Null on an account identified only by an email address.
+  final String? phone;
+
+  /// Whichever identifier to show when only one can be shown.
+  String get primary => email ?? phone ?? '';
+
+  factory AccountProfile.fromJson(Map<String, Object?> json) {
+    return AccountProfile(
+      email: json['email'] as String?,
+      phone: json['phone'] as String?,
+    );
+  }
+}
+
+/// Account lifecycle: sign up, sign in, sign out, and everything the user can
+/// do to their own account afterwards.
 class AuthApi {
   const AuthApi({required ApiClient client, required TokenStore tokens})
     : _client = client,
@@ -11,13 +33,16 @@ class AuthApi {
   final TokenStore _tokens;
 
   /// Creates an account and stores the session it returns.
+  ///
+  /// [identifier] is an email address or a phone number; the server decides
+  /// which from its shape.
   Future<void> register({
-    required String email,
+    required String identifier,
     required String password,
   }) async {
     final data = await _client.post(
       '/auth/register',
-      body: {'email': email, 'password': password},
+      body: {'identifier': identifier, 'password': password},
       authenticated: false,
     );
 
@@ -26,16 +51,19 @@ class AuthApi {
     if (tokens is! Map<String, Object?>) {
       throw const ApiException('Malformed registration response');
     }
-    await _persist(tokens, email);
+    await _persist(tokens, data['identifier'] as String? ?? identifier);
   }
 
-  Future<void> login({required String email, required String password}) async {
+  Future<void> login({
+    required String identifier,
+    required String password,
+  }) async {
     final data = await _client.post(
       '/auth/login',
-      body: {'email': email, 'password': password},
+      body: {'identifier': identifier, 'password': password},
       authenticated: false,
     );
-    await _persist(data, email);
+    await _persist(data, identifier);
   }
 
   /// Revokes the refresh token server-side and clears the local session.
@@ -59,7 +87,55 @@ class AuthApi {
     }
   }
 
-  Future<void> _persist(Map<String, Object?> tokens, String email) async {
+  Future<AccountProfile> profile() async {
+    return AccountProfile.fromJson(await _client.get('/users/me'));
+  }
+
+  /// Permanently deletes the account and everything on it.
+  ///
+  /// The session is cleared only after the server confirms, so a failed
+  /// deletion leaves the user signed in and able to try again.
+  Future<void> deleteAccount({required String password}) async {
+    await _client.delete('/users/me', body: {'password': password});
+    await _tokens.clear();
+  }
+
+  /// Changes the password.
+  ///
+  /// The server revokes every session, including this one, so the caller must
+  /// sign in again afterwards. The local session is cleared here to match.
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await _client.put(
+      '/users/me/password',
+      body: {'current_password': currentPassword, 'new_password': newPassword},
+    );
+    await _tokens.clear();
+  }
+
+  /// Sets the email address or phone number on the account.
+  ///
+  /// Only the matching kind is replaced, so adding a phone to an email account
+  /// keeps both.
+  Future<AccountProfile> changeIdentifier({
+    required String identifier,
+    required String password,
+  }) async {
+    final data = await _client.put(
+      '/users/me/identifier',
+      body: {'identifier': identifier, 'password': password},
+    );
+    final profile = AccountProfile.fromJson(data);
+    await _tokens.saveIdentifier(profile.primary);
+    return profile;
+  }
+
+  /// Downloads every word on the account.
+  Future<Map<String, Object?>> exportWords() => _client.get('/users/me/export');
+
+  Future<void> _persist(Map<String, Object?> tokens, String identifier) async {
     final accessToken = tokens['access_token'] as String?;
     final refreshToken = tokens['refresh_token'] as String?;
 
@@ -70,7 +146,7 @@ class AuthApi {
     await _tokens.save(
       accessToken: accessToken,
       refreshToken: refreshToken,
-      email: email,
+      identifier: identifier,
     );
   }
 }

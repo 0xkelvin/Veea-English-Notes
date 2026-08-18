@@ -16,6 +16,10 @@ words themselves.
   tag, from any day. Accents are optional — `kien cuong` finds `kiên cường`.
 - **Local first.** Everything is written to SQLite on the device and works with
   no account and no network. Signing in only adds sync between devices.
+- **An account is an email address or a phone number.** One field; the app
+  works out which and labels itself accordingly. From the account screen you
+  can change either, change your password, export every word as JSON, or
+  delete the account outright.
 
 ## Running it
 
@@ -91,3 +95,18 @@ the server acknowledges them, which also makes undo a real restore.
 
 **Writes are not optimistic.** Every mutation writes to SQLite and then re-reads
 the affected view, so the screen can never show a word that failed to save.
+
+**Deleting the account wipes the device second, not first.** The local database
+is cleared only once the server confirms the deletion. Wiping first would
+destroy the user's words on a failed request, and those words are the whole
+point of the app.
+
+**A wrong password is not a dead session.** The server answers a failed password
+confirmation with 403 `INVALID_PASSWORD` rather than 401. The transport treats
+401 as "refresh the token, then sign out if that fails", so without the
+distinction a single typo in the delete dialog would log the user out.
+
+**Identifier parsing is duplicated on purpose.** `AccountIdentifier` mirrors the
+server's `Identifier` and `PhoneNumber` rules so the form can label itself and
+reject obvious mistakes offline. The server still re-validates everything; if
+one side's rules change, the other has to change with it.

@@ -19,6 +19,7 @@ class PixelField extends StatefulWidget {
     this.onChanged,
     this.textCapitalization = TextCapitalization.none,
     this.trailing,
+    this.obscure = false,
   });
 
   final TextEditingController controller;
@@ -34,6 +35,9 @@ class PixelField extends StatefulWidget {
 
   /// Optional control rendered beside the field, e.g. a remove button.
   final Widget? trailing;
+
+  /// Hides the text, for passwords.
+  final bool obscure;
 
   @override
   State<PixelField> createState() => _PixelFieldState();
@@ -72,7 +76,9 @@ class _PixelFieldState extends State<PixelField> {
         controller: widget.controller,
         focusNode: _focusNode,
         autofocus: widget.autofocus,
-        maxLines: widget.maxLines,
+        // A password field must stay on one line; obscured text cannot wrap.
+        maxLines: widget.obscure ? 1 : widget.maxLines,
+        obscureText: widget.obscure,
         textInputAction: widget.textInputAction,
         onSubmitted: widget.onSubmitted,
         onChanged: widget.onChanged,

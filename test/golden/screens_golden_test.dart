@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:veea_english_app/core/config/app_config.dart';
 import 'package:veea_english_app/core/theme/pixel_theme.dart';
 import 'package:veea_english_app/data/local/sqlite_vocabulary_repository.dart';
 import 'package:veea_english_app/data/remote/api_client.dart';
@@ -16,6 +17,7 @@ import 'package:veea_english_app/models/vocabulary_word.dart';
 import 'package:veea_english_app/providers/auth_provider.dart';
 import 'package:veea_english_app/providers/vocabulary_provider.dart';
 import 'package:veea_english_app/screens/search_screen.dart';
+import 'package:veea_english_app/screens/account_screen.dart';
 import 'package:veea_english_app/screens/home_screen.dart';
 import 'package:veea_english_app/screens/word_editor_screen.dart';
 import 'package:veea_english_app/services/sync_service.dart';
@@ -124,23 +126,24 @@ void main() {
     // Nothing in these tests triggers a network call; the transport exists
     // only so the screens have the providers they read from.
     final apiClient = ApiClient(tokenStore: const TokenStore());
+    final syncService = SyncService(
+      repository: repo,
+      api: VocabularyApi(apiClient),
+      now: () => today,
+    );
 
     return MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: provider),
         ChangeNotifierProvider(create: (_) => TtsService()),
-        ChangeNotifierProvider(
-          create: (_) => SyncService(
-            repository: repo,
-            api: VocabularyApi(apiClient),
-            now: () => today,
-          ),
-        ),
+        ChangeNotifierProvider(create: (_) => syncService),
         ChangeNotifierProvider(
           create: (_) => AuthProvider(
             authApi: AuthApi(client: apiClient, tokens: const TokenStore()),
             tokens: const TokenStore(),
             client: apiClient,
+            repository: repo,
+            sync: syncService,
           ),
         ),
       ],
@@ -207,6 +210,62 @@ void main() {
       find.byType(WordEditorScreen),
       matchesGoldenFile('editor_dark.png'),
     );
+  });
+
+  group('account screen', () {
+    // The account UI only appears when a server is configured; the default
+    // build is local-only.
+    setUp(() => AppConfig.overrideBaseUrl('https://example.test'));
+    tearDown(() => AppConfig.overrideBaseUrl(null));
+
+    testWidgets('signed out, offering sign in', (tester) async {
+      await sizeToPhone(tester);
+      await tester.pumpWidget(wrap(const AccountScreen(), Brightness.light));
+      await tester.pumpAndSettle();
+
+      expect(find.text('SIGN IN TO SYNC'), findsOneWidget);
+      await expectLater(
+        find.byType(AccountScreen),
+        matchesGoldenFile('account_signed_out.png'),
+      );
+    });
+
+    testWidgets('the field labels itself as the input is read', (tester) async {
+      await sizeToPhone(tester);
+      await tester.pumpWidget(wrap(const AccountScreen(), Brightness.light));
+      await tester.pumpAndSettle();
+
+      // Starts ambiguous...
+      expect(find.text('EMAIL OR PHONE'), findsOneWidget);
+
+      await tester.enterText(
+        find.byType(TextField).first,
+        'kelvin@example.com',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('EMAIL'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField).first, '+84901234567');
+      await tester.pumpAndSettle();
+      expect(find.text('PHONE'), findsOneWidget);
+    });
+
+    testWidgets('a national number is refused with a clear reason', (
+      tester,
+    ) async {
+      await sizeToPhone(tester);
+      await tester.pumpWidget(wrap(const AccountScreen(), Brightness.light));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField).first, '0901234567');
+      await tester.pumpAndSettle();
+
+      // The message names the actual problem rather than "invalid email".
+      expect(
+        find.textContaining('COUNTRY CODE', findRichText: true),
+        findsOneWidget,
+      );
+    });
   });
 
   testWidgets('search results show which day each word came from', (

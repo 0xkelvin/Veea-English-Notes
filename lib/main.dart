@@ -29,14 +29,18 @@ Future<void> main() async {
 
   const tokens = TokenStore();
   final apiClient = ApiClient(tokenStore: tokens);
+  final sync = SyncService(
+    repository: repository,
+    api: VocabularyApi(apiClient),
+  );
   final auth = AuthProvider(
     authApi: AuthApi(client: apiClient, tokens: tokens),
     tokens: tokens,
     client: apiClient,
-  );
-  final sync = SyncService(
+    // Deleting an account has to wipe this device too, so the provider needs
+    // the local store and the sync cursor as well as the API.
     repository: repository,
-    api: VocabularyApi(apiClient),
+    sync: sync,
   );
 
   // The app is usable immediately; the session and any sync catch up behind

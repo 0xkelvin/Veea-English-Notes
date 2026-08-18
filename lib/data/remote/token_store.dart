@@ -10,7 +10,10 @@ class TokenStore {
 
   static const _accessKey = 'auth.access_token';
   static const _refreshKey = 'auth.refresh_token';
-  static const _emailKey = 'auth.email';
+
+  /// The email address or phone number the account signs in with, kept only
+  /// so the account screen can show who is signed in while offline.
+  static const _identifierKey = 'auth.identifier';
 
   final FlutterSecureStorage _storage;
 
@@ -18,27 +21,32 @@ class TokenStore {
 
   Future<String?> readRefreshToken() => _storage.read(key: _refreshKey);
 
-  Future<String?> readEmail() => _storage.read(key: _emailKey);
+  Future<String?> readIdentifier() => _storage.read(key: _identifierKey);
 
   Future<bool> get hasSession async => await readRefreshToken() != null;
 
   Future<void> save({
     required String accessToken,
     required String refreshToken,
-    String? email,
+    String? identifier,
   }) async {
     await _storage.write(key: _accessKey, value: accessToken);
     await _storage.write(key: _refreshKey, value: refreshToken);
-    if (email != null) await _storage.write(key: _emailKey, value: email);
+    if (identifier != null) {
+      await _storage.write(key: _identifierKey, value: identifier);
+    }
   }
 
   /// Replaces only the access token, after a silent refresh.
   Future<void> saveAccessToken(String accessToken) =>
       _storage.write(key: _accessKey, value: accessToken);
 
+  Future<void> saveIdentifier(String identifier) =>
+      _storage.write(key: _identifierKey, value: identifier);
+
   Future<void> clear() async {
     await _storage.delete(key: _accessKey);
     await _storage.delete(key: _refreshKey);
-    await _storage.delete(key: _emailKey);
+    await _storage.delete(key: _identifierKey);
   }
 }

@@ -1,3 +1,6 @@
+pub mod user_deleted;
+pub mod user_identifier_changed;
+pub mod user_password_changed;
 pub mod user_registered;
 pub mod user_role_changed;
 
@@ -5,6 +8,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub use user_deleted::UserDeleted;
+pub use user_identifier_changed::UserIdentifierChanged;
+pub use user_password_changed::UserPasswordChanged;
 pub use user_registered::UserRegistered;
 pub use user_role_changed::UserRoleChanged;
 
@@ -17,6 +23,9 @@ pub use user_role_changed::UserRoleChanged;
 pub enum IdentityDomainEvent {
     UserRegistered(UserRegistered),
     UserRoleChanged(UserRoleChanged),
+    UserPasswordChanged(UserPasswordChanged),
+    UserIdentifierChanged(UserIdentifierChanged),
+    UserDeleted(UserDeleted),
 }
 
 impl IdentityDomainEvent {
@@ -24,6 +33,9 @@ impl IdentityDomainEvent {
         match self {
             IdentityDomainEvent::UserRegistered(_) => "identity.user_registered",
             IdentityDomainEvent::UserRoleChanged(_) => "identity.user_role_changed",
+            IdentityDomainEvent::UserPasswordChanged(_) => "identity.user_password_changed",
+            IdentityDomainEvent::UserIdentifierChanged(_) => "identity.user_identifier_changed",
+            IdentityDomainEvent::UserDeleted(_) => "identity.user_deleted",
         }
     }
 
@@ -35,6 +47,9 @@ impl IdentityDomainEvent {
         match self {
             IdentityDomainEvent::UserRegistered(e) => e.user_id,
             IdentityDomainEvent::UserRoleChanged(e) => e.user_id,
+            IdentityDomainEvent::UserPasswordChanged(e) => e.user_id,
+            IdentityDomainEvent::UserIdentifierChanged(e) => e.user_id,
+            IdentityDomainEvent::UserDeleted(e) => e.user_id,
         }
     }
 
@@ -42,6 +57,9 @@ impl IdentityDomainEvent {
         match self {
             IdentityDomainEvent::UserRegistered(e) => e.occurred_at,
             IdentityDomainEvent::UserRoleChanged(e) => e.occurred_at,
+            IdentityDomainEvent::UserPasswordChanged(e) => e.occurred_at,
+            IdentityDomainEvent::UserIdentifierChanged(e) => e.occurred_at,
+            IdentityDomainEvent::UserDeleted(e) => e.occurred_at,
         }
     }
 }

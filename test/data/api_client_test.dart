@@ -4,52 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:veea_english_app/data/remote/api_client.dart';
-import 'package:veea_english_app/data/remote/token_store.dart';
 
-/// In-memory [TokenStore]; the real one talks to the platform keychain, which
-/// is unavailable in a unit test.
-class FakeTokenStore implements TokenStore {
-  String? accessToken;
-  String? refreshToken;
-  String? email;
-  int clearCount = 0;
-
-  @override
-  Future<String?> readAccessToken() async => accessToken;
-
-  @override
-  Future<String?> readRefreshToken() async => refreshToken;
-
-  @override
-  Future<String?> readEmail() async => email;
-
-  @override
-  Future<bool> get hasSession async => refreshToken != null;
-
-  @override
-  Future<void> save({
-    required String accessToken,
-    required String refreshToken,
-    String? email,
-  }) async {
-    this.accessToken = accessToken;
-    this.refreshToken = refreshToken;
-    if (email != null) this.email = email;
-  }
-
-  @override
-  Future<void> saveAccessToken(String accessToken) async {
-    this.accessToken = accessToken;
-  }
-
-  @override
-  Future<void> clear() async {
-    accessToken = null;
-    refreshToken = null;
-    email = null;
-    clearCount++;
-  }
-}
+import '../support/fake_token_store.dart';
 
 void main() {
   const baseUrl = 'https://example.test/api/v1';

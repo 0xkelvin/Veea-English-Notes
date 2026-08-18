@@ -6,16 +6,20 @@ use validator::Validate;
 
 #[derive(Debug, Deserialize, Validate)]
 pub struct RegisterUserRequest {
-    #[validate(email, length(max = 254))]
-    pub email: String,
+    /// An email address or a phone number. Format is checked by the
+    /// `Identifier` value object, which reports a phone error for phone-shaped
+    /// input rather than a misleading "invalid email".
+    #[validate(length(min = 1, max = 254))]
+    pub identifier: String,
     #[validate(length(min = 8, max = 128))]
     pub password: String,
 }
 
 #[derive(Debug, Deserialize, Validate)]
 pub struct LoginRequest {
-    #[validate(email)]
-    pub email: String,
+    /// An email address or a phone number.
+    #[validate(length(min = 1, max = 254))]
+    pub identifier: String,
     #[validate(length(min = 1))]
     pub password: String,
 }
@@ -61,6 +65,35 @@ impl AuthTokensResponse {
 #[derive(Debug, Serialize)]
 pub struct RegisterUserResponse {
     pub user_id: Uuid,
-    pub email: String,
+    /// The normalised identifier the account was created with.
+    pub identifier: String,
     pub tokens: AuthTokensResponse,
+}
+
+/// Body for `DELETE /users/me`.
+///
+/// The password is re-entered because the action is irreversible and an
+/// access token alone is a weaker signal than knowing the password.
+#[derive(Debug, Deserialize, Validate)]
+pub struct DeleteAccountRequest {
+    #[validate(length(min = 1))]
+    pub password: String,
+}
+
+/// Body for `PUT /users/me/password`.
+#[derive(Debug, Deserialize, Validate)]
+pub struct ChangePasswordRequest {
+    #[validate(length(min = 1))]
+    pub current_password: String,
+    #[validate(length(min = 8, max = 128))]
+    pub new_password: String,
+}
+
+/// Body for `PUT /users/me/identifier`.
+#[derive(Debug, Deserialize, Validate)]
+pub struct ChangeIdentifierRequest {
+    #[validate(length(min = 1, max = 254))]
+    pub identifier: String,
+    #[validate(length(min = 1))]
+    pub password: String,
 }

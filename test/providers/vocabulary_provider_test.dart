@@ -67,6 +67,8 @@ class FlakyRepository implements VocabularyRepository {
   Future<void> mergeFromServer(List<VocabularyWord> remote) =>
       _inner.mergeFromServer(remote);
   @override
+  Future<void> deleteAll() => _inner.deleteAll();
+  @override
   Future<void> close() => _inner.close();
 }
 

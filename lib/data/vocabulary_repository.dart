@@ -49,5 +49,12 @@ abstract interface class VocabularyRepository {
   /// edits are never silently discarded.
   Future<void> mergeFromServer(List<VocabularyWord> remote);
 
+  /// Removes every locally stored word.
+  ///
+  /// Used when the account is deleted, and when signing in as someone else:
+  /// leaving the previous account's vocabulary on the device would show one
+  /// person another's notes.
+  Future<void> deleteAll();
+
   Future<void> close();
 }

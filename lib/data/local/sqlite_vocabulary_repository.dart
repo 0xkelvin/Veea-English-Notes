@@ -252,6 +252,13 @@ class SqliteVocabularyRepository implements VocabularyRepository {
   }
 
   @override
+  Future<void> deleteAll() async {
+    // A hard delete, not a tombstone: there is no server left to tell, and
+    // tombstones would only be re-uploaded to whatever account signs in next.
+    await _db.delete(_table);
+  }
+
+  @override
   Future<void> close() => _db.close();
 
   // `\` escapes the SQL wildcards so a query containing % or _ is treated
