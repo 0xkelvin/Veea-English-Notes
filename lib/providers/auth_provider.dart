@@ -46,6 +46,19 @@ class AuthProvider extends ChangeNotifier {
   String? _lastError;
   String? _lastMessage;
   bool _busy = false;
+  bool _isDisposed = false;
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    if (_isDisposed) return;
+    super.notifyListeners();
+  }
 
   AuthState get state => _state;
   bool get isSignedIn => _state == AuthState.signedIn;

@@ -10,7 +10,9 @@ import '../core/theme/pixel_metrics.dart';
 import '../core/theme/pixel_palette.dart';
 import '../models/account_identifier.dart';
 import '../providers/auth_provider.dart';
+import '../providers/theme_provider.dart';
 import '../providers/vocabulary_provider.dart';
+import '../providers/widget_provider.dart';
 import '../services/sync_service.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_field.dart';
@@ -135,6 +137,10 @@ class _AccountScreenState extends State<AccountScreen> {
                             : _buildAuthForm(auth);
                       },
                     ),
+                    const SizedBox(height: PixelMetrics.space5),
+                    const _ThemePickerSection(),
+                    const SizedBox(height: PixelMetrics.space5),
+                    const _WidgetSettingsSection(),
                   ],
                 ],
               ),
@@ -800,6 +806,138 @@ class _ErrorLine extends StatelessWidget {
         style: Theme.of(
           context,
         ).textTheme.labelSmall?.copyWith(color: context.palette.danger),
+      ),
+    );
+  }
+}
+
+class _ThemePickerSection extends StatelessWidget {
+  const _ThemePickerSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final themeProvider = context.watch<ThemeProvider>();
+    final palette = context.palette;
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('RETRO PIXEL THEME', style: theme.textTheme.labelSmall),
+        const SizedBox(height: PixelMetrics.space2),
+        Wrap(
+          spacing: PixelMetrics.space2,
+          runSpacing: PixelMetrics.space2,
+          children: [
+            for (final mode in AppThemeMode.values)
+              GestureDetector(
+                onTap: () => themeProvider.setMode(mode),
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: PixelMetrics.space3,
+                    vertical: PixelMetrics.space2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: themeProvider.mode == mode
+                        ? palette.accent
+                        : palette.surface,
+                    border: Border.all(
+                      color: palette.border,
+                      width: PixelMetrics.border,
+                    ),
+                  ),
+                  child: Text(
+                    mode.label.toUpperCase(),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: themeProvider.mode == mode
+                          ? palette.onAccent
+                          : palette.ink,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _WidgetSettingsSection extends StatelessWidget {
+  const _WidgetSettingsSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final widgetProvider = context.watch<WidgetProvider>();
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('HOME SCREEN WIDGET & REMINDERS', style: theme.textTheme.labelSmall),
+        const SizedBox(height: PixelMetrics.space2),
+        _ToggleTile(
+          title: 'WORD OF THE DAY WIDGET',
+          subtitle: 'Displays daily review words on iOS & Android home screen',
+          enabled: widgetProvider.isWidgetEnabled,
+          onChanged: (value) => widgetProvider.setWidgetEnabled(value),
+        ),
+        const SizedBox(height: PixelMetrics.space2),
+        _ToggleTile(
+          title: 'DAILY RECALL REMINDER',
+          subtitle: 'Receive a subtle notification to record your daily words',
+          enabled: widgetProvider.isDailyReminderEnabled,
+          onChanged: (value) => widgetProvider.setDailyReminderEnabled(value),
+        ),
+      ],
+    );
+  }
+}
+
+class _ToggleTile extends StatelessWidget {
+  const _ToggleTile({
+    required this.title,
+    required this.subtitle,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(PixelMetrics.space3),
+      decoration: BoxDecoration(
+        color: palette.surface,
+        border: Border.all(color: palette.border, width: PixelMetrics.border),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: theme.textTheme.labelSmall),
+                const SizedBox(height: 2),
+                Text(subtitle, style: theme.textTheme.bodyMedium),
+              ],
+            ),
+          ),
+          const SizedBox(width: PixelMetrics.space2),
+          PixelButton(
+            label: enabled ? 'ON' : 'OFF',
+            filled: enabled,
+            onPressed: () => onChanged(!enabled),
+          ),
+        ],
       ),
     );
   }

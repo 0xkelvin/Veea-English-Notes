@@ -69,6 +69,45 @@ class PixelPalette extends ThemeExtension<PixelPalette> {
     danger: Color(0xFFD4674F),
   );
 
+  /// GameBoy DMG-01 LCD matrix green palette.
+  static const matrixGreen = PixelPalette(
+    paper: Color(0xFF8B956D),
+    surface: Color(0xFF9BBC0F),
+    ink: Color(0xFF0F380F),
+    inkMuted: Color(0xFF306230),
+    inkFaint: Color(0xFF487848),
+    border: Color(0xFF0F380F),
+    accent: Color(0xFF0F380F),
+    onAccent: Color(0xFF9BBC0F),
+    danger: Color(0xFF6B1414),
+  );
+
+  /// Cyberpunk synthwave palette with electric cyan text and hot pink accents.
+  static const cyberpunkNeon = PixelPalette(
+    paper: Color(0xFF0D0914),
+    surface: Color(0xFF191228),
+    ink: Color(0xFF00F0FF),
+    inkMuted: Color(0xFFC084FC),
+    inkFaint: Color(0xFF6E5686),
+    border: Color(0xFFFF2A85),
+    accent: Color(0xFFFF2A85),
+    onAccent: Color(0xFF0D0914),
+    danger: Color(0xFFFF0055),
+  );
+
+  /// OLED True Black with crisp white text and bright emerald accent.
+  static const oledBlack = PixelPalette(
+    paper: Color(0xFF000000),
+    surface: Color(0xFF111111),
+    ink: Color(0xFFF2F2F2),
+    inkMuted: Color(0xFFA0A0A0),
+    inkFaint: Color(0xFF666666),
+    border: Color(0xFF333333),
+    accent: Color(0xFF00FF66),
+    onAccent: Color(0xFF000000),
+    danger: Color(0xFFFF3333),
+  );
+
   @override
   PixelPalette copyWith({
     Color? paper,

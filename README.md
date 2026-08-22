@@ -8,21 +8,25 @@ The interface is deliberately plain: a pixel typeface, hard 2px borders, square
 corners, two colours and no animation. Nothing on screen competes with the
 words themselves.
 
-## How it works
+## Key Features (Implemented)
 
-- **A day at a time.** The home screen is one day's words. Arrows move between
-  days; the label opens a picker.
-- **Search reaches everything.** Any word, meaning, example sentence, source or
-  tag, from any day. Accents are optional — `kien cuong` finds `kiên cường`.
-- **Local first.** Everything is written to SQLite on the device and works with
-  no account and no network. Signing in only adds sync between devices.
-- **Pronunciation writes itself.** Type the word and the IPA appears — no
-  phone keyboard can produce `/rɪˈzɪljənt/`, so the app never asks you for it.
-  Words captured before this existed get filled in on first launch.
-- **An account is an email address or a phone number.** One field; the app
-  works out which and labels itself accordingly. From the account screen you
-  can change either, change your password, export every word as JSON, or
-  delete the account outright.
+- **Daily Vocabulary Journal**: Organised a day at a time with streak tracking, part of speech tags, context sentences, and source notes.
+- **Automatic IPA Pronunciation & TTS**: Instant offline IPA transcription from a bundled 126k-entry dictionary plus text-to-speech audio reading.
+- **Unicode Diacritic-Insensitive Search**: Fast SQLite search folding Vietnamese diacritics so typing `kien cuong` finds `kiên cường`.
+- **Expanded Retro Pixel Themes**: Choose between 6 retro pixel palettes (*Paper Light, Night Dark, GameBoy Matrix Green, Cyberpunk Neon, OLED True Black, System Default*).
+- **Native "Word of the Day" Widgets**: iOS WidgetKit & Android AppWidget integration displaying daily review words, streak count, and IPA transcriptions right on your Home Screen & Lock Screen.
+- **Widget & Notification Toggles**: User controls in Settings to enable or disable home screen widgets and daily notifications at any time.
+- **Offline-First & Cloud Sync**: Completely usable offline with local SQLite database; optional cloud sync across devices backed by a production Rust microservice.
+- **Account & Data Control**: Register with email or phone, change credentials, export every word as formatted JSON, or delete your account.
+- **Store Ready**: Includes Apple Privacy Manifest (`PrivacyInfo.xcprivacy`), Android permissions, and full visual test suite.
+
+## Next Planned Features (Roadmap)
+
+- 🎯 **Spaced Repetition System (SRS) Review Mode**: Interactive flashcard review mode powered by the SuperMemo (SM-2) algorithm to optimize long-term word retention.
+- 🎙️ **Voice Recording & Speaking Practice**: Record your own voice pronouncing words and compare audio waveforms side-by-side with TTS.
+- 📦 **Expanded Data Import & Export**: Export journal entries into Anki decks (`.apkg`), CSV, and Markdown files.
+- 🔔 **Local Scheduled Recall Notifications**: Configurable daily push reminders to log new words and maintain active learning streaks.
+- 📊 **Learning Analytics & Progress Charts**: Visual pixel-art charts tracking weekly retention and total vocabulary growth over time.
 
 ## Running it
 

@@ -272,36 +272,35 @@ class SqliteVocabularyRepository implements VocabularyRepository {
   ) async {
     final rows = await _db.query(
       _table,
-      columns: ['id', 'word'],
+      columns: _columns,
       where: "is_deleted = 0 AND (pronunciation IS NULL OR pronunciation = '')",
     );
     if (rows.isEmpty) return false;
 
     var updated = 0;
     final stamp = _now().toUtc().toIso8601String();
+    final batch = _db.batch();
 
     for (final row in rows) {
-      final ipa = await lookup(row['word']! as String);
+      final wordObj = VocabularyWord.fromDbMap(row);
+      final ipa = await lookup(wordObj.word);
       if (ipa == null) continue;
 
-      // Written column-wise rather than through the model so search_text is
-      // recomputed without loading and re-encoding the whole row.
-      final word = await findById(row['id']! as String);
-      if (word == null) continue;
-
-      await _db.update(
+      final updatedWord = wordObj.copyWith(pronunciation: ipa, isDirty: true);
+      batch.update(
         _table,
         {
-          ...word.copyWith(pronunciation: ipa, isDirty: true).toDbMap(),
+          ...updatedWord.toDbMap(),
           'updated_at': stamp,
         },
         where: 'id = ?',
-        whereArgs: [word.id],
+        whereArgs: [wordObj.id],
       );
       updated++;
     }
 
     if (updated > 0) {
+      await batch.commit(noResult: true);
       debugPrint('Backfilled pronunciation for $updated word(s)');
     }
     return updated > 0;

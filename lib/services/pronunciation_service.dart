@@ -115,18 +115,21 @@ class PronunciationService {
     return _cache[key] = result;
   }
 
+  static final RegExp _whitespaceRegExp = RegExp(r'\s+');
+  static final RegExp _punctuationRegExp = RegExp(r"^[^a-z']+|[^a-z']+$");
+
   Future<String?> _lookupUncached(String key) async {
     try {
       final direct = await _word(key);
       if (direct != null) return direct;
 
-      final parts = key.split(RegExp(r'\s+')).where((p) => p.isNotEmpty);
+      final parts = key.split(_whitespaceRegExp).where((p) => p.isNotEmpty);
       if (parts.length < 2) return null;
 
       final transcribed = <String>[];
       for (final part in parts) {
         // Strip punctuation that rides along with a word in a phrase.
-        final cleaned = part.replaceAll(RegExp(r"^[^a-z']+|[^a-z']+$"), '');
+        final cleaned = part.replaceAll(_punctuationRegExp, '');
         final ipa = cleaned.isEmpty ? null : await _word(cleaned);
         if (ipa == null) return null;
         transcribed.add(ipa);

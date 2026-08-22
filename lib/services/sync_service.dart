@@ -39,6 +39,19 @@ class SyncService extends ChangeNotifier {
   String? _lastError;
   DateTime? _lastSyncedAt;
   int _pendingCount = 0;
+  bool _isDisposed = false;
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    if (_isDisposed) return;
+    super.notifyListeners();
+  }
 
   SyncState get state => _state;
   bool get isSyncing => _state == SyncState.syncing;

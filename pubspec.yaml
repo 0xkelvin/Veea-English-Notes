@@ -22,6 +22,8 @@ dependencies:
   # Refresh tokens are long-lived credentials, so they go to the platform
   # keychain/keystore rather than SharedPreferences.
   flutter_secure_storage: ^9.2.2
+  # Native Home Screen & Lock Screen Widgets
+  home_widget: ^0.7.0
 
 dev_dependencies:
   flutter_test:

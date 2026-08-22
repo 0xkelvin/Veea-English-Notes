@@ -78,8 +78,17 @@ class TtsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _isDisposed = false;
+
+  @override
+  void notifyListeners() {
+    if (_isDisposed) return;
+    super.notifyListeners();
+  }
+
   @override
   void dispose() {
+    _isDisposed = true;
     _tts.stop();
     super.dispose();
   }

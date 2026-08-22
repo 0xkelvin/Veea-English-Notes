@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#1B1E17"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/widget_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="WORD OF THE DAY"
+        android:textColor="#6A6C5F"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/widget_word"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/widget_title"
+        android:layout_marginTop="4dp"
+        android:text="resilient"
+        android:textColor="#E6E4D8"
+        android:textSize="22sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/widget_ipa"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/widget_word"
+        android:text="/rɪˈzɪliənt/"
+        android:textColor="#9BBC0F"
+        android:textSize="14sp" />
+
+    <TextView
+        android:id="@+id/widget_meaning"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/widget_ipa"
+        android:layout_marginTop="6dp"
+        android:text="kiên cường, dẻo dai"
+        android:textColor="#E6E4D8"
+        android:textSize="16sp" />
+
+    <TextView
+        android:id="@+id/widget_example"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/widget_meaning"
+        android:layout_marginTop="4dp"
+        android:text="a resilient distributed system"
+        android:textColor="#9A9C8C"
+        android:textSize="13sp"
+        android:textStyle="italic" />
+
+</RelativeLayout>

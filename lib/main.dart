@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'core/config/app_config.dart';
-import 'core/theme/pixel_theme.dart';
 import 'data/local/legacy_import.dart';
 import 'data/local/sqlite_vocabulary_repository.dart';
 import 'data/remote/api_client.dart';
@@ -12,7 +11,9 @@ import 'data/remote/auth_api.dart';
 import 'data/remote/token_store.dart';
 import 'data/remote/vocabulary_api.dart';
 import 'providers/auth_provider.dart';
+import 'providers/theme_provider.dart';
 import 'providers/vocabulary_provider.dart';
+import 'providers/widget_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/pronunciation_service.dart';
 import 'services/sync_service.dart';
@@ -57,12 +58,20 @@ Future<void> main() async {
     ),
   );
 
+  final themeProvider = ThemeProvider();
+  await themeProvider.init();
+
+  final widgetProvider = WidgetProvider();
+  await widgetProvider.init();
+
   runApp(
     VeeaEnglishApp(
       vocabulary: vocabulary,
       auth: auth,
       sync: sync,
       pronunciation: pronunciation,
+      themeProvider: themeProvider,
+      widgetProvider: widgetProvider,
     ),
   );
 }
@@ -76,20 +85,24 @@ Future<void> _startBackgroundWork({
   required PronunciationService pronunciation,
   required SqliteVocabularyRepository repository,
 }) async {
-  // Importing 126k dictionary rows takes a second or two, so it happens behind
-  // the first frame rather than delaying the journal.
-  await pronunciation.importIfNeeded();
-  if (await repository.backfillPronunciations(pronunciation.lookup)) {
-    await vocabulary.init();
-  }
+  try {
+    // Importing 126k dictionary rows takes a second or two, so it happens behind
+    // the first frame rather than delaying the journal.
+    await pronunciation.importIfNeeded();
+    if (await repository.backfillPronunciations(pronunciation.lookup)) {
+      await vocabulary.init();
+    }
 
-  await auth.restore();
-  if (!AppConfig.isCloudEnabled || !auth.isSignedIn) return;
+    await auth.restore();
+    if (!AppConfig.isCloudEnabled || !auth.isSignedIn) return;
 
-  await sync.refreshPendingCount();
-  if (await sync.synchronise()) {
-    // Reload so anything pulled from another device appears straight away.
-    await vocabulary.init();
+    await sync.refreshPendingCount();
+    if (await sync.synchronise()) {
+      // Reload so anything pulled from another device appears straight away.
+      await vocabulary.init();
+    }
+  } catch (error, stack) {
+    debugPrint('Background initialization failed: $error\n$stack');
   }
 }
 
@@ -100,12 +113,16 @@ class VeeaEnglishApp extends StatelessWidget {
     required this.auth,
     required this.sync,
     required this.pronunciation,
+    this.themeProvider,
+    this.widgetProvider,
   });
 
   final VocabularyProvider vocabulary;
   final AuthProvider auth;
   final SyncService sync;
   final PronunciationService pronunciation;
+  final ThemeProvider? themeProvider;
+  final WidgetProvider? widgetProvider;
 
   @override
   Widget build(BuildContext context) {
@@ -115,17 +132,22 @@ class VeeaEnglishApp extends StatelessWidget {
         ChangeNotifierProvider.value(value: auth),
         ChangeNotifierProvider.value(value: sync),
         ChangeNotifierProvider(create: (_) => TtsService()),
+        ChangeNotifierProvider(create: (_) => themeProvider ?? (ThemeProvider()..init())),
+        ChangeNotifierProvider(create: (_) => widgetProvider ?? (WidgetProvider()..init())),
         Provider<PronunciationService>.value(value: pronunciation),
       ],
-      child: MaterialApp(
-        title: 'Veea English',
-        debugShowCheckedModeBanner: false,
-        theme: PixelTheme.light(),
-        darkTheme: PixelTheme.dark(),
-        // Both palettes are built from the same tokens; the OS picks.
-        themeMode: ThemeMode.system,
-        scrollBehavior: const PixelScrollBehavior(),
-        home: const HomeScreen(),
+      child: Consumer<ThemeProvider>(
+        builder: (context, theme, _) {
+          return MaterialApp(
+            title: 'Veea English',
+            debugShowCheckedModeBanner: false,
+            theme: theme.activeTheme,
+            darkTheme: theme.darkTheme,
+            themeMode: theme.themeMode,
+            scrollBehavior: const PixelScrollBehavior(),
+            home: const HomeScreen(),
+          );
+        },
       ),
     );
   }

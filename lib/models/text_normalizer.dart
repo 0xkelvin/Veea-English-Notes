@@ -29,7 +29,12 @@ class TextNormalizer {
     final lower = input.toLowerCase();
     final buffer = StringBuffer();
     for (final rune in lower.runes) {
-      buffer.write(_charMap[rune] ?? String.fromCharCode(rune));
+      final mapped = _charMap[rune];
+      if (mapped != null) {
+        buffer.write(mapped);
+      } else {
+        buffer.writeCharCode(rune);
+      }
     }
     return buffer.toString();
   }

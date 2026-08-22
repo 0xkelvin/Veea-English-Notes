@@ -72,6 +72,15 @@ class PixelTheme {
 
   static ThemeData dark() => _build(PixelPalette.dark, Brightness.dark);
 
+  static ThemeData matrixGreen() =>
+      _build(PixelPalette.matrixGreen, Brightness.dark);
+
+  static ThemeData cyberpunkNeon() =>
+      _build(PixelPalette.cyberpunkNeon, Brightness.dark);
+
+  static ThemeData oledBlack() =>
+      _build(PixelPalette.oledBlack, Brightness.dark);
+
   static ThemeData _build(PixelPalette palette, Brightness brightness) {
     final textTheme = TextTheme(
       displaySmall: _style(sizeDisplay, 700, palette.ink),

@@ -5,6 +5,7 @@ import '../data/vocabulary_repository.dart';
 import '../models/part_of_speech.dart';
 import '../models/vocabulary_stats.dart';
 import '../models/vocabulary_word.dart';
+import '../services/widget_service.dart';
 
 enum LoadStatus { loading, ready, failed }
 
@@ -32,6 +33,19 @@ class VocabularyProvider extends ChangeNotifier {
   late DateTime _selectedDate;
   String? _lastError;
   String? _undoableDeletionId;
+  bool _isDisposed = false;
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    if (_isDisposed) return;
+    super.notifyListeners();
+  }
 
   LoadStatus get status => _status;
   bool get isLoading => _status == LoadStatus.loading;
@@ -201,6 +215,13 @@ class VocabularyProvider extends ChangeNotifier {
       _stats = results[1] as VocabularyStats;
       _markedDates = results[2] as Set<String>;
       _status = LoadStatus.ready;
+
+      if (_words.isNotEmpty) {
+        WidgetService.updateWidgetData(
+          word: _words.first,
+          streakDays: _stats.streakDays,
+        );
+      }
     } catch (error, stack) {
       debugPrint('Failed to load vocabulary: $error\n$stack');
       if (initialLoad) _status = LoadStatus.failed;
