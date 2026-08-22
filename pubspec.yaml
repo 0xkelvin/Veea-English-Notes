@@ -1,7 +1,7 @@
 name: veea_english_app
 description: "Veea English - notes for the English words you meet each day"
-publish_to: 'none'
-version: 1.0.0+1
+publish_to: "none"
+version: 1.0.1
 
 environment:
   sdk: ^3.10.0
