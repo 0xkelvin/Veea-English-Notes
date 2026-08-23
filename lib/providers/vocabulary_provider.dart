@@ -217,8 +217,8 @@ class VocabularyProvider extends ChangeNotifier {
       _status = LoadStatus.ready;
 
       if (_words.isNotEmpty) {
-        WidgetService.updateWidgetData(
-          word: _words.first,
+        WidgetService.updateWidgetWords(
+          words: _words,
           streakDays: _stats.streakDays,
         );
       }

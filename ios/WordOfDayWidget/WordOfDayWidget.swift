@@ -11,6 +11,14 @@ struct WordOfDayEntry: TimelineEntry {
     let streakDays: Int
 }
 
+struct RawWord: Decodable {
+    let word: String
+    let ipa: String
+    let pos: String
+    let meaning: String
+    let example: String
+}
+
 struct WordOfDayProvider: TimelineProvider {
     func placeholder(in context: Context) -> WordOfDayEntry {
         WordOfDayEntry(
@@ -29,10 +37,45 @@ struct WordOfDayProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<WordOfDayEntry>) -> Void) {
-        let entry = loadEntry()
-        let nextUpdate = Calendar.current.date(byAdding: .hour, value: 4, to: Date()) ?? Date().addingTimeInterval(14400)
-        let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
+        let entries = loadEntries()
+        let timeline = Timeline(entries: entries, policy: .atEnd)
         completion(timeline)
+    }
+
+    private func loadEntries() -> [WordOfDayEntry] {
+        let userDefaults = UserDefaults(suiteName: "group.com.veea.veea_english_app")
+        let streak = userDefaults?.integer(forKey: "widget_streak") ?? 12
+        let jsonString = userDefaults?.string(forKey: "widget_words_json") ?? ""
+
+        var parsedWords: [RawWord] = []
+        if let data = jsonString.data(using: .utf8),
+           let list = try? JSONDecoder().decode([RawWord].self, from: data) {
+            parsedWords = list
+        }
+
+        if parsedWords.isEmpty {
+            return [loadEntry()]
+        }
+
+        var entries: [WordOfDayEntry] = []
+        let currentDate = Date()
+        for (index, item) in parsedWords.enumerated() {
+            // Schedule each word 15 minutes apart in the WidgetKit timeline queue
+            let entryDate = Calendar.current.date(byAdding: .minute, value: index * 15, to: currentDate) ?? currentDate
+            entries.append(
+                WordOfDayEntry(
+                    date: entryDate,
+                    word: item.word.isEmpty ? "resilient" : item.word,
+                    ipa: item.ipa.isEmpty ? "/rɪˈzɪliənt/" : item.ipa,
+                    pos: item.pos,
+                    meaning: item.meaning.isEmpty ? "kiên cường, dẻo dai" : item.meaning,
+                    example: item.example,
+                    streakDays: streak
+                )
+            )
+        }
+
+        return entries
     }
 
     private func loadEntry() -> WordOfDayEntry {

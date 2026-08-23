@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:home_widget/home_widget.dart';
 
@@ -11,30 +12,36 @@ class WidgetService {
   static const String iOSWidgetName = 'WordOfDayWidget';
   static const String androidWidgetName = 'WordOfDayWidgetProvider';
 
-  /// Updates native Home Screen & Lock Screen widgets with the Word of the Day.
-  static Future<void> updateWidgetData({
-    required VocabularyWord word,
+  /// Updates native Home Screen & Lock Screen widgets with today's list of words.
+  static Future<void> updateWidgetWords({
+    required List<VocabularyWord> words,
     required int streakDays,
   }) async {
-    if (kIsWeb) return;
+    if (kIsWeb || words.isEmpty) return;
 
     try {
       await HomeWidget.setAppGroupId(appGroupId);
 
+      final wordsJson = jsonEncode(
+        words.map((w) => {
+          'word': w.word,
+          'ipa': w.pronunciation ?? '',
+          'pos': w.partOfSpeech?.short ?? '',
+          'meaning': w.meaning,
+          'example': w.examples.isNotEmpty ? w.examples.first : '',
+        }).toList(),
+      );
+
+      final first = words.first;
       await Future.wait([
-        HomeWidget.saveWidgetData<String>('widget_word', word.word),
-        HomeWidget.saveWidgetData<String>(
-          'widget_ipa',
-          word.pronunciation ?? '',
-        ),
-        HomeWidget.saveWidgetData<String>(
-          'widget_pos',
-          word.partOfSpeech?.short ?? '',
-        ),
-        HomeWidget.saveWidgetData<String>('widget_meaning', word.meaning),
+        HomeWidget.saveWidgetData<String>('widget_words_json', wordsJson),
+        HomeWidget.saveWidgetData<String>('widget_word', first.word),
+        HomeWidget.saveWidgetData<String>('widget_ipa', first.pronunciation ?? ''),
+        HomeWidget.saveWidgetData<String>('widget_pos', first.partOfSpeech?.short ?? ''),
+        HomeWidget.saveWidgetData<String>('widget_meaning', first.meaning),
         HomeWidget.saveWidgetData<String>(
           'widget_example',
-          word.examples.isNotEmpty ? word.examples.first : '',
+          first.examples.isNotEmpty ? first.examples.first : '',
         ),
         HomeWidget.saveWidgetData<int>('widget_streak', streakDays),
       ]);
@@ -44,8 +51,16 @@ class WidgetService {
         androidName: androidWidgetName,
       );
     } catch (error, stack) {
-      debugPrint('Could not update native widget data: $error\n$stack');
+      debugPrint('Could not update native widget list: $error\n$stack');
     }
+  }
+
+  /// Updates native Home Screen & Lock Screen widgets with the Word of the Day.
+  static Future<void> updateWidgetData({
+    required VocabularyWord word,
+    required int streakDays,
+  }) async {
+    await updateWidgetWords(words: [word], streakDays: streakDays);
   }
 
   /// Clears native widget data.
