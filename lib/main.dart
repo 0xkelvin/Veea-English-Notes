@@ -138,6 +138,8 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
       onInactive: () => widget.vocabulary.refreshWidgetData(),
       onHide: () => widget.vocabulary.refreshWidgetData(),
       onPause: () => widget.vocabulary.refreshWidgetData(),
+      onRestart: () => widget.vocabulary.refreshWidgetData(),
+      onDetach: () => widget.vocabulary.refreshWidgetData(),
     );
   }
 
