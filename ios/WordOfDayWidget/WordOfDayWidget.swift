@@ -88,10 +88,10 @@ struct WordOfDayProvider: TimelineProvider {
         let currentDate = Date()
         let totalWords = parsedWords.count
 
-        // Generate 1-minute repeating timeline loop starting from current rotation index
-        for step in 0..<120 {
+        // Generate a 1-hour repeating timeline loop (240 entries total, 15 seconds apart)
+        for step in 0..<240 {
             let item = parsedWords[(currentIndex + step) % totalWords]
-            let entryDate = Calendar.current.date(byAdding: .minute, value: step * 1, to: currentDate) ?? currentDate
+            let entryDate = Calendar.current.date(byAdding: .second, value: step * 15, to: currentDate) ?? currentDate
             entries.append(
                 WordOfDayEntry(
                     date: entryDate,
