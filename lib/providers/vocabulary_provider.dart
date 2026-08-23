@@ -210,19 +210,19 @@ class VocabularyProvider extends ChangeNotifier {
         _repository.wordsForDate(selectedDateKey),
         _repository.stats(),
         _repository.datesWithWords(),
-        _repository.recentWords(limit: 50),
       ]);
       _words = results[0] as List<VocabularyWord>;
       _stats = results[1] as VocabularyStats;
       _markedDates = results[2] as Set<String>;
-      final recentWords = results[3] as List<VocabularyWord>;
       _status = LoadStatus.ready;
 
-      if (recentWords.isNotEmpty) {
+      if (_words.isNotEmpty) {
         WidgetService.updateWidgetWords(
-          words: recentWords,
+          words: _words,
           streakDays: _stats.streakDays,
         );
+      } else {
+        WidgetService.clearWidgetData();
       }
     } catch (error, stack) {
       debugPrint('Failed to load vocabulary: $error\n$stack');
