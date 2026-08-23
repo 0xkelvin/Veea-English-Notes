@@ -109,27 +109,40 @@ struct WordOfDayWidgetEntryView : View {
     var body: some View {
         switch family {
         case .accessoryInline:
-            // Lock Screen Top Bar Widget
+            // Lock Screen Top Bar Slot (above clock)
             Text("Veea: \(entry.word) • \(entry.meaning)")
                 .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .containerBackground(for: .widget) { Color.clear }
 
         case .accessoryRectangular:
-            // Lock Screen Main Widget Slot
+            // Lock Screen Main Rectangular Slot (below clock)
             VStack(alignment: .leading, spacing: 2) {
-                HStack {
+                HStack(spacing: 4) {
                     Text(entry.word)
-                        .font(.system(size: 15, weight: .bold, design: .monospaced))
-                    Spacer()
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                    Spacer(minLength: 2)
                     Text("🔥\(entry.streakDays)")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.system(size: 10, weight: .bold))
                 }
                 Text(entry.ipa)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: 10, design: .monospaced))
                 Text(entry.meaning)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .lineLimit(1)
             }
-            .containerBackground(for: .widget) { Color.clear }
+            .padding(2)
+            .containerBackground(for: .widget) { AccessoryWidgetBackground() }
+
+        case .accessoryCircular:
+            // Lock Screen Small Circular Slot
+            VStack(spacing: 1) {
+                Text("🔥\(entry.streakDays)")
+                    .font(.system(size: 10, weight: .bold))
+                Text(entry.word)
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .lineLimit(1)
+            }
+            .containerBackground(for: .widget) { AccessoryWidgetBackground() }
 
         default:
             // Home Screen Medium / Small Widget
@@ -190,7 +203,8 @@ struct WordOfDayWidget: Widget {
             .systemMedium,
             .systemSmall,
             .accessoryRectangular,
-            .accessoryInline
+            .accessoryInline,
+            .accessoryCircular
         ])
     }
 }
