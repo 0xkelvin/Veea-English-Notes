@@ -59,9 +59,12 @@ struct WordOfDayProvider: TimelineProvider {
 
         var entries: [WordOfDayEntry] = []
         let currentDate = Date()
-        for (index, item) in parsedWords.enumerated() {
-            // Schedule each word 15 minutes apart in the WidgetKit timeline queue
-            let entryDate = Calendar.current.date(byAdding: .minute, value: index * 15, to: currentDate) ?? currentDate
+        let totalWords = parsedWords.count
+        
+        // Generate a 2-hour repeating timeline loop (24 entries total, 5 minutes apart)
+        for step in 0..<24 {
+            let item = parsedWords[step % totalWords]
+            let entryDate = Calendar.current.date(byAdding: .minute, value: step * 5, to: currentDate) ?? currentDate
             entries.append(
                 WordOfDayEntry(
                     date: entryDate,
