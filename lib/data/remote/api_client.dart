@@ -235,6 +235,9 @@ class ApiClient {
   }
 
   Uri _uri(String path, [Map<String, String>? query]) {
+    if (_baseUrl.isEmpty || !_baseUrl.startsWith('http')) {
+      throw const OfflineException();
+    }
     final uri = Uri.parse('$_baseUrl$path');
     return query == null ? uri : uri.replace(queryParameters: query);
   }

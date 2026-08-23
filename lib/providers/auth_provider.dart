@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../core/config/app_config.dart';
 import '../data/remote/api_client.dart';
 import '../data/remote/auth_api.dart';
 import '../data/remote/token_store.dart';
@@ -114,7 +115,7 @@ class AuthProvider extends ChangeNotifier {
   /// Fetches both identifiers. Failure is not surfaced — the account screen
   /// still works from the locally cached identifier.
   Future<void> loadProfile() async {
-    if (!isSignedIn) return;
+    if (!isSignedIn || !AppConfig.isCloudEnabled) return;
     try {
       _profile = await _authApi.profile();
       _identifier = _profile!.primary;
