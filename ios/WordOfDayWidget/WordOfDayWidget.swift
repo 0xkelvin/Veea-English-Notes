@@ -58,44 +58,13 @@ struct WordOfDayProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (WordOfDayEntry) -> Void) {
-        completion(getNextRotatingEntry())
+        completion(loadEntry())
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<WordOfDayEntry>) -> Void) {
         let entries = loadEntries()
         let timeline = Timeline(entries: entries, policy: .atEnd)
         completion(timeline)
-    }
-
-    private func getNextRotatingEntry() -> WordOfDayEntry {
-        let userDefaults = UserDefaults(suiteName: "group.com.veea.veea_english_app")
-        let streak = userDefaults?.integer(forKey: "widget_streak") ?? 12
-        let jsonString = userDefaults?.string(forKey: "widget_words_json") ?? ""
-
-        var parsedWords: [RawWord] = []
-        if let data = jsonString.data(using: .utf8),
-           let list = try? JSONDecoder().decode([RawWord].self, from: data) {
-            parsedWords = list
-        }
-
-        if parsedWords.isEmpty {
-            return loadEntry()
-        }
-
-        let currentIndex = userDefaults?.integer(forKey: "widget_rotation_index") ?? 0
-        let nextIndex = (currentIndex + 1) % parsedWords.count
-        userDefaults?.set(nextIndex, forKey: "widget_rotation_index")
-
-        let item = parsedWords[currentIndex % parsedWords.count]
-        return WordOfDayEntry(
-            date: Date(),
-            word: item.word.isEmpty ? "resilient" : item.word,
-            ipa: item.ipa.isEmpty ? "/rɪˈzɪliənt/" : item.ipa,
-            pos: item.pos,
-            meaning: item.meaning.isEmpty ? "kiên cường, dẻo dai" : item.meaning,
-            example: item.example,
-            streakDays: streak
-        )
     }
 
     private func loadEntries() -> [WordOfDayEntry] {
@@ -141,20 +110,43 @@ struct WordOfDayProvider: TimelineProvider {
 
     private func loadEntry() -> WordOfDayEntry {
         let userDefaults = UserDefaults(suiteName: "group.com.veea.veea_english_app")
-        let word = userDefaults?.string(forKey: "widget_word") ?? "resilient"
-        let ipa = userDefaults?.string(forKey: "widget_ipa") ?? "/rɪˈzɪliənt/"
-        let pos = userDefaults?.string(forKey: "widget_pos") ?? "adj."
-        let meaning = userDefaults?.string(forKey: "widget_meaning") ?? "kiên cường, dẻo dai"
-        let example = userDefaults?.string(forKey: "widget_example") ?? "a resilient distributed system"
         let streak = userDefaults?.integer(forKey: "widget_streak") ?? 12
+        let jsonString = userDefaults?.string(forKey: "widget_words_json") ?? ""
+
+        var parsedWords: [RawWord] = []
+        if let data = jsonString.data(using: .utf8),
+           let list = try? JSONDecoder().decode([RawWord].self, from: data) {
+            parsedWords = list
+        }
+
+        if parsedWords.isEmpty {
+            let word = userDefaults?.string(forKey: "widget_word") ?? "resilient"
+            let ipa = userDefaults?.string(forKey: "widget_ipa") ?? "/rɪˈzɪliənt/"
+            let pos = userDefaults?.string(forKey: "widget_pos") ?? "adj."
+            let meaning = userDefaults?.string(forKey: "widget_meaning") ?? "kiên cường, dẻo dai"
+            let example = userDefaults?.string(forKey: "widget_example") ?? "a resilient distributed system"
+
+            return WordOfDayEntry(
+                date: Date(),
+                word: word.isEmpty ? "resilient" : word,
+                ipa: ipa.isEmpty ? "/rɪˈzɪliənt/" : ipa,
+                pos: pos,
+                meaning: meaning.isEmpty ? "kiên cường, dẻo dai" : meaning,
+                example: example,
+                streakDays: streak
+            )
+        }
+
+        let currentIndex = userDefaults?.integer(forKey: "widget_rotation_index") ?? 0
+        let item = parsedWords[currentIndex % parsedWords.count]
 
         return WordOfDayEntry(
             date: Date(),
-            word: word.isEmpty ? "resilient" : word,
-            ipa: ipa.isEmpty ? "/rɪˈzɪliənt/" : ipa,
-            pos: pos,
-            meaning: meaning.isEmpty ? "kiên cường, dẻo dai" : meaning,
-            example: example,
+            word: item.word.isEmpty ? "resilient" : item.word,
+            ipa: item.ipa.isEmpty ? "/rɪˈzɪliənt/" : item.ipa,
+            pos: item.pos,
+            meaning: item.meaning.isEmpty ? "kiên cường, dẻo dai" : item.meaning,
+            example: item.example,
             streakDays: streak
         )
     }
