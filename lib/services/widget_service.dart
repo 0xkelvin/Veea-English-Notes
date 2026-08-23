@@ -32,16 +32,27 @@ class WidgetService {
         }).toList(),
       );
 
-      final first = words.first;
+      final currentRotationIndex =
+          await HomeWidget.getWidgetData<int>('widget_rotation_index') ?? 0;
+      final nextRotationIndex = (currentRotationIndex + 1) % words.length;
+      final currentWord = words[nextRotationIndex % words.length];
+
       await Future.wait([
+        HomeWidget.saveWidgetData<int>('widget_rotation_index', nextRotationIndex),
         HomeWidget.saveWidgetData<String>('widget_words_json', wordsJson),
-        HomeWidget.saveWidgetData<String>('widget_word', first.word),
-        HomeWidget.saveWidgetData<String>('widget_ipa', first.pronunciation ?? ''),
-        HomeWidget.saveWidgetData<String>('widget_pos', first.partOfSpeech?.short ?? ''),
-        HomeWidget.saveWidgetData<String>('widget_meaning', first.meaning),
+        HomeWidget.saveWidgetData<String>('widget_word', currentWord.word),
+        HomeWidget.saveWidgetData<String>(
+          'widget_ipa',
+          currentWord.pronunciation ?? '',
+        ),
+        HomeWidget.saveWidgetData<String>(
+          'widget_pos',
+          currentWord.partOfSpeech?.short ?? '',
+        ),
+        HomeWidget.saveWidgetData<String>('widget_meaning', currentWord.meaning),
         HomeWidget.saveWidgetData<String>(
           'widget_example',
-          first.examples.isNotEmpty ? first.examples.first : '',
+          currentWord.examples.isNotEmpty ? currentWord.examples.first : '',
         ),
         HomeWidget.saveWidgetData<int>('widget_streak', streakDays),
       ]);
