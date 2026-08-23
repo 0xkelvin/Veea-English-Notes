@@ -1,10 +1,3 @@
-//
-//  WordOfDayWidgetBundle.swift
-//  WordOfDayWidget
-//
-//  Created by kelvinm on 23/8/26.
-//
-
 import WidgetKit
 import SwiftUI
 
@@ -12,7 +5,5 @@ import SwiftUI
 struct WordOfDayWidgetBundle: WidgetBundle {
     var body: some Widget {
         WordOfDayWidget()
-        WordOfDayWidgetControl()
-        WordOfDayWidgetLiveActivity()
     }
 }
