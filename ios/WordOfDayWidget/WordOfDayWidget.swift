@@ -33,13 +33,44 @@ struct WordOfDayProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (WordOfDayEntry) -> Void) {
-        completion(loadEntry())
+        completion(getNextRotatingEntry())
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<WordOfDayEntry>) -> Void) {
         let entries = loadEntries()
         let timeline = Timeline(entries: entries, policy: .atEnd)
         completion(timeline)
+    }
+
+    private func getNextRotatingEntry() -> WordOfDayEntry {
+        let userDefaults = UserDefaults(suiteName: "group.com.veea.veea_english_app")
+        let streak = userDefaults?.integer(forKey: "widget_streak") ?? 12
+        let jsonString = userDefaults?.string(forKey: "widget_words_json") ?? ""
+
+        var parsedWords: [RawWord] = []
+        if let data = jsonString.data(using: .utf8),
+           let list = try? JSONDecoder().decode([RawWord].self, from: data) {
+            parsedWords = list
+        }
+
+        if parsedWords.isEmpty {
+            return loadEntry()
+        }
+
+        let currentIndex = userDefaults?.integer(forKey: "widget_rotation_index") ?? 0
+        let nextIndex = (currentIndex + 1) % parsedWords.count
+        userDefaults?.set(nextIndex, forKey: "widget_rotation_index")
+
+        let item = parsedWords[currentIndex % parsedWords.count]
+        return WordOfDayEntry(
+            date: Date(),
+            word: item.word.isEmpty ? "resilient" : item.word,
+            ipa: item.ipa.isEmpty ? "/rɪˈzɪliənt/" : item.ipa,
+            pos: item.pos,
+            meaning: item.meaning.isEmpty ? "kiên cường, dẻo dai" : item.meaning,
+            example: item.example,
+            streakDays: streak
+        )
     }
 
     private func loadEntries() -> [WordOfDayEntry] {
@@ -57,13 +88,17 @@ struct WordOfDayProvider: TimelineProvider {
             return [loadEntry()]
         }
 
+        let currentIndex = userDefaults?.integer(forKey: "widget_rotation_index") ?? 0
+        let nextIndex = (currentIndex + 1) % parsedWords.count
+        userDefaults?.set(nextIndex, forKey: "widget_rotation_index")
+
         var entries: [WordOfDayEntry] = []
         let currentDate = Date()
         let totalWords = parsedWords.count
-        
-        // Generate a 2-hour repeating timeline loop (120 entries total, 1 minute apart)
+
+        // Generate 1-minute repeating timeline loop starting from current rotation index
         for step in 0..<120 {
-            let item = parsedWords[step % totalWords]
+            let item = parsedWords[(currentIndex + step) % totalWords]
             let entryDate = Calendar.current.date(byAdding: .minute, value: step * 1, to: currentDate) ?? currentDate
             entries.append(
                 WordOfDayEntry(
