@@ -106,7 +106,7 @@ Future<void> _startBackgroundWork({
   }
 }
 
-class VeeaEnglishApp extends StatelessWidget {
+class VeeaEnglishApp extends StatefulWidget {
   const VeeaEnglishApp({
     super.key,
     required this.vocabulary,
@@ -125,16 +125,43 @@ class VeeaEnglishApp extends StatelessWidget {
   final WidgetProvider? widgetProvider;
 
   @override
+  State<VeeaEnglishApp> createState() => _VeeaEnglishAppState();
+}
+
+class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
+  late final AppLifecycleListener _lifecycleListener;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycleListener = AppLifecycleListener(
+      onInactive: () => widget.vocabulary.refreshWidgetData(),
+      onHide: () => widget.vocabulary.refreshWidgetData(),
+      onPause: () => widget.vocabulary.refreshWidgetData(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _lifecycleListener.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider.value(value: vocabulary),
-        ChangeNotifierProvider.value(value: auth),
-        ChangeNotifierProvider.value(value: sync),
+        ChangeNotifierProvider.value(value: widget.vocabulary),
+        ChangeNotifierProvider.value(value: widget.auth),
+        ChangeNotifierProvider.value(value: widget.sync),
         ChangeNotifierProvider(create: (_) => TtsService()),
-        ChangeNotifierProvider(create: (_) => themeProvider ?? (ThemeProvider()..init())),
-        ChangeNotifierProvider(create: (_) => widgetProvider ?? (WidgetProvider()..init())),
-        Provider<PronunciationService>.value(value: pronunciation),
+        ChangeNotifierProvider(
+          create: (_) => widget.themeProvider ?? (ThemeProvider()..init()),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => widget.widgetProvider ?? (WidgetProvider()..init()),
+        ),
+        Provider<PronunciationService>.value(value: widget.pronunciation),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, theme, _) {

@@ -232,6 +232,15 @@ class VocabularyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> refreshWidgetData() async {
+    if (_words.isNotEmpty) {
+      await WidgetService.updateWidgetWords(
+        words: _words,
+        streakDays: _stats.streakDays,
+      );
+    }
+  }
+
   static DateTime _dayOnly(DateTime value) =>
       DateTime(value.year, value.month, value.day);
 
