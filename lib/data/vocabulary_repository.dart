@@ -10,6 +10,9 @@ abstract interface class VocabularyRepository {
   /// Words captured on [date] (`YYYY-MM-DD`), newest first.
   Future<List<VocabularyWord>> wordsForDate(String date);
 
+  /// Recent active words across all days, newest first.
+  Future<List<VocabularyWord>> recentWords({int limit = 50});
+
   /// Full-text search across word, meaning, pronunciation, source, examples
   /// and tags. Matching is case- and diacritic-insensitive.
   Future<List<VocabularyWord>> search(String query, {int limit = 200});

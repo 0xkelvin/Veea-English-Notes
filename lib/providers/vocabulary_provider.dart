@@ -210,15 +210,17 @@ class VocabularyProvider extends ChangeNotifier {
         _repository.wordsForDate(selectedDateKey),
         _repository.stats(),
         _repository.datesWithWords(),
+        _repository.recentWords(limit: 50),
       ]);
       _words = results[0] as List<VocabularyWord>;
       _stats = results[1] as VocabularyStats;
       _markedDates = results[2] as Set<String>;
+      final recentWords = results[3] as List<VocabularyWord>;
       _status = LoadStatus.ready;
 
-      if (_words.isNotEmpty) {
+      if (recentWords.isNotEmpty) {
         WidgetService.updateWidgetWords(
-          words: _words,
+          words: recentWords,
           streakDays: _stats.streakDays,
         );
       }

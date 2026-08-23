@@ -71,6 +71,18 @@ class SqliteVocabularyRepository implements VocabularyRepository {
   }
 
   @override
+  Future<List<VocabularyWord>> recentWords({int limit = 50}) async {
+    final rows = await _db.query(
+      _table,
+      columns: _columns,
+      where: 'is_deleted = 0',
+      orderBy: 'created_at DESC',
+      limit: limit,
+    );
+    return rows.map(VocabularyWord.fromDbMap).toList(growable: false);
+  }
+
+  @override
   Future<List<VocabularyWord>> search(String query, {int limit = 200}) async {
     final needle = TextNormalizer.query(query);
     if (needle.isEmpty) return const [];

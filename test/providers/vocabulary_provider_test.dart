@@ -47,6 +47,9 @@ class FlakyRepository implements VocabularyRepository {
   Future<List<VocabularyWord>> wordsForDate(String date) =>
       _inner.wordsForDate(date);
   @override
+  Future<List<VocabularyWord>> recentWords({int limit = 50}) =>
+      _inner.recentWords(limit: limit);
+  @override
   Future<List<VocabularyWord>> search(String query, {int limit = 200}) =>
       _inner.search(query, limit: limit);
   @override
