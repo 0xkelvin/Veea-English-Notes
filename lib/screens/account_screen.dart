@@ -867,23 +867,83 @@ class _ThemePickerSection extends StatelessWidget {
 class _WidgetSettingsSection extends StatelessWidget {
   const _WidgetSettingsSection();
 
+  static const List<({int minutes, String label})> _intervals = [
+    (minutes: 15, label: '15 MIN'),
+    (minutes: 30, label: '30 MIN'),
+    (minutes: 60, label: '1 HOUR'),
+    (minutes: 0, label: 'STATIC'),
+  ];
+
   @override
   Widget build(BuildContext context) {
     final widgetProvider = context.watch<WidgetProvider>();
+    final palette = context.palette;
     final theme = Theme.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('HOME SCREEN WIDGET & REMINDERS', style: theme.textTheme.labelSmall),
+        Text('HOME SCREEN & LOCK SCREEN WIDGET', style: theme.textTheme.labelSmall),
         const SizedBox(height: PixelMetrics.space2),
         _ToggleTile(
           title: 'WORD OF THE DAY WIDGET',
-          subtitle: 'Displays daily review words on iOS & Android home screen',
+          subtitle: 'Displays daily review words on iOS & Android widgets',
           enabled: widgetProvider.isWidgetEnabled,
           onChanged: (value) => widgetProvider.setWidgetEnabled(value),
         ),
-        const SizedBox(height: PixelMetrics.space2),
+        if (widgetProvider.isWidgetEnabled) ...[
+          const SizedBox(height: PixelMetrics.space4),
+          Text('WORD ROTATION INTERVAL', style: theme.textTheme.labelSmall),
+          const SizedBox(height: PixelMetrics.space2),
+          Wrap(
+            spacing: PixelMetrics.space2,
+            runSpacing: PixelMetrics.space2,
+            children: [
+              for (final opt in _intervals)
+                GestureDetector(
+                  onTap: () => widgetProvider.setRotationIntervalMinutes(opt.minutes),
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: PixelMetrics.space3,
+                      vertical: PixelMetrics.space2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: widgetProvider.rotationIntervalMinutes == opt.minutes
+                          ? palette.accent
+                          : palette.surface,
+                      border: Border.all(
+                        color: palette.border,
+                        width: PixelMetrics.border,
+                      ),
+                    ),
+                    child: Text(
+                      opt.label,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: widgetProvider.rotationIntervalMinutes == opt.minutes
+                            ? palette.onAccent
+                            : palette.ink,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: PixelMetrics.space3),
+          _ToggleTile(
+            title: 'ROTATE ON APP OPEN',
+            subtitle: 'Advances to next word when opening or returning to Veea',
+            enabled: widgetProvider.rotateOnAppOpen,
+            onChanged: (value) => widgetProvider.setRotateOnAppOpen(value),
+          ),
+          const SizedBox(height: PixelMetrics.space2),
+          const _Notice(
+            lines: [
+              'TIP: TAP THE WIDGET DIRECTLY ON YOUR HOME SCREEN OR LOCK SCREEN TO CYCLE WORDS INSTANTLY.',
+            ],
+          ),
+        ],
+        const SizedBox(height: PixelMetrics.space4),
         _ToggleTile(
           title: 'DAILY RECALL REMINDER',
           subtitle: 'Receive a subtle notification to record your daily words',

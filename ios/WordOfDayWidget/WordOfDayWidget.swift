@@ -58,47 +58,22 @@ struct WordOfDayProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (WordOfDayEntry) -> Void) {
-        completion(loadNextEntry())
+        completion(loadEntry())
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<WordOfDayEntry>) -> Void) {
-        let entries = loadEntries()
-        let timeline = Timeline(entries: entries, policy: .atEnd)
+        let userDefaults = UserDefaults(suiteName: "group.com.veea.veea_english_app")
+        let intervalMinutes = userDefaults?.object(forKey: "widget_rotation_interval_minutes") != nil
+            ? userDefaults!.integer(forKey: "widget_rotation_interval_minutes")
+            : 15
+
+        let entries = loadEntries(intervalMinutes: intervalMinutes)
+        let policy: TimelineReloadPolicy = intervalMinutes <= 0 ? .never : .atEnd
+        let timeline = Timeline(entries: entries, policy: policy)
         completion(timeline)
     }
 
-    private func loadNextEntry() -> WordOfDayEntry {
-        let userDefaults = UserDefaults(suiteName: "group.com.veea.veea_english_app")
-        let streak = userDefaults?.integer(forKey: "widget_streak") ?? 12
-        let jsonString = userDefaults?.string(forKey: "widget_words_json") ?? ""
-
-        var parsedWords: [RawWord] = []
-        if let data = jsonString.data(using: .utf8),
-           let list = try? JSONDecoder().decode([RawWord].self, from: data) {
-            parsedWords = list
-        }
-
-        if parsedWords.isEmpty {
-            return loadEntry()
-        }
-
-        let currentIndex = userDefaults?.integer(forKey: "widget_rotation_index") ?? 0
-        let nextIndex = (currentIndex + 1) % parsedWords.count
-        userDefaults?.set(nextIndex, forKey: "widget_rotation_index")
-
-        let item = parsedWords[nextIndex]
-        return WordOfDayEntry(
-            date: Date(),
-            word: item.word.isEmpty ? "resilient" : item.word,
-            ipa: item.ipa.isEmpty ? "/rɪˈzɪliənt/" : item.ipa,
-            pos: item.pos,
-            meaning: item.meaning.isEmpty ? "kiên cường, dẻo dai" : item.meaning,
-            example: item.example,
-            streakDays: streak
-        )
-    }
-
-    private func loadEntries() -> [WordOfDayEntry] {
+    private func loadEntries(intervalMinutes: Int) -> [WordOfDayEntry] {
         let userDefaults = UserDefaults(suiteName: "group.com.veea.veea_english_app")
         let streak = userDefaults?.integer(forKey: "widget_streak") ?? 12
         let jsonString = userDefaults?.string(forKey: "widget_words_json") ?? ""
@@ -114,17 +89,21 @@ struct WordOfDayProvider: TimelineProvider {
         }
 
         let currentIndex = userDefaults?.integer(forKey: "widget_rotation_index") ?? 0
-        let nextIndex = (currentIndex + 1) % parsedWords.count
-        userDefaults?.set(nextIndex, forKey: "widget_rotation_index")
+
+        // If rotation is set to static / off, return single entry
+        if intervalMinutes <= 0 {
+            return [loadEntry()]
+        }
 
         var entries: [WordOfDayEntry] = []
         let currentDate = Date()
         let totalWords = parsedWords.count
 
-        // Generate 15-second repeating timeline loop starting from nextIndex
-        for step in 0..<240 {
-            let item = parsedWords[(nextIndex + step) % totalWords]
-            let entryDate = Calendar.current.date(byAdding: .second, value: step * 15, to: currentDate) ?? currentDate
+        // Generate full 24-hour timeline loop spaced by intervalMinutes
+        let steps = max(1, min(96, 1440 / intervalMinutes))
+        for step in 0..<steps {
+            let item = parsedWords[(currentIndex + step) % totalWords]
+            let entryDate = Calendar.current.date(byAdding: .minute, value: step * intervalMinutes, to: currentDate) ?? currentDate
             entries.append(
                 WordOfDayEntry(
                     date: entryDate,

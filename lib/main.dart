@@ -18,6 +18,7 @@ import 'screens/home_screen.dart';
 import 'services/pronunciation_service.dart';
 import 'services/sync_service.dart';
 import 'services/tts_service.dart';
+import 'services/widget_service.dart';
 import 'widgets/pixel/pixel_field.dart';
 
 Future<void> main() async {
@@ -135,12 +136,24 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
   void initState() {
     super.initState();
     _lifecycleListener = AppLifecycleListener(
+      onResume: _handleAppResume,
       onInactive: () => widget.vocabulary.refreshWidgetData(),
       onHide: () => widget.vocabulary.refreshWidgetData(),
       onPause: () => widget.vocabulary.refreshWidgetData(),
       onRestart: () => widget.vocabulary.refreshWidgetData(),
       onDetach: () => widget.vocabulary.refreshWidgetData(),
     );
+  }
+
+  void _handleAppResume() {
+    final widgetProvider = widget.widgetProvider;
+    if (widgetProvider != null &&
+        widgetProvider.rotateOnAppOpen &&
+        widgetProvider.isWidgetEnabled) {
+      WidgetService.rotateToNextWord();
+    } else {
+      widget.vocabulary.refreshWidgetData();
+    }
   }
 
   @override
