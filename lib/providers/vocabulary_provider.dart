@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 
 import '../data/vocabulary_repository.dart';
 import '../models/part_of_speech.dart';
+import '../models/srs_review.dart';
 import '../models/vocabulary_stats.dart';
 import '../models/vocabulary_word.dart';
 import '../services/widget_service.dart';
@@ -30,6 +31,7 @@ class VocabularyProvider extends ChangeNotifier {
   List<VocabularyWord> _words = const [];
   VocabularyStats _stats = VocabularyStats.empty;
   Set<String> _markedDates = const {};
+  int _dueReviewCount = 0;
   late DateTime _selectedDate;
   String? _lastError;
   String? _undoableDeletionId;
@@ -62,6 +64,8 @@ class VocabularyProvider extends ChangeNotifier {
   /// Days holding at least one word, so the date bar can mark them.
   Set<String> get markedDates => _markedDates;
 
+  int get dueReviewCount => _dueReviewCount;
+
   bool get isToday => dateKey(_selectedDate) == dateKey(_now());
 
   /// Message for the last failed operation, cleared once shown.
@@ -74,6 +78,31 @@ class VocabularyProvider extends ChangeNotifier {
     _status = LoadStatus.loading;
     notifyListeners();
     await _refresh(initialLoad: true);
+  }
+
+  /// Fetches words due for Spaced Repetition (SM-2) review.
+  Future<List<VocabularyWord>> wordsDueForReview({int limit = 30}) async {
+    return _repository.wordsDueForReview(
+      asOfDate: dateKey(_now()),
+      limit: limit,
+    );
+  }
+
+  /// Records an SM-2 rating for a card and updates the review count.
+  Future<SrsReview> recordSrsReview({
+    required String wordId,
+    required SrsRating rating,
+  }) async {
+    final result = await _repository.recordSrsReview(
+      wordId: wordId,
+      rating: rating,
+      now: _now(),
+    );
+    _dueReviewCount = await _repository.dueReviewCount(
+      asOfDate: dateKey(_now()),
+    );
+    notifyListeners();
+    return result;
   }
 
   /// Switches the visible day and reloads it.
@@ -210,10 +239,12 @@ class VocabularyProvider extends ChangeNotifier {
         _repository.wordsForDate(selectedDateKey),
         _repository.stats(),
         _repository.datesWithWords(),
+        _repository.dueReviewCount(asOfDate: dateKey(_now())),
       ]);
       _words = results[0] as List<VocabularyWord>;
       _stats = results[1] as VocabularyStats;
       _markedDates = results[2] as Set<String>;
+      _dueReviewCount = results[3] as int;
       _status = LoadStatus.ready;
 
       if (_words.isNotEmpty) {

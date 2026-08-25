@@ -19,8 +19,11 @@ class AppDatabase {
   /// user; see [PronunciationService].
   static const String pronunciationsTable = 'pronunciations';
 
+  /// Spaced repetition review tracking table.
+  static const String srsReviewsTable = 'srs_reviews';
+
   /// Bump this and add a branch to [_upgrade] whenever the schema changes.
-  static const int version = 3;
+  static const int version = 4;
 
   /// Opens the database, creating or migrating the schema as needed.
   ///
@@ -48,6 +51,7 @@ class AppDatabase {
   static Future<void> _create(Database db, int version) async {
     await _createV2Schema(db, wordsTable);
     await _createPronunciationsTable(db);
+    await _createSrsReviewsTable(db);
   }
 
   static Future<void> _upgrade(Database db, int from, int to) async {
@@ -57,6 +61,28 @@ class AppDatabase {
     if (from < 3) {
       await _createPronunciationsTable(db);
     }
+    if (from < 4) {
+      await _createSrsReviewsTable(db);
+    }
+  }
+
+  /// Table for Spaced Repetition (SM-2) review states.
+  static Future<void> _createSrsReviewsTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS $srsReviewsTable (
+        word_id          TEXT    PRIMARY KEY,
+        interval_days    INTEGER NOT NULL DEFAULT 0,
+        ease_factor      REAL    NOT NULL DEFAULT 2.5,
+        next_review_date TEXT    NOT NULL,
+        last_reviewed_at TEXT,
+        repetitions      INTEGER NOT NULL DEFAULT 0,
+        lapses           INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (word_id) REFERENCES $wordsTable (id) ON DELETE CASCADE
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_srs_next_review ON $srsReviewsTable(next_review_date)',
+    );
   }
 
   /// Lookup table for automatic pronunciation.

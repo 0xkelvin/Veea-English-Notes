@@ -10,6 +10,7 @@ import '../widgets/pixel/pixel_icon.dart';
 import '../services/sync_service.dart';
 import '../widgets/word_row.dart';
 import 'account_screen.dart';
+import 'review_screen.dart';
 import 'search_screen.dart';
 import 'word_editor_screen.dart';
 
@@ -47,6 +48,7 @@ class _TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final provider = context.watch<VocabularyProvider>();
 
     return Container(
       padding: const EdgeInsets.fromLTRB(
@@ -64,6 +66,15 @@ class _TopBar extends StatelessWidget {
         children: [
           Text('VEEA·EN', style: Theme.of(context).textTheme.titleMedium),
           const Spacer(),
+          PixelIconButton(
+            glyph: PixelGlyph.cards,
+            semanticLabel: provider.dueReviewCount > 0
+                ? 'Spaced review, ${provider.dueReviewCount} due'
+                : 'Spaced review',
+            active: provider.dueReviewCount > 0,
+            onPressed: () => _open(context, const ReviewScreen()),
+          ),
+          const SizedBox(width: PixelMetrics.space1),
           PixelIconButton(
             glyph: PixelGlyph.search,
             semanticLabel: 'Search all words',

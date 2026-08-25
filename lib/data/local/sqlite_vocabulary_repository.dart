@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../../models/srs_review.dart';
 import '../../models/text_normalizer.dart';
 import '../../models/vocabulary_stats.dart';
 import '../../models/vocabulary_word.dart';
@@ -80,6 +81,80 @@ class SqliteVocabularyRepository implements VocabularyRepository {
       limit: limit,
     );
     return rows.map(VocabularyWord.fromDbMap).toList(growable: false);
+  }
+
+  @override
+  Future<List<VocabularyWord>> wordsDueForReview({
+    String? asOfDate,
+    int limit = 30,
+  }) async {
+    final date = asOfDate ?? _dateKey(_now());
+    final srsTable = AppDatabase.srsReviewsTable;
+    final rows = await _db.rawQuery(
+      '''
+      SELECT ${_columns.map((c) => 'w.$c').join(', ')}
+      FROM $_table w
+      LEFT JOIN $srsTable r ON w.id = r.word_id
+      WHERE w.is_deleted = 0
+        AND (r.next_review_date IS NULL OR r.next_review_date <= ?)
+      ORDER BY
+        CASE WHEN r.next_review_date IS NULL THEN 0 ELSE 1 END,
+        COALESCE(r.next_review_date, w.date) ASC,
+        w.created_at DESC
+      LIMIT ?
+      ''',
+      [date, limit],
+    );
+    return rows.map(VocabularyWord.fromDbMap).toList(growable: false);
+  }
+
+  @override
+  Future<int> dueReviewCount({String? asOfDate}) async {
+    final date = asOfDate ?? _dateKey(_now());
+    final srsTable = AppDatabase.srsReviewsTable;
+    final row = await _db.rawQuery(
+      '''
+      SELECT COUNT(*) AS c
+      FROM $_table w
+      LEFT JOIN $srsTable r ON w.id = r.word_id
+      WHERE w.is_deleted = 0
+        AND (r.next_review_date IS NULL OR r.next_review_date <= ?)
+      ''',
+      [date],
+    );
+    return Sqflite.firstIntValue(row) ?? 0;
+  }
+
+  @override
+  Future<SrsReview?> getSrsReview(String wordId) async {
+    final rows = await _db.query(
+      AppDatabase.srsReviewsTable,
+      where: 'word_id = ?',
+      whereArgs: [wordId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return SrsReview.fromDbMap(rows.first);
+  }
+
+  @override
+  Future<SrsReview> recordSrsReview({
+    required String wordId,
+    required SrsRating rating,
+    DateTime? now,
+  }) async {
+    final currentTime = now ?? _now();
+    final existing =
+        await getSrsReview(wordId) ??
+        SrsReview.initial(wordId, now: currentTime);
+    final next = existing.calculateNext(rating: rating, now: currentTime);
+
+    await _db.insert(
+      AppDatabase.srsReviewsTable,
+      next.toDbMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+    return next;
   }
 
   @override

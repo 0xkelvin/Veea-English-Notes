@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:veea_english_app/data/local/sqlite_vocabulary_repository.dart';
 import 'package:veea_english_app/data/vocabulary_repository.dart';
+import 'package:veea_english_app/models/srs_review.dart';
 import 'package:veea_english_app/models/vocabulary_stats.dart';
 import 'package:veea_english_app/models/vocabulary_word.dart';
 import 'package:veea_english_app/providers/vocabulary_provider.dart';
@@ -49,6 +50,23 @@ class FlakyRepository implements VocabularyRepository {
   @override
   Future<List<VocabularyWord>> recentWords({int limit = 50}) =>
       _inner.recentWords(limit: limit);
+  @override
+  Future<List<VocabularyWord>> wordsDueForReview({
+    String? asOfDate,
+    int limit = 30,
+  }) => _inner.wordsDueForReview(asOfDate: asOfDate, limit: limit);
+  @override
+  Future<int> dueReviewCount({String? asOfDate}) =>
+      _inner.dueReviewCount(asOfDate: asOfDate);
+  @override
+  Future<SrsReview?> getSrsReview(String wordId) =>
+      _inner.getSrsReview(wordId);
+  @override
+  Future<SrsReview> recordSrsReview({
+    required String wordId,
+    required SrsRating rating,
+    DateTime? now,
+  }) => _inner.recordSrsReview(wordId: wordId, rating: rating, now: now);
   @override
   Future<List<VocabularyWord>> search(String query, {int limit = 200}) =>
       _inner.search(query, limit: limit);

@@ -1,3 +1,4 @@
+import '../models/srs_review.dart';
 import '../models/vocabulary_stats.dart';
 import '../models/vocabulary_word.dart';
 
@@ -12,6 +13,22 @@ abstract interface class VocabularyRepository {
 
   /// Recent active words across all days, newest first.
   Future<List<VocabularyWord>> recentWords({int limit = 50});
+
+  /// Words due for spaced repetition review as of [asOfDate] (`YYYY-MM-DD`).
+  Future<List<VocabularyWord>> wordsDueForReview({String? asOfDate, int limit = 30});
+
+  /// Total number of words due for review.
+  Future<int> dueReviewCount({String? asOfDate});
+
+  /// Retrieves the SRS review progress for a specific word.
+  Future<SrsReview?> getSrsReview(String wordId);
+
+  /// Records an SM-2 review score and schedules the next review.
+  Future<SrsReview> recordSrsReview({
+    required String wordId,
+    required SrsRating rating,
+    DateTime? now,
+  });
 
   /// Full-text search across word, meaning, pronunciation, source, examples
   /// and tags. Matching is case- and diacritic-insensitive.

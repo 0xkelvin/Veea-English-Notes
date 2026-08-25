@@ -182,6 +182,26 @@ class PixelGlyph {
     '#######',
   ]);
 
+  static const cards = PixelGlyph([
+    '.#####.',
+    '#.....#',
+    '#.###.#',
+    '#.#.#.#',
+    '#.###.#',
+    '#.....#',
+    '.#####.',
+  ]);
+
+  static const sword = PixelGlyph([
+    '......#',
+    '.....##',
+    '....##.',
+    '.##.#..',
+    '####...',
+    '#..##..',
+    '#......',
+  ]);
+
   @override
   bool operator ==(Object other) =>
       other is PixelGlyph && identical(other.rows, rows);

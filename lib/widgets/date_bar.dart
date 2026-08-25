@@ -145,7 +145,7 @@ class StatusLine extends StatelessWidget {
       child: Text(
         '${provider.words.length} HERE   '
         'STREAK ${stats.streakDays}   '
-        'WEEK ${stats.wordsThisWeek}   '
+        'DUE ${provider.dueReviewCount}   '
         'ALL ${stats.totalWords}',
         style: theme.textTheme.labelSmall?.copyWith(color: palette.inkMuted),
       ),
