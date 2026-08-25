@@ -232,6 +232,56 @@ class PixelGlyph {
     '.......',
   ]);
 
+  static const gamepad = PixelGlyph([
+    '.......',
+    '.#####.',
+    '#######',
+    '##.#.##',
+    '#######',
+    '#.....#',
+    '.......',
+  ]);
+
+  static const heart = PixelGlyph([
+    '.#...#.',
+    '#######',
+    '#######',
+    '#######',
+    '.#####.',
+    '..###..',
+    '...#...',
+  ]);
+
+  static const shield = PixelGlyph([
+    '#######',
+    '#######',
+    '#######',
+    '.#####.',
+    '.#####.',
+    '..###..',
+    '...#...',
+  ]);
+
+  static const skull = PixelGlyph([
+    '.#####.',
+    '#.#.#.#',
+    '#######',
+    '.#####.',
+    '.#.#.#.',
+    '..###..',
+    '.......',
+  ]);
+
+  static const bolt = PixelGlyph([
+    '....##.',
+    '...##..',
+    '..##...',
+    '.######',
+    '...##..',
+    '..##...',
+    '.##....',
+  ]);
+
   @override
   bool operator ==(Object other) =>
       other is PixelGlyph && identical(other.rows, rows);

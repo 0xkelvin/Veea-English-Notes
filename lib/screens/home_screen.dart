@@ -10,6 +10,7 @@ import '../widgets/pixel/pixel_icon.dart';
 import '../services/sync_service.dart';
 import '../widgets/word_row.dart';
 import 'account_screen.dart';
+import 'arcade_screen.dart';
 import 'review_screen.dart';
 import 'search_screen.dart';
 import 'word_editor_screen.dart';
@@ -66,6 +67,12 @@ class _TopBar extends StatelessWidget {
         children: [
           Text('VEEA·EN', style: Theme.of(context).textTheme.titleMedium),
           const Spacer(),
+          PixelIconButton(
+            glyph: PixelGlyph.gamepad,
+            semanticLabel: 'Arcade Mini-Games',
+            onPressed: () => _open(context, const ArcadeScreen()),
+          ),
+          const SizedBox(width: PixelMetrics.space1),
           PixelIconButton(
             glyph: PixelGlyph.cards,
             semanticLabel: provider.dueReviewCount > 0
