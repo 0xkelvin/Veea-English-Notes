@@ -202,6 +202,36 @@ class PixelGlyph {
     '#......',
   ]);
 
+  static const flame = PixelGlyph([
+    '...#...',
+    '..###..',
+    '.#.#.#.',
+    '##.#.##',
+    '#######',
+    '.#####.',
+    '..###..',
+  ]);
+
+  static const trophy = PixelGlyph([
+    '#######',
+    '#.#.#.#',
+    '.#####.',
+    '..###..',
+    '...#...',
+    '..###..',
+    '.#####.',
+  ]);
+
+  static const star = PixelGlyph([
+    '...#...',
+    '..###..',
+    '#######',
+    '.#####.',
+    '.##.##.',
+    '##...##',
+    '.......',
+  ]);
+
   @override
   bool operator ==(Object other) =>
       other is PixelGlyph && identical(other.rows, rows);

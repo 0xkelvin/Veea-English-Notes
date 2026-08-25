@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../data/vocabulary_repository.dart';
+import '../models/gamification_badge.dart';
 import '../models/part_of_speech.dart';
 import '../models/srs_review.dart';
 import '../models/vocabulary_stats.dart';
@@ -30,6 +31,7 @@ class VocabularyProvider extends ChangeNotifier {
   LoadStatus _status = LoadStatus.loading;
   List<VocabularyWord> _words = const [];
   VocabularyStats _stats = VocabularyStats.empty;
+  GamificationStats _gamificationStats = GamificationStats.empty;
   Set<String> _markedDates = const {};
   int _dueReviewCount = 0;
   late DateTime _selectedDate;
@@ -56,6 +58,8 @@ class VocabularyProvider extends ChangeNotifier {
   List<VocabularyWord> get words => _words;
 
   VocabularyStats get stats => _stats;
+
+  GamificationStats get gamificationStats => _gamificationStats;
 
   DateTime get selectedDate => _selectedDate;
 
@@ -240,11 +244,13 @@ class VocabularyProvider extends ChangeNotifier {
         _repository.stats(),
         _repository.datesWithWords(),
         _repository.dueReviewCount(asOfDate: dateKey(_now())),
+        _repository.gamificationStats(),
       ]);
       _words = results[0] as List<VocabularyWord>;
       _stats = results[1] as VocabularyStats;
       _markedDates = results[2] as Set<String>;
       _dueReviewCount = results[3] as int;
+      _gamificationStats = results[4] as GamificationStats;
       _status = LoadStatus.ready;
 
       if (_words.isNotEmpty) {

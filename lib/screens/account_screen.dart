@@ -14,8 +14,10 @@ import '../providers/theme_provider.dart';
 import '../providers/vocabulary_provider.dart';
 import '../providers/widget_provider.dart';
 import '../services/sync_service.dart';
+import '../widgets/pixel/pixel_badges_grid.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_field.dart';
+import '../widgets/pixel/pixel_heatmap.dart';
 import '../widgets/pixel/pixel_icon.dart';
 
 /// Account and sync.
@@ -88,6 +90,8 @@ class _AccountScreenState extends State<AccountScreen> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final provider = context.watch<VocabularyProvider>();
+    final gamification = provider.gamificationStats;
 
     return Scaffold(
       body: SafeArea(
@@ -137,11 +141,18 @@ class _AccountScreenState extends State<AccountScreen> {
                             : _buildAuthForm(auth);
                       },
                     ),
-                    const SizedBox(height: PixelMetrics.space5),
-                    const _ThemePickerSection(),
-                    const SizedBox(height: PixelMetrics.space5),
-                    const _WidgetSettingsSection(),
                   ],
+                  const SizedBox(height: PixelMetrics.space5),
+                  PixelHeatmap(
+                    dailyCounts: gamification.dailyCounts,
+                    weeks: 16,
+                  ),
+                  const SizedBox(height: PixelMetrics.space5),
+                  PixelBadgesGrid(badges: gamification.badges),
+                  const SizedBox(height: PixelMetrics.space5),
+                  const _ThemePickerSection(),
+                  const SizedBox(height: PixelMetrics.space5),
+                  const _WidgetSettingsSection(),
                 ],
               ),
             ),

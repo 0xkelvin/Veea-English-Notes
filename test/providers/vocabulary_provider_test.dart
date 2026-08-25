@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:veea_english_app/data/local/sqlite_vocabulary_repository.dart';
 import 'package:veea_english_app/data/vocabulary_repository.dart';
+import 'package:veea_english_app/models/gamification_badge.dart';
 import 'package:veea_english_app/models/srs_review.dart';
 import 'package:veea_english_app/models/vocabulary_stats.dart';
 import 'package:veea_english_app/models/vocabulary_word.dart';
@@ -67,6 +68,9 @@ class FlakyRepository implements VocabularyRepository {
     required SrsRating rating,
     DateTime? now,
   }) => _inner.recordSrsReview(wordId: wordId, rating: rating, now: now);
+  @override
+  Future<GamificationStats> gamificationStats({int days = 112}) =>
+      _inner.gamificationStats(days: days);
   @override
   Future<List<VocabularyWord>> search(String query, {int limit = 200}) =>
       _inner.search(query, limit: limit);

@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../../models/gamification_badge.dart';
 import '../../models/srs_review.dart';
 import '../../models/text_normalizer.dart';
 import '../../models/vocabulary_stats.dart';
@@ -155,6 +158,71 @@ class SqliteVocabularyRepository implements VocabularyRepository {
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
     return next;
+  }
+
+  @override
+  Future<GamificationStats> gamificationStats({int days = 112}) async {
+    final today = _now();
+    final cutoffDate = _dateKey(today.subtract(Duration(days: days)));
+
+    final totalRow = await _db.rawQuery(
+      'SELECT COUNT(*) AS c FROM $_table WHERE is_deleted = 0',
+    );
+    final totalWords = Sqflite.firstIntValue(totalRow) ?? 0;
+
+    final maxWordsRow = await _db.rawQuery(
+      'SELECT MAX(c) AS max_c FROM (SELECT COUNT(*) AS c FROM $_table WHERE is_deleted = 0 GROUP BY date)',
+    );
+    final maxWordsInDay = Sqflite.firstIntValue(maxWordsRow) ?? 0;
+
+    final reviewsRow = await _db.rawQuery(
+      'SELECT COALESCE(SUM(repetitions + lapses), 0) AS s FROM ${AppDatabase.srsReviewsTable}',
+    );
+    final totalReviews = Sqflite.firstIntValue(reviewsRow) ?? 0;
+
+    final tagsRows = await _db.query(
+      _table,
+      columns: ['tags'],
+      where: 'is_deleted = 0',
+    );
+    final uniqueTags = <String>{};
+    for (final row in tagsRows) {
+      final raw = row['tags'] as String?;
+      if (raw == null || raw.isEmpty) continue;
+      try {
+        final list = (jsonDecode(raw) as List).cast<String>();
+        uniqueTags.addAll(list);
+      } catch (_) {}
+    }
+
+    final allDates = await datesWithWords();
+    final currentStreak = _streakFrom(allDates, today);
+    final maxStreak = _maxStreakFrom(allDates);
+
+    final dailyCountsRows = await _db.rawQuery(
+      '''
+      SELECT date, COUNT(*) AS count
+      FROM $_table
+      WHERE is_deleted = 0 AND date >= ?
+      GROUP BY date
+      ORDER BY date ASC
+      ''',
+      [cutoffDate],
+    );
+    final dailyCounts = <String, int>{
+      for (final r in dailyCountsRows)
+        r['date']! as String: r['count']! as int,
+    };
+
+    return GamificationStats(
+      totalWords: totalWords,
+      currentStreak: currentStreak,
+      maxStreak: maxStreak,
+      totalReviews: totalReviews,
+      uniqueTagsCount: uniqueTags.length,
+      maxWordsInDay: maxWordsInDay,
+      dailyCounts: dailyCounts,
+    );
   }
 
   @override
@@ -439,5 +507,24 @@ class SqliteVocabularyRepository implements VocabularyRepository {
       cursor = cursor.subtract(const Duration(days: 1));
     }
     return streak;
+  }
+
+  /// Calculates the maximum streak length achieved across all recorded dates.
+  static int _maxStreakFrom(Set<String> dates) {
+    if (dates.isEmpty) return 0;
+    final sorted = dates.map(DateTime.parse).toList()..sort();
+    var maxStreak = 1;
+    var current = 1;
+    for (var i = 1; i < sorted.length; i++) {
+      final prev = sorted[i - 1];
+      final curr = sorted[i];
+      if (curr.difference(prev).inDays == 1) {
+        current++;
+        if (current > maxStreak) maxStreak = current;
+      } else if (curr.difference(prev).inDays > 1) {
+        current = 1;
+      }
+    }
+    return maxStreak;
   }
 }

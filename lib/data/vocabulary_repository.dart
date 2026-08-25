@@ -1,3 +1,4 @@
+import '../models/gamification_badge.dart';
 import '../models/srs_review.dart';
 import '../models/vocabulary_stats.dart';
 import '../models/vocabulary_word.dart';
@@ -29,6 +30,9 @@ abstract interface class VocabularyRepository {
     required SrsRating rating,
     DateTime? now,
   });
+
+  /// Aggregate statistics for the activity heatmap and retro milestone badges.
+  Future<GamificationStats> gamificationStats({int days = 112});
 
   /// Full-text search across word, meaning, pronunciation, source, examples
   /// and tags. Matching is case- and diacritic-insensitive.
