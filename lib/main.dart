@@ -131,6 +131,7 @@ class VeeaEnglishApp extends StatefulWidget {
 
 class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
   late final AppLifecycleListener _lifecycleListener;
+  final TtsService _ttsService = TtsService();
 
   @override
   void initState() {
@@ -143,6 +144,13 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
       onRestart: () => widget.vocabulary.refreshWidgetData(),
       onDetach: () => widget.vocabulary.refreshWidgetData(),
     );
+
+    if (widget.widgetProvider != null) {
+      WidgetService.handleWidgetClick(
+        widgetProvider: widget.widgetProvider!,
+        ttsService: _ttsService,
+      );
+    }
   }
 
   void _handleAppResume() {
@@ -159,6 +167,7 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
   @override
   void dispose() {
     _lifecycleListener.dispose();
+    _ttsService.dispose();
     super.dispose();
   }
 
@@ -169,7 +178,7 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
         ChangeNotifierProvider.value(value: widget.vocabulary),
         ChangeNotifierProvider.value(value: widget.auth),
         ChangeNotifierProvider.value(value: widget.sync),
-        ChangeNotifierProvider(create: (_) => TtsService()),
+        ChangeNotifierProvider.value(value: _ttsService),
         ChangeNotifierProvider(
           create: (_) => widget.themeProvider ?? (ThemeProvider()..init()),
         ),

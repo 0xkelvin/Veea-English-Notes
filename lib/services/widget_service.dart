@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:home_widget/home_widget.dart';
 
 import '../models/vocabulary_word.dart';
+import '../providers/widget_provider.dart';
+import 'tts_service.dart';
 
 /// Manages data syncing for native iOS WidgetKit and Android AppWidget.
 class WidgetService {
@@ -165,6 +167,66 @@ class WidgetService {
       );
     } catch (error, stack) {
       debugPrint('Could not clear native widget data: $error\n$stack');
+    }
+  }
+
+  /// Returns the word currently displayed on the widget.
+  static Future<String?> getCurrentWidgetWord() async {
+    if (kIsWeb) return null;
+    try {
+      await HomeWidget.setAppGroupId(appGroupId);
+      return await HomeWidget.getWidgetData<String>('widget_word');
+    } catch (error, stack) {
+      debugPrint('Could not get current widget word: $error\n$stack');
+      return null;
+    }
+  }
+
+  /// Sets up widget click handling for cold start and live app listening.
+  static Future<void> handleWidgetClick({
+    required WidgetProvider widgetProvider,
+    required TtsService ttsService,
+  }) async {
+    if (kIsWeb) return;
+    try {
+      await HomeWidget.setAppGroupId(appGroupId);
+
+      // 1. If launched from widget tap (cold start)
+      final launchedUri = await HomeWidget.initiallyLaunchedFromHomeWidget();
+      if (launchedUri != null) {
+        await processWidgetTap(
+          widgetProvider: widgetProvider,
+          ttsService: ttsService,
+        );
+      }
+
+      // 2. Stream listener for widget taps while app is in background or foreground
+      HomeWidget.widgetClicked.listen((Uri? uri) async {
+        await processWidgetTap(
+          widgetProvider: widgetProvider,
+          ttsService: ttsService,
+        );
+      });
+    } catch (error, stack) {
+      debugPrint('Could not initialize widget click listener: $error\n$stack');
+    }
+  }
+
+  /// Processes a widget click: pronounces the word if enabled and rotates to next word.
+  static Future<void> processWidgetTap({
+    required WidgetProvider widgetProvider,
+    required TtsService ttsService,
+  }) async {
+    try {
+      final currentWord = await getCurrentWidgetWord();
+      if (widgetProvider.pronounceOnTap &&
+          currentWord != null &&
+          currentWord.trim().isNotEmpty) {
+        await ttsService.speak(currentWord.trim());
+      }
+      await rotateToNextWord();
+    } catch (error, stack) {
+      debugPrint('Could not process widget tap: $error\n$stack');
     }
   }
 }

@@ -17,6 +17,7 @@ void main() {
     expect(provider.isDailyReminderEnabled, isTrue);
     expect(provider.rotationIntervalMinutes, equals(15));
     expect(provider.rotateOnAppOpen, isTrue);
+    expect(provider.pronounceOnTap, isTrue);
   });
 
   test('loads existing preferences from SharedPreferences', () async {
@@ -25,6 +26,7 @@ void main() {
       'daily_reminder_enabled': false,
       'widget_rotation_interval_minutes': 30,
       'widget_rotate_on_app_open': false,
+      'widget_pronounce_on_tap': false,
     });
 
     final provider = WidgetProvider();
@@ -34,6 +36,7 @@ void main() {
     expect(provider.isDailyReminderEnabled, isFalse);
     expect(provider.rotationIntervalMinutes, equals(30));
     expect(provider.rotateOnAppOpen, isFalse);
+    expect(provider.pronounceOnTap, isFalse);
   });
 
   test('updating rotation interval saves to SharedPreferences and notifies', () async {
@@ -66,6 +69,22 @@ void main() {
 
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getBool('widget_rotate_on_app_open'), isFalse);
+  });
+
+  test('updating pronounceOnTap saves to SharedPreferences and notifies', () async {
+    final provider = WidgetProvider();
+    await provider.init();
+
+    var notified = false;
+    provider.addListener(() => notified = true);
+
+    await provider.setPronounceOnTap(false);
+
+    expect(provider.pronounceOnTap, isFalse);
+    expect(notified, isTrue);
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool('widget_pronounce_on_tap'), isFalse);
   });
 
   test('disabling widget saves to SharedPreferences and notifies', () async {

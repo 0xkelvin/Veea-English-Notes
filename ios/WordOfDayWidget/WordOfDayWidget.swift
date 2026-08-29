@@ -261,6 +261,7 @@ struct WordOfDayWidgetEntryView : View {
             .buttonStyle(.plain)
             .containerBackground(for: .widget) { Color(red: 0.11, green: 0.12, blue: 0.09) }
         }
+        .widgetURL(URL(string: "veea://widget_tap"))
     }
 }
 
