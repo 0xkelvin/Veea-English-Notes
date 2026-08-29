@@ -169,97 +169,99 @@ struct WordOfDayWidgetEntryView : View {
     @Environment(\.widgetFamily) var family
 
     var body: some View {
-        switch family {
-        case .accessoryInline:
-            // Lock Screen Top Bar Slot (above clock)
-            Button(intent: NextWordIntent()) {
-                Text("Veea: \(entry.word) • \(entry.meaning)")
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-            }
-            .buttonStyle(.plain)
-            .containerBackground(for: .widget) { Color.clear }
+        Group {
+            switch family {
+            case .accessoryInline:
+                // Lock Screen Top Bar Slot (above clock)
+                Button(intent: NextWordIntent()) {
+                    Text("Veea: \(entry.word) • \(entry.meaning)")
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                }
+                .buttonStyle(.plain)
+                .containerBackground(for: .widget) { Color.clear }
 
-        case .accessoryRectangular:
-            // Lock Screen Main Rectangular Slot (below clock)
-            Button(intent: NextWordIntent()) {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 4) {
-                        Text(entry.word)
-                            .font(.system(size: 14, weight: .bold, design: .monospaced))
-                        Spacer(minLength: 2)
+            case .accessoryRectangular:
+                // Lock Screen Main Rectangular Slot (below clock)
+                Button(intent: NextWordIntent()) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 4) {
+                            Text(entry.word)
+                                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                            Spacer(minLength: 2)
+                            Text("🔥\(entry.streakDays)")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                        Text(entry.ipa)
+                            .font(.system(size: 10, design: .monospaced))
+                        Text(entry.meaning)
+                            .font(.system(size: 11, weight: .medium))
+                            .lineLimit(1)
+                    }
+                    .padding(2)
+                }
+                .buttonStyle(.plain)
+                .containerBackground(for: .widget) { AccessoryWidgetBackground() }
+
+            case .accessoryCircular:
+                // Lock Screen Small Circular Slot
+                Button(intent: NextWordIntent()) {
+                    VStack(spacing: 1) {
                         Text("🔥\(entry.streakDays)")
                             .font(.system(size: 10, weight: .bold))
-                    }
-                    Text(entry.ipa)
-                        .font(.system(size: 10, design: .monospaced))
-                    Text(entry.meaning)
-                        .font(.system(size: 11, weight: .medium))
-                        .lineLimit(1)
-                }
-                .padding(2)
-            }
-            .buttonStyle(.plain)
-            .containerBackground(for: .widget) { AccessoryWidgetBackground() }
-
-        case .accessoryCircular:
-            // Lock Screen Small Circular Slot
-            Button(intent: NextWordIntent()) {
-                VStack(spacing: 1) {
-                    Text("🔥\(entry.streakDays)")
-                        .font(.system(size: 10, weight: .bold))
-                    Text(entry.word)
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .lineLimit(1)
-                }
-            }
-            .buttonStyle(.plain)
-            .containerBackground(for: .widget) { AccessoryWidgetBackground() }
-
-        default:
-            // Home Screen Medium / Small Widget
-            Button(intent: NextWordIntent()) {
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack {
-                        Text("WORD OF THE DAY")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundColor(Color(red: 0.45, green: 0.46, blue: 0.40))
-                        Spacer()
-                        Text("🔥 \(entry.streakDays) STREAK")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundColor(Color(red: 0.95, green: 0.40, blue: 0.10))
-                    }
-
-                    Spacer().frame(height: 1)
-
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(entry.word)
-                            .font(.system(size: 20, weight: .bold, design: .monospaced))
-                            .foregroundColor(Color(red: 0.90, green: 0.89, blue: 0.85))
-
-                        Text(entry.pos)
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
-                            .foregroundColor(Color(red: 0.60, green: 0.61, blue: 0.55))
-                    }
-
-                    Text(entry.ipa)
-                        .font(.system(size: 13, design: .monospaced))
-                        .foregroundColor(Color(red: 0.61, green: 0.74, blue: 0.06))
-
-                    Text(entry.meaning)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(Color(red: 0.90, green: 0.89, blue: 0.85))
-
-                    if !entry.example.isEmpty {
-                        Text("\"\(entry.example)\"")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(Color(red: 0.60, green: 0.61, blue: 0.55))
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
                             .lineLimit(1)
                     }
                 }
-                .padding()
+                .buttonStyle(.plain)
+                .containerBackground(for: .widget) { AccessoryWidgetBackground() }
+
+            default:
+                // Home Screen Medium / Small Widget
+                Button(intent: NextWordIntent()) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack {
+                            Text("WORD OF THE DAY")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundColor(Color(red: 0.45, green: 0.46, blue: 0.40))
+                            Spacer()
+                            Text("🔥 \(entry.streakDays) STREAK")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundColor(Color(red: 0.95, green: 0.40, blue: 0.10))
+                        }
+
+                        Spacer().frame(height: 1)
+
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(entry.word)
+                                .font(.system(size: 20, weight: .bold, design: .monospaced))
+                                .foregroundColor(Color(red: 0.90, green: 0.89, blue: 0.85))
+
+                            Text(entry.pos)
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .foregroundColor(Color(red: 0.60, green: 0.61, blue: 0.55))
+                        }
+
+                        Text(entry.ipa)
+                            .font(.system(size: 13, design: .monospaced))
+                            .foregroundColor(Color(red: 0.61, green: 0.74, blue: 0.06))
+
+                        Text(entry.meaning)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(Color(red: 0.90, green: 0.89, blue: 0.85))
+
+                        if !entry.example.isEmpty {
+                            Text("\"\(entry.example)\"")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(Color(red: 0.60, green: 0.61, blue: 0.55))
+                                .lineLimit(1)
+                        }
+                    }
+                    .padding()
+                }
+                .buttonStyle(.plain)
+                .containerBackground(for: .widget) { Color(red: 0.11, green: 0.12, blue: 0.09) }
             }
-            .buttonStyle(.plain)
-            .containerBackground(for: .widget) { Color(red: 0.11, green: 0.12, blue: 0.09) }
         }
         .widgetURL(URL(string: "veea://widget_tap"))
     }
