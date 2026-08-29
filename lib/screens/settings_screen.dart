@@ -91,7 +91,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final theme = Theme.of(context);
     final provider = context.watch<VocabularyProvider>();
     final gamification = provider.gamificationStats;
 

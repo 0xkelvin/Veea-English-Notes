@@ -5,7 +5,6 @@ import '../core/theme/pixel_palette.dart';
 import '../widgets/pixel/pixel_box.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_icon.dart';
-import 'games/boss_battle_game.dart';
 import 'games/vocab_snake_game.dart';
 import 'games/word_rush_game.dart';
 
@@ -74,7 +73,7 @@ class ArcadeScreen extends StatelessWidget {
                       ),
                     ),
                     child: Text(
-                      '3 GAMES',
+                      '2 GAMES',
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: palette.onAccent,
                         fontWeight: FontWeight.bold,
@@ -91,16 +90,6 @@ class ArcadeScreen extends StatelessWidget {
               child: ListView(
                 padding: const EdgeInsets.all(PixelMetrics.space4),
                 children: [
-                  _GameCabinetCard(
-                    title: 'BOSS BATTLE RPG',
-                    subtitle: 'TURN-BASED DUNGEON CRAWLER',
-                    description:
-                        'Defeat 3 pixel dungeon monsters with word attacks, IPA spell casts, and healing shields.',
-                    glyph: PixelGlyph.skull,
-                    buttonLabel: 'Enter Dungeon',
-                    onPlay: () => _launch(context, const BossBattleGame()),
-                  ),
-                  const SizedBox(height: PixelMetrics.space4),
                   _GameCabinetCard(
                     title: 'WORD RUSH 60S',
                     subtitle: 'RAPID SPEED MATCH',

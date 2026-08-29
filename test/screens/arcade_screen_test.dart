@@ -8,7 +8,6 @@ import 'package:veea_english_app/models/vocabulary_word.dart';
 import 'package:veea_english_app/providers/theme_provider.dart';
 import 'package:veea_english_app/providers/vocabulary_provider.dart';
 import 'package:veea_english_app/screens/arcade_screen.dart';
-import 'package:veea_english_app/screens/games/boss_battle_game.dart';
 import 'package:veea_english_app/screens/games/vocab_snake_game.dart';
 import 'package:veea_english_app/screens/games/word_rush_game.dart';
 import 'package:veea_english_app/services/tts_service.dart';
@@ -63,27 +62,13 @@ void main() {
     );
   }
 
-  testWidgets('ArcadeScreen displays 3 arcade game options', (tester) async {
+  testWidgets('ArcadeScreen displays 2 arcade game options', (tester) async {
     await tester.pumpWidget(buildApp(const ArcadeScreen()));
     await tester.pump();
 
     expect(find.text('ARCADE CENTER'), findsOneWidget);
-    expect(find.text('BOSS BATTLE RPG'), findsOneWidget);
     expect(find.text('WORD RUSH 60S'), findsOneWidget);
     expect(find.text('VOCAB SNAKE'), findsOneWidget);
-  });
-
-  testWidgets('BossBattleGame launches and renders monster arena', (tester) async {
-    await tester.pumpWidget(buildApp(const BossBattleGame()));
-    await tester.pump();
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 150)),
-    );
-    await tester.pump();
-
-    expect(find.text('DUNGEON RPG'), findsOneWidget);
-    expect(find.text('CYBER SLIME'), findsOneWidget);
-    expect(find.text('ATTACK (25D)'), findsOneWidget);
   });
 
   testWidgets('WordRushGame launches and displays timer and score', (tester) async {
