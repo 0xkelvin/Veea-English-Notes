@@ -9,6 +9,7 @@ import '../../core/theme/pixel_metrics.dart';
 import '../../core/theme/pixel_palette.dart';
 import '../../models/vocabulary_word.dart';
 import '../../providers/vocabulary_provider.dart';
+import '../../services/tts_service.dart';
 import '../../widgets/pixel/pixel_box.dart';
 import '../../widgets/pixel/pixel_button.dart';
 import '../../widgets/pixel/pixel_icon.dart';
@@ -69,6 +70,22 @@ class BreakoutScorePopup {
   double life;
 }
 
+class BreakoutFallingMeaning {
+  BreakoutFallingMeaning({
+    required this.x,
+    required this.y,
+    required this.meaning,
+    this.vy = 0.003,
+    this.life = 1.0,
+  });
+
+  double x;
+  double y;
+  final String meaning;
+  double vy;
+  double life;
+}
+
 /// 8-Bit Brick Breaker / Arkanoid Game for Vocabulary Practice.
 class BreakoutVocabGame extends StatefulWidget {
   const BreakoutVocabGame({super.key});
@@ -87,6 +104,7 @@ class _BreakoutVocabGameState extends State<BreakoutVocabGame> {
   List<VocabBrick> _bricks = [];
   List<BreakoutParticle> _particles = [];
   List<BreakoutScorePopup> _scorePopups = [];
+  List<BreakoutFallingMeaning> _fallingMeanings = [];
 
   double _paddleX = 0.5; // 0.0 to 1.0
   double _ballX = 0.5;
@@ -118,6 +136,12 @@ class _BreakoutVocabGameState extends State<BreakoutVocabGame> {
     super.dispose();
   }
 
+  void _speakWord(String text) {
+    try {
+      context.read<TtsService>().speak(text);
+    } catch (_) {}
+  }
+
   Future<void> _initGame() async {
     final provider = context.read<VocabularyProvider>();
     var words = await provider.wordsDueForReview(limit: 50);
@@ -135,6 +159,7 @@ class _BreakoutVocabGameState extends State<BreakoutVocabGame> {
       _paddleX = 0.5;
       _particles = [];
       _scorePopups = [];
+      _fallingMeanings = [];
       _screenShakeX = 0.0;
       _screenShakeY = 0.0;
       _screenFlashOpacity = 0.0;
@@ -260,6 +285,16 @@ class _BreakoutVocabGameState extends State<BreakoutVocabGame> {
     );
   }
 
+  void _spawnFallingMeaning(double x, double y, String meaning) {
+    _fallingMeanings.add(
+      BreakoutFallingMeaning(
+        x: x,
+        y: y,
+        meaning: meaning,
+      ),
+    );
+  }
+
   void _spawnPaddleDeathExplosion(double x, double y) {
     final random = Random();
     final palette = context.palette;
@@ -324,6 +359,14 @@ class _BreakoutVocabGameState extends State<BreakoutVocabGame> {
     }
     _scorePopups.removeWhere((s) => s.life <= 0);
 
+    // Update Falling Meanings
+    for (final b in _fallingMeanings) {
+      b.vy += 0.0012;
+      b.y += b.vy;
+      b.life -= 0.035;
+    }
+    _fallingMeanings.removeWhere((b) => b.life <= 0 || b.y > 1.05);
+
     if (!_ballInPlay || _isPlayerDying) {
       setState(() {});
       return;
@@ -352,7 +395,7 @@ class _BreakoutVocabGameState extends State<BreakoutVocabGame> {
       if (paddleDist.abs() < 0.15) {
         _ballY = 0.84;
         _ballVy = -_ballVy.abs();
-        _ballVx = paddleDist * 0.12; // Angular deflection based on hit spot
+        _ballVx = paddleDist * 0.12;
       }
     }
 
@@ -367,7 +410,6 @@ class _BreakoutVocabGameState extends State<BreakoutVocabGame> {
       if (_lives > 0) {
         _resetBall();
       } else {
-        // Fatal Death Sequence
         _isPlayerDying = true;
         _spawnPaddleDeathExplosion(_paddleX, 0.86);
 
@@ -408,11 +450,17 @@ class _BreakoutVocabGameState extends State<BreakoutVocabGame> {
         if (brick.isTarget) {
           _score += 300;
           _boardsCleared++;
+          _speakWord(brick.word);
           _spawnBrickDebris(
             brickCenterX,
             brickCenterY,
             isTarget: true,
             text: '+300! 🧱',
+          );
+          _spawnFallingMeaning(
+            brickCenterX,
+            brickCenterY,
+            _currentTargetWord?.meaning ?? '',
           );
           _spawnBricks();
           return;
@@ -734,6 +782,46 @@ class _BreakoutVocabGameState extends State<BreakoutVocabGame> {
                                       fontSize: 13,
                                       fontWeight: FontWeight.bold,
                                       color: s.color,
+                                      height: 1.0,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                          // Falling Vietnamese Meaning (drops to bottom with gravity)
+                          for (final b in _fallingMeanings)
+                            Positioned(
+                              left: ((b.x * w) - 50).clamp(8.0, w - 100.0),
+                              top: b.y * h,
+                              child: Opacity(
+                                opacity: b.life.clamp(0.0, 1.0),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: palette.paper,
+                                    border: Border.all(
+                                      color: palette.accent,
+                                      width: 1.5,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: palette.accent.withValues(alpha: 0.3),
+                                        offset: const Offset(1, 2),
+                                        blurRadius: 0,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Text(
+                                    b.meaning,
+                                    style: TextStyle(
+                                      fontFamily: 'Handjet',
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: palette.ink,
                                       height: 1.0,
                                     ),
                                   ),

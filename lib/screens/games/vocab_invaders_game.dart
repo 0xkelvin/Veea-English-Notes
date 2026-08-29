@@ -9,6 +9,7 @@ import '../../core/theme/pixel_metrics.dart';
 import '../../core/theme/pixel_palette.dart';
 import '../../models/vocabulary_word.dart';
 import '../../providers/vocabulary_provider.dart';
+import '../../services/tts_service.dart';
 import '../../widgets/pixel/pixel_box.dart';
 import '../../widgets/pixel/pixel_button.dart';
 import '../../widgets/pixel/pixel_icon.dart';
@@ -71,6 +72,22 @@ class ScorePopup {
   double life;
 }
 
+class FallingMeaningBadge {
+  FallingMeaningBadge({
+    required this.x,
+    required this.y,
+    required this.meaning,
+    this.vy = 0.004,
+    this.life = 1.0,
+  });
+
+  double x;
+  double y;
+  final String meaning;
+  double vy;
+  double life;
+}
+
 /// 8-Bit Space Invaders / Galaga Arcade Shooter for Vocabulary Practice.
 class VocabInvadersGame extends StatefulWidget {
   const VocabInvadersGame({super.key});
@@ -90,6 +107,7 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
   List<LaserBeam> _lasers = [];
   List<ExplosionParticle> _particles = [];
   List<ScorePopup> _scorePopups = [];
+  List<FallingMeaningBadge> _fallingMeanings = [];
 
   double _cannonX = 0.5; // 0.0 to 1.0
   int _score = 0;
@@ -116,6 +134,12 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
     super.dispose();
   }
 
+  void _speakWord(String text) {
+    try {
+      context.read<TtsService>().speak(text);
+    } catch (_) {}
+  }
+
   Future<void> _initGame() async {
     final provider = context.read<VocabularyProvider>();
     var words = await provider.wordsDueForReview(limit: 50);
@@ -135,6 +159,7 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
       _lasers = [];
       _particles = [];
       _scorePopups = [];
+      _fallingMeanings = [];
       _screenShakeX = 0.0;
       _screenShakeY = 0.0;
       _screenFlashOpacity = 0.0;
@@ -242,6 +267,16 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
     );
   }
 
+  void _spawnFallingMeaning(double x, double y, String meaning) {
+    _fallingMeanings.add(
+      FallingMeaningBadge(
+        x: x,
+        y: y,
+        meaning: meaning,
+      ),
+    );
+  }
+
   void _spawnCannonCatastrophe(double x, double y) {
     final random = Random();
     final palette = context.palette;
@@ -264,7 +299,7 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
           x: x,
           y: y,
           vx: cos(angle) * speed,
-          vy: sin(angle) * speed - 0.006, // upward plume
+          vy: sin(angle) * speed - 0.006,
           size: 5.0 + random.nextDouble() * 8.0,
           color: deathColors[random.nextInt(deathColors.length)],
           decay: 0.03 + random.nextDouble() * 0.03,
@@ -312,6 +347,14 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
     }
     _scorePopups.removeWhere((s) => s.life <= 0);
 
+    // Update Falling Vietnamese Meanings (Gravity Drop & Fade)
+    for (final b in _fallingMeanings) {
+      b.vy += 0.0012; // gravity acceleration
+      b.y += b.vy;
+      b.life -= 0.035; // gradually disappear as it drops to bottom
+    }
+    _fallingMeanings.removeWhere((b) => b.life <= 0 || b.y > 1.05);
+
     if (_isPlayerDying) {
       setState(() {});
       return;
@@ -354,11 +397,17 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
       if (hitAlien.isCorrect) {
         final earned = 150 * _combo;
         _score += earned;
+        _speakWord(hitAlien.word);
         _spawnExplosion(
           hitAlien.x,
           hitAlien.y,
           isTarget: true,
           text: '+$earned! 💥',
+        );
+        _spawnFallingMeaning(
+          hitAlien.x,
+          hitAlien.y,
+          _currentTargetWord?.meaning ?? '',
         );
         _combo = (_combo + 1).clamp(1, 5);
         _wave++;
@@ -391,7 +440,6 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
     if (_shields > 0) {
       _spawnWave();
     } else {
-      // Catastrophic Player Death Sequence
       setState(() {
         _isPlayerDying = true;
       });
@@ -706,6 +754,46 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
                                       fontSize: 13,
                                       fontWeight: FontWeight.bold,
                                       color: s.color,
+                                      height: 1.0,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                          // Falling Vietnamese Meaning Badges (drops to bottom with gravity)
+                          for (final b in _fallingMeanings)
+                            Positioned(
+                              left: ((b.x * w) - 50).clamp(8.0, w - 100.0),
+                              top: b.y * h,
+                              child: Opacity(
+                                opacity: b.life.clamp(0.0, 1.0),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: palette.paper,
+                                    border: Border.all(
+                                      color: palette.accent,
+                                      width: 1.5,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: palette.accent.withValues(alpha: 0.3),
+                                        offset: const Offset(1, 2),
+                                        blurRadius: 0,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Text(
+                                    b.meaning,
+                                    style: TextStyle(
+                                      fontFamily: 'Handjet',
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: palette.ink,
                                       height: 1.0,
                                     ),
                                   ),

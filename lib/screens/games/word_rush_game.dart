@@ -8,9 +8,24 @@ import '../../core/theme/pixel_metrics.dart';
 import '../../core/theme/pixel_palette.dart';
 import '../../models/vocabulary_word.dart';
 import '../../providers/vocabulary_provider.dart';
+import '../../services/tts_service.dart';
 import '../../widgets/pixel/pixel_box.dart';
 import '../../widgets/pixel/pixel_button.dart';
 import '../../widgets/pixel/pixel_icon.dart';
+
+class RushFallingMeaning {
+  RushFallingMeaning({
+    required this.meaning,
+    this.y = 0.35,
+    this.vy = 0.008,
+    this.life = 1.0,
+  });
+
+  final String meaning;
+  double y;
+  double vy;
+  double life;
+}
 
 /// 60-Second Fast-Paced Arcade Speed Match Mini-Game.
 class WordRushGame extends StatefulWidget {
@@ -28,6 +43,7 @@ class _WordRushGameState extends State<WordRushGame> {
 
   int _secondsLeft = _gameDurationSeconds;
   Timer? _timer;
+  Timer? _animTimer;
   int _score = 0;
   int _combo = 1;
   int _maxCombo = 1;
@@ -36,6 +52,7 @@ class _WordRushGameState extends State<WordRushGame> {
 
   VocabularyWord? _currentWord;
   List<String> _options = [];
+  List<RushFallingMeaning> _fallingMeanings = [];
   bool _isGameOver = false;
 
   @override
@@ -47,7 +64,14 @@ class _WordRushGameState extends State<WordRushGame> {
   @override
   void dispose() {
     _timer?.cancel();
+    _animTimer?.cancel();
     super.dispose();
+  }
+
+  void _speakWord(String text) {
+    try {
+      context.read<TtsService>().speak(text);
+    } catch (_) {}
   }
 
   Future<void> _initGame() async {
@@ -67,6 +91,7 @@ class _WordRushGameState extends State<WordRushGame> {
       _maxCombo = 1;
       _correctCount = 0;
       _totalAnswered = 0;
+      _fallingMeanings = [];
       _isGameOver = false;
     });
 
@@ -86,6 +111,20 @@ class _WordRushGameState extends State<WordRushGame> {
         setState(() {
           _secondsLeft = 0;
           _isGameOver = true;
+        });
+      }
+    });
+
+    _animTimer?.cancel();
+    _animTimer = Timer.periodic(const Duration(milliseconds: 40), (_) {
+      if (_fallingMeanings.isNotEmpty) {
+        setState(() {
+          for (final b in _fallingMeanings) {
+            b.vy += 0.002;
+            b.y += b.vy;
+            b.life -= 0.045;
+          }
+          _fallingMeanings.removeWhere((b) => b.life <= 0 || b.y > 1.05);
         });
       }
     });
@@ -126,6 +165,14 @@ class _WordRushGameState extends State<WordRushGame> {
       _score += 100 * _combo;
       _combo++;
       if (_combo > _maxCombo) _maxCombo = _combo;
+
+      _speakWord(_currentWord!.word);
+      _fallingMeanings.add(
+        RushFallingMeaning(
+          meaning: _currentWord!.meaning,
+          y: 0.35,
+        ),
+      );
     } else {
       _combo = 1;
       // Penalty: deduct 2 seconds from clock
@@ -189,13 +236,10 @@ class _WordRushGameState extends State<WordRushGame> {
           const Spacer(),
           // Timer Box
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
               color: isTimeLow ? palette.danger : palette.surface,
-              border: Border.all(
-                color: isTimeLow ? palette.border : palette.inkFaint,
-                width: 1,
-              ),
+              border: Border.all(color: palette.border, width: 1),
             ),
             child: Text(
               '⏱ ${_secondsLeft}s',
@@ -235,116 +279,137 @@ class _WordRushGameState extends State<WordRushGame> {
     final theme = Theme.of(context);
     final word = _currentWord!;
 
-    return Padding(
-      padding: const EdgeInsets.all(PixelMetrics.space4),
-      child: Column(
-        children: [
-          // Score Readout
-          Row(
+    return Stack(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(PixelMetrics.space4),
+          child: Column(
             children: [
-              Text('SCORE: ', style: theme.textTheme.labelSmall),
-              Text(
-                '$_score',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: palette.accent,
+              // Score Readout
+              Row(
+                children: [
+                  Text('SCORE: ', style: theme.textTheme.labelSmall),
+                  Text(
+                    '$_score',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: palette.accent,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    'MATCHED: $_correctCount / $_totalAnswered',
+                    style: theme.textTheme.labelSmall?.copyWith(fontSize: 10),
+                  ),
+                ],
+              ),
+              const SizedBox(height: PixelMetrics.space3),
+
+              // Main Word Prompt Box
+              Expanded(
+                flex: 4,
+                child: PixelBox(
+                  raised: true,
+                  color: palette.surface,
+                  padding: const EdgeInsets.all(PixelMetrics.space4),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          word.word,
+                          style: theme.textTheme.headlineMedium?.copyWith(
+                            fontFamily: 'Handjet',
+                            fontWeight: FontWeight.bold,
+                            fontSize: 40,
+                            letterSpacing: 1.5,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        if (word.pronunciation != null &&
+                            word.pronunciation!.isNotEmpty) ...[
+                          const SizedBox(height: PixelMetrics.space2),
+                          Text(
+                            word.pronunciation!,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: palette.inkMuted,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
-              const Spacer(),
-              Text(
-                'MATCHED: $_correctCount / $_totalAnswered',
-                style: theme.textTheme.labelSmall?.copyWith(fontSize: 10),
+
+              const SizedBox(height: PixelMetrics.space3),
+
+              // 4 Fast Choice Buttons (2x2 Grid)
+              Expanded(
+                flex: 5,
+                child: GridView.count(
+                  crossAxisCount: 2,
+                  childAspectRatio: 1.8,
+                  crossAxisSpacing: PixelMetrics.space3,
+                  mainAxisSpacing: PixelMetrics.space3,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: _options.map((option) {
+                    return PixelButton(
+                      label: option,
+                      expand: true,
+                      onPressed: () => _submitAnswer(option),
+                    );
+                  }).toList(),
+                ),
               ),
             ],
           ),
-          const SizedBox(height: PixelMetrics.space3),
+        ),
 
-          // Main Word Prompt Box
-          Expanded(
-            flex: 4,
-            child: PixelBox(
-              raised: true,
-              color: palette.surface,
-              padding: const EdgeInsets.all(PixelMetrics.space4),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      word.word,
-                      style: theme.textTheme.headlineMedium?.copyWith(
-                        fontFamily: 'Handjet',
-                        fontWeight: FontWeight.bold,
-                        fontSize: 40,
-                        letterSpacing: 1.5,
-                      ),
-                      textAlign: TextAlign.center,
+        // Falling Vietnamese Meanings Overlay (drops to bottom with gravity)
+        for (final b in _fallingMeanings)
+          Positioned(
+            left: 0,
+            right: 0,
+            top: MediaQuery.of(context).size.height * b.y,
+            child: Center(
+              child: Opacity(
+                opacity: b.life.clamp(0.0, 1.0),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: palette.paper,
+                    border: Border.all(
+                      color: palette.accent,
+                      width: 2,
                     ),
-                    const SizedBox(height: PixelMetrics.space2),
-                    Text(
-                      word.pronunciation ?? '/pronounce/',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: palette.accent,
-                        fontWeight: FontWeight.bold,
+                    boxShadow: [
+                      BoxShadow(
+                        color: palette.accent.withValues(alpha: 0.4),
+                        offset: const Offset(2, 3),
+                        blurRadius: 0,
                       ),
+                    ],
+                  ),
+                  child: Text(
+                    b.meaning,
+                    style: TextStyle(
+                      fontFamily: 'Handjet',
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: palette.ink,
+                      height: 1.0,
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
-
-          const SizedBox(height: PixelMetrics.space4),
-
-          // 4 Options Grid (2x2)
-          Expanded(
-            flex: 5,
-            child: Column(
-              children: [
-                Expanded(
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _RushOptionButton(
-                          label: _options[0],
-                          onPressed: () => _submitAnswer(_options[0]),
-                        ),
-                      ),
-                      const SizedBox(width: PixelMetrics.space2),
-                      Expanded(
-                        child: _RushOptionButton(
-                          label: _options[1],
-                          onPressed: () => _submitAnswer(_options[1]),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: PixelMetrics.space2),
-                Expanded(
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _RushOptionButton(
-                          label: _options[2],
-                          onPressed: () => _submitAnswer(_options[2]),
-                        ),
-                      ),
-                      const SizedBox(width: PixelMetrics.space2),
-                      Expanded(
-                        child: _RushOptionButton(
-                          label: _options[3],
-                          onPressed: () => _submitAnswer(_options[3]),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -352,8 +417,8 @@ class _WordRushGameState extends State<WordRushGame> {
     final palette = context.palette;
     final theme = Theme.of(context);
     final accuracy = _totalAnswered > 0
-        ? ((_correctCount / _totalAnswered) * 100).round()
-        : 0;
+        ? ((_correctCount / _totalAnswered) * 100).toStringAsFixed(0)
+        : '0';
 
     return Center(
       child: Padding(
@@ -365,25 +430,46 @@ class _WordRushGameState extends State<WordRushGame> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                '★ TIME UP! ★',
+                'TIME OVER!',
                 style: theme.textTheme.headlineSmall?.copyWith(
                   color: palette.accent,
-                  fontFamily: 'Handjet',
                   fontWeight: FontWeight.bold,
                 ),
               ),
               const SizedBox(height: PixelMetrics.space4),
-              _buildStatLine('FINAL SCORE', '$_score'),
+              Row(
+                children: [
+                  Text('FINAL SCORE', style: theme.textTheme.labelSmall),
+                  const Spacer(),
+                  Text(
+                    '$_score',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: PixelMetrics.space2),
-              _buildStatLine('WORDS MATCHED', '$_correctCount'),
+              Row(
+                children: [
+                  Text('ACCURACY', style: theme.textTheme.labelSmall),
+                  const Spacer(),
+                  Text('$accuracy% ($_correctCount/$_totalAnswered)',
+                      style: theme.textTheme.titleMedium),
+                ],
+              ),
               const SizedBox(height: PixelMetrics.space2),
-              _buildStatLine('ACCURACY RATE', '$accuracy%'),
-              const SizedBox(height: PixelMetrics.space2),
-              _buildStatLine('MAX COMBO', '$_maxCombo X'),
+              Row(
+                children: [
+                  Text('MAX COMBO', style: theme.textTheme.labelSmall),
+                  const Spacer(),
+                  Text('${_maxCombo}X', style: theme.textTheme.titleMedium),
+                ],
+              ),
               const SizedBox(height: PixelMetrics.space5),
               PixelButton(
                 label: 'Play Again',
-                glyph: PixelGlyph.gamepad,
+                glyph: PixelGlyph.bolt,
                 filled: true,
                 expand: true,
                 onPressed: _initGame,
@@ -395,59 +481,6 @@ class _WordRushGameState extends State<WordRushGame> {
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatLine(String label, String value) {
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        Text(label, style: theme.textTheme.labelSmall),
-        const Spacer(),
-        Text(
-          value,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _RushOptionButton extends StatelessWidget {
-  const _RushOptionButton({required this.label, required this.onPressed});
-
-  final String label;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-
-    return GestureDetector(
-      onTap: onPressed,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.all(PixelMetrics.space3),
-        decoration: BoxDecoration(
-          color: palette.surface,
-          border: Border.all(color: palette.border, width: PixelMetrics.border),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontFamily: 'Handjet',
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-            textAlign: TextAlign.center,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
           ),
         ),
       ),

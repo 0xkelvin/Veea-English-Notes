@@ -9,6 +9,7 @@ import '../../core/theme/pixel_metrics.dart';
 import '../../core/theme/pixel_palette.dart';
 import '../../models/vocabulary_word.dart';
 import '../../providers/vocabulary_provider.dart';
+import '../../services/tts_service.dart';
 import '../../widgets/pixel/pixel_box.dart';
 import '../../widgets/pixel/pixel_button.dart';
 import '../../widgets/pixel/pixel_icon.dart';
@@ -25,6 +26,22 @@ class FoodPellet {
   final Point<int> position;
   final String word;
   final bool isCorrect;
+}
+
+class SnakeFallingMeaning {
+  SnakeFallingMeaning({
+    required this.x,
+    required this.y,
+    required this.meaning,
+    this.vy = 0.003,
+    this.life = 1.0,
+  });
+
+  double x;
+  double y;
+  final String meaning;
+  double vy;
+  double life;
 }
 
 /// 8-Bit Vocab Snake / Nibbler Game.
@@ -50,6 +67,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
 
   VocabularyWord? _currentTargetWord;
   List<FoodPellet> _foodPellets = [];
+  List<SnakeFallingMeaning> _fallingMeanings = [];
 
   int _score = 0;
   int _wordsEaten = 0;
@@ -69,12 +87,16 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
     super.dispose();
   }
 
+  void _speakWord(String text) {
+    try {
+      context.read<TtsService>().speak(text);
+    } catch (_) {}
+  }
+
   Future<void> _initGame() async {
     final provider = context.read<VocabularyProvider>();
     var words = await provider.wordsDueForReview(limit: 50);
-    if (words.length < 3) {
-      words = provider.words;
-    }
+    if (words.length < 3) words = provider.words;
 
     if (!mounted) return;
     setState(() {
@@ -82,11 +104,12 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
       _isLoading = false;
       _score = 0;
       _wordsEaten = 0;
-      _pendingGrowth = 0;
       _hearts = 3;
+      _pendingGrowth = 0;
       _isGameOver = false;
       _direction = Direction.right;
       _nextDirection = Direction.right;
+      _fallingMeanings = [];
       _snake = [
         const Point(5, 8),
         const Point(4, 8),
@@ -125,52 +148,53 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
     }
     pelletWords.shuffle();
 
-    final occupied = {..._snake};
-    final pellets = <FoodPellet>[];
+    final occupied = Set<Point<int>>.from(_snake);
+    final chosenPositions = <Point<int>>[];
 
-    for (final p in pelletWords) {
+    for (var i = 0; i < pelletWords.length; i++) {
       Point<int> pos;
       var attempts = 0;
       do {
-        // Keep 1-cell padding from borders so floating tags stay well within the board
-        final x = random.nextInt(_gridSize - 2) + 1;
-        final y = random.nextInt(_gridSize - 2) + 1;
-        pos = Point(x, y);
+        pos = Point(
+          1 + random.nextInt(_gridSize - 2),
+          1 + random.nextInt(_gridSize - 2),
+        );
         attempts++;
       } while ((occupied.contains(pos) ||
-              pellets.any((other) =>
-                  (other.position.x - pos.x).abs() < 3 &&
-                  (other.position.y - pos.y).abs() < 3)) &&
-          attempts < 60);
+              chosenPositions.any((p) => (p.x - pos.x).abs() < 3 && (p.y - pos.y).abs() < 3)) &&
+          attempts < 100);
 
+      chosenPositions.add(pos);
       occupied.add(pos);
-      pellets.add(
+    }
+
+    final newPellets = <FoodPellet>[];
+    for (var i = 0; i < pelletWords.length; i++) {
+      newPellets.add(
         FoodPellet(
-          position: pos,
-          word: p.word,
-          isCorrect: p.isCorrect,
+          position: chosenPositions[i],
+          word: pelletWords[i].word,
+          isCorrect: pelletWords[i].isCorrect,
         ),
       );
     }
 
     setState(() {
       _currentTargetWord = target;
-      _foodPellets = pellets;
+      _foodPellets = newPellets;
     });
   }
 
   void _changeDirection(Direction newDir) {
-    if ((_direction == Direction.up && newDir == Direction.down) ||
-        (_direction == Direction.down && newDir == Direction.up) ||
-        (_direction == Direction.left && newDir == Direction.right) ||
-        (_direction == Direction.right && newDir == Direction.left)) {
-      return;
-    }
+    if (_direction == Direction.up && newDir == Direction.down) return;
+    if (_direction == Direction.down && newDir == Direction.up) return;
+    if (_direction == Direction.left && newDir == Direction.right) return;
+    if (_direction == Direction.right && newDir == Direction.left) return;
     _nextDirection = newDir;
   }
 
   void _tick() {
-    if (_isGameOver) return;
+    if (_isGameOver || _snake.isEmpty) return;
 
     _direction = _nextDirection;
     final head = _snake.first;
@@ -191,17 +215,30 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
         break;
     }
 
-    // Check Wall Collision
+    // Update Falling Vietnamese Meanings
+    for (final b in _fallingMeanings) {
+      b.vy += 0.0012;
+      b.y += b.vy;
+      b.life -= 0.035;
+    }
+    _fallingMeanings.removeWhere((b) => b.life <= 0 || b.y > 1.05);
+
+    // Wall Collision
     if (newHead.x < 0 ||
         newHead.x >= _gridSize ||
         newHead.y < 0 ||
-        newHead.y >= _gridSize ||
-        _snake.contains(newHead)) {
+        newHead.y >= _gridSize) {
       _handleCollision();
       return;
     }
 
-    // Check Food Collision
+    // Self Collision
+    if (_snake.contains(newHead)) {
+      _handleCollision();
+      return;
+    }
+
+    // Food Collision
     FoodPellet? eatenPellet;
     for (final pellet in _foodPellets) {
       if (pellet.position == newHead) {
@@ -214,8 +251,18 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
       if (eatenPellet.isCorrect) {
         _wordsEaten++;
         _score += 150;
-        _pendingGrowth += 2; // Snake grows longer with each correct word eaten!
+        _pendingGrowth += 2;
         _snake.insert(0, newHead);
+
+        _speakWord(eatenPellet.word);
+        _fallingMeanings.add(
+          SnakeFallingMeaning(
+            x: (eatenPellet.position.x + 0.5) / _gridSize,
+            y: (eatenPellet.position.y + 0.5) / _gridSize,
+            meaning: _currentTargetWord?.meaning ?? '',
+          ),
+        );
+
         _spawnNewTargetAndPellets();
       } else {
         _handleCollision();
@@ -237,7 +284,6 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
       _hearts--;
       _pendingGrowth = 0;
       if (_hearts > 0) {
-        // Reset snake position
         _snake = [
           const Point(5, 8),
           const Point(4, 8),
@@ -291,9 +337,9 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
               _buildTopBar(context),
               Expanded(
                 child: _isLoading
-                    ? const Center(child: Text('LOADING SNAKE GRID…'))
+                    ? const Center(child: Text('PREPARING ARENA…'))
                     : _isGameOver
-                    ? _buildGameOverScreen(context)
+                    ? _buildGameOver(context)
                     : _buildGameBoard(context),
               ),
             ],
@@ -314,7 +360,10 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
       decoration: BoxDecoration(
         color: palette.surface,
         border: Border(
-          bottom: BorderSide(color: palette.border, width: PixelMetrics.border),
+          bottom: BorderSide(
+            color: palette.border,
+            width: PixelMetrics.border,
+          ),
         ),
       ),
       child: Row(
@@ -325,16 +374,19 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
             onPressed: () => Navigator.of(context).pop(),
           ),
           const SizedBox(width: PixelMetrics.space2),
-          Text('VOCAB SNAKE', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            'VOCAB SNAKE',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const Spacer(),
           Row(
             children: List.generate(3, (i) {
-              final isFilled = i < _hearts;
+              final isFull = i < _hearts;
               return Padding(
                 padding: const EdgeInsets.only(right: 3),
                 child: PixelIcon(
                   PixelGlyph.heart,
-                  color: isFilled ? palette.danger : palette.inkFaint,
+                  color: isFull ? palette.danger : palette.inkFaint,
                   scale: 2,
                 ),
               );
@@ -358,7 +410,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
 
     return Column(
       children: [
-        // Target Meaning Banner
+        // Target Meaning HUD Banner
         Container(
           width: double.infinity,
           margin: const EdgeInsets.all(PixelMetrics.space3),
@@ -368,7 +420,10 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
           ),
           decoration: BoxDecoration(
             color: palette.surface,
-            border: Border.all(color: palette.border, width: PixelMetrics.border),
+            border: Border.all(
+              color: palette.border,
+              width: PixelMetrics.border,
+            ),
           ),
           child: Row(
             children: [
@@ -378,7 +433,10 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
                   children: [
                     Text(
                       'STEER SNAKE TO EAT:',
-                      style: theme.textTheme.labelSmall?.copyWith(fontSize: 10),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: palette.inkFaint,
+                        fontSize: 10,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -395,7 +453,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: palette.surface,
+                  color: palette.paper,
                   border: Border.all(color: palette.border, width: 1),
                 ),
                 child: Text(
@@ -409,7 +467,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
           ),
         ),
 
-        // 16x16 Pixel Board with Pellets, Floating Labels & Swipe Controls
+        // 16x16 Game Board
         Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: PixelMetrics.space3),
@@ -420,25 +478,30 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
                 onVerticalDragEnd: (details) {
                   final v = details.primaryVelocity;
                   if (v != null) {
-                    if (v < -80) _changeDirection(Direction.up);
-                    if (v > 80) _changeDirection(Direction.down);
+                    if (v < -60) _changeDirection(Direction.up);
+                    if (v > 60) _changeDirection(Direction.down);
                   }
                 },
                 onHorizontalDragEnd: (details) {
                   final v = details.primaryVelocity;
                   if (v != null) {
-                    if (v < -80) _changeDirection(Direction.left);
-                    if (v > 80) _changeDirection(Direction.right);
+                    if (v < -60) _changeDirection(Direction.left);
+                    if (v > 60) _changeDirection(Direction.right);
                   }
                 },
                 child: Container(
                   decoration: BoxDecoration(
                     color: palette.surface,
-                    border: Border.all(color: palette.border, width: PixelMetrics.border),
+                    border: Border.all(
+                      color: palette.border,
+                      width: PixelMetrics.border,
+                    ),
                   ),
                   child: LayoutBuilder(
                     builder: (context, constraints) {
                       final cellSize = constraints.maxWidth / _gridSize;
+                      final w = constraints.maxWidth;
+                      final h = constraints.maxHeight;
 
                       return Stack(
                         clipBehavior: Clip.none,
@@ -485,7 +548,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
                               ),
                             ),
 
-                          // English Word Labels positioned directly above or below each red dot
+                          // English Word Labels
                           for (final pellet in _foodPellets)
                             Positioned(
                               left: ((pellet.position.x + 0.5) * cellSize)
@@ -518,7 +581,49 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
                                     pellet.word.toUpperCase(),
                                     style: TextStyle(
                                       fontFamily: 'Handjet',
-                                      fontSize: 11,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: pellet.isCorrect
+                                          ? palette.accent
+                                          : palette.ink,
+                                      height: 1.0,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                          // Falling Vietnamese Meanings
+                          for (final b in _fallingMeanings)
+                            Positioned(
+                              left: ((b.x * w) - 50).clamp(8.0, w - 100.0),
+                              top: b.y * h,
+                              child: Opacity(
+                                opacity: b.life.clamp(0.0, 1.0),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: palette.paper,
+                                    border: Border.all(
+                                      color: palette.accent,
+                                      width: 1.5,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: palette.accent.withValues(alpha: 0.3),
+                                        offset: const Offset(1, 2),
+                                        blurRadius: 0,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Text(
+                                    b.meaning,
+                                    style: TextStyle(
+                                      fontFamily: 'Handjet',
+                                      fontSize: 12,
                                       fontWeight: FontWeight.bold,
                                       color: palette.ink,
                                       height: 1.0,
@@ -539,15 +644,13 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
 
         const SizedBox(height: PixelMetrics.space2),
 
-        // Retro D-Pad Controller with Spacious Layout
+        // Spacious D-Pad Controls
         _buildDPad(context),
       ],
     );
   }
 
   Widget _buildDPad(BuildContext context) {
-    final palette = context.palette;
-
     return Padding(
       padding: const EdgeInsets.only(bottom: PixelMetrics.space3),
       child: SizedBox(
@@ -556,63 +659,21 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // Center Decorative Grid Plate
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: palette.surface,
-                border: Border.all(color: palette.border, width: PixelMetrics.border),
-              ),
-              child: Center(
-                child: Container(
-                  width: 12,
-                  height: 12,
-                  color: palette.border,
-                ),
-              ),
-            ),
-
-            // UP Arrow Button
             Positioned(
               top: 0,
-              child: _dPadButton(
-                PixelGlyph.arrowLeft,
-                () => _changeDirection(Direction.up),
-                isUp: true,
-                semanticLabel: 'Snake Up',
-              ),
+              child: _dPadButton(Direction.up, PixelGlyph.arrowLeft, isUp: true),
             ),
-
-            // DOWN Arrow Button
             Positioned(
               bottom: 0,
-              child: _dPadButton(
-                PixelGlyph.arrowRight,
-                () => _changeDirection(Direction.down),
-                isDown: true,
-                semanticLabel: 'Snake Down',
-              ),
+              child: _dPadButton(Direction.down, PixelGlyph.arrowRight, isDown: true),
             ),
-
-            // LEFT Arrow Button
             Positioned(
               left: 0,
-              child: _dPadButton(
-                PixelGlyph.arrowLeft,
-                () => _changeDirection(Direction.left),
-                semanticLabel: 'Snake Left',
-              ),
+              child: _dPadButton(Direction.left, PixelGlyph.arrowLeft),
             ),
-
-            // RIGHT Arrow Button
             Positioned(
               right: 0,
-              child: _dPadButton(
-                PixelGlyph.arrowRight,
-                () => _changeDirection(Direction.right),
-                semanticLabel: 'Snake Right',
-              ),
+              child: _dPadButton(Direction.right, PixelGlyph.arrowRight),
             ),
           ],
         ),
@@ -620,47 +681,36 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
     );
   }
 
-  Widget _dPadButton(
-    PixelGlyph glyph,
-    VoidCallback onTap, {
-    bool isUp = false,
-    bool isDown = false,
-    required String semanticLabel,
-  }) {
+  Widget _dPadButton(Direction dir, PixelGlyph glyph, {bool isUp = false, bool isDown = false}) {
     final palette = context.palette;
-
-    return Semantics(
-      label: semanticLabel,
-      button: true,
-      child: GestureDetector(
-        onTapDown: (_) => onTap(),
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          width: 64,
-          height: 48,
-          decoration: BoxDecoration(
-            color: palette.surface,
-            border: Border.all(color: palette.border, width: PixelMetrics.border),
-            boxShadow: [
-              BoxShadow(
-                color: palette.border.withValues(alpha: 0.4),
-                offset: const Offset(1, 1),
-                blurRadius: 0,
-              ),
-            ],
-          ),
-          child: Center(
-            child: RotatedBox(
-              quarterTurns: isUp ? 1 : (isDown ? 3 : 0),
-              child: PixelIcon(glyph, color: palette.ink, scale: 2.2),
+    return GestureDetector(
+      onTapDown: (_) => _changeDirection(dir),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 64,
+        height: 48,
+        decoration: BoxDecoration(
+          color: palette.surface,
+          border: Border.all(color: palette.border, width: PixelMetrics.border),
+          boxShadow: [
+            BoxShadow(
+              color: palette.border.withValues(alpha: 0.5),
+              offset: const Offset(1, 2),
+              blurRadius: 0,
             ),
+          ],
+        ),
+        child: Center(
+          child: RotatedBox(
+            quarterTurns: isUp ? 1 : (isDown ? 3 : 0),
+            child: PixelIcon(glyph, color: palette.ink, scale: 2.4),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildGameOverScreen(BuildContext context) {
+  Widget _buildGameOver(BuildContext context) {
     final palette = context.palette;
     final theme = Theme.of(context);
 
@@ -700,6 +750,14 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
                   Text('WORDS EATEN', style: theme.textTheme.labelSmall),
                   const Spacer(),
                   Text('$_wordsEaten', style: theme.textTheme.titleMedium),
+                ],
+              ),
+              const SizedBox(height: PixelMetrics.space2),
+              Row(
+                children: [
+                  Text('SNAKE LENGTH', style: theme.textTheme.labelSmall),
+                  const Spacer(),
+                  Text('${_snake.length}', style: theme.textTheme.titleMedium),
                 ],
               ),
               const SizedBox(height: PixelMetrics.space5),
