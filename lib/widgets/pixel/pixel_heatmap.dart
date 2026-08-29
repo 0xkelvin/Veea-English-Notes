@@ -3,8 +3,9 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme/pixel_metrics.dart';
 import '../../core/theme/pixel_palette.dart';
+import 'pixel_box.dart';
 
-/// An 8-bit GitHub-style contribution heatmap showing daily word capture density.
+/// An 8-bit GitHub-style contribution activity heatmap showing daily word capture density.
 class PixelHeatmap extends StatefulWidget {
   const PixelHeatmap({
     super.key,
@@ -16,7 +17,7 @@ class PixelHeatmap extends StatefulWidget {
   /// Map of `YYYY-MM-DD` -> number of words recorded.
   final Map<String, int> dailyCounts;
 
-  /// Number of weeks to display (default 16 weeks = ~112 days).
+  /// Number of weeks to display initially.
   final int weeks;
 
   final DateTime? now;
@@ -27,12 +28,17 @@ class PixelHeatmap extends StatefulWidget {
 
 class _PixelHeatmapState extends State<PixelHeatmap> {
   DateTime? _selectedDate;
+  late int _selectedWeeks;
   final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
-    // Scroll to the latest weeks on the right
+    _selectedWeeks = widget.weeks;
+    _scrollToEnd();
+  }
+
+  void _scrollToEnd() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
@@ -54,7 +60,7 @@ class _PixelHeatmapState extends State<PixelHeatmap> {
     final todayOnly = DateTime(today.year, today.month, today.day);
 
     // Calculate grid starting from (weeks * 7) days ago aligned to Monday
-    final daysTotal = widget.weeks * 7;
+    final daysTotal = _selectedWeeks * 7;
     final startOfGrid = todayOnly
         .subtract(Duration(days: daysTotal - 1))
         .subtract(Duration(days: (todayOnly.weekday - DateTime.monday) % 7));
@@ -63,37 +69,103 @@ class _PixelHeatmapState extends State<PixelHeatmap> {
     final selectedKey = _dateKey(selected);
     final selectedCount = widget.dailyCounts[selectedKey] ?? 0;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(PixelMetrics.space3),
-      decoration: BoxDecoration(
-        color: palette.surface,
-        border: Border.all(color: palette.border, width: PixelMetrics.border),
-      ),
+    // Calculate period statistics
+    int totalWordsInPeriod = 0;
+    int activeDaysInPeriod = 0;
+    int maxWordsInDay = 0;
+
+    for (var d = 0; d < daysTotal; d++) {
+      final curDate = startOfGrid.add(Duration(days: d));
+      if (curDate.isAfter(todayOnly)) continue;
+      final count = widget.dailyCounts[_dateKey(curDate)] ?? 0;
+      if (count > 0) {
+        totalWordsInPeriod += count;
+        activeDaysInPeriod++;
+        if (count > maxWordsInDay) maxWordsInDay = count;
+      }
+    }
+
+    return PixelBox(
+      raised: true,
+      color: palette.surface,
+      padding: const EdgeInsets.all(PixelMetrics.space4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header & Range Selector (GitHub style)
           Row(
             children: [
-              Text(
-                'ACTIVITY HEATMAP',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ACTIVITY HEATMAP',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$totalWordsInPeriod words captured across $activeDaysInPeriod active days',
+                      style: TextStyle(
+                        fontFamily: 'Handjet',
+                        fontSize: 12,
+                        color: palette.inkMuted,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
               ),
-              const Spacer(),
-              Text(
-                'PAST ${widget.weeks} WEEKS',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: palette.inkMuted,
-                  fontSize: 10,
-                ),
+              const SizedBox(width: 6),
+              // Week range selector pills
+              Row(
+                children: [16, 26, 52].map((w) {
+                  final active = _selectedWeeks == w;
+                  return Padding(
+                    padding: const EdgeInsets.only(left: 3),
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _selectedWeeks = w;
+                        });
+                        _scrollToEnd();
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: active ? palette.accent : palette.paper,
+                          border: Border.all(
+                            color: palette.border,
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          '${w}W',
+                          style: TextStyle(
+                            fontFamily: 'Handjet',
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: active ? palette.onAccent : palette.ink,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
               ),
             ],
           ),
+
           const SizedBox(height: PixelMetrics.space3),
 
-          // Scrollable Grid
+          // Scrollable Grid (like GitHub contributions)
           SingleChildScrollView(
             controller: _scrollController,
             scrollDirection: Axis.horizontal,
@@ -116,7 +188,7 @@ class _PixelHeatmapState extends State<PixelHeatmap> {
                 ),
 
                 // Columns of weeks
-                for (var w = 0; w < widget.weeks; w++) ...[
+                for (var w = 0; w < _selectedWeeks; w++) ...[
                   _buildWeekColumn(
                     weekIndex: w,
                     startOfGrid: startOfGrid,
@@ -131,20 +203,29 @@ class _PixelHeatmapState extends State<PixelHeatmap> {
 
           const SizedBox(height: PixelMetrics.space3),
 
-          // Selected cell detail readout + Legend
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${DateFormat('d MMM yyyy').format(selected).toUpperCase()} : $selectedCount WORD${selectedCount == 1 ? '' : 'S'}',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: selectedCount > 0 ? palette.accent : palette.inkMuted,
-                    fontWeight: FontWeight.bold,
+          // Selected cell inspector card + Legend
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: palette.paper,
+              border: Border.all(color: palette.border, width: 1),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${DateFormat('EEEE, d MMM yyyy').format(selected).toUpperCase()} : $selectedCount WORD${selectedCount == 1 ? '' : 'S'}',
+                    style: TextStyle(
+                      fontFamily: 'Handjet',
+                      fontSize: 12,
+                      color: selectedCount > 0 ? palette.accent : palette.inkMuted,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
-              ),
-              _buildLegend(palette, theme),
-            ],
+                _buildLegend(palette, theme),
+              ],
+            ),
           ),
         ],
       ),
