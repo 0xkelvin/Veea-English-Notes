@@ -228,56 +228,51 @@ struct WordOfDayWidgetEntryView : View {
 
             default:
                 // Home Screen Medium / Small Widget
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack {
-                        Text("WORD OF THE DAY")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundColor(Color(red: 0.45, green: 0.46, blue: 0.40))
-                        Spacer()
-                        Text("🔥 \(entry.streakDays) STREAK")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundColor(Color(red: 0.95, green: 0.40, blue: 0.10))
-                        
-                        // Interactive Rotate Button directly on Home Screen
-                        Button(intent: NextWordIntent()) {
-                            Text("🔄")
-                                .font(.system(size: 12))
+                Button(intent: NextWordIntent()) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack {
+                            Text("WORD OF THE DAY")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundColor(Color(red: 0.45, green: 0.46, blue: 0.40))
+                            Spacer()
+                            Text("🔥 \(entry.streakDays) STREAK")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundColor(Color(red: 0.95, green: 0.40, blue: 0.10))
                         }
-                        .buttonStyle(.plain)
-                    }
 
-                    Spacer().frame(height: 1)
+                        Spacer().frame(height: 1)
 
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(entry.word)
-                            .font(.system(size: 20, weight: .bold, design: .monospaced))
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(entry.word)
+                                .font(.system(size: 20, weight: .bold, design: .monospaced))
+                                .foregroundColor(Color(red: 0.90, green: 0.89, blue: 0.85))
+
+                            Text(entry.pos)
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .foregroundColor(Color(red: 0.60, green: 0.61, blue: 0.55))
+                        }
+
+                        Text(entry.ipa)
+                            .font(.system(size: 13, design: .monospaced))
+                            .foregroundColor(Color(red: 0.61, green: 0.74, blue: 0.06))
+
+                        Text(entry.meaning)
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(Color(red: 0.90, green: 0.89, blue: 0.85))
 
-                        Text(entry.pos)
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
-                            .foregroundColor(Color(red: 0.60, green: 0.61, blue: 0.55))
+                        if !entry.example.isEmpty {
+                            Text("\"\(entry.example)\"")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(Color(red: 0.60, green: 0.61, blue: 0.55))
+                                .lineLimit(1)
+                        }
                     }
-
-                    Text(entry.ipa)
-                        .font(.system(size: 13, design: .monospaced))
-                        .foregroundColor(Color(red: 0.61, green: 0.74, blue: 0.06))
-
-                    Text(entry.meaning)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(Color(red: 0.90, green: 0.89, blue: 0.85))
-
-                    if !entry.example.isEmpty {
-                        Text("\"\(entry.example)\"")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(Color(red: 0.60, green: 0.61, blue: 0.55))
-                            .lineLimit(1)
-                    }
+                    .padding()
                 }
-                .padding()
+                .buttonStyle(.plain)
                 .containerBackground(for: .widget) { Color(red: 0.11, green: 0.12, blue: 0.09) }
             }
         }
-        .widgetURL(URL(string: "veea://widget_tap"))
     }
 }
 
