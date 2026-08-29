@@ -372,6 +372,47 @@ class PixelGlyph {
     '.......',
   ]);
 
+  static const headphones = PixelGlyph([
+    '..###..',
+    '.#...#.',
+    '#.....#',
+    '##...##',
+    '##...##',
+    '##...##',
+    '.......',
+  ]);
+
+  static const cassette = PixelGlyph([
+    '#######',
+    '#.#.#.#',
+    '#######',
+    '#.###.#',
+    '#.###.#',
+    '#######',
+    '.......',
+  ]);
+
+  static const pet = PixelGlyph([
+    '.#...#.',
+    '##...##',
+    '#######',
+    '#.#.#.#',
+    '#######',
+    '.#.#.#.',
+    '.#...#.',
+  ]);
+
+
+  static const food = PixelGlyph([
+    '...##..',
+    '..####.',
+    '.######',
+    '#######',
+    '.######',
+    '..#..#.',
+    '.......',
+  ]);
+
   @override
   bool operator ==(Object other) =>
       other is PixelGlyph && identical(other.rows, rows);

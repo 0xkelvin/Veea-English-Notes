@@ -11,6 +11,7 @@ import '../services/tts_service.dart';
 import '../widgets/pixel/pixel_box.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_icon.dart';
+import 'audio_commute_screen.dart';
 
 /// 8-bit Spaced Repetition (SM-2) Flashcard Review Screen.
 class ReviewScreen extends StatefulWidget {
@@ -224,8 +225,18 @@ class _ReviewScreenState extends State<ReviewScreen> {
           const Spacer(),
           if (!_isLoading && _queue.isNotEmpty && !_isComplete) ...[
             _buildProgressBar(context),
-            const SizedBox(width: PixelMetrics.space3),
+            const SizedBox(width: PixelMetrics.space2),
           ],
+          PixelIconButton(
+            glyph: PixelGlyph.headphones,
+            semanticLabel: 'Hands-Free Audio Review',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const AudioCommuteScreen(),
+              ),
+            ),
+          ),
+          const SizedBox(width: PixelMetrics.space2),
           Container(
             padding: const EdgeInsets.symmetric(
               horizontal: PixelMetrics.space2,

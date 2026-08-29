@@ -5,11 +5,13 @@ import '../core/theme/pixel_metrics.dart';
 import '../core/theme/pixel_palette.dart';
 import '../providers/vocabulary_provider.dart';
 import '../widgets/date_bar.dart';
+import '../widgets/pixel/pet_companion_widget.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_icon.dart';
 import '../widgets/word_of_day_widget_card.dart';
 import '../widgets/word_row.dart';
 import 'arcade_screen.dart';
+import 'audio_commute_screen.dart';
 import 'review_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
@@ -35,6 +37,7 @@ class HomeScreen extends StatelessWidget {
             const DateBar(),
             const StatusLine(),
             const WordOfDayWidgetCard(),
+            const PetCompanionWidget(),
             Expanded(child: _Body(provider: provider)),
             const _UndoBar(),
           ],
@@ -66,14 +69,26 @@ class _TopBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Text('VEEA·EN', style: Theme.of(context).textTheme.titleMedium),
-          const Spacer(),
+          Flexible(
+            child: Text(
+              'VEEA·EN',
+              style: Theme.of(context).textTheme.titleMedium,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: PixelMetrics.space2),
+          PixelIconButton(
+            glyph: PixelGlyph.headphones,
+            semanticLabel: 'Commute Audio Player',
+            onPressed: () => _open(context, const AudioCommuteScreen()),
+          ),
+          const SizedBox(width: 4),
           PixelIconButton(
             glyph: PixelGlyph.gamepad,
             semanticLabel: 'Arcade Mini-Games',
             onPressed: () => _open(context, const ArcadeScreen()),
           ),
-          const SizedBox(width: PixelMetrics.space1),
+          const SizedBox(width: 4),
           PixelIconButton(
             glyph: PixelGlyph.cards,
             semanticLabel: provider.dueReviewCount > 0
@@ -82,19 +97,19 @@ class _TopBar extends StatelessWidget {
             active: provider.dueReviewCount > 0,
             onPressed: () => _open(context, const ReviewScreen()),
           ),
-          const SizedBox(width: PixelMetrics.space1),
+          const SizedBox(width: 4),
           PixelIconButton(
             glyph: PixelGlyph.search,
             semanticLabel: 'Search all words',
             onPressed: () => _open(context, const SearchScreen()),
           ),
-          const SizedBox(width: PixelMetrics.space1),
+          const SizedBox(width: 4),
           PixelIconButton(
             glyph: PixelGlyph.plus,
             semanticLabel: 'Add a word',
             onPressed: () => _open(context, const WordEditorScreen()),
           ),
-          const SizedBox(width: PixelMetrics.space1),
+          const SizedBox(width: 4),
           PixelIconButton(
             glyph: PixelGlyph.gear,
             semanticLabel: 'Settings',

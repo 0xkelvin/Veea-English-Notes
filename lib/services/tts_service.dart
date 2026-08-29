@@ -71,7 +71,9 @@ class TtsService extends ChangeNotifier {
   }
 
   Future<void> stop() async {
-    await _tts.stop();
+    try {
+      await _tts.stop();
+    } catch (_) {}
     _reset();
   }
 
@@ -92,7 +94,9 @@ class TtsService extends ChangeNotifier {
   @override
   void dispose() {
     _isDisposed = true;
-    _tts.stop();
+    try {
+      _tts.stop();
+    } catch (_) {}
     super.dispose();
   }
 }
