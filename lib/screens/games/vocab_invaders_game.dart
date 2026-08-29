@@ -97,6 +97,11 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
   int _shields = 3;
   int _combo = 1;
   bool _isGameOver = false;
+  bool _isPlayerDying = false;
+
+  double _screenShakeX = 0.0;
+  double _screenShakeY = 0.0;
+  double _screenFlashOpacity = 0.0;
 
   @override
   void initState() {
@@ -125,10 +130,14 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
       _shields = 3;
       _combo = 1;
       _isGameOver = false;
+      _isPlayerDying = false;
       _cannonX = 0.5;
       _lasers = [];
       _particles = [];
       _scorePopups = [];
+      _screenShakeX = 0.0;
+      _screenShakeY = 0.0;
+      _screenFlashOpacity = 0.0;
     });
 
     _spawnWave();
@@ -184,13 +193,14 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
   }
 
   void _fireLaser() {
-    if (_isGameOver) return;
+    if (_isGameOver || _isPlayerDying) return;
     setState(() {
       _lasers.add(LaserBeam(x: _cannonX, y: 0.85));
     });
   }
 
   void _moveCannon(double delta) {
+    if (_isPlayerDying) return;
     setState(() {
       _cannonX = (_cannonX + delta).clamp(0.08, 0.92);
     });
@@ -232,8 +242,54 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
     );
   }
 
+  void _spawnCannonCatastrophe(double x, double y) {
+    final random = Random();
+    final palette = context.palette;
+    final deathColors = [
+      palette.danger,
+      Colors.orangeAccent,
+      Colors.yellowAccent,
+      palette.accent,
+      palette.ink,
+      Colors.white,
+    ];
+
+    final newParticles = <ExplosionParticle>[];
+    const count = 40;
+    for (var i = 0; i < count; i++) {
+      final angle = (i / count) * 2 * pi + (random.nextDouble() * 0.5 - 0.25);
+      final speed = 0.010 + (random.nextDouble() * 0.035);
+      newParticles.add(
+        ExplosionParticle(
+          x: x,
+          y: y,
+          vx: cos(angle) * speed,
+          vy: sin(angle) * speed - 0.006, // upward plume
+          size: 5.0 + random.nextDouble() * 8.0,
+          color: deathColors[random.nextInt(deathColors.length)],
+          decay: 0.03 + random.nextDouble() * 0.03,
+        ),
+      );
+    }
+
+    _particles.addAll(newParticles);
+    _scorePopups.add(
+      ScorePopup(
+        x: x,
+        y: y - 0.06,
+        text: '☠ CANNON DESTROYED! ☠',
+        color: palette.danger,
+      ),
+    );
+  }
+
   void _tick() {
     if (_isGameOver) return;
+
+    // Decay screen shake & flash
+    if (_screenShakeX.abs() > 0.2) _screenShakeX *= 0.65;
+    if (_screenShakeY.abs() > 0.2) _screenShakeY *= 0.65;
+    if (_screenFlashOpacity > 0.03) _screenFlashOpacity -= 0.04;
 
     // Move Lasers Up
     for (final laser in _lasers) {
@@ -252,9 +308,14 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
     // Update Score Popups
     for (final s in _scorePopups) {
       s.y -= 0.008;
-      s.life -= 0.06;
+      s.life -= 0.05;
     }
     _scorePopups.removeWhere((s) => s.life <= 0);
+
+    if (_isPlayerDying) {
+      setState(() {});
+      return;
+    }
 
     // Move Aliens Down
     final speed = 0.003 + (_wave * 0.0006);
@@ -318,16 +379,34 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
   }
 
   void _handleShieldHit() {
+    final random = Random();
     setState(() {
       _shields--;
       _combo = 1;
-      if (_shields > 0) {
-        _spawnWave();
-      } else {
-        _isGameOver = true;
-        _gameLoop?.cancel();
-      }
+      _screenFlashOpacity = 0.45;
+      _screenShakeX = (random.nextBool() ? 1 : -1) * 8.0;
+      _screenShakeY = (random.nextBool() ? 1 : -1) * 8.0;
     });
+
+    if (_shields > 0) {
+      _spawnWave();
+    } else {
+      // Catastrophic Player Death Sequence
+      setState(() {
+        _isPlayerDying = true;
+      });
+      _spawnCannonCatastrophe(_cannonX, 0.88);
+
+      Future.delayed(const Duration(milliseconds: 1400), () {
+        if (mounted) {
+          setState(() {
+            _isGameOver = true;
+            _isPlayerDying = false;
+            _gameLoop?.cancel();
+          });
+        }
+      });
+    }
   }
 
   void _handleKey(KeyEvent event) {
@@ -485,167 +564,187 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
           ),
         ),
 
-        // Space Sector Arena
+        // Space Sector Arena with Screen Shake
         Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: PixelMetrics.space3),
-            child: Container(
-              decoration: BoxDecoration(
-                color: palette.surface,
-                border: Border.all(color: palette.border, width: PixelMetrics.border),
-              ),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final w = constraints.maxWidth;
-                  final h = constraints.maxHeight;
+            child: Transform.translate(
+              offset: Offset(_screenShakeX, _screenShakeY),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: palette.surface,
+                  border: Border.all(color: palette.border, width: PixelMetrics.border),
+                ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final w = constraints.maxWidth;
+                    final h = constraints.maxHeight;
 
-                  return GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onHorizontalDragUpdate: (details) {
-                      setState(() {
-                        _cannonX = (_cannonX + (details.delta.dx / w)).clamp(0.08, 0.92);
-                      });
-                    },
-                    onTapUp: (_) => _fireLaser(),
-                    child: Stack(
-                      children: [
-                        // Descending Alien Ships
-                        for (final alien in _aliens)
-                          Positioned(
-                            left: (alien.x * w) - 45,
-                            top: alien.y * h,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                PixelIcon(
-                                  PixelGlyph.alien,
-                                  color: palette.danger,
-                                  scale: 2.4,
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onHorizontalDragUpdate: (details) {
+                        if (!_isPlayerDying) {
+                          setState(() {
+                            _cannonX = (_cannonX + (details.delta.dx / w)).clamp(0.08, 0.92);
+                          });
+                        }
+                      },
+                      onTapUp: (_) => _fireLaser(),
+                      child: Stack(
+                        children: [
+                          // Red Screen Danger Flash
+                          if (_screenFlashOpacity > 0.01)
+                            Positioned.fill(
+                              child: IgnorePointer(
+                                child: Container(
+                                  color: palette.danger.withValues(
+                                    alpha: _screenFlashOpacity.clamp(0.0, 0.5),
+                                  ),
                                 ),
-                                const SizedBox(height: 2),
-                                Container(
+                              ),
+                            ),
+
+                          // Descending Alien Ships
+                          for (final alien in _aliens)
+                            Positioned(
+                              left: (alien.x * w) - 45,
+                              top: alien.y * h,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  PixelIcon(
+                                    PixelGlyph.alien,
+                                    color: palette.danger,
+                                    scale: 2.4,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 1,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: palette.paper,
+                                      border: Border.all(color: palette.border, width: 1),
+                                    ),
+                                    child: Text(
+                                      alien.word.toUpperCase(),
+                                      style: const TextStyle(
+                                        fontFamily: 'Handjet',
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        height: 1.0,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                          // Laser Beams
+                          for (final laser in _lasers)
+                            Positioned(
+                              left: (laser.x * w) - 2,
+                              top: laser.y * h,
+                              child: Container(
+                                width: 4,
+                                height: 12,
+                                color: palette.accent,
+                              ),
+                            ),
+
+                          // Explosion Debris Particles
+                          for (final p in _particles)
+                            Positioned(
+                              left: (p.x * w) - (p.size / 2),
+                              top: (p.y * h) - (p.size / 2),
+                              child: Opacity(
+                                opacity: p.life.clamp(0.0, 1.0),
+                                child: Container(
+                                  width: p.size,
+                                  height: p.size,
+                                  decoration: BoxDecoration(
+                                    color: p.color,
+                                    border: Border.all(
+                                      color: palette.border.withValues(
+                                        alpha: p.life.clamp(0.0, 1.0),
+                                      ),
+                                      width: 0.5,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                          // Floating Score & Hit Popups
+                          for (final s in _scorePopups)
+                            Positioned(
+                              left: ((s.x * w) - 45).clamp(8.0, w - 90.0),
+                              top: s.y * h,
+                              child: Opacity(
+                                opacity: s.life.clamp(0.0, 1.0),
+                                child: Container(
                                   padding: const EdgeInsets.symmetric(
-                                    horizontal: 4,
-                                    vertical: 1,
+                                    horizontal: 6,
+                                    vertical: 2,
                                   ),
                                   decoration: BoxDecoration(
                                     color: palette.paper,
-                                    border: Border.all(color: palette.border, width: 1),
+                                    border: Border.all(color: s.color, width: 1.5),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: palette.border.withValues(alpha: 0.3),
+                                        offset: const Offset(1, 1),
+                                        blurRadius: 0,
+                                      ),
+                                    ],
                                   ),
                                   child: Text(
-                                    alien.word.toUpperCase(),
-                                    style: const TextStyle(
+                                    s.text,
+                                    style: TextStyle(
                                       fontFamily: 'Handjet',
-                                      fontSize: 11,
+                                      fontSize: 13,
                                       fontWeight: FontWeight.bold,
+                                      color: s.color,
                                       height: 1.0,
                                     ),
                                   ),
                                 ),
-                              ],
-                            ),
-                          ),
-
-                        // Laser Beams
-                        for (final laser in _lasers)
-                          Positioned(
-                            left: (laser.x * w) - 2,
-                            top: laser.y * h,
-                            child: Container(
-                              width: 4,
-                              height: 12,
-                              color: palette.accent,
-                            ),
-                          ),
-
-                        // Explosion Debris Particles
-                        for (final p in _particles)
-                          Positioned(
-                            left: (p.x * w) - (p.size / 2),
-                            top: (p.y * h) - (p.size / 2),
-                            child: Opacity(
-                              opacity: p.life.clamp(0.0, 1.0),
-                              child: Container(
-                                width: p.size,
-                                height: p.size,
-                                decoration: BoxDecoration(
-                                  color: p.color,
-                                  border: Border.all(
-                                    color: palette.border.withValues(alpha: p.life.clamp(0.0, 1.0)),
-                                    width: 0.5,
-                                  ),
-                                ),
                               ),
                             ),
-                          ),
 
-                        // Floating Score & Hit Popups
-                        for (final s in _scorePopups)
-                          Positioned(
-                            left: ((s.x * w) - 40).clamp(8.0, w - 80.0),
-                            top: s.y * h,
-                            child: Opacity(
-                              opacity: s.life.clamp(0.0, 1.0),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: palette.paper,
-                                  border: Border.all(color: s.color, width: 1.5),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: palette.border.withValues(alpha: 0.3),
-                                      offset: const Offset(1, 1),
-                                      blurRadius: 0,
+                          // Defense Cannon (disintegrates into explosion during death)
+                          if (!_isPlayerDying)
+                            Positioned(
+                              left: (_cannonX * w) - 18,
+                              bottom: 12,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 6,
+                                    height: 8,
+                                    color: palette.accent,
+                                  ),
+                                  Container(
+                                    width: 36,
+                                    height: 16,
+                                    decoration: BoxDecoration(
+                                      color: palette.ink,
+                                      border: Border.all(
+                                        color: palette.border,
+                                        width: 1,
+                                      ),
                                     ),
-                                  ],
-                                ),
-                                child: Text(
-                                  s.text,
-                                  style: TextStyle(
-                                    fontFamily: 'Handjet',
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                    color: s.color,
-                                    height: 1.0,
                                   ),
-                                ),
+                                ],
                               ),
                             ),
-                          ),
-
-                        // Defense Cannon
-                        Positioned(
-                          left: (_cannonX * w) - 18,
-                          bottom: 12,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: 6,
-                                height: 8,
-                                color: palette.accent,
-                              ),
-                              Container(
-                                width: 36,
-                                height: 16,
-                                decoration: BoxDecoration(
-                                  color: palette.ink,
-                                  border: Border.all(
-                                    color: palette.border,
-                                    width: 1,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
+                        ],
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
           ),
