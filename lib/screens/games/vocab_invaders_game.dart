@@ -487,7 +487,7 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
 
         const SizedBox(height: PixelMetrics.space3),
 
-        // Controls
+        // Ergonomic Two-Handed Controls: Left/Right on Left, FIRE on Right
         Padding(
           padding: const EdgeInsets.fromLTRB(
             PixelMetrics.space3,
@@ -496,25 +496,29 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
             PixelMetrics.space3,
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              PixelButton(
-                label: '◀ Move',
+              // Left Thumb: Movement Buttons
+              _ArcadeTouchButton(
                 glyph: PixelGlyph.arrowLeft,
-                onPressed: () => _moveCannon(-0.12),
+                label: '◀',
+                semanticLabel: 'Move Cannon Left',
+                onAction: () => _moveCannon(-0.06),
               ),
-              const SizedBox(width: PixelMetrics.space3),
-              PixelButton(
-                label: 'FIRE ⚡',
-                glyph: PixelGlyph.fire,
-                filled: true,
-                onPressed: _fireLaser,
-              ),
-              const SizedBox(width: PixelMetrics.space3),
-              PixelButton(
-                label: 'Move ▶',
+              const SizedBox(width: PixelMetrics.space2),
+              _ArcadeTouchButton(
                 glyph: PixelGlyph.arrowRight,
-                onPressed: () => _moveCannon(0.12),
+                label: '▶',
+                semanticLabel: 'Move Cannon Right',
+                onAction: () => _moveCannon(0.06),
+              ),
+
+              const Spacer(),
+
+              // Right Thumb: Big Fire Button
+              _ArcadeFireButton(
+                glyph: PixelGlyph.fire,
+                label: 'FIRE ⚡',
+                onFire: _fireLaser,
               ),
             ],
           ),
@@ -586,3 +590,175 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
     );
   }
 }
+
+class _ArcadeTouchButton extends StatefulWidget {
+  const _ArcadeTouchButton({
+    required this.glyph,
+    required this.label,
+    required this.semanticLabel,
+    required this.onAction,
+  });
+
+  final PixelGlyph glyph;
+  final String label;
+  final String semanticLabel;
+  final VoidCallback onAction;
+
+  @override
+  State<_ArcadeTouchButton> createState() => _ArcadeTouchButtonState();
+}
+
+class _ArcadeTouchButtonState extends State<_ArcadeTouchButton> {
+  Timer? _holdTimer;
+  bool _pressed = false;
+
+  void _start() {
+    widget.onAction();
+    setState(() => _pressed = true);
+    _holdTimer?.cancel();
+    _holdTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
+      widget.onAction();
+    });
+  }
+
+  void _stop() {
+    _holdTimer?.cancel();
+    if (mounted) setState(() => _pressed = false);
+  }
+
+  @override
+  void dispose() {
+    _holdTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+
+    return Semantics(
+      label: widget.semanticLabel,
+      button: true,
+      child: GestureDetector(
+        onTapDown: (_) => _start(),
+        onTapUp: (_) => _stop(),
+        onTapCancel: _stop,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 58,
+          height: 48,
+          decoration: BoxDecoration(
+            color: _pressed ? palette.accent : palette.surface,
+            border: Border.all(color: palette.border, width: PixelMetrics.border),
+            boxShadow: _pressed
+                ? []
+                : [
+                    BoxShadow(
+                      color: palette.border.withValues(alpha: 0.4),
+                      offset: const Offset(1, 1),
+                      blurRadius: 0,
+                    ),
+                  ],
+          ),
+          child: Center(
+            child: PixelIcon(
+              widget.glyph,
+              color: _pressed ? palette.onAccent : palette.ink,
+              scale: 2.2,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ArcadeFireButton extends StatefulWidget {
+  const _ArcadeFireButton({
+    required this.glyph,
+    required this.label,
+    required this.onFire,
+  });
+
+  final PixelGlyph glyph;
+  final String label;
+  final VoidCallback onFire;
+
+  @override
+  State<_ArcadeFireButton> createState() => _ArcadeFireButtonState();
+}
+
+class _ArcadeFireButtonState extends State<_ArcadeFireButton> {
+  Timer? _fireTimer;
+  bool _pressed = false;
+
+  void _start() {
+    widget.onFire();
+    setState(() => _pressed = true);
+    _fireTimer?.cancel();
+    _fireTimer = Timer.periodic(const Duration(milliseconds: 180), (_) {
+      widget.onFire();
+    });
+  }
+
+  void _stop() {
+    _fireTimer?.cancel();
+    if (mounted) setState(() => _pressed = false);
+  }
+
+  @override
+  void dispose() {
+    _fireTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+
+    return GestureDetector(
+      onTapDown: (_) => _start(),
+      onTapUp: (_) => _stop(),
+      onTapCancel: _stop,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        decoration: BoxDecoration(
+          color: _pressed ? palette.ink : palette.danger,
+          border: Border.all(color: palette.border, width: PixelMetrics.border),
+          boxShadow: _pressed
+              ? []
+              : [
+                  BoxShadow(
+                    color: palette.border.withValues(alpha: 0.5),
+                    offset: const Offset(2, 2),
+                    blurRadius: 0,
+                  ),
+                ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            PixelIcon(
+              widget.glyph,
+              color: Colors.white,
+              scale: 2.0,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              widget.label,
+              style: const TextStyle(
+                fontFamily: 'Handjet',
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
