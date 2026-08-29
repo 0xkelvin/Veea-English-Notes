@@ -5,7 +5,6 @@ import AppIntents
 struct NextWordIntent: AppIntent {
     static var title: LocalizedStringResource = "Next Word"
     static var description = IntentDescription("Rotates to the next vocabulary word.")
-    static var openAppWhenRun: Bool = true
 
     func perform() async throws -> some IntentResult {
         let userDefaults = UserDefaults(suiteName: "group.com.veea.veea_english_app")
@@ -31,6 +30,7 @@ struct NextWordIntent: AppIntent {
             userDefaults?.set(nextItem.pos ?? "", forKey: "widget_pos")
             userDefaults?.set(nextItem.meaning ?? "", forKey: "widget_meaning")
             userDefaults?.set(nextItem.example ?? "", forKey: "widget_example")
+            userDefaults?.synchronize()
         }
 
         WidgetCenter.shared.reloadAllTimelines()
@@ -102,7 +102,6 @@ struct WordOfDayProvider: TimelineProvider {
 
         let currentIndex = userDefaults?.integer(forKey: "widget_rotation_index") ?? 0
 
-        // If rotation is set to static / off, return single entry
         if intervalMinutes <= 0 {
             return [loadEntry()]
         }
@@ -111,7 +110,6 @@ struct WordOfDayProvider: TimelineProvider {
         let currentDate = Date()
         let totalWords = parsedWords.count
 
-        // Generate full 24-hour timeline loop spaced by intervalMinutes
         let steps = max(1, min(96, 1440 / intervalMinutes))
         for step in 0..<steps {
             let item = parsedWords[(currentIndex + step) % totalWords]
@@ -184,7 +182,7 @@ struct WordOfDayWidgetEntryView : View {
         Group {
             switch family {
             case .accessoryInline:
-                // Lock Screen Top Bar Slot (above clock)
+                // Lock Screen Top Bar Slot
                 Button(intent: NextWordIntent()) {
                     Text("Veea: \(entry.word) • \(entry.meaning)")
                         .font(.system(size: 12, weight: .bold, design: .monospaced))
@@ -193,7 +191,7 @@ struct WordOfDayWidgetEntryView : View {
                 .containerBackground(for: .widget) { Color.clear }
 
             case .accessoryRectangular:
-                // Lock Screen Main Rectangular Slot (below clock)
+                // Lock Screen Main Rectangular Slot
                 Button(intent: NextWordIntent()) {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 4) {
@@ -230,48 +228,52 @@ struct WordOfDayWidgetEntryView : View {
 
             default:
                 // Home Screen Medium / Small Widget
-                Button(intent: NextWordIntent()) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack {
-                            Text("WORD OF THE DAY")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundColor(Color(red: 0.45, green: 0.46, blue: 0.40))
-                            Spacer()
-                            Text("🔥 \(entry.streakDays) STREAK")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundColor(Color(red: 0.95, green: 0.40, blue: 0.10))
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack {
+                        Text("WORD OF THE DAY")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(Color(red: 0.45, green: 0.46, blue: 0.40))
+                        Spacer()
+                        Text("🔥 \(entry.streakDays) STREAK")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(Color(red: 0.95, green: 0.40, blue: 0.10))
+                        
+                        // Interactive Rotate Button directly on Home Screen
+                        Button(intent: NextWordIntent()) {
+                            Text("🔄")
+                                .font(.system(size: 12))
                         }
+                        .buttonStyle(.plain)
+                    }
 
-                        Spacer().frame(height: 1)
+                    Spacer().frame(height: 1)
 
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text(entry.word)
-                                .font(.system(size: 20, weight: .bold, design: .monospaced))
-                                .foregroundColor(Color(red: 0.90, green: 0.89, blue: 0.85))
-
-                            Text(entry.pos)
-                                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                .foregroundColor(Color(red: 0.60, green: 0.61, blue: 0.55))
-                        }
-
-                        Text(entry.ipa)
-                            .font(.system(size: 13, design: .monospaced))
-                            .foregroundColor(Color(red: 0.61, green: 0.74, blue: 0.06))
-
-                        Text(entry.meaning)
-                            .font(.system(size: 14, weight: .semibold))
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(entry.word)
+                            .font(.system(size: 20, weight: .bold, design: .monospaced))
                             .foregroundColor(Color(red: 0.90, green: 0.89, blue: 0.85))
 
-                        if !entry.example.isEmpty {
-                            Text("\"\(entry.example)\"")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(Color(red: 0.60, green: 0.61, blue: 0.55))
-                                .lineLimit(1)
-                        }
+                        Text(entry.pos)
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .foregroundColor(Color(red: 0.60, green: 0.61, blue: 0.55))
                     }
-                    .padding()
+
+                    Text(entry.ipa)
+                        .font(.system(size: 13, design: .monospaced))
+                        .foregroundColor(Color(red: 0.61, green: 0.74, blue: 0.06))
+
+                    Text(entry.meaning)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(Color(red: 0.90, green: 0.89, blue: 0.85))
+
+                    if !entry.example.isEmpty {
+                        Text("\"\(entry.example)\"")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(Color(red: 0.60, green: 0.61, blue: 0.55))
+                            .lineLimit(1)
+                    }
                 }
-                .buttonStyle(.plain)
+                .padding()
                 .containerBackground(for: .widget) { Color(red: 0.11, green: 0.12, blue: 0.09) }
             }
         }
