@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:veea_english_app/core/config/app_config.dart';
 import 'package:veea_english_app/core/theme/pixel_theme.dart';
 import 'package:veea_english_app/data/local/sqlite_vocabulary_repository.dart';
 import 'package:veea_english_app/data/remote/api_client.dart';
@@ -80,7 +81,7 @@ void main() {
     );
   }
 
-  testWidgets('SettingsScreen renders offline stats, theme, widgets, and cloud tile', (tester) async {
+  testWidgets('SettingsScreen renders in 100% offline local mode without server', (tester) async {
     tester.view.physicalSize = const Size(600, 3500);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -89,11 +90,28 @@ void main() {
     await tester.pumpWidget(buildApp(const SettingsScreen()));
     await tester.pump();
 
-    expect(find.text('SETTINGS & STATS'), findsOneWidget);
+    expect(find.text('SETTINGS'), findsOneWidget);
     expect(find.text('ACTIVITY HEATMAP'), findsOneWidget);
     expect(find.textContaining('RETRO MILESTONES'), findsOneWidget);
     expect(find.text('RETRO PIXEL THEME'), findsOneWidget);
     expect(find.text('HOME SCREEN & LOCK SCREEN WIDGET'), findsOneWidget);
-    expect(find.text('CLOUD & CROSS-DEVICE SYNC'), findsOneWidget);
+    expect(find.text('THIS BUILD RUNS IN FULLY LOCAL STORAGE MODE.'), findsOneWidget);
+  });
+
+  testWidgets('SettingsScreen renders cloud sync form when cloud is enabled', (tester) async {
+    AppConfig.overrideBaseUrl('https://example.test');
+    addTearDown(() => AppConfig.overrideBaseUrl(null));
+
+    tester.view.physicalSize = const Size(600, 3500);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(buildApp(const SettingsScreen()));
+    await tester.pump();
+
+    expect(find.text('SETTINGS'), findsOneWidget);
+    expect(find.text('SIGN IN TO SYNC'), findsOneWidget);
+    expect(find.text('EMAIL OR PHONE'), findsOneWidget);
   });
 }

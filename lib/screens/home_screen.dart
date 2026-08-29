@@ -7,9 +7,7 @@ import '../providers/vocabulary_provider.dart';
 import '../widgets/date_bar.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_icon.dart';
-import '../services/sync_service.dart';
 import '../widgets/word_row.dart';
-import 'account_screen.dart';
 import 'arcade_screen.dart';
 import 'review_screen.dart';
 import 'search_screen.dart';
@@ -97,33 +95,11 @@ class _TopBar extends StatelessWidget {
           const SizedBox(width: PixelMetrics.space1),
           PixelIconButton(
             glyph: PixelGlyph.gear,
-            semanticLabel: 'Settings and Stats',
+            semanticLabel: 'Settings',
             onPressed: () => _open(context, const SettingsScreen()),
           ),
-          const SizedBox(width: PixelMetrics.space1),
-          const _AccountButton(),
         ],
       ),
-    );
-  }
-}
-
-/// Opens the account screen, marking itself active while changes are waiting
-/// to upload — the only sync state worth putting on the main screen.
-class _AccountButton extends StatelessWidget {
-  const _AccountButton();
-
-  @override
-  Widget build(BuildContext context) {
-    final sync = context.watch<SyncService>();
-
-    return PixelIconButton(
-      glyph: PixelGlyph.cloud,
-      semanticLabel: sync.pendingCount > 0
-          ? 'Account, ${sync.pendingCount} words waiting to upload'
-          : 'Account and sync',
-      active: sync.isSyncing,
-      onPressed: () => _open(context, const AccountScreen()),
     );
   }
 }
