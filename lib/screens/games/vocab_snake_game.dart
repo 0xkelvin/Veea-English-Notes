@@ -43,6 +43,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
   bool _isLoading = true;
 
   List<Point<int>> _snake = [];
+  int _pendingGrowth = 0;
   Direction _direction = Direction.right;
   Direction _nextDirection = Direction.right;
   Timer? _gameLoop;
@@ -81,6 +82,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
       _isLoading = false;
       _score = 0;
       _wordsEaten = 0;
+      _pendingGrowth = 0;
       _hearts = 3;
       _isGameOver = false;
       _direction = Direction.right;
@@ -212,6 +214,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
       if (eatenPellet.isCorrect) {
         _wordsEaten++;
         _score += 150;
+        _pendingGrowth += 2; // Snake grows longer with each correct word eaten!
         _snake.insert(0, newHead);
         _spawnNewTargetAndPellets();
       } else {
@@ -219,7 +222,11 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
       }
     } else {
       _snake.insert(0, newHead);
-      _snake.removeLast();
+      if (_pendingGrowth > 0) {
+        _pendingGrowth--;
+      } else {
+        _snake.removeLast();
+      }
     }
 
     setState(() {});
@@ -228,6 +235,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
   void _handleCollision() {
     setState(() {
       _hearts--;
+      _pendingGrowth = 0;
       if (_hearts > 0) {
         // Reset snake position
         _snake = [
@@ -362,130 +370,167 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
             color: palette.surface,
             border: Border.all(color: palette.border, width: PixelMetrics.border),
           ),
-          child: Column(
+          child: Row(
             children: [
-              Text(
-                'STEER SNAKE TO EAT:',
-                style: theme.textTheme.labelSmall?.copyWith(fontSize: 10),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                '"${_currentTargetWord?.meaning ?? ''}"',
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: palette.accent,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'STEER SNAKE TO EAT:',
+                      style: theme.textTheme.labelSmall?.copyWith(fontSize: 10),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '"${_currentTargetWord?.meaning ?? ''}"',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: palette.accent,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
-                textAlign: TextAlign.center,
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: palette.surface,
+                  border: Border.all(color: palette.border, width: 1),
+                ),
+                child: Text(
+                  'LEN: ${_snake.length}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ],
           ),
         ),
 
-        // 16x16 Pixel Board with Pellets & Floating Word Labels
+        // 16x16 Pixel Board with Pellets, Floating Labels & Swipe Controls
         Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: PixelMetrics.space3),
             child: AspectRatio(
               aspectRatio: 1.0,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: palette.surface,
-                  border: Border.all(color: palette.border, width: PixelMetrics.border),
-                ),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final cellSize = constraints.maxWidth / _gridSize;
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onVerticalDragEnd: (details) {
+                  final v = details.primaryVelocity;
+                  if (v != null) {
+                    if (v < -80) _changeDirection(Direction.up);
+                    if (v > 80) _changeDirection(Direction.down);
+                  }
+                },
+                onHorizontalDragEnd: (details) {
+                  final v = details.primaryVelocity;
+                  if (v != null) {
+                    if (v < -80) _changeDirection(Direction.left);
+                    if (v > 80) _changeDirection(Direction.right);
+                  }
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: palette.surface,
+                    border: Border.all(color: palette.border, width: PixelMetrics.border),
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final cellSize = constraints.maxWidth / _gridSize;
 
-                    return Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        // Snake Body & Head
-                        for (var i = 0; i < _snake.length; i++)
-                          Positioned(
-                            left: _snake[i].x * cellSize,
-                            top: _snake[i].y * cellSize,
-                            width: cellSize,
-                            height: cellSize,
-                            child: Container(
-                              margin: const EdgeInsets.all(1),
-                              decoration: BoxDecoration(
-                                color: i == 0 ? palette.accent : palette.ink,
-                                border: Border.all(color: palette.border, width: 0.5),
-                              ),
-                            ),
-                          ),
-
-                        // Food Pellets (Red Dots)
-                        for (final pellet in _foodPellets)
-                          Positioned(
-                            left: pellet.position.x * cellSize,
-                            top: pellet.position.y * cellSize,
-                            width: cellSize,
-                            height: cellSize,
-                            child: Center(
+                      return Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          // Snake Body & Head
+                          for (var i = 0; i < _snake.length; i++)
+                            Positioned(
+                              left: _snake[i].x * cellSize,
+                              top: _snake[i].y * cellSize,
+                              width: cellSize,
+                              height: cellSize,
                               child: Container(
-                                width: cellSize * 0.75,
-                                height: cellSize * 0.75,
+                                margin: const EdgeInsets.all(1),
                                 decoration: BoxDecoration(
-                                  color: palette.danger,
-                                  border: Border.all(color: palette.border, width: 1),
-                                ),
-                                child: Center(
-                                  child: Container(
-                                    width: 3,
-                                    height: 3,
-                                    color: Colors.white,
-                                  ),
+                                  color: i == 0 ? palette.accent : palette.ink,
+                                  border: Border.all(color: palette.border, width: 0.5),
                                 ),
                               ),
                             ),
-                          ),
 
-                        // English Word Labels positioned directly above or below each red dot
-                        for (final pellet in _foodPellets)
-                          Positioned(
-                            left: ((pellet.position.x + 0.5) * cellSize)
-                                .clamp(36.0, constraints.maxWidth - 36.0),
-                            top: pellet.position.y >= 2
-                                ? (pellet.position.y * cellSize) - 18
-                                : ((pellet.position.y + 1) * cellSize) + 2,
-                            child: FractionalTranslation(
-                              translation: const Offset(-0.5, 0),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                  vertical: 1,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: palette.paper,
-                                  border: Border.all(
-                                    color: palette.border,
-                                    width: 1,
+                          // Food Pellets (Red Dots)
+                          for (final pellet in _foodPellets)
+                            Positioned(
+                              left: pellet.position.x * cellSize,
+                              top: pellet.position.y * cellSize,
+                              width: cellSize,
+                              height: cellSize,
+                              child: Center(
+                                child: Container(
+                                  width: cellSize * 0.75,
+                                  height: cellSize * 0.75,
+                                  decoration: BoxDecoration(
+                                    color: palette.danger,
+                                    border: Border.all(color: palette.border, width: 1),
                                   ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: palette.border.withValues(alpha: 0.5),
-                                      offset: const Offset(1, 1),
-                                      blurRadius: 0,
+                                  child: Center(
+                                    child: Container(
+                                      width: 3,
+                                      height: 3,
+                                      color: Colors.white,
                                     ),
-                                  ],
-                                ),
-                                child: Text(
-                                  pellet.word.toUpperCase(),
-                                  style: TextStyle(
-                                    fontFamily: 'Handjet',
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: palette.ink,
-                                    height: 1.0,
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                      ],
-                    );
-                  },
+
+                          // English Word Labels positioned directly above or below each red dot
+                          for (final pellet in _foodPellets)
+                            Positioned(
+                              left: ((pellet.position.x + 0.5) * cellSize)
+                                  .clamp(36.0, constraints.maxWidth - 36.0),
+                              top: pellet.position.y >= 2
+                                  ? (pellet.position.y * cellSize) - 18
+                                  : ((pellet.position.y + 1) * cellSize) + 2,
+                              child: FractionalTranslation(
+                                translation: const Offset(-0.5, 0),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 1,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: palette.paper,
+                                    border: Border.all(
+                                      color: palette.border,
+                                      width: 1,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: palette.border.withValues(alpha: 0.5),
+                                        offset: const Offset(1, 1),
+                                        blurRadius: 0,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Text(
+                                    pellet.word.toUpperCase(),
+                                    style: TextStyle(
+                                      fontFamily: 'Handjet',
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: palette.ink,
+                                      height: 1.0,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
@@ -494,28 +539,83 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
 
         const SizedBox(height: PixelMetrics.space2),
 
-        // Retro D-Pad Controller
+        // Retro D-Pad Controller with Spacious Layout
         _buildDPad(context),
       ],
     );
   }
 
   Widget _buildDPad(BuildContext context) {
+    final palette = context.palette;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: PixelMetrics.space3),
-      child: Column(
-        children: [
-          _dPadButton(PixelGlyph.arrowLeft, () => _changeDirection(Direction.up), isUp: true),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _dPadButton(PixelGlyph.arrowLeft, () => _changeDirection(Direction.left)),
-              const SizedBox(width: 44),
-              _dPadButton(PixelGlyph.arrowRight, () => _changeDirection(Direction.right)),
-            ],
-          ),
-          _dPadButton(PixelGlyph.arrowRight, () => _changeDirection(Direction.down), isDown: true),
-        ],
+      child: SizedBox(
+        width: 220,
+        height: 150,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // Center Decorative Grid Plate
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: palette.surface,
+                border: Border.all(color: palette.border, width: PixelMetrics.border),
+              ),
+              child: Center(
+                child: Container(
+                  width: 12,
+                  height: 12,
+                  color: palette.border,
+                ),
+              ),
+            ),
+
+            // UP Arrow Button
+            Positioned(
+              top: 0,
+              child: _dPadButton(
+                PixelGlyph.arrowLeft,
+                () => _changeDirection(Direction.up),
+                isUp: true,
+                semanticLabel: 'Snake Up',
+              ),
+            ),
+
+            // DOWN Arrow Button
+            Positioned(
+              bottom: 0,
+              child: _dPadButton(
+                PixelGlyph.arrowRight,
+                () => _changeDirection(Direction.down),
+                isDown: true,
+                semanticLabel: 'Snake Down',
+              ),
+            ),
+
+            // LEFT Arrow Button
+            Positioned(
+              left: 0,
+              child: _dPadButton(
+                PixelGlyph.arrowLeft,
+                () => _changeDirection(Direction.left),
+                semanticLabel: 'Snake Left',
+              ),
+            ),
+
+            // RIGHT Arrow Button
+            Positioned(
+              right: 0,
+              child: _dPadButton(
+                PixelGlyph.arrowRight,
+                () => _changeDirection(Direction.right),
+                semanticLabel: 'Snake Right',
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -525,23 +625,35 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
     VoidCallback onTap, {
     bool isUp = false,
     bool isDown = false,
+    required String semanticLabel,
   }) {
     final palette = context.palette;
 
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: 44,
-        height: 36,
-        decoration: BoxDecoration(
-          color: palette.surface,
-          border: Border.all(color: palette.border, width: PixelMetrics.border),
-        ),
-        child: Center(
-          child: RotatedBox(
-            quarterTurns: isUp ? 1 : (isDown ? 3 : 0),
-            child: PixelIcon(glyph, color: palette.ink, scale: 2),
+    return Semantics(
+      label: semanticLabel,
+      button: true,
+      child: GestureDetector(
+        onTapDown: (_) => onTap(),
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 64,
+          height: 48,
+          decoration: BoxDecoration(
+            color: palette.surface,
+            border: Border.all(color: palette.border, width: PixelMetrics.border),
+            boxShadow: [
+              BoxShadow(
+                color: palette.border.withValues(alpha: 0.4),
+                offset: const Offset(1, 1),
+                blurRadius: 0,
+              ),
+            ],
+          ),
+          child: Center(
+            child: RotatedBox(
+              quarterTurns: isUp ? 1 : (isDown ? 3 : 0),
+              child: PixelIcon(glyph, color: palette.ink, scale: 2.2),
+            ),
           ),
         ),
       ),
