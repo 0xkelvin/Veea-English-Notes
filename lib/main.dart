@@ -155,10 +155,19 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
 
   void _handleAppResume() {
     final widgetProvider = widget.widgetProvider;
-    if (widgetProvider != null &&
-        widgetProvider.rotateOnAppOpen &&
-        widgetProvider.isWidgetEnabled) {
-      WidgetService.rotateToNextWord();
+    if (widgetProvider != null && widgetProvider.isWidgetEnabled) {
+      if (widgetProvider.pronounceOnTap) {
+        WidgetService.getCurrentWidgetWord().then((word) {
+          if (word != null && word.trim().isNotEmpty) {
+            _ttsService.speak(word.trim());
+          }
+        });
+      }
+      if (widgetProvider.rotateOnAppOpen) {
+        WidgetService.rotateToNextWord();
+      } else {
+        widget.vocabulary.refreshWidgetData();
+      }
     } else {
       widget.vocabulary.refreshWidgetData();
     }
