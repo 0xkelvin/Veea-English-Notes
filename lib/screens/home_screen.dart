@@ -13,6 +13,7 @@ import 'account_screen.dart';
 import 'arcade_screen.dart';
 import 'review_screen.dart';
 import 'search_screen.dart';
+import 'settings_screen.dart';
 import 'word_editor_screen.dart';
 
 /// The daily journal.
@@ -92,6 +93,12 @@ class _TopBar extends StatelessWidget {
             glyph: PixelGlyph.plus,
             semanticLabel: 'Add a word',
             onPressed: () => _open(context, const WordEditorScreen()),
+          ),
+          const SizedBox(width: PixelMetrics.space1),
+          PixelIconButton(
+            glyph: PixelGlyph.gear,
+            semanticLabel: 'Settings and Stats',
+            onPressed: () => _open(context, const SettingsScreen()),
           ),
           const SizedBox(width: PixelMetrics.space1),
           const _AccountButton(),

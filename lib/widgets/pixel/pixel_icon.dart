@@ -282,6 +282,16 @@ class PixelGlyph {
     '.##....',
   ]);
 
+  static const gear = PixelGlyph([
+    '.#.##.#',
+    '#######',
+    '.##.##.',
+    '##...##',
+    '.##.##.',
+    '#######',
+    '.#.##.#',
+  ]);
+
   @override
   bool operator ==(Object other) =>
       other is PixelGlyph && identical(other.rows, rows);
