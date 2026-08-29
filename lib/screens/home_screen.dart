@@ -10,6 +10,7 @@ import '../widgets/pixel/pixel_icon.dart';
 import '../widgets/word_row.dart';
 import 'arcade_screen.dart';
 import 'audio_commute_screen.dart';
+import 'pixel_lens_screen.dart';
 import 'review_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
@@ -98,6 +99,12 @@ class _TopBar extends StatelessWidget {
             glyph: PixelGlyph.search,
             semanticLabel: 'Search all words',
             onPressed: () => _open(context, const SearchScreen()),
+          ),
+          const SizedBox(width: 4),
+          PixelIconButton(
+            glyph: PixelGlyph.camera,
+            semanticLabel: 'Pixel Lens OCR Scanner',
+            onPressed: () => _open(context, const PixelLensScreen()),
           ),
           const SizedBox(width: 4),
           PixelIconButton(

@@ -413,6 +413,36 @@ class PixelGlyph {
     '.......',
   ]);
 
+  static const camera = PixelGlyph([
+    '..###..',
+    '#######',
+    '#.###.#',
+    '#.#.#.#',
+    '#.###.#',
+    '#######',
+    '.......',
+  ]);
+
+  static const wand = PixelGlyph([
+    '.....#.',
+    '....#.#',
+    '...#.#.',
+    '..#....',
+    '.#.....',
+    '#......',
+    '.......',
+  ]);
+
+  static const scan = PixelGlyph([
+    '##...##',
+    '#.....#',
+    '..###..',
+    '..#.#..',
+    '..###..',
+    '#.....#',
+    '##...##',
+  ]);
+
   @override
   bool operator ==(Object other) =>
       other is PixelGlyph && identical(other.rows, rows);

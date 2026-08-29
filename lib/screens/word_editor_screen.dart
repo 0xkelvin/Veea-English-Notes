@@ -7,6 +7,7 @@ import '../models/part_of_speech.dart';
 import '../models/vocabulary_word.dart';
 import '../providers/vocabulary_provider.dart';
 import '../services/pronunciation_service.dart';
+import '../widgets/pixel/context_wizard_sheet.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_field.dart';
 import '../widgets/pixel/pixel_icon.dart';
@@ -184,6 +185,35 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
     if (mounted) Navigator.of(context).pop();
   }
 
+  void _openContextWizard() {
+    final targetWord =
+        _word.text.trim().isNotEmpty ? _word.text.trim() : 'resilient';
+    ContextWizardSheet.show(
+      context: context,
+      word: targetWord,
+      meaning: _meaning.text.trim(),
+      onSelectSentence: (sentence) {
+        setState(() {
+          if (_examples.isEmpty) {
+            _examples.add(TextEditingController(text: sentence));
+          } else {
+            _examples.first.text = sentence;
+          }
+        });
+      },
+      onAddTag: (tag) {
+        setState(() {
+          final current = _tags.text.trim();
+          if (current.isEmpty) {
+            _tags.text = tag;
+          } else {
+            _tags.text = '$current, $tag';
+          }
+        });
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -260,6 +290,7 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                     controllers: _examples,
                     onAdd: _addExample,
                     onRemove: _removeExample,
+                    onOpenWizard: _openContextWizard,
                   ),
                   const SizedBox(height: PixelMetrics.space4),
                   PixelField(
@@ -477,15 +508,18 @@ class _ExamplesSection extends StatelessWidget {
     required this.controllers,
     required this.onAdd,
     required this.onRemove,
+    required this.onOpenWizard,
   });
 
   final List<TextEditingController> controllers;
   final VoidCallback onAdd;
   final ValueChanged<int> onRemove;
+  final VoidCallback onOpenWizard;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final palette = context.palette;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -497,6 +531,37 @@ class _ExamplesSection extends StatelessWidget {
               style: theme.textTheme.labelSmall,
             ),
             const Spacer(),
+            GestureDetector(
+              onTap: onOpenWizard,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: palette.accent,
+                  border: Border.all(color: palette.border, width: 1),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    PixelIcon(
+                      PixelGlyph.wand,
+                      color: palette.onAccent,
+                      scale: 1.2,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      'AI WIZARD',
+                      style: TextStyle(
+                        fontFamily: 'Handjet',
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: palette.onAccent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
             PixelIconButton(
               glyph: PixelGlyph.plus,
               semanticLabel: 'Add another sentence',
