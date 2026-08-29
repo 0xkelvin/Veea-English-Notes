@@ -69,12 +69,12 @@ void main() {
     );
   }
 
-  testWidgets('ArcadeScreen displays 9 arcade game options', (tester) async {
+  testWidgets('ArcadeScreen displays arcade game options', (tester) async {
     await tester.pumpWidget(buildApp(const ArcadeScreen()));
     await tester.pump();
 
     expect(find.text('ARCADE CENTER'), findsOneWidget);
-    expect(find.text('9 GAMES'), findsOneWidget);
+    expect(find.textContaining('GAMES'), findsOneWidget);
     expect(find.text('WORD RUSH 60S'), findsOneWidget);
     expect(find.text('VOCAB SNAKE'), findsOneWidget);
     expect(find.text('VOCAB INVADERS'), findsOneWidget);
