@@ -53,11 +53,9 @@ class _TopBar extends StatelessWidget {
     final provider = context.watch<VocabularyProvider>();
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(
-        PixelMetrics.space4,
-        PixelMetrics.space2,
-        PixelMetrics.space2,
-        PixelMetrics.space2,
+      padding: const EdgeInsets.symmetric(
+        horizontal: PixelMetrics.space3,
+        vertical: PixelMetrics.space2,
       ),
       decoration: BoxDecoration(
         border: Border(
@@ -65,27 +63,18 @@ class _TopBar extends StatelessWidget {
         ),
       ),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Flexible(
-            child: Text(
-              'VEEA·EN',
-              style: Theme.of(context).textTheme.titleMedium,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(width: PixelMetrics.space2),
           PixelIconButton(
             glyph: PixelGlyph.headphones,
             semanticLabel: 'Commute Audio Player',
             onPressed: () => _open(context, const AudioCommuteScreen()),
           ),
-          const SizedBox(width: 4),
           PixelIconButton(
             glyph: PixelGlyph.gamepad,
             semanticLabel: 'Arcade Mini-Games',
             onPressed: () => _open(context, const ArcadeScreen()),
           ),
-          const SizedBox(width: 4),
           PixelIconButton(
             glyph: PixelGlyph.cards,
             semanticLabel: provider.dueReviewCount > 0
@@ -94,25 +83,21 @@ class _TopBar extends StatelessWidget {
             active: provider.dueReviewCount > 0,
             onPressed: () => _open(context, const ReviewScreen()),
           ),
-          const SizedBox(width: 4),
           PixelIconButton(
             glyph: PixelGlyph.search,
             semanticLabel: 'Search all words',
             onPressed: () => _open(context, const SearchScreen()),
           ),
-          const SizedBox(width: 4),
           PixelIconButton(
             glyph: PixelGlyph.camera,
             semanticLabel: 'Pixel Lens OCR Scanner',
             onPressed: () => _open(context, const PixelLensScreen()),
           ),
-          const SizedBox(width: 4),
           PixelIconButton(
             glyph: PixelGlyph.plus,
             semanticLabel: 'Add a word',
             onPressed: () => _open(context, const WordEditorScreen()),
           ),
-          const SizedBox(width: 4),
           PixelIconButton(
             glyph: PixelGlyph.gear,
             semanticLabel: 'Settings',
