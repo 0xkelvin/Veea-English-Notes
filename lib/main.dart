@@ -11,6 +11,7 @@ import 'data/remote/auth_api.dart';
 import 'data/remote/token_store.dart';
 import 'data/remote/vocabulary_api.dart';
 import 'providers/auth_provider.dart';
+import 'providers/cartridge_provider.dart';
 import 'providers/pet_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/vocabulary_provider.dart';
@@ -197,6 +198,9 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
         ),
         ChangeNotifierProvider(
           create: (_) => PetProvider()..init(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => CartridgeProvider(),
         ),
         Provider<PronunciationService>.value(value: widget.pronunciation),
       ],

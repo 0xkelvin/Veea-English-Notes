@@ -15,6 +15,7 @@ import 'package:veea_english_app/data/remote/vocabulary_api.dart';
 import 'package:veea_english_app/models/part_of_speech.dart';
 import 'package:veea_english_app/models/vocabulary_word.dart';
 import 'package:veea_english_app/providers/auth_provider.dart';
+import 'package:veea_english_app/providers/cartridge_provider.dart';
 import 'package:veea_english_app/providers/pet_provider.dart';
 import 'package:veea_english_app/providers/theme_provider.dart';
 import 'package:veea_english_app/providers/vocabulary_provider.dart';
@@ -149,6 +150,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => WidgetProvider()),
         ChangeNotifierProvider(create: (_) => PetProvider()),
+        ChangeNotifierProvider(create: (_) => CartridgeProvider()),
         Provider<PronunciationService>.value(value: pronunciation),
         ChangeNotifierProvider(create: (_) => syncService),
         ChangeNotifierProvider(

@@ -10,15 +10,18 @@ import '../core/theme/pixel_metrics.dart';
 import '../core/theme/pixel_palette.dart';
 import '../models/account_identifier.dart';
 import '../providers/auth_provider.dart';
+import '../providers/cartridge_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/vocabulary_provider.dart';
 import '../providers/widget_provider.dart';
 import '../services/sync_service.dart';
 import '../widgets/pixel/pixel_badges_grid.dart';
+import '../widgets/pixel/pixel_box.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_field.dart';
 import '../widgets/pixel/pixel_heatmap.dart';
 import '../widgets/pixel/pixel_icon.dart';
+import 'cartridge_library_screen.dart';
 
 /// Unified Settings, Appearance, Stats, and Cloud Sync screen.
 ///
@@ -155,6 +158,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                   // Retro Milestones & Badges
                   PixelBadgesGrid(badges: gamification.badges),
+                  const SizedBox(height: PixelMetrics.space5),
+
+                  // Career DLC Cartridges Library
+                  const _CartridgeLibrarySection(),
                   const SizedBox(height: PixelMetrics.space5),
 
                   // Theme Appearance
@@ -898,3 +905,87 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
     );
   }
 }
+
+class _CartridgeLibrarySection extends StatelessWidget {
+  const _CartridgeLibrarySection();
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final theme = Theme.of(context);
+    final cartridgeProvider = context.watch<CartridgeProvider>();
+    final isInstalled = cartridgeProvider.isInstalled('silicon_valley_tech_vol1');
+
+    return PixelBox(
+      raised: true,
+      color: palette.surface,
+      padding: const EdgeInsets.all(PixelMetrics.space4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              PixelIcon(PixelGlyph.gamepad, color: palette.accent, scale: 1.8),
+              const SizedBox(width: PixelMetrics.space2),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'CAREER & TECH CARTRIDGES',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Curated vocabulary for PR reviews & FAANG standups',
+                      style: TextStyle(
+                        fontFamily: 'Handjet',
+                        fontSize: 11,
+                        color: palette.inkMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isInstalled)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: palette.accent,
+                    border: Border.all(color: palette.border, width: 1),
+                  ),
+                  child: Text(
+                    'ACTIVE ★',
+                    style: TextStyle(
+                      fontFamily: 'Handjet',
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: palette.onAccent,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: PixelMetrics.space3),
+          PixelButton(
+            label: isInstalled ? 'Manage Tech Cartridge' : 'Explore Tech Cartridge',
+            glyph: PixelGlyph.gamepad,
+            filled: !isInstalled,
+            expand: true,
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const CartridgeLibraryScreen(),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+

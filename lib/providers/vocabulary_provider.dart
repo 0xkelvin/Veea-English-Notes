@@ -157,6 +157,12 @@ class VocabularyProvider extends ChangeNotifier {
     });
   }
 
+  Future<void> insertWord(VocabularyWord word) {
+    return _mutate('Could not save the word', () async {
+      await _repository.insert(word);
+    });
+  }
+
   Future<void> updateWord(
     VocabularyWord original, {
     required String word,

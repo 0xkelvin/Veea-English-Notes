@@ -6,6 +6,7 @@ import '../core/theme/pixel_palette.dart';
 import '../widgets/pixel/pixel_box.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_icon.dart';
+import 'cartridge_library_screen.dart';
 
 /// 8-Bit Retro Arcade Center for Vocabulary Practice & Mini-Games.
 ///
@@ -66,6 +67,45 @@ class ArcadeScreen extends StatelessWidget {
                     style: theme.textTheme.titleMedium,
                   ),
                   const Spacer(),
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const CartridgeLibraryScreen(),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: palette.surface,
+                        border: Border.all(
+                          color: palette.border,
+                          width: PixelMetrics.border,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          PixelIcon(PixelGlyph.gamepad,
+                              color: palette.accent, scale: 1.2),
+                          const SizedBox(width: 3),
+                          Text(
+                            'CARTRIDGES',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: palette.ink,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 6,

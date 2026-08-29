@@ -95,11 +95,14 @@ class _PixelButtonState extends State<PixelButton> {
                 PixelIcon(widget.glyph!, color: foreground),
                 const SizedBox(width: PixelMetrics.space2),
               ],
-              Text(
-                widget.label.toUpperCase(),
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: foreground,
-                  fontSize: PixelTheme.sizeLabel,
+              Flexible(
+                child: Text(
+                  widget.label.toUpperCase(),
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: foreground,
+                    fontSize: PixelTheme.sizeLabel,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],

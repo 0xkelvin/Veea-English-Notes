@@ -11,6 +11,7 @@ import 'package:veea_english_app/data/remote/token_store.dart';
 import 'package:veea_english_app/data/remote/vocabulary_api.dart';
 import 'package:veea_english_app/models/vocabulary_word.dart';
 import 'package:veea_english_app/providers/auth_provider.dart';
+import 'package:veea_english_app/providers/cartridge_provider.dart';
 import 'package:veea_english_app/providers/theme_provider.dart';
 import 'package:veea_english_app/providers/vocabulary_provider.dart';
 import 'package:veea_english_app/providers/widget_provider.dart';
@@ -74,6 +75,7 @@ void main() {
         ChangeNotifierProvider.value(value: vocabProvider),
         ChangeNotifierProvider.value(value: themeProvider),
         ChangeNotifierProvider.value(value: widgetProvider),
+        ChangeNotifierProvider(create: (_) => CartridgeProvider()),
         ChangeNotifierProvider.value(value: authProvider),
         ChangeNotifierProvider.value(value: syncService),
       ],
