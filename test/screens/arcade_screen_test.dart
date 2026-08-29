@@ -93,6 +93,6 @@ void main() {
     await tester.pump();
 
     expect(find.text('VOCAB SNAKE'), findsOneWidget);
-    expect(find.text('EAT MATCHING ENGLISH WORD:'), findsOneWidget);
+    expect(find.text('STEER SNAKE TO EAT:'), findsOneWidget);
   });
 }

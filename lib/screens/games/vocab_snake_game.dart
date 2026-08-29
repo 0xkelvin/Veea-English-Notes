@@ -128,9 +128,18 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
 
     for (final p in pelletWords) {
       Point<int> pos;
+      var attempts = 0;
       do {
-        pos = Point(random.nextInt(_gridSize), random.nextInt(_gridSize));
-      } while (occupied.contains(pos));
+        // Keep 1-cell padding from borders so floating tags stay well within the board
+        final x = random.nextInt(_gridSize - 2) + 1;
+        final y = random.nextInt(_gridSize - 2) + 1;
+        pos = Point(x, y);
+        attempts++;
+      } while ((occupied.contains(pos) ||
+              pellets.any((other) =>
+                  (other.position.x - pos.x).abs() < 3 &&
+                  (other.position.y - pos.y).abs() < 3)) &&
+          attempts < 60);
 
       occupied.add(pos);
       pellets.add(
@@ -356,7 +365,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
           child: Column(
             children: [
               Text(
-                'EAT MATCHING ENGLISH WORD:',
+                'STEER SNAKE TO EAT:',
                 style: theme.textTheme.labelSmall?.copyWith(fontSize: 10),
               ),
               const SizedBox(height: 2),
@@ -372,7 +381,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
           ),
         ),
 
-        // 16x16 Pixel Board
+        // 16x16 Pixel Board with Pellets & Floating Word Labels
         Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: PixelMetrics.space3),
@@ -388,6 +397,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
                     final cellSize = constraints.maxWidth / _gridSize;
 
                     return Stack(
+                      clipBehavior: Clip.none,
                       children: [
                         // Snake Body & Head
                         for (var i = 0; i < _snake.length; i++)
@@ -405,18 +415,71 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
                             ),
                           ),
 
-                        // Food Pellets with Word Labels
+                        // Food Pellets (Red Dots)
                         for (final pellet in _foodPellets)
                           Positioned(
                             left: pellet.position.x * cellSize,
                             top: pellet.position.y * cellSize,
                             width: cellSize,
                             height: cellSize,
-                            child: Container(
-                              margin: const EdgeInsets.all(1),
-                              decoration: BoxDecoration(
-                                color: palette.danger,
-                                border: Border.all(color: palette.border, width: 0.5),
+                            child: Center(
+                              child: Container(
+                                width: cellSize * 0.75,
+                                height: cellSize * 0.75,
+                                decoration: BoxDecoration(
+                                  color: palette.danger,
+                                  border: Border.all(color: palette.border, width: 1),
+                                ),
+                                child: Center(
+                                  child: Container(
+                                    width: 3,
+                                    height: 3,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+
+                        // English Word Labels positioned directly above or below each red dot
+                        for (final pellet in _foodPellets)
+                          Positioned(
+                            left: ((pellet.position.x + 0.5) * cellSize)
+                                .clamp(36.0, constraints.maxWidth - 36.0),
+                            top: pellet.position.y >= 2
+                                ? (pellet.position.y * cellSize) - 18
+                                : ((pellet.position.y + 1) * cellSize) + 2,
+                            child: FractionalTranslation(
+                              translation: const Offset(-0.5, 0),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: palette.paper,
+                                  border: Border.all(
+                                    color: palette.border,
+                                    width: 1,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: palette.border.withValues(alpha: 0.5),
+                                      offset: const Offset(1, 1),
+                                      blurRadius: 0,
+                                    ),
+                                  ],
+                                ),
+                                child: Text(
+                                  pellet.word.toUpperCase(),
+                                  style: TextStyle(
+                                    fontFamily: 'Handjet',
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: palette.ink,
+                                    height: 1.0,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -429,33 +492,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
           ),
         ),
 
-        // Pellet Reference Legend
-        Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: PixelMetrics.space3,
-            vertical: 4,
-          ),
-          child: Wrap(
-            spacing: 8,
-            children: _foodPellets.map((p) {
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                decoration: BoxDecoration(
-                  color: palette.surface,
-                  border: Border.all(color: palette.border, width: 1),
-                ),
-                child: Text(
-                  '● ${p.word}',
-                  style: TextStyle(
-                    fontFamily: 'Handjet',
-                    fontSize: 11,
-                    color: palette.ink,
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ),
+        const SizedBox(height: PixelMetrics.space2),
 
         // Retro D-Pad Controller
         _buildDPad(context),
