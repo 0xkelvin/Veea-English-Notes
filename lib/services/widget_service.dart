@@ -175,7 +175,23 @@ class WidgetService {
     if (kIsWeb) return null;
     try {
       await HomeWidget.setAppGroupId(appGroupId);
-      return await HomeWidget.getWidgetData<String>('widget_word');
+      final word = await HomeWidget.getWidgetData<String>('widget_word');
+      if (word != null && word.trim().isNotEmpty) return word.trim();
+
+      final jsonString =
+          await HomeWidget.getWidgetData<String>('widget_words_json');
+      if (jsonString == null || jsonString.isEmpty) return null;
+
+      final dynamic decoded = jsonDecode(jsonString);
+      if (decoded is! List || decoded.isEmpty) return null;
+
+      final currentIndex =
+          (await HomeWidget.getWidgetData<int>('widget_rotation_index')) ?? 0;
+      final currentItem = decoded[currentIndex % decoded.length];
+      if (currentItem is Map<String, dynamic>) {
+        return currentItem['word']?.toString();
+      }
+      return null;
     } catch (error, stack) {
       debugPrint('Could not get current widget word: $error\n$stack');
       return null;
