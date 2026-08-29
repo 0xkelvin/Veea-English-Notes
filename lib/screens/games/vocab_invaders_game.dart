@@ -33,6 +33,44 @@ class LaserBeam {
   double y;
 }
 
+class ExplosionParticle {
+  ExplosionParticle({
+    required this.x,
+    required this.y,
+    required this.vx,
+    required this.vy,
+    required this.size,
+    required this.color,
+    this.life = 1.0,
+    this.decay = 0.08,
+  });
+
+  double x;
+  double y;
+  double vx;
+  double vy;
+  double size;
+  Color color;
+  double life;
+  double decay;
+}
+
+class ScorePopup {
+  ScorePopup({
+    required this.x,
+    required this.y,
+    required this.text,
+    required this.color,
+    this.life = 1.0,
+  });
+
+  double x;
+  double y;
+  final String text;
+  final Color color;
+  double life;
+}
+
 /// 8-Bit Space Invaders / Galaga Arcade Shooter for Vocabulary Practice.
 class VocabInvadersGame extends StatefulWidget {
   const VocabInvadersGame({super.key});
@@ -50,6 +88,8 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
   VocabularyWord? _currentTargetWord;
   List<AlienShip> _aliens = [];
   List<LaserBeam> _lasers = [];
+  List<ExplosionParticle> _particles = [];
+  List<ScorePopup> _scorePopups = [];
 
   double _cannonX = 0.5; // 0.0 to 1.0
   int _score = 0;
@@ -87,6 +127,8 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
       _isGameOver = false;
       _cannonX = 0.5;
       _lasers = [];
+      _particles = [];
+      _scorePopups = [];
     });
 
     _spawnWave();
@@ -154,6 +196,42 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
     });
   }
 
+  void _spawnExplosion(double x, double y, {required bool isTarget, required String text}) {
+    final random = Random();
+    final palette = context.palette;
+    final colors = isTarget
+        ? [palette.accent, palette.danger, Colors.amberAccent, palette.ink]
+        : [palette.inkFaint, palette.danger, palette.border];
+
+    final newParticles = <ExplosionParticle>[];
+    const count = 20;
+    for (var i = 0; i < count; i++) {
+      final angle = (i / count) * 2 * pi + (random.nextDouble() * 0.4 - 0.2);
+      final speed = 0.008 + (random.nextDouble() * 0.022);
+      newParticles.add(
+        ExplosionParticle(
+          x: x,
+          y: y,
+          vx: cos(angle) * speed,
+          vy: sin(angle) * speed,
+          size: 4.0 + random.nextDouble() * 6.0,
+          color: colors[random.nextInt(colors.length)],
+          decay: 0.06 + random.nextDouble() * 0.05,
+        ),
+      );
+    }
+
+    _particles.addAll(newParticles);
+    _scorePopups.add(
+      ScorePopup(
+        x: x,
+        y: y - 0.03,
+        text: text,
+        color: isTarget ? palette.accent : palette.danger,
+      ),
+    );
+  }
+
   void _tick() {
     if (_isGameOver) return;
 
@@ -162,6 +240,21 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
       laser.y -= 0.06;
     }
     _lasers.removeWhere((l) => l.y < 0.0);
+
+    // Update Particles
+    for (final p in _particles) {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= p.decay;
+    }
+    _particles.removeWhere((p) => p.life <= 0);
+
+    // Update Score Popups
+    for (final s in _scorePopups) {
+      s.y -= 0.008;
+      s.life -= 0.06;
+    }
+    _scorePopups.removeWhere((s) => s.life <= 0);
 
     // Move Aliens Down
     final speed = 0.003 + (_wave * 0.0006);
@@ -195,12 +288,27 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
 
     if (hitAlien != null && collidingLaser != null) {
       _lasers.remove(collidingLaser);
+      _aliens.remove(hitAlien);
+
       if (hitAlien.isCorrect) {
-        _score += 150 * _combo;
+        final earned = 150 * _combo;
+        _score += earned;
+        _spawnExplosion(
+          hitAlien.x,
+          hitAlien.y,
+          isTarget: true,
+          text: '+$earned! 💥',
+        );
         _combo = (_combo + 1).clamp(1, 5);
         _wave++;
         _spawnWave();
       } else {
+        _spawnExplosion(
+          hitAlien.x,
+          hitAlien.y,
+          isTarget: false,
+          text: 'WRONG! ☠',
+        );
         _combo = 1;
         _handleShieldHit();
       }
@@ -447,6 +555,64 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
                               width: 4,
                               height: 12,
                               color: palette.accent,
+                            ),
+                          ),
+
+                        // Explosion Debris Particles
+                        for (final p in _particles)
+                          Positioned(
+                            left: (p.x * w) - (p.size / 2),
+                            top: (p.y * h) - (p.size / 2),
+                            child: Opacity(
+                              opacity: p.life.clamp(0.0, 1.0),
+                              child: Container(
+                                width: p.size,
+                                height: p.size,
+                                decoration: BoxDecoration(
+                                  color: p.color,
+                                  border: Border.all(
+                                    color: palette.border.withValues(alpha: p.life.clamp(0.0, 1.0)),
+                                    width: 0.5,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+
+                        // Floating Score & Hit Popups
+                        for (final s in _scorePopups)
+                          Positioned(
+                            left: ((s.x * w) - 40).clamp(8.0, w - 80.0),
+                            top: s.y * h,
+                            child: Opacity(
+                              opacity: s.life.clamp(0.0, 1.0),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: palette.paper,
+                                  border: Border.all(color: s.color, width: 1.5),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: palette.border.withValues(alpha: 0.3),
+                                      offset: const Offset(1, 1),
+                                      blurRadius: 0,
+                                    ),
+                                  ],
+                                ),
+                                child: Text(
+                                  s.text,
+                                  style: TextStyle(
+                                    fontFamily: 'Handjet',
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: s.color,
+                                    height: 1.0,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
 
@@ -761,4 +927,3 @@ class _ArcadeFireButtonState extends State<_ArcadeFireButton> {
     );
   }
 }
-
