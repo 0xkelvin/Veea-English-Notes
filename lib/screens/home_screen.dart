@@ -7,6 +7,7 @@ import '../providers/vocabulary_provider.dart';
 import '../widgets/date_bar.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_icon.dart';
+import '../widgets/word_of_day_widget_card.dart';
 import '../widgets/word_row.dart';
 import 'arcade_screen.dart';
 import 'review_screen.dart';
@@ -33,6 +34,7 @@ class HomeScreen extends StatelessWidget {
             const _TopBar(),
             const DateBar(),
             const StatusLine(),
+            const WordOfDayWidgetCard(),
             Expanded(child: _Body(provider: provider)),
             const _UndoBar(),
           ],

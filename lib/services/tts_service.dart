@@ -29,7 +29,10 @@ class TtsService extends ChangeNotifier {
       await _tts.setIosAudioCategory(IosTextToSpeechAudioCategory.playback, [
         IosTextToSpeechAudioCategoryOptions.allowBluetooth,
         IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+        IosTextToSpeechAudioCategoryOptions.mixWithOthers,
+        IosTextToSpeechAudioCategoryOptions.duckOthers,
       ]);
+      await _tts.awaitSpeakCompletion(true);
     }
 
     await _tts.setLanguage('en-US');
