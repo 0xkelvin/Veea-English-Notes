@@ -475,7 +475,7 @@ class _WordStackerGameState extends State<WordStackerGame> {
 
         const SizedBox(height: PixelMetrics.space3),
 
-        // Controls
+        // Ergonomic Two-Handed Controls
         Padding(
           padding: const EdgeInsets.fromLTRB(
             PixelMetrics.space3,
@@ -484,25 +484,29 @@ class _WordStackerGameState extends State<WordStackerGame> {
             PixelMetrics.space3,
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              PixelButton(
-                label: '◀ Col',
+              // Left Thumb: Column Movement
+              _StackerTouchButton(
                 glyph: PixelGlyph.arrowLeft,
-                onPressed: () => _moveBlock(-1),
+                label: '◀',
+                semanticLabel: 'Move Block Left',
+                onAction: () => _moveBlock(-1),
               ),
-              const SizedBox(width: PixelMetrics.space3),
-              PixelButton(
-                label: 'DROP ⬇',
-                glyph: PixelGlyph.tetris,
-                filled: true,
-                onPressed: _hardDrop,
-              ),
-              const SizedBox(width: PixelMetrics.space3),
-              PixelButton(
-                label: 'Col ▶',
+              const SizedBox(width: PixelMetrics.space2),
+              _StackerTouchButton(
                 glyph: PixelGlyph.arrowRight,
-                onPressed: () => _moveBlock(1),
+                label: '▶',
+                semanticLabel: 'Move Block Right',
+                onAction: () => _moveBlock(1),
+              ),
+
+              const Spacer(),
+
+              // Right Thumb: Big Drop Button
+              _StackerDropButton(
+                glyph: PixelGlyph.tetris,
+                label: 'DROP ⬇',
+                onDrop: _hardDrop,
               ),
             ],
           ),
@@ -569,6 +573,113 @@ class _WordStackerGameState extends State<WordStackerGame> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StackerTouchButton extends StatelessWidget {
+  const _StackerTouchButton({
+    required this.glyph,
+    required this.label,
+    required this.semanticLabel,
+    required this.onAction,
+  });
+
+  final PixelGlyph glyph;
+  final String label;
+  final String semanticLabel;
+  final VoidCallback onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+
+    return Semantics(
+      label: semanticLabel,
+      button: true,
+      child: GestureDetector(
+        onTapDown: (_) => onAction(),
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 58,
+          height: 48,
+          decoration: BoxDecoration(
+            color: palette.surface,
+            border: Border.all(color: palette.border, width: PixelMetrics.border),
+            boxShadow: [
+              BoxShadow(
+                color: palette.border.withValues(alpha: 0.4),
+                offset: const Offset(1, 1),
+                blurRadius: 0,
+              ),
+            ],
+          ),
+          child: Center(
+            child: PixelIcon(
+              glyph,
+              color: palette.ink,
+              scale: 2.2,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StackerDropButton extends StatelessWidget {
+  const _StackerDropButton({
+    required this.glyph,
+    required this.label,
+    required this.onDrop,
+  });
+
+  final PixelGlyph glyph;
+  final String label;
+  final VoidCallback onDrop;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+
+    return GestureDetector(
+      onTap: onDrop,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        decoration: BoxDecoration(
+          color: palette.accent,
+          border: Border.all(color: palette.border, width: PixelMetrics.border),
+          boxShadow: [
+            BoxShadow(
+              color: palette.border.withValues(alpha: 0.4),
+              offset: const Offset(2, 2),
+              blurRadius: 0,
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            PixelIcon(
+              glyph,
+              color: palette.onAccent,
+              scale: 2.0,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'Handjet',
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: palette.onAccent,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
         ),
       ),
     );

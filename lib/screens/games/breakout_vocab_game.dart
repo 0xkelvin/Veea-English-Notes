@@ -31,6 +31,44 @@ class VocabBrick {
   bool isBroken;
 }
 
+class BreakoutParticle {
+  BreakoutParticle({
+    required this.x,
+    required this.y,
+    required this.vx,
+    required this.vy,
+    required this.size,
+    required this.color,
+    this.life = 1.0,
+    this.decay = 0.08,
+  });
+
+  double x;
+  double y;
+  double vx;
+  double vy;
+  double size;
+  Color color;
+  double life;
+  double decay;
+}
+
+class BreakoutScorePopup {
+  BreakoutScorePopup({
+    required this.x,
+    required this.y,
+    required this.text,
+    required this.color,
+    this.life = 1.0,
+  });
+
+  double x;
+  double y;
+  final String text;
+  final Color color;
+  double life;
+}
+
 /// 8-Bit Brick Breaker / Arkanoid Game for Vocabulary Practice.
 class BreakoutVocabGame extends StatefulWidget {
   const BreakoutVocabGame({super.key});
@@ -47,6 +85,8 @@ class _BreakoutVocabGameState extends State<BreakoutVocabGame> {
   Timer? _gameLoop;
   VocabularyWord? _currentTargetWord;
   List<VocabBrick> _bricks = [];
+  List<BreakoutParticle> _particles = [];
+  List<BreakoutScorePopup> _scorePopups = [];
 
   double _paddleX = 0.5; // 0.0 to 1.0
   double _ballX = 0.5;
@@ -59,6 +99,11 @@ class _BreakoutVocabGameState extends State<BreakoutVocabGame> {
   int _boardsCleared = 0;
   int _lives = 3;
   bool _isGameOver = false;
+  bool _isPlayerDying = false;
+
+  double _screenShakeX = 0.0;
+  double _screenShakeY = 0.0;
+  double _screenFlashOpacity = 0.0;
 
   @override
   void initState() {
@@ -86,7 +131,13 @@ class _BreakoutVocabGameState extends State<BreakoutVocabGame> {
       _boardsCleared = 0;
       _lives = 3;
       _isGameOver = false;
+      _isPlayerDying = false;
       _paddleX = 0.5;
+      _particles = [];
+      _scorePopups = [];
+      _screenShakeX = 0.0;
+      _screenShakeY = 0.0;
+      _screenFlashOpacity = 0.0;
       _resetBall();
     });
 
@@ -158,6 +209,7 @@ class _BreakoutVocabGameState extends State<BreakoutVocabGame> {
   }
 
   void _movePaddle(double delta) {
+    if (_isPlayerDying) return;
     setState(() {
       _paddleX = (_paddleX + delta).clamp(0.15, 0.85);
       if (!_ballInPlay) _ballX = _paddleX;
@@ -165,15 +217,117 @@ class _BreakoutVocabGameState extends State<BreakoutVocabGame> {
   }
 
   void _launchBall() {
-    if (!_ballInPlay && !_isGameOver) {
+    if (!_ballInPlay && !_isGameOver && !_isPlayerDying) {
       setState(() {
         _ballInPlay = true;
       });
     }
   }
 
+  void _spawnBrickDebris(double x, double y, {required bool isTarget, required String text}) {
+    final random = Random();
+    final palette = context.palette;
+    final colors = isTarget
+        ? [palette.accent, Colors.amberAccent, palette.danger, palette.ink]
+        : [palette.inkFaint, palette.surface, palette.border];
+
+    final newParticles = <BreakoutParticle>[];
+    const count = 16;
+    for (var i = 0; i < count; i++) {
+      final angle = (i / count) * 2 * pi + (random.nextDouble() * 0.4 - 0.2);
+      final speed = 0.006 + (random.nextDouble() * 0.018);
+      newParticles.add(
+        BreakoutParticle(
+          x: x,
+          y: y,
+          vx: cos(angle) * speed,
+          vy: sin(angle) * speed,
+          size: 4.0 + random.nextDouble() * 5.0,
+          color: colors[random.nextInt(colors.length)],
+          decay: 0.06 + random.nextDouble() * 0.04,
+        ),
+      );
+    }
+
+    _particles.addAll(newParticles);
+    _scorePopups.add(
+      BreakoutScorePopup(
+        x: x,
+        y: y - 0.03,
+        text: text,
+        color: isTarget ? palette.accent : palette.inkFaint,
+      ),
+    );
+  }
+
+  void _spawnPaddleDeathExplosion(double x, double y) {
+    final random = Random();
+    final palette = context.palette;
+    final deathColors = [
+      palette.danger,
+      Colors.orangeAccent,
+      Colors.yellowAccent,
+      palette.accent,
+      palette.ink,
+      Colors.white,
+    ];
+
+    final newParticles = <BreakoutParticle>[];
+    const count = 36;
+    for (var i = 0; i < count; i++) {
+      final angle = (i / count) * 2 * pi + (random.nextDouble() * 0.5 - 0.25);
+      final speed = 0.008 + (random.nextDouble() * 0.030);
+      newParticles.add(
+        BreakoutParticle(
+          x: x,
+          y: y,
+          vx: cos(angle) * speed,
+          vy: sin(angle) * speed - 0.005,
+          size: 5.0 + random.nextDouble() * 7.0,
+          color: deathColors[random.nextInt(deathColors.length)],
+          decay: 0.03 + random.nextDouble() * 0.03,
+        ),
+      );
+    }
+
+    _particles.addAll(newParticles);
+    _scorePopups.add(
+      BreakoutScorePopup(
+        x: x,
+        y: y - 0.06,
+        text: '☠ PADDLE SHATTERED! ☠',
+        color: palette.danger,
+      ),
+    );
+  }
+
   void _tick() {
-    if (_isGameOver || !_ballInPlay) return;
+    if (_isGameOver) return;
+
+    // Decay shake and flash
+    if (_screenShakeX.abs() > 0.2) _screenShakeX *= 0.65;
+    if (_screenShakeY.abs() > 0.2) _screenShakeY *= 0.65;
+    if (_screenFlashOpacity > 0.03) _screenFlashOpacity -= 0.04;
+
+    // Update Particles
+    for (final p in _particles) {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= p.decay;
+    }
+    _particles.removeWhere((p) => p.life <= 0);
+
+    // Update Score Popups
+    for (final s in _scorePopups) {
+      s.y -= 0.006;
+      s.life -= 0.05;
+    }
+    _scorePopups.removeWhere((s) => s.life <= 0);
+
+    if (!_ballInPlay || _isPlayerDying) {
+      setState(() {});
+      return;
+    }
 
     _ballX += _ballVx;
     _ballY += _ballVy;
@@ -204,19 +358,34 @@ class _BreakoutVocabGameState extends State<BreakoutVocabGame> {
 
     // Ball Drop
     if (_ballY > 0.96) {
+      final random = Random();
       _lives--;
+      _screenFlashOpacity = 0.45;
+      _screenShakeX = (random.nextBool() ? 1 : -1) * 8.0;
+      _screenShakeY = (random.nextBool() ? 1 : -1) * 8.0;
+
       if (_lives > 0) {
         _resetBall();
       } else {
-        _isGameOver = true;
-        _gameLoop?.cancel();
+        // Fatal Death Sequence
+        _isPlayerDying = true;
+        _spawnPaddleDeathExplosion(_paddleX, 0.86);
+
+        Future.delayed(const Duration(milliseconds: 1400), () {
+          if (mounted) {
+            setState(() {
+              _isGameOver = true;
+              _isPlayerDying = false;
+              _gameLoop?.cancel();
+            });
+          }
+        });
       }
       setState(() {});
       return;
     }
 
     // Brick Collisions
-    // Brick area: rows 0..2 map to y in [0.08, 0.40]
     const rowHeight = 0.09;
     const topMargin = 0.06;
     for (final brick in _bricks) {
@@ -233,13 +402,28 @@ class _BreakoutVocabGameState extends State<BreakoutVocabGame> {
         brick.isBroken = true;
         _ballVy = -_ballVy;
 
+        final brickCenterX = (brickLeft + brickRight) / 2;
+        final brickCenterY = (brickTop + brickBottom) / 2;
+
         if (brick.isTarget) {
           _score += 300;
           _boardsCleared++;
+          _spawnBrickDebris(
+            brickCenterX,
+            brickCenterY,
+            isTarget: true,
+            text: '+300! 🧱',
+          );
           _spawnBricks();
           return;
         } else {
           _score += 50;
+          _spawnBrickDebris(
+            brickCenterX,
+            brickCenterY,
+            isTarget: false,
+            text: '+50',
+          );
         }
         break;
       }
@@ -381,133 +565,212 @@ class _BreakoutVocabGameState extends State<BreakoutVocabGame> {
           ),
         ),
 
-        // Breakout Court
+        // Breakout Court with Screen Shake
         Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: PixelMetrics.space3),
-            child: Container(
-              decoration: BoxDecoration(
-                color: palette.surface,
-                border: Border.all(color: palette.border, width: PixelMetrics.border),
-              ),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final w = constraints.maxWidth;
-                  final h = constraints.maxHeight;
+            child: Transform.translate(
+              offset: Offset(_screenShakeX, _screenShakeY),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: palette.surface,
+                  border: Border.all(color: palette.border, width: PixelMetrics.border),
+                ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final w = constraints.maxWidth;
+                    final h = constraints.maxHeight;
 
-                  return GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onHorizontalDragUpdate: (details) {
-                      setState(() {
-                        _paddleX = (_paddleX + (details.delta.dx / w)).clamp(0.15, 0.85);
-                        if (!_ballInPlay) _ballX = _paddleX;
-                      });
-                    },
-                    onTapUp: (_) => _launchBall(),
-                    child: Stack(
-                      children: [
-                        // Bricks Grid
-                        for (final brick in _bricks)
-                          if (!brick.isBroken)
-                            Positioned(
-                              left: (0.05 + (brick.col * 0.31)) * w,
-                              top: (0.06 + (brick.row * 0.09)) * h,
-                              width: 0.28 * w,
-                              height: 0.075 * h,
-                              child: Container(
-                                padding: const EdgeInsets.all(2),
-                                decoration: BoxDecoration(
-                                  color: brick.isTarget
-                                      ? palette.accent
-                                      : palette.surface,
-                                  border: Border.all(
-                                    color: palette.border,
-                                    width: 1.5,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: palette.border.withValues(alpha: 0.3),
-                                      offset: const Offset(1, 1),
-                                      blurRadius: 0,
-                                    ),
-                                  ],
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    brick.word.toUpperCase(),
-                                    style: TextStyle(
-                                      fontFamily: 'Handjet',
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      color: brick.isTarget
-                                          ? palette.onAccent
-                                          : palette.ink,
-                                      height: 1.0,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                    overflow: TextOverflow.ellipsis,
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onHorizontalDragUpdate: (details) {
+                        if (!_isPlayerDying) {
+                          setState(() {
+                            _paddleX = (_paddleX + (details.delta.dx / w)).clamp(0.15, 0.85);
+                            if (!_ballInPlay) _ballX = _paddleX;
+                          });
+                        }
+                      },
+                      onTapUp: (_) => _launchBall(),
+                      child: Stack(
+                        children: [
+                          // Red Screen Flash
+                          if (_screenFlashOpacity > 0.01)
+                            Positioned.fill(
+                              child: IgnorePointer(
+                                child: Container(
+                                  color: palette.danger.withValues(
+                                    alpha: _screenFlashOpacity.clamp(0.0, 0.5),
                                   ),
                                 ),
                               ),
                             ),
 
-                        // Bouncing Ball
-                        Positioned(
-                          left: (_ballX * w) - 6,
-                          top: (_ballY * h) - 6,
-                          child: Container(
-                            width: 12,
-                            height: 12,
-                            decoration: BoxDecoration(
-                              color: palette.danger,
-                              border: Border.all(color: palette.border, width: 1),
-                            ),
-                          ),
-                        ),
-
-                        // Paddle
-                        Positioned(
-                          left: (_paddleX * w) - 35,
-                          top: 0.86 * h,
-                          width: 70,
-                          height: 14,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: palette.ink,
-                              border: Border.all(color: palette.border, width: 1.5),
-                            ),
-                          ),
-                        ),
-
-                        // Launch Prompt
-                        if (!_ballInPlay)
-                          Positioned(
-                            bottom: 24,
-                            left: 0,
-                            right: 0,
-                            child: Center(
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
+                          // Bricks Grid
+                          for (final brick in _bricks)
+                            if (!brick.isBroken)
+                              Positioned(
+                                left: (0.05 + (brick.col * 0.31)) * w,
+                                top: (0.06 + (brick.row * 0.09)) * h,
+                                width: 0.28 * w,
+                                height: 0.075 * h,
+                                child: Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: BoxDecoration(
+                                    color: brick.isTarget
+                                        ? palette.accent
+                                        : palette.surface,
+                                    border: Border.all(
+                                      color: palette.border,
+                                      width: 1.5,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: palette.border.withValues(alpha: 0.3),
+                                        offset: const Offset(1, 1),
+                                        blurRadius: 0,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      brick.word.toUpperCase(),
+                                      style: TextStyle(
+                                        fontFamily: 'Handjet',
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: brick.isTarget
+                                            ? palette.onAccent
+                                            : palette.ink,
+                                        height: 1.0,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
                                 ),
+                              ),
+
+                          // Bouncing Ball
+                          if (!_isPlayerDying)
+                            Positioned(
+                              left: (_ballX * w) - 6,
+                              top: (_ballY * h) - 6,
+                              child: Container(
+                                width: 12,
+                                height: 12,
                                 decoration: BoxDecoration(
-                                  color: palette.paper,
+                                  color: palette.danger,
                                   border: Border.all(color: palette.border, width: 1),
                                 ),
-                                child: Text(
-                                  'TAP OR PRESS FIRE TO LAUNCH BALL',
-                                  style: theme.textTheme.labelSmall?.copyWith(
-                                    fontWeight: FontWeight.bold,
+                              ),
+                            ),
+
+                          // Paddle
+                          if (!_isPlayerDying)
+                            Positioned(
+                              left: (_paddleX * w) - 35,
+                              top: 0.86 * h,
+                              width: 70,
+                              height: 14,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: palette.ink,
+                                  border: Border.all(color: palette.border, width: 1.5),
+                                ),
+                              ),
+                            ),
+
+                          // Debris Particles
+                          for (final p in _particles)
+                            Positioned(
+                              left: (p.x * w) - (p.size / 2),
+                              top: (p.y * h) - (p.size / 2),
+                              child: Opacity(
+                                opacity: p.life.clamp(0.0, 1.0),
+                                child: Container(
+                                  width: p.size,
+                                  height: p.size,
+                                  decoration: BoxDecoration(
+                                    color: p.color,
+                                    border: Border.all(
+                                      color: palette.border.withValues(
+                                        alpha: p.life.clamp(0.0, 1.0),
+                                      ),
+                                      width: 0.5,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                      ],
-                    ),
-                  );
-                },
+
+                          // Floating Score Popups
+                          for (final s in _scorePopups)
+                            Positioned(
+                              left: ((s.x * w) - 45).clamp(8.0, w - 90.0),
+                              top: s.y * h,
+                              child: Opacity(
+                                opacity: s.life.clamp(0.0, 1.0),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: palette.paper,
+                                    border: Border.all(color: s.color, width: 1.5),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: palette.border.withValues(alpha: 0.3),
+                                        offset: const Offset(1, 1),
+                                        blurRadius: 0,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Text(
+                                    s.text,
+                                    style: TextStyle(
+                                      fontFamily: 'Handjet',
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      color: s.color,
+                                      height: 1.0,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                          // Launch Prompt
+                          if (!_ballInPlay && !_isPlayerDying)
+                            Positioned(
+                              bottom: 24,
+                              left: 0,
+                              right: 0,
+                              child: Center(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: palette.paper,
+                                    border: Border.all(color: palette.border, width: 1),
+                                  ),
+                                  child: Text(
+                                    'TAP OR PRESS LAUNCH TO PLAY',
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
           ),
@@ -515,7 +778,7 @@ class _BreakoutVocabGameState extends State<BreakoutVocabGame> {
 
         const SizedBox(height: PixelMetrics.space3),
 
-        // Controls
+        // Ergonomic Two-Handed Controls (Guaranteed zero-overflow)
         Padding(
           padding: const EdgeInsets.fromLTRB(
             PixelMetrics.space3,
@@ -524,25 +787,30 @@ class _BreakoutVocabGameState extends State<BreakoutVocabGame> {
             PixelMetrics.space3,
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              PixelButton(
-                label: '◀ Left',
+              // Left Thumb: Paddle Movement
+              _BreakoutTouchButton(
                 glyph: PixelGlyph.arrowLeft,
-                onPressed: () => _movePaddle(-0.08),
+                label: '◀',
+                semanticLabel: 'Move Paddle Left',
+                onAction: () => _movePaddle(-0.06),
               ),
-              const SizedBox(width: PixelMetrics.space3),
-              PixelButton(
-                label: _ballInPlay ? 'IN PLAY' : 'LAUNCH ⚪',
-                glyph: PixelGlyph.brick,
-                filled: !_ballInPlay,
-                onPressed: _launchBall,
-              ),
-              const SizedBox(width: PixelMetrics.space3),
-              PixelButton(
-                label: 'Right ▶',
+              const SizedBox(width: PixelMetrics.space2),
+              _BreakoutTouchButton(
                 glyph: PixelGlyph.arrowRight,
-                onPressed: () => _movePaddle(0.08),
+                label: '▶',
+                semanticLabel: 'Move Paddle Right',
+                onAction: () => _movePaddle(0.06),
+              ),
+
+              const Spacer(),
+
+              // Right Thumb: Big Launch Button
+              _BreakoutLaunchButton(
+                glyph: PixelGlyph.brick,
+                label: _ballInPlay ? 'IN PLAY ⚪' : 'LAUNCH ⚪',
+                isBallInPlay: _ballInPlay,
+                onLaunch: _launchBall,
               ),
             ],
           ),
@@ -609,6 +877,147 @@ class _BreakoutVocabGameState extends State<BreakoutVocabGame> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BreakoutTouchButton extends StatefulWidget {
+  const _BreakoutTouchButton({
+    required this.glyph,
+    required this.label,
+    required this.semanticLabel,
+    required this.onAction,
+  });
+
+  final PixelGlyph glyph;
+  final String label;
+  final String semanticLabel;
+  final VoidCallback onAction;
+
+  @override
+  State<_BreakoutTouchButton> createState() => _BreakoutTouchButtonState();
+}
+
+class _BreakoutTouchButtonState extends State<_BreakoutTouchButton> {
+  Timer? _holdTimer;
+  bool _pressed = false;
+
+  void _start() {
+    widget.onAction();
+    setState(() => _pressed = true);
+    _holdTimer?.cancel();
+    _holdTimer = Timer.periodic(const Duration(milliseconds: 40), (_) {
+      widget.onAction();
+    });
+  }
+
+  void _stop() {
+    _holdTimer?.cancel();
+    if (mounted) setState(() => _pressed = false);
+  }
+
+  @override
+  void dispose() {
+    _holdTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+
+    return Semantics(
+      label: widget.semanticLabel,
+      button: true,
+      child: GestureDetector(
+        onTapDown: (_) => _start(),
+        onTapUp: (_) => _stop(),
+        onTapCancel: _stop,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 58,
+          height: 48,
+          decoration: BoxDecoration(
+            color: _pressed ? palette.accent : palette.surface,
+            border: Border.all(color: palette.border, width: PixelMetrics.border),
+            boxShadow: _pressed
+                ? []
+                : [
+                    BoxShadow(
+                      color: palette.border.withValues(alpha: 0.4),
+                      offset: const Offset(1, 1),
+                      blurRadius: 0,
+                    ),
+                  ],
+          ),
+          child: Center(
+            child: PixelIcon(
+              widget.glyph,
+              color: _pressed ? palette.onAccent : palette.ink,
+              scale: 2.2,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BreakoutLaunchButton extends StatelessWidget {
+  const _BreakoutLaunchButton({
+    required this.glyph,
+    required this.label,
+    required this.isBallInPlay,
+    required this.onLaunch,
+  });
+
+  final PixelGlyph glyph;
+  final String label;
+  final bool isBallInPlay;
+  final VoidCallback onLaunch;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+
+    return GestureDetector(
+      onTap: onLaunch,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        decoration: BoxDecoration(
+          color: isBallInPlay ? palette.surface : palette.accent,
+          border: Border.all(color: palette.border, width: PixelMetrics.border),
+          boxShadow: [
+            BoxShadow(
+              color: palette.border.withValues(alpha: 0.4),
+              offset: const Offset(2, 2),
+              blurRadius: 0,
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            PixelIcon(
+              glyph,
+              color: isBallInPlay ? palette.inkFaint : palette.onAccent,
+              scale: 2.0,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'Handjet',
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: isBallInPlay ? palette.inkFaint : palette.onAccent,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
         ),
       ),
     );

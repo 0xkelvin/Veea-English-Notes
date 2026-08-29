@@ -460,7 +460,7 @@ class _VocabAnglerGameState extends State<VocabAnglerGame> {
 
         const SizedBox(height: PixelMetrics.space3),
 
-        // Controls
+        // Ergonomic Two-Handed Controls
         Padding(
           padding: const EdgeInsets.fromLTRB(
             PixelMetrics.space3,
@@ -469,25 +469,30 @@ class _VocabAnglerGameState extends State<VocabAnglerGame> {
             PixelMetrics.space3,
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              PixelButton(
-                label: '◀ Hook',
+              // Left Thumb: Hook Movement
+              _AnglerTouchButton(
                 glyph: PixelGlyph.arrowLeft,
-                onPressed: () => _moveHook(-0.08),
+                label: '◀',
+                semanticLabel: 'Move Hook Left',
+                onAction: () => _moveHook(-0.06),
               ),
-              const SizedBox(width: PixelMetrics.space3),
-              PixelButton(
-                label: _isReeling ? 'REEL UP 🎣' : 'DROP LINE ⚓',
-                glyph: PixelGlyph.fish,
-                filled: true,
-                onPressed: _toggleDropReel,
-              ),
-              const SizedBox(width: PixelMetrics.space3),
-              PixelButton(
-                label: 'Hook ▶',
+              const SizedBox(width: PixelMetrics.space2),
+              _AnglerTouchButton(
                 glyph: PixelGlyph.arrowRight,
-                onPressed: () => _moveHook(0.08),
+                label: '▶',
+                semanticLabel: 'Move Hook Right',
+                onAction: () => _moveHook(0.06),
+              ),
+
+              const Spacer(),
+
+              // Right Thumb: Big Reel/Drop Button
+              _AnglerReelButton(
+                glyph: PixelGlyph.fish,
+                label: _isReeling ? 'REEL UP 🎣' : 'DROP LINE ⚓',
+                isReeling: _isReeling,
+                onToggle: _toggleDropReel,
               ),
             ],
           ),
@@ -554,6 +559,147 @@ class _VocabAnglerGameState extends State<VocabAnglerGame> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AnglerTouchButton extends StatefulWidget {
+  const _AnglerTouchButton({
+    required this.glyph,
+    required this.label,
+    required this.semanticLabel,
+    required this.onAction,
+  });
+
+  final PixelGlyph glyph;
+  final String label;
+  final String semanticLabel;
+  final VoidCallback onAction;
+
+  @override
+  State<_AnglerTouchButton> createState() => _AnglerTouchButtonState();
+}
+
+class _AnglerTouchButtonState extends State<_AnglerTouchButton> {
+  Timer? _holdTimer;
+  bool _pressed = false;
+
+  void _start() {
+    widget.onAction();
+    setState(() => _pressed = true);
+    _holdTimer?.cancel();
+    _holdTimer = Timer.periodic(const Duration(milliseconds: 40), (_) {
+      widget.onAction();
+    });
+  }
+
+  void _stop() {
+    _holdTimer?.cancel();
+    if (mounted) setState(() => _pressed = false);
+  }
+
+  @override
+  void dispose() {
+    _holdTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+
+    return Semantics(
+      label: widget.semanticLabel,
+      button: true,
+      child: GestureDetector(
+        onTapDown: (_) => _start(),
+        onTapUp: (_) => _stop(),
+        onTapCancel: _stop,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 58,
+          height: 48,
+          decoration: BoxDecoration(
+            color: _pressed ? palette.accent : palette.surface,
+            border: Border.all(color: palette.border, width: PixelMetrics.border),
+            boxShadow: _pressed
+                ? []
+                : [
+                    BoxShadow(
+                      color: palette.border.withValues(alpha: 0.4),
+                      offset: const Offset(1, 1),
+                      blurRadius: 0,
+                    ),
+                  ],
+          ),
+          child: Center(
+            child: PixelIcon(
+              widget.glyph,
+              color: _pressed ? palette.onAccent : palette.ink,
+              scale: 2.2,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AnglerReelButton extends StatelessWidget {
+  const _AnglerReelButton({
+    required this.glyph,
+    required this.label,
+    required this.isReeling,
+    required this.onToggle,
+  });
+
+  final PixelGlyph glyph;
+  final String label;
+  final bool isReeling;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+
+    return GestureDetector(
+      onTap: onToggle,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        decoration: BoxDecoration(
+          color: isReeling ? palette.accent : palette.danger,
+          border: Border.all(color: palette.border, width: PixelMetrics.border),
+          boxShadow: [
+            BoxShadow(
+              color: palette.border.withValues(alpha: 0.4),
+              offset: const Offset(2, 2),
+              blurRadius: 0,
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            PixelIcon(
+              glyph,
+              color: Colors.white,
+              scale: 2.0,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                fontFamily: 'Handjet',
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
         ),
       ),
     );
