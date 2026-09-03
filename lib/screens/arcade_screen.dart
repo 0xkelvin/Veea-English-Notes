@@ -7,6 +7,7 @@ import '../widgets/pixel/pixel_box.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_icon.dart';
 import 'cartridge_library_screen.dart';
+import 'pixel_link_screen.dart';
 
 /// 8-Bit Retro Arcade Center for Vocabulary Practice & Mini-Games.
 ///
@@ -131,6 +132,27 @@ class ArcadeScreen extends StatelessWidget {
               ),
             ),
 
+            // 2P Game Link Duels Banner
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                PixelMetrics.space4,
+                PixelMetrics.space3,
+                PixelMetrics.space4,
+                0,
+              ),
+              child: _PixelLinkDuelBanner(
+                onTap: () {
+                  Navigator.of(context).push(
+                    PageRouteBuilder<void>(
+                      pageBuilder: (_, _, _) => const PixelLinkScreen(),
+                      transitionDuration: Duration.zero,
+                      reverseTransitionDuration: Duration.zero,
+                    ),
+                  );
+                },
+              ),
+            ),
+
             // Game Cards List
             Expanded(
               child: ListView.separated(
@@ -148,6 +170,99 @@ class ArcadeScreen extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PixelLinkDuelBanner extends StatelessWidget {
+  const _PixelLinkDuelBanner({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: palette.surface,
+        border: Border.all(color: palette.border, width: PixelMetrics.border),
+        boxShadow: [
+          BoxShadow(
+            color: palette.border.withValues(alpha: 0.4),
+            offset: const Offset(3, 3),
+            blurRadius: 0,
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(PixelMetrics.space3),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  color: palette.accent.withValues(alpha: 0.15),
+                  alignment: Alignment.center,
+                  child: PixelIcon(PixelGlyph.link, color: palette.accent, scale: 2.2),
+                ),
+                const SizedBox(width: PixelMetrics.space3),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                            color: palette.accent,
+                            child: Text(
+                              '2P VERSUS',
+                              style: TextStyle(
+                                fontFamily: 'Handjet',
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: palette.onAccent,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'PIXEL LINK DUELS',
+                            style: TextStyle(
+                              fontFamily: 'Handjet',
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: palette.ink,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Bắn từ thách đấu pop-up với bạn bè',
+                        style: TextStyle(
+                          fontFamily: 'Handjet',
+                          fontSize: 12,
+                          color: palette.inkMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                PixelButton(
+                  label: 'ĐẤU ⚡',
+                  onPressed: onTap,
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
