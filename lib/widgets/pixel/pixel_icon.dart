@@ -90,6 +90,26 @@ class PixelGlyph {
     '#.....#',
   ]);
 
+  static const arrowUp = PixelGlyph([
+    '...#...',
+    '..###..',
+    '.#####.',
+    '#######',
+    '...#...',
+    '...#...',
+    '...#...',
+  ]);
+
+  static const arrowDown = PixelGlyph([
+    '...#...',
+    '...#...',
+    '...#...',
+    '#######',
+    '.#####.',
+    '..###..',
+    '...#...',
+  ]);
+
   static const arrowLeft = PixelGlyph([
     '...#...',
     '..##...',

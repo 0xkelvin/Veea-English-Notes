@@ -661,11 +661,11 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
           children: [
             Positioned(
               top: 0,
-              child: _dPadButton(Direction.up, PixelGlyph.arrowLeft, isUp: true),
+              child: _dPadButton(Direction.up, PixelGlyph.arrowUp),
             ),
             Positioned(
               bottom: 0,
-              child: _dPadButton(Direction.down, PixelGlyph.arrowRight, isDown: true),
+              child: _dPadButton(Direction.down, PixelGlyph.arrowDown),
             ),
             Positioned(
               left: 0,
@@ -681,7 +681,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
     );
   }
 
-  Widget _dPadButton(Direction dir, PixelGlyph glyph, {bool isUp = false, bool isDown = false}) {
+  Widget _dPadButton(Direction dir, PixelGlyph glyph) {
     final palette = context.palette;
     return GestureDetector(
       onTapDown: (_) => _changeDirection(dir),
@@ -701,10 +701,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
           ],
         ),
         child: Center(
-          child: RotatedBox(
-            quarterTurns: isUp ? 1 : (isDown ? 3 : 0),
-            child: PixelIcon(glyph, color: palette.ink, scale: 2.4),
-          ),
+          child: PixelIcon(glyph, color: palette.ink, scale: 2.4),
         ),
       ),
     );
