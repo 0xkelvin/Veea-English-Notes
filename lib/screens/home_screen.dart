@@ -11,6 +11,7 @@ import '../widgets/word_row.dart';
 import 'arcade_screen.dart';
 import 'audio_commute_screen.dart';
 import 'pixel_lens_screen.dart';
+import 'pixel_link_screen.dart';
 import 'review_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
@@ -74,6 +75,11 @@ class _TopBar extends StatelessWidget {
             glyph: PixelGlyph.gamepad,
             semanticLabel: 'Arcade Mini-Games',
             onPressed: () => _open(context, const ArcadeScreen()),
+          ),
+          PixelIconButton(
+            glyph: PixelGlyph.link,
+            semanticLabel: 'Game Link & Word Drop',
+            onPressed: () => _open(context, const PixelLinkScreen()),
           ),
           PixelIconButton(
             glyph: PixelGlyph.cards,
