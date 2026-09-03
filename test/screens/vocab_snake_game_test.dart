@@ -97,4 +97,25 @@ void main() {
 
     expect(checkedCount, greaterThan(0));
   });
+
+  testWidgets('Initial snake has 3 segments', (tester) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(wrap(const VocabSnakeGame()));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+    await tester.pump();
+
+    final containers = tester.widgetList<Container>(find.byType(Container));
+    final snakeSegments = containers.where((c) {
+      final decoration = c.decoration;
+      if (decoration is BoxDecoration) {
+        return decoration.border?.top.width == 0.5;
+      }
+      return false;
+    }).toList();
+
+    expect(snakeSegments.length, equals(3));
+  });
 }

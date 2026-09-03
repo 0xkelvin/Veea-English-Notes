@@ -251,7 +251,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
       if (eatenPellet.isCorrect) {
         _wordsEaten++;
         _score += 150;
-        _pendingGrowth += 2;
+        // Increases snake length by exactly 1 segment (insert head without removing tail)
         _snake.insert(0, newHead);
 
         _speakWord(eatenPellet.word);
