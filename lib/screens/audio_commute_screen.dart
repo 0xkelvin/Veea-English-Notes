@@ -563,7 +563,75 @@ class _PlaybackSettingsSection extends StatelessWidget {
               ),
             ],
           ),
+
+          const SizedBox(height: PixelMetrics.space3),
+
+          // English Audio Voice Mode
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'VOICE (ENGLISH ONLY):',
+                style: theme.textTheme.labelSmall,
+              ),
+              Row(
+                children: [
+                  _AudioModePill(
+                    label: 'WORD ONLY',
+                    active: commuteService.mode == CommutePlaybackMode.wordOnly,
+                    onTap: () => commuteService
+                        .setPlaybackMode(CommutePlaybackMode.wordOnly),
+                  ),
+                  const SizedBox(width: 4),
+                  _AudioModePill(
+                    label: 'WORD + EXAMPLE',
+                    active: commuteService.mode ==
+                        CommutePlaybackMode.wordAndExample,
+                    onTap: () => commuteService
+                        .setPlaybackMode(CommutePlaybackMode.wordAndExample),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _AudioModePill extends StatelessWidget {
+  const _AudioModePill({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: active ? palette.accent : palette.surface,
+          border: Border.all(color: palette.border, width: 1),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontFamily: 'Handjet',
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: active ? palette.onAccent : palette.ink,
+          ),
+        ),
       ),
     );
   }

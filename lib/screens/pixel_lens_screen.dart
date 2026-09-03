@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -26,6 +29,10 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
   DetectedWord? _selectedWord;
   final TextEditingController _customTextController = TextEditingController();
   bool _isCustomInput = false;
+  bool _isScanning = false;
+  String? _errorMessage;
+  String? _scannedImagePath;
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
@@ -45,6 +52,8 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
   void _switchSample(int index) {
     setState(() {
       _isCustomInput = false;
+      _errorMessage = null;
+      _scannedImagePath = null;
       _selectedSampleIndex = index;
       _currentResult = OcrService.sampleScans[index];
       _selectedWord =
@@ -57,10 +66,82 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
     if (text.isEmpty) return;
     setState(() {
       _isCustomInput = true;
-      _currentResult = OcrService.processText(text, sourceTitle: 'Pasted / OCR Text');
+      _errorMessage = null;
+      _scannedImagePath = null;
+      _selectedSampleIndex = -1;
+      _currentResult = OcrService.processText(text, sourceTitle: 'Pasted Text');
       _selectedWord =
           _currentResult.words.isNotEmpty ? _currentResult.words.first : null;
     });
+  }
+
+  Future<void> _captureFromCamera() async {
+    try {
+      final XFile? photo = await _picker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 90,
+      );
+      if (photo == null) return;
+      await _processImageFile(photo.path, sourceTitle: 'Camera Scan');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Could not access camera: $e';
+        _isScanning = false;
+      });
+    }
+  }
+
+  Future<void> _pickFromGallery() async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 90,
+      );
+      if (image == null) return;
+      await _processImageFile(image.path, sourceTitle: 'Photo / Screenshot');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Could not pick image: $e';
+        _isScanning = false;
+      });
+    }
+  }
+
+  Future<void> _processImageFile(String path, {required String sourceTitle}) async {
+    setState(() {
+      _isScanning = true;
+      _errorMessage = null;
+      _scannedImagePath = path;
+      _isCustomInput = true;
+      _selectedSampleIndex = -1;
+    });
+
+    try {
+      final result = await OcrService.scanImageFile(path, sourceTitle: sourceTitle);
+      if (!mounted) return;
+      setState(() {
+        _isScanning = false;
+        if (result.words.isEmpty) {
+          _errorMessage =
+              'No English words detected in image. Please ensure clear focus, good lighting, and avoid heavy glare.';
+        } else {
+          _currentResult = result;
+          _selectedWord = result.words.first;
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isScanning = false;
+        _errorMessage = 'OCR scanning failed: $e';
+      });
+    }
   }
 
   void _showPasteDialog() {
@@ -155,7 +236,7 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
               ),
               child: Row(
                 children: [
-                  PixelIcon(PixelGlyph.scan, color: palette.accent, scale: 2),
+                  PixelIcon(PixelGlyph.camera, color: palette.accent, scale: 2),
                   const SizedBox(width: PixelMetrics.space2),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -165,7 +246,7 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                         style: theme.textTheme.titleMedium,
                       ),
                       Text(
-                        'TAP ANY WORD TO SNIFF & CAPTURE',
+                        'SNAP CAMERA • SNIFF VOCABULARY',
                         style: TextStyle(
                           fontFamily: 'Handjet',
                           fontSize: 10,
@@ -184,11 +265,51 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
               ),
             ),
 
-            // Source Selector Tabs
+            // Camera & Input Action Bar
             Container(
               padding: const EdgeInsets.symmetric(
                 horizontal: PixelMetrics.space4,
                 vertical: PixelMetrics.space2,
+              ),
+              decoration: BoxDecoration(
+                color: palette.surface,
+                border: Border(
+                  bottom: BorderSide(color: palette.border, width: 1),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: PixelButton(
+                      label: 'SNAP CAMERA',
+                      glyph: PixelGlyph.camera,
+                      filled: true,
+                      onPressed: _isScanning ? null : _captureFromCamera,
+                    ),
+                  ),
+                  const SizedBox(width: PixelMetrics.space2),
+                  Expanded(
+                    child: PixelButton(
+                      label: 'PHOTO ALBUM',
+                      glyph: PixelGlyph.cards,
+                      onPressed: _isScanning ? null : _pickFromGallery,
+                    ),
+                  ),
+                  const SizedBox(width: PixelMetrics.space2),
+                  PixelIconButton(
+                    glyph: PixelGlyph.pencil,
+                    semanticLabel: 'Paste text snippet',
+                    onPressed: _isScanning ? null : _showPasteDialog,
+                  ),
+                ],
+              ),
+            ),
+
+            // Demo Presets Ribbon
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: PixelMetrics.space4,
+                vertical: 4,
               ),
               decoration: BoxDecoration(
                 color: palette.paper,
@@ -196,47 +317,24 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                   bottom: BorderSide(color: palette.border, width: 1),
                 ),
               ),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _sourceTab(0, 'PR REVIEW', palette),
-                    const SizedBox(width: 4),
-                    _sourceTab(1, 'TECH NEWS', palette),
-                    const SizedBox(width: 4),
-                    _sourceTab(2, 'ESSAY', palette),
-                    const SizedBox(width: 4),
-                    GestureDetector(
-                      onTap: _showPasteDialog,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _isCustomInput ? palette.accent : palette.surface,
-                          border: Border.all(color: palette.border, width: 1),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '+ PASTE OCR',
-                              style: TextStyle(
-                                fontFamily: 'Handjet',
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: _isCustomInput
-                                    ? palette.onAccent
-                                    : palette.ink,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+              child: Row(
+                children: [
+                  Text(
+                    'SAMPLES:',
+                    style: TextStyle(
+                      fontFamily: 'Handjet',
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: palette.inkMuted,
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 6),
+                  _sourceTab(0, 'PR REVIEW', palette),
+                  const SizedBox(width: 4),
+                  _sourceTab(1, 'TECH NEWS', palette),
+                  const SizedBox(width: 4),
+                  _sourceTab(2, 'ESSAY', palette),
+                ],
               ),
             ),
 
@@ -264,7 +362,9 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                               border: Border.all(color: palette.border, width: 1),
                             ),
                             child: Text(
-                              'SCANNER HUD: ${_currentResult.words.length} TOKENS',
+                              _isScanning
+                                  ? 'SCANNING IN PROGRESS...'
+                                  : 'HUD: ${_currentResult.words.length} TOKENS • ${_currentResult.sourceTitle ?? "OCR"}',
                               style: TextStyle(
                                 fontFamily: 'Handjet',
                                 fontSize: 10,
@@ -286,57 +386,194 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                         ],
                       ),
 
-                      const SizedBox(height: PixelMetrics.space3),
+                      const SizedBox(height: PixelMetrics.space2),
 
-                      // Interactive Token Cloud
-                      Expanded(
-                        child: SingleChildScrollView(
-                          child: Wrap(
-                            spacing: 4,
-                            runSpacing: 6,
-                            children: _currentResult.words.map((dw) {
-                              final isSelected = _selectedWord == dw;
-                              return GestureDetector(
-                                onTap: () {
-                                  setState(() {
-                                    _selectedWord = dw;
-                                  });
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 5,
-                                    vertical: 3,
+                      // If scanning:
+                      if (_isScanning)
+                        Expanded(
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 32,
+                                  height: 32,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 3,
+                                    color: palette.accent,
                                   ),
-                                  decoration: BoxDecoration(
-                                    color: isSelected
-                                        ? palette.accent
-                                        : palette.paper,
-                                    border: Border.all(
-                                      color: isSelected
-                                          ? palette.border
-                                          : palette.border.withValues(alpha: 0.4),
-                                      width: isSelected ? 1.5 : 1.0,
+                                ),
+                                const SizedBox(height: PixelMetrics.space3),
+                                Text(
+                                  'ANALYZING PHOTO WITH ON-DEVICE OCR...',
+                                  style: TextStyle(
+                                    fontFamily: 'Handjet',
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: palette.accent,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'HOLD STEADY • EXTRACTING WORDS & EXAMPLES',
+                                  style: TextStyle(
+                                    fontFamily: 'Handjet',
+                                    fontSize: 12,
+                                    color: palette.inkMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      // If error:
+                      else if (_errorMessage != null)
+                        Expanded(
+                          child: Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(PixelMetrics.space3),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  PixelIcon(PixelGlyph.bolt, color: palette.danger, scale: 3),
+                                  const SizedBox(height: PixelMetrics.space2),
+                                  Text(
+                                    'SCAN WARNING',
+                                    style: TextStyle(
+                                      fontFamily: 'Handjet',
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: palette.danger,
                                     ),
                                   ),
-                                  child: Text(
-                                    dw.word,
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    _errorMessage!,
+                                    textAlign: TextAlign.center,
                                     style: TextStyle(
                                       fontFamily: 'Handjet',
                                       fontSize: 13,
-                                      fontWeight: isSelected
-                                          ? FontWeight.bold
-                                          : FontWeight.normal,
-                                      color: isSelected
-                                          ? palette.onAccent
-                                          : palette.ink,
+                                      color: palette.ink,
                                     ),
                                   ),
+                                  const SizedBox(height: PixelMetrics.space3),
+                                  PixelButton(
+                                    label: 'Snap Camera Again',
+                                    glyph: PixelGlyph.camera,
+                                    filled: true,
+                                    onPressed: _captureFromCamera,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        )
+                      // Otherwise, show content:
+                      else ...[
+                        // Optional image thumbnail banner if scanned from photo
+                        if (_scannedImagePath != null && File(_scannedImagePath!).existsSync())
+                          Container(
+                            height: 52,
+                            margin: const EdgeInsets.only(bottom: PixelMetrics.space2),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: palette.border, width: 1),
+                              color: palette.paper,
+                            ),
+                            child: Row(
+                              children: [
+                                Image.file(
+                                  File(_scannedImagePath!),
+                                  width: 52,
+                                  height: 52,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => const SizedBox(width: 52),
                                 ),
-                              );
-                            }).toList(),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        _currentResult.sourceTitle ?? 'Camera Scan',
+                                        style: TextStyle(
+                                          fontFamily: 'Handjet',
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: palette.ink,
+                                        ),
+                                      ),
+                                      Text(
+                                        '${_currentResult.words.length} vocabulary words extracted',
+                                        style: TextStyle(
+                                          fontFamily: 'Handjet',
+                                          fontSize: 10,
+                                          color: palette.inkMuted,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                PixelIconButton(
+                                  glyph: PixelGlyph.camera,
+                                  semanticLabel: 'Retake',
+                                  onPressed: _captureFromCamera,
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                            ),
+                          ),
+
+                        // Interactive Token Cloud
+                        Expanded(
+                          child: SingleChildScrollView(
+                            child: Wrap(
+                              spacing: 4,
+                              runSpacing: 6,
+                              children: _currentResult.words.map((dw) {
+                                final isSelected = _selectedWord == dw;
+                                return GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedWord = dw;
+                                    });
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 5,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: isSelected
+                                          ? palette.accent
+                                          : palette.paper,
+                                      border: Border.all(
+                                        color: isSelected
+                                            ? palette.border
+                                            : palette.border.withValues(alpha: 0.4),
+                                        width: isSelected ? 1.5 : 1.0,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      dw.word,
+                                      style: TextStyle(
+                                        fontFamily: 'Handjet',
+                                        fontSize: 13,
+                                        fontWeight: isSelected
+                                            ? FontWeight.bold
+                                            : FontWeight.normal,
+                                        color: isSelected
+                                            ? palette.onAccent
+                                            : palette.ink,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
                           ),
                         ),
-                      ),
+                      ],
 
                       // HUD Bottom bracket
                       Row(
@@ -360,7 +597,7 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
             ),
 
             // Quick-Capture Inspection Dock
-            if (_selectedWord != null)
+            if (_selectedWord != null && !_isScanning)
               Container(
                 padding: const EdgeInsets.all(PixelMetrics.space4),
                 decoration: BoxDecoration(

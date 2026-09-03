@@ -24,6 +24,7 @@ dependencies:
   flutter_secure_storage: ^9.2.2
   # Native Home Screen & Lock Screen Widgets
   home_widget: ^0.7.0
+  image_picker: ^1.2.3
 
 dev_dependencies:
   flutter_test:

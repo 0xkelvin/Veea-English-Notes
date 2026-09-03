@@ -15,7 +15,7 @@ class WidgetProvider extends ChangeNotifier {
   bool _isDailyReminderEnabled = true;
   int _rotationIntervalMinutes = 15;
   bool _rotateOnAppOpen = true;
-  bool _pronounceOnTap = true;
+  bool _pronounceOnTap = false;
   bool _isDisposed = false;
 
   bool get isWidgetEnabled => _isWidgetEnabled;
@@ -31,7 +31,7 @@ class WidgetProvider extends ChangeNotifier {
       _isDailyReminderEnabled = prefs.getBool(_reminderKey) ?? true;
       _rotationIntervalMinutes = prefs.getInt(_rotationIntervalKey) ?? 15;
       _rotateOnAppOpen = prefs.getBool(_rotateOnAppOpenKey) ?? true;
-      _pronounceOnTap = prefs.getBool(_pronounceOnTapKey) ?? true;
+      _pronounceOnTap = prefs.getBool(_pronounceOnTapKey) ?? false;
 
       // Sync native widget interval preference
       await WidgetService.setRotationInterval(_rotationIntervalMinutes);

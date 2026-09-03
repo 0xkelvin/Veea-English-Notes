@@ -1,4 +1,4 @@
-import 'dart:ui';
+import 'package:flutter/services.dart';
 
 /// A single word token detected by the OCR camera.
 class DetectedWord {
@@ -40,6 +40,30 @@ class OcrScanResult {
 
 /// 100% Offline OCR & Text Extraction Engine.
 class OcrService {
+  static const MethodChannel _channel = MethodChannel('com.veea.english/ocr');
+
+  /// Extracts text and tokens from an image file using hardware-accelerated Apple Vision on-device OCR.
+  static Future<OcrScanResult> scanImageFile(
+    String filePath, {
+    String? sourceTitle,
+  }) async {
+    try {
+      final String? recognizedText = await _channel.invokeMethod<String>(
+        'recognizeText',
+        {'path': filePath},
+      );
+      return processText(
+        recognizedText ?? '',
+        sourceTitle: sourceTitle ?? 'Camera OCR Scan',
+      );
+    } catch (_) {
+      return processText(
+        '',
+        sourceTitle: sourceTitle ?? 'Camera OCR Scan',
+      );
+    }
+  }
+
   /// Parses raw text into tokenized words, bounding boxes, and surrounding sentences.
   static OcrScanResult processText(String text, {String? sourceTitle}) {
     final cleanText = text.trim();

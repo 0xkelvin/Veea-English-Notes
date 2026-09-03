@@ -76,5 +76,9 @@
 			</dict>
 		</dict>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Veea English needs camera access to scan and recognize English words from documents, books, and screens.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Veea English needs photo library access to scan and extract words from images or screenshots.</string>
 </dict>
 </plist>

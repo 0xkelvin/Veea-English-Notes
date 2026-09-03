@@ -3,10 +3,22 @@ import 'package:veea_english_app/models/vocabulary_word.dart';
 import 'package:veea_english_app/services/audio_commute_service.dart';
 import 'package:veea_english_app/services/tts_service.dart';
 
+class MockTtsService extends TtsService {
+  final List<String> spokenTexts = [];
+
+  @override
+  Future<void> speak(String text) async {
+    spokenTexts.add(text);
+  }
+
+  @override
+  Future<void> stop() async {}
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late TtsService tts;
+  late MockTtsService tts;
   late AudioCommuteService service;
 
   final sampleWords = [
@@ -29,7 +41,7 @@ void main() {
   ];
 
   setUp(() {
-    tts = TtsService();
+    tts = MockTtsService();
     service = AudioCommuteService(ttsService: tts);
   });
 
@@ -39,11 +51,12 @@ void main() {
   });
 
   group('AudioCommuteService', () {
-    test('initializes in idle state', () {
+    test('initializes in idle state with wordOnly mode', () {
       expect(service.state, AudioCommuteState.idle);
       expect(service.isPlaying, isFalse);
       expect(service.totalWords, 0);
       expect(service.currentWord, isNull);
+      expect(service.mode, CommutePlaybackMode.wordOnly);
     });
 
     test('startPlayback sets playlist and starts playing', () {
@@ -52,6 +65,15 @@ void main() {
       expect(service.isPlaying, isTrue);
       expect(service.totalWords, 2);
       expect(service.currentWord?.word, 'resilient');
+    });
+
+    test('only speaks English words, never Vietnamese meaning', () async {
+      service.startPlayback(sampleWords);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(tts.spokenTexts, contains('resilient'));
+      expect(tts.spokenTexts, isNot(contains('kiên cường')));
+      expect(tts.spokenTexts, isNot(contains('bền bỉ')));
     });
 
     test('pause and resume toggle playback state', () {
@@ -90,12 +112,15 @@ void main() {
       expect(service.isLoop, isFalse);
     });
 
-    test('updating recall pause and repeat count clamps values', () {
+    test('updating recall pause, repeat count, and mode', () {
       service.setRecallPauseSeconds(4);
       expect(service.recallPauseSeconds, 4);
 
       service.setRepeatCount(2);
       expect(service.repeatCountPerWord, 2);
+
+      service.setPlaybackMode(CommutePlaybackMode.wordAndExample);
+      expect(service.mode, CommutePlaybackMode.wordAndExample);
     });
   });
 }

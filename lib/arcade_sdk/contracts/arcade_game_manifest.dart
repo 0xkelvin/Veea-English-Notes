@@ -9,6 +9,7 @@ enum ArcadeGameCategory {
   speedQuiz,
   puzzle,
   rhythm,
+  typing,
   strategy,
   community,
 }

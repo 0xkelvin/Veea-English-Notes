@@ -8,15 +8,9 @@ import 'package:veea_english_app/models/vocabulary_word.dart';
 import 'package:veea_english_app/providers/theme_provider.dart';
 import 'package:veea_english_app/providers/vocabulary_provider.dart';
 import 'package:veea_english_app/screens/arcade_screen.dart';
-import 'package:veea_english_app/screens/games/breakout_vocab_game.dart';
-import 'package:veea_english_app/screens/games/pixel_duel_game.dart';
-import 'package:veea_english_app/screens/games/vocab_angler_game.dart';
-import 'package:veea_english_app/screens/games/vocab_chomp_game.dart';
-import 'package:veea_english_app/screens/games/vocab_frogger_game.dart';
 import 'package:veea_english_app/screens/games/vocab_invaders_game.dart';
 import 'package:veea_english_app/screens/games/vocab_snake_game.dart';
 import 'package:veea_english_app/screens/games/word_rush_game.dart';
-import 'package:veea_english_app/screens/games/word_stacker_game.dart';
 import 'package:veea_english_app/services/tts_service.dart';
 
 void main() {
@@ -78,6 +72,14 @@ void main() {
     expect(find.text('WORD RUSH 60S'), findsOneWidget);
     expect(find.text('VOCAB SNAKE'), findsOneWidget);
     expect(find.text('VOCAB INVADERS'), findsOneWidget);
+
+    // Registered late in the list, so it starts below the fold.
+    await tester.scrollUntilVisible(
+      find.text('PIXEL TYPER'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('PIXEL TYPER'), findsOneWidget);
   });
 
   testWidgets('WordRushGame launches and displays timer and score', (tester) async {
@@ -115,77 +117,5 @@ void main() {
 
     expect(find.text('VOCAB INVADERS'), findsOneWidget);
     expect(find.text('SHOOT MATCHING ALIEN SHIP:'), findsOneWidget);
-  });
-
-  testWidgets('BreakoutVocabGame launches and displays bricks', (tester) async {
-    await tester.pumpWidget(buildApp(const BreakoutVocabGame()));
-    await tester.pump();
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 150)),
-    );
-    await tester.pump();
-
-    expect(find.text('BREAKOUT VOCAB'), findsOneWidget);
-    expect(find.text('SHATTER TARGET WORD BRICK:'), findsOneWidget);
-  });
-
-  testWidgets('VocabFroggerGame launches and displays lanes', (tester) async {
-    await tester.pumpWidget(buildApp(const VocabFroggerGame()));
-    await tester.pump();
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 150)),
-    );
-    await tester.pump();
-
-    expect(find.text('VOCAB FROGGER'), findsOneWidget);
-    expect(find.text('HOP ACROSS TARGET WORD LOGS:'), findsOneWidget);
-  });
-
-  testWidgets('VocabChompGame launches and displays maze', (tester) async {
-    await tester.pumpWidget(buildApp(const VocabChompGame()));
-    await tester.pump();
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 150)),
-    );
-    await tester.pump();
-
-    expect(find.text('VOCAB CHOMP'), findsOneWidget);
-    expect(find.text('CHOMP MATCHING ENGLISH WORD PELLET:'), findsOneWidget);
-  });
-
-  testWidgets('WordStackerGame launches and displays columns', (tester) async {
-    await tester.pumpWidget(buildApp(const WordStackerGame()));
-    await tester.pump();
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 150)),
-    );
-    await tester.pump();
-
-    expect(find.text('WORD STACKER'), findsOneWidget);
-    expect(find.text('DROP FALLING WORD INTO MATCHING DEFINITION COLUMN'), findsOneWidget);
-  });
-
-  testWidgets('VocabAnglerGame launches and displays ocean', (tester) async {
-    await tester.pumpWidget(buildApp(const VocabAnglerGame()));
-    await tester.pump();
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 150)),
-    );
-    await tester.pump();
-
-    expect(find.text('VOCAB ANGLER'), findsOneWidget);
-    expect(find.text('HOOK MATCHING WORD FISH:'), findsOneWidget);
-  });
-
-  testWidgets('PixelDuelGame launches and displays standoff', (tester) async {
-    await tester.pumpWidget(buildApp(const PixelDuelGame()));
-    await tester.pump();
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 150)),
-    );
-    await tester.pump();
-
-    expect(find.text('PIXEL DUEL'), findsOneWidget);
-    expect(find.text('TARGET VOCABULARY:'), findsOneWidget);
   });
 }

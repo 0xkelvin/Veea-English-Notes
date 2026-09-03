@@ -1,12 +1,7 @@
-import '../../screens/games/breakout_vocab_game.dart';
-import '../../screens/games/pixel_duel_game.dart';
-import '../../screens/games/vocab_angler_game.dart';
-import '../../screens/games/vocab_chomp_game.dart';
-import '../../screens/games/vocab_frogger_game.dart';
+import '../../screens/games/pixel_typer_game.dart';
 import '../../screens/games/vocab_invaders_game.dart';
 import '../../screens/games/vocab_snake_game.dart';
 import '../../screens/games/word_rush_game.dart';
-import '../../screens/games/word_stacker_game.dart';
 import '../../widgets/pixel/pixel_icon.dart';
 import '../contracts/arcade_game_manifest.dart';
 import '../templates/starter_template_game.dart';
@@ -57,85 +52,22 @@ class ArcadeDefaults {
         builder: (ctx) => const VocabInvadersGame(),
       ),
 
-      // 4. Breakout Vocab
+      // 4. Pixel Typer
       ArcadeGameManifest(
-        id: 'breakout_vocab',
-        title: 'BREAKOUT VOCAB',
-        tagline: 'Bounce the retro ball to smash bricks with matching meanings.',
+        id: 'pixel_typer',
+        title: 'PIXEL TYPER',
+        tagline: 'Type the English word from memory before it breaches.',
         author: '@veea_team',
         version: '1.0.0',
-        glyph: PixelGlyph.brick,
-        category: ArcadeGameCategory.retroArcade,
-        badge: 'PADDLE BOUNCE',
-        builder: (ctx) => const BreakoutVocabGame(),
+        glyph: PixelGlyph.skull,
+        category: ArcadeGameCategory.typing,
+        badge: 'TYPE TO RECALL',
+        difficulty: 'HARD',
+        minWordsRequired: 3,
+        builder: (ctx) => const PixelTyperGame(),
       ),
 
-      // 5. Vocab Chomp
-      ArcadeGameManifest(
-        id: 'vocab_chomp',
-        title: 'VOCAB CHOMP',
-        tagline: 'Navigate the maze, dodge phantoms, and chomp correct terms.',
-        author: '@veea_team',
-        version: '1.0.0',
-        glyph: PixelGlyph.pacman,
-        category: ArcadeGameCategory.retroArcade,
-        badge: 'MAZE RUNNER',
-        builder: (ctx) => const VocabChompGame(),
-      ),
-
-      // 6. Word Stacker
-      ArcadeGameManifest(
-        id: 'word_stacker',
-        title: 'WORD STACKER',
-        tagline: 'Stack falling blocks neatly by identifying vocabulary terms.',
-        author: '@veea_team',
-        version: '1.0.0',
-        glyph: PixelGlyph.tetris,
-        category: ArcadeGameCategory.puzzle,
-        badge: 'BLOCK PUZZLE',
-        builder: (ctx) => const WordStackerGame(),
-      ),
-
-      // 7. Vocab Angler
-      ArcadeGameManifest(
-        id: 'vocab_angler',
-        title: 'VOCAB ANGLER',
-        tagline: 'Cast your hook deep underwater and catch the target definition.',
-        author: '@veea_team',
-        version: '1.0.0',
-        glyph: PixelGlyph.fish,
-        category: ArcadeGameCategory.retroArcade,
-        badge: 'DEEP SEA FISHING',
-        builder: (ctx) => const VocabAnglerGame(),
-      ),
-
-      // 8. Vocab Frogger
-      ArcadeGameManifest(
-        id: 'vocab_frogger',
-        title: 'VOCAB FROGGER',
-        tagline: 'Hop across busy retro traffic to reach the matching lily pad.',
-        author: '@veea_team',
-        version: '1.0.0',
-        glyph: PixelGlyph.frog,
-        category: ArcadeGameCategory.retroArcade,
-        badge: 'CROSS THE ROAD',
-        builder: (ctx) => const VocabFroggerGame(),
-      ),
-
-      // 9. Pixel Duel
-      ArcadeGameManifest(
-        id: 'pixel_duel',
-        title: 'PIXEL DUEL 1V1',
-        tagline: 'Turn-based RPG battle: attack bosses by solving vocabulary.',
-        author: '@veea_team',
-        version: '1.0.0',
-        glyph: PixelGlyph.gamepad,
-        category: ArcadeGameCategory.strategy,
-        badge: 'TURN-BASED RPG',
-        builder: (ctx) => const PixelDuelGame(),
-      ),
-
-      // 10. Community Starter Game (SDK Demonstration)
+      // 11. Community Starter Game (SDK Demonstration)
       ArcadeGameManifest(
         id: 'starter_template',
         title: 'COMMUNITY MATCH',

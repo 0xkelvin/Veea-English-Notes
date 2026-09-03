@@ -48,9 +48,11 @@ void main() {
 
     test('ArcadeDefaults registers all standard games', () {
       ArcadeDefaults.registerDefaults();
-      expect(ArcadeRegistry.allGames.length, greaterThanOrEqualTo(10));
+      expect(ArcadeRegistry.allGames.length, greaterThanOrEqualTo(5));
       expect(ArcadeRegistry.findById('word_rush'), isNotNull);
       expect(ArcadeRegistry.findById('vocab_invaders'), isNotNull);
+      expect(ArcadeRegistry.findById('pixel_typer'), isNotNull);
+      expect(ArcadeRegistry.findById('vocab_angler'), isNull);
       expect(ArcadeRegistry.findById('starter_template'), isNotNull);
     });
   });

@@ -12,26 +12,29 @@ enum AudioCommuteState {
 }
 
 enum CommutePlaybackMode {
-  wordThenMeaning,
-  wordMeaningExample,
   wordOnly,
+  wordAndExample,
+  @Deprecated('Use wordOnly. Vietnamese audio is excluded.')
+  wordThenMeaning,
+  @Deprecated('Use wordAndExample. Vietnamese audio is excluded.')
+  wordMeaningExample,
 }
 
 /// Hands-Free Background Commute Audio Player Service.
 ///
 /// Cycles through vocabulary words in a rhythmic recall loop:
 /// 1. Speaks English Word
-/// 2. Waits for user mental recall ([recallPauseSeconds])
-/// 3. Speaks Vietnamese Meaning
-/// 4. (Optional) Speaks Example Sentence
-/// 5. Smoothly transitions to the next word.
+/// 2. (Optional) Speaks English Example Sentence
+/// 3. Smoothly transitions to the next word.
+///
+/// Note: Only English words/examples are read aloud, avoiding Vietnamese TTS pronunciation issues.
 class AudioCommuteService extends ChangeNotifier {
   AudioCommuteService({required TtsService ttsService}) : _tts = ttsService;
 
   final TtsService _tts;
 
   AudioCommuteState _state = AudioCommuteState.idle;
-  CommutePlaybackMode _mode = CommutePlaybackMode.wordMeaningExample;
+  CommutePlaybackMode _mode = CommutePlaybackMode.wordOnly;
 
   List<VocabularyWord> _playlist = [];
   List<int> _order = [];
@@ -185,49 +188,42 @@ class AudioCommuteService extends ChangeNotifier {
     }
 
     try {
-      // Step 1: Speak English Word
-      _currentPhaseText = 'LISTENING TO WORD…';
+      // Step 1: Speak English Word ONLY (never speak Vietnamese meaning)
+      _currentPhaseText = 'PLAYING: ${word.word.toUpperCase()}';
       _notify();
       await _tts.speak(word.word);
 
       if (_state != AudioCommuteState.playing || _isDisposed) return;
 
-      // Step 2: Recall Pause
-      _currentPhaseText = 'RECALL MEANING (${_recallPauseSeconds}s)…';
-      _notify();
-      await Future.delayed(Duration(seconds: _recallPauseSeconds));
-
-      if (_state != AudioCommuteState.playing || _isDisposed) return;
-
-      // Step 3: Speak Vietnamese Meaning (or Word if mode allows)
-      if (_mode != CommutePlaybackMode.wordOnly) {
-        _currentPhaseText = 'MEANING: ${word.meaning}';
+      // Step 2: Optional English Example Sentence
+      final wantsExample = _mode == CommutePlaybackMode.wordAndExample ||
+          _mode == CommutePlaybackMode.wordMeaningExample;
+      if (wantsExample && word.examples.isNotEmpty) {
+        _currentPhaseText = 'PAUSE (${_recallPauseSeconds}s)…';
         _notify();
-        await _tts.speak(word.meaning);
+        await Future.delayed(Duration(seconds: _recallPauseSeconds));
 
         if (_state != AudioCommuteState.playing || _isDisposed) return;
 
-        // Step 4: Optional Example Sentence
-        if (_mode == CommutePlaybackMode.wordMeaningExample &&
-            word.examples.isNotEmpty) {
-          await Future.delayed(const Duration(milliseconds: 600));
-          if (_state != AudioCommuteState.playing || _isDisposed) return;
-          _currentPhaseText = 'EXAMPLE: "${word.examples.first}"';
-          _notify();
-          await _tts.speak(word.examples.first);
-        }
+        _currentPhaseText = 'EXAMPLE: "${word.examples.first}"';
+        _notify();
+        await _tts.speak(word.examples.first);
       }
 
       if (_state != AudioCommuteState.playing || _isDisposed) return;
 
-      // Step 5: Check Repeat Count or Advance
+      // Step 3: Check Repeat Count or Advance
       _currentRepeat++;
       if (_currentRepeat < _repeatCountPerWord) {
-        await Future.delayed(const Duration(milliseconds: 800));
+        _currentPhaseText = 'REPEAT (${_currentRepeat + 1}/$_repeatCountPerWord)';
+        _notify();
+        await Future.delayed(Duration(seconds: _recallPauseSeconds));
         _runCurrentWordCycle();
       } else {
         _currentRepeat = 0;
-        await Future.delayed(const Duration(milliseconds: 1200));
+        _currentPhaseText = 'NEXT WORD…';
+        _notify();
+        await Future.delayed(Duration(seconds: _recallPauseSeconds));
         next();
       }
     } catch (e) {

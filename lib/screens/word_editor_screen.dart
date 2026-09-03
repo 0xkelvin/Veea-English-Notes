@@ -7,6 +7,7 @@ import '../models/part_of_speech.dart';
 import '../models/vocabulary_word.dart';
 import '../providers/vocabulary_provider.dart';
 import '../services/pronunciation_service.dart';
+import '../services/word_suggestion_service.dart';
 import '../widgets/pixel/context_wizard_sheet.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_field.dart';
@@ -45,9 +46,25 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
   /// being replaced on every keystroke.
   bool _pronunciationIsManual = false;
 
+  /// Suggested Vietnamese meaning and part of speech as the word is typed.
+  String? _suggestedMeaning;
+  PartOfSpeech? _suggestedPartOfSpeech;
+  bool _partOfSpeechIsManual = false;
+
   /// Guards against an earlier, slower lookup landing after a later one and
   /// showing the pronunciation of a word that has since been edited.
   int _lookupToken = 0;
+  int _suggestionToken = 0;
+
+  String get _meaningHint {
+    if (_suggestedMeaning != null && _suggestedMeaning!.isNotEmpty) {
+      return _suggestedMeaning!;
+    }
+    if (_word.text.trim().isNotEmpty) {
+      return 'Gợi ý nghĩa tiếng Việt...';
+    }
+    return 'kiên cường';
+  }
 
   @override
   void initState() {
@@ -58,6 +75,7 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
     _source = TextEditingController(text: existing?.source ?? '');
     _tags = TextEditingController(text: existing?.tags.join(', ') ?? '');
     _partOfSpeech = existing?.partOfSpeech;
+    _partOfSpeechIsManual = existing?.partOfSpeech != null;
     for (final example in existing?.examples ?? const <String>[]) {
       _examples.add(TextEditingController(text: example));
     }
@@ -67,9 +85,14 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
     // dictionary, so treat it as automatic and let a fresh lookup refresh it.
     _pronunciationIsManual = false;
     if (existing != null) {
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _refreshPronunciation(existing.word),
-      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _refreshPronunciation(existing.word);
+        _refreshSuggestions(existing.word);
+      });
+    } else if (_word.text.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _refreshSuggestions(_word.text);
+      });
     }
   }
 
@@ -106,6 +129,58 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
     // A later keystroke already started its own lookup; this result is stale.
     if (!mounted || token != _lookupToken) return;
     setState(() => _pronunciation = found);
+  }
+
+  /// Automatically looks up Vietnamese meaning suggestions and part of speech.
+  Future<void> _refreshSuggestions(String rawWord) async {
+    final clean = rawWord.trim();
+    if (clean.length < 2) {
+      if (!mounted) return;
+      setState(() {
+        _suggestedMeaning = null;
+        _suggestedPartOfSpeech = null;
+        if (!_partOfSpeechIsManual && widget.existing == null) {
+          _partOfSpeech = null;
+        }
+      });
+      return;
+    }
+
+    final token = ++_suggestionToken;
+    final provider = context.read<VocabularyProvider>();
+
+    // 1. Instant local/cache suggestion (0ms)
+    final fast = WordSuggestionService.suggestFast(
+      clean,
+      userWords: provider.words,
+    );
+    if (fast != null && mounted && token == _suggestionToken) {
+      setState(() {
+        _suggestedMeaning = fast.meaning;
+        _suggestedPartOfSpeech = fast.partOfSpeech;
+        if (!_partOfSpeechIsManual && fast.partOfSpeech != null) {
+          _partOfSpeech = fast.partOfSpeech;
+        }
+      });
+    }
+
+    // 2. Async enrichment (e.g. online translation if not already in local dict)
+    if (fast?.meaning == null || fast!.meaning!.isEmpty) {
+      final suggestion = await WordSuggestionService.suggest(
+        clean,
+        userWords: provider.words,
+      );
+
+      if (!mounted || token != _suggestionToken) return;
+      setState(() {
+        _suggestedMeaning = suggestion?.meaning ?? fast?.meaning;
+        _suggestedPartOfSpeech = suggestion?.partOfSpeech ?? fast?.partOfSpeech;
+
+        if (!_partOfSpeechIsManual && _suggestedPartOfSpeech != null) {
+          _partOfSpeech = _suggestedPartOfSpeech;
+        }
+      });
+    }
   }
 
   /// Lets the user type a transcription themselves.
@@ -245,6 +320,7 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                     onChanged: (value) {
                       setState(() {});
                       _refreshPronunciation(value);
+                      _refreshSuggestions(value);
                     },
                   ),
                   const SizedBox(height: PixelMetrics.space2),
@@ -260,6 +336,7 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                               _pronunciation = null;
                             });
                             _refreshPronunciation(_word.text);
+                            _refreshSuggestions(_word.text);
                           }
                         : null,
                   ),
@@ -267,15 +344,75 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                   PixelField(
                     controller: _meaning,
                     label: 'What it means',
-                    hint: 'kiên cường',
+                    hint: _meaningHint,
                     textCapitalization: TextCapitalization.sentences,
                     onChanged: (_) => setState(() {}),
                   ),
+                  if (_meaning.text.trim().isEmpty && _suggestedMeaning != null) ...[
+                    const SizedBox(height: PixelMetrics.space1),
+                    GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _meaning.text = _suggestedMeaning!;
+                        });
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: PixelMetrics.space2,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: palette.surface,
+                          border: Border.all(
+                            color: palette.border.withValues(alpha: 0.4),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Text(
+                              'GỢI Ý: ',
+                              style: TextStyle(
+                                fontFamily: 'Handjet',
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: palette.inkFaint,
+                              ),
+                            ),
+                            Expanded(
+                              child: Text(
+                                _suggestedMeaning!,
+                                style: TextStyle(
+                                  fontFamily: 'Handjet',
+                                  fontSize: 12,
+                                  color: palette.inkMuted,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '[ÁP DỤNG]',
+                              style: TextStyle(
+                                fontFamily: 'Handjet',
+                                fontSize: 10,
+                                color: palette.accent,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: PixelMetrics.space4),
                   _PartOfSpeechPicker(
                     selected: _partOfSpeech,
-                    onSelected: (value) =>
-                        setState(() => _partOfSpeech = value),
+                    suggested: _suggestedPartOfSpeech,
+                    onSelected: (value) => setState(() {
+                      _partOfSpeech = value;
+                      _partOfSpeechIsManual = true;
+                    }),
                   ),
                   const SizedBox(height: PixelMetrics.space4),
                   PixelField(
@@ -451,9 +588,14 @@ class _EditorTopBar extends StatelessWidget {
 }
 
 class _PartOfSpeechPicker extends StatelessWidget {
-  const _PartOfSpeechPicker({required this.selected, required this.onSelected});
+  const _PartOfSpeechPicker({
+    required this.selected,
+    this.suggested,
+    required this.onSelected,
+  });
 
   final PartOfSpeech? selected;
+  final PartOfSpeech? suggested;
   final ValueChanged<PartOfSpeech?> onSelected;
 
   @override
@@ -464,7 +606,33 @@ class _PartOfSpeechPicker extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('PART OF SPEECH (OPTIONAL)', style: theme.textTheme.labelSmall),
+        Row(
+          children: [
+            Text('PART OF SPEECH (OPTIONAL)', style: theme.textTheme.labelSmall),
+            if (suggested != null) ...[
+              const SizedBox(width: PixelMetrics.space2),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: palette.surface,
+                  border: Border.all(
+                    color: palette.border.withValues(alpha: 0.4),
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  'GỢI Ý: ${suggested!.label.toUpperCase()}',
+                  style: TextStyle(
+                    fontFamily: 'Handjet',
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: palette.inkMuted,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
         const SizedBox(height: PixelMetrics.space2),
         Wrap(
           spacing: PixelMetrics.space2,
@@ -484,15 +652,37 @@ class _PartOfSpeechPicker extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: selected == value ? palette.accent : palette.surface,
                     border: Border.all(
-                      color: palette.border,
+                      color: selected == value
+                          ? palette.border
+                          : (suggested == value
+                              ? palette.accent.withValues(alpha: 0.6)
+                              : palette.border),
                       width: PixelMetrics.border,
                     ),
                   ),
-                  child: Text(
-                    value.label.toUpperCase(),
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: selected == value ? palette.onAccent : palette.ink,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        value.label.toUpperCase(),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: selected == value ? palette.onAccent : palette.ink,
+                          fontWeight: (selected == value || suggested == value)
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                        ),
+                      ),
+                      if (suggested == value && selected != value) ...[
+                        const SizedBox(width: 3),
+                        Text(
+                          '★',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: palette.accent,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ),

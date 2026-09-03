@@ -19,19 +19,14 @@ Veea English Notes is a fast, offline-first personal notebook for capturing word
 
 ---
 
-## 🕹️ 8-Bit Retro Arcade Center (9 Mini-Games)
+## 🕹️ 8-Bit Retro Arcade Center
 
 Practice your captured vocabulary through classic arcade games with 8-bit CRT scanlines, pixel explosion effects, TTS audio pronunciation, and falling Vietnamese meaning badges:
 
 1. ⚡ **Word Rush 60s**: Rapid-fire definition matching against the clock with combo multipliers.
 2. 🐍 **Vocab Snake**: Slither around the retro grid and devour matching vocabulary pellets.
 3. 👾 **Vocab Invaders**: Galaga/Space-Invaders shooter — blast descending alien UFOs carrying the matching terms.
-4. 🧱 **Breakout Vocab**: Arkanoid paddle bounce — shatter bricks with matching meanings.
-5. 🐸 **Vocab Frogger**: Hop across busy highway traffic and jump onto matching vocabulary logs.
-6. 🟡 **Vocab Chomp**: Pacman-style maze runner — chomp vocabulary pellets and grab power pellets.
-7. 🏗️ **Word Stacker**: Tetris block sorting — stack falling blocks into correct definition bins.
-8. 🎣 **Vocab Angler**: Deep-sea fishing — cast your hook underwater and catch target definitions.
-9. 🤠 **Pixel Duel 1v1**: Wild West quick-draw standoff — tap the correct holster before the outlaw draws!
+4. 💀 **Pixel Typer**: Typing-of-the-Dead recall drill — Vietnamese meanings descend and you *type* the English word from memory before it breaches the line.
 
 ---
 
