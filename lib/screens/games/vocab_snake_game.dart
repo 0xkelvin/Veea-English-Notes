@@ -583,9 +583,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
                                       fontFamily: 'Handjet',
                                       fontSize: 10,
                                       fontWeight: FontWeight.bold,
-                                      color: pellet.isCorrect
-                                          ? palette.accent
-                                          : palette.ink,
+                                      color: palette.ink,
                                       height: 1.0,
                                     ),
                                   ),

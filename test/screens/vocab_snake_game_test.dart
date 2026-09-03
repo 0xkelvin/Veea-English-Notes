@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:veea_english_app/core/theme/pixel_palette.dart';
 import 'package:veea_english_app/core/theme/pixel_theme.dart';
 import 'package:veea_english_app/data/local/sqlite_vocabulary_repository.dart';
 import 'package:veea_english_app/providers/vocabulary_provider.dart';
@@ -68,5 +69,32 @@ void main() {
 
     await tester.tap(downIconFinder);
     await tester.pump();
+  });
+
+  testWidgets('VocabSnakeGame renders all English words on board with identical ink color', (tester) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(wrap(const VocabSnakeGame()));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+    await tester.pump();
+
+    // Check all English word label texts on the pellets
+    const lightPalette = PixelPalette.light;
+    final pelletWords = ['RESILIENT', 'TENACIOUS', 'ELOQUENT'];
+    var checkedCount = 0;
+
+    for (final pw in pelletWords) {
+      final matches = find.text(pw);
+      if (matches.evaluate().isNotEmpty) {
+        final text = tester.widget<Text>(matches.first);
+        expect(text.style?.color, equals(lightPalette.ink));
+        expect(text.style?.color, isNot(equals(lightPalette.accent)));
+        checkedCount++;
+      }
+    }
+
+    expect(checkedCount, greaterThan(0));
   });
 }
