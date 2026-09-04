@@ -519,24 +519,27 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
   Widget build(BuildContext context) {
     final palette = context.palette;
 
-    return Container(
-      margin: const EdgeInsets.all(PixelMetrics.space3),
-      padding: const EdgeInsets.all(PixelMetrics.space4),
-      decoration: BoxDecoration(
-        color: palette.surface,
-        border: Border.all(color: palette.border, width: PixelMetrics.border * 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: palette.border.withValues(alpha: 0.6),
-            offset: const Offset(4, 4),
-            blurRadius: 0,
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: _isSent
-            ? _buildSentConfirmation(palette)
-            : _buildPickerBody(palette),
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        margin: const EdgeInsets.all(PixelMetrics.space3),
+        padding: const EdgeInsets.all(PixelMetrics.space4),
+        decoration: BoxDecoration(
+          color: palette.surface,
+          border: Border.all(color: palette.border, width: PixelMetrics.border * 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: palette.border.withValues(alpha: 0.6),
+              offset: const Offset(4, 4),
+              blurRadius: 0,
+            ),
+          ],
+        ),
+        child: SafeArea(
+          child: _isSent
+              ? _buildSentConfirmation(palette)
+              : _buildPickerBody(palette),
+        ),
       ),
     );
   }
@@ -663,34 +666,37 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
               itemBuilder: (context, i) {
                 final w = widget.words[i];
                 final isSelected = _selectedWord?.id == w.id;
-                return ListTile(
-                  dense: true,
-                  selected: isSelected,
-                  selectedTileColor: palette.accent.withValues(alpha: 0.15),
-                  title: Text(
-                    w.word,
-                    style: TextStyle(
-                      fontFamily: 'Handjet',
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: isSelected ? palette.accent : palette.ink,
+                return Material(
+                  color: Colors.transparent,
+                  child: ListTile(
+                    dense: true,
+                    selected: isSelected,
+                    selectedTileColor: palette.accent.withValues(alpha: 0.15),
+                    title: Text(
+                      w.word,
+                      style: TextStyle(
+                        fontFamily: 'Handjet',
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: isSelected ? palette.accent : palette.ink,
+                      ),
                     ),
-                  ),
-                  subtitle: Text(
-                    w.meaning,
-                    style: TextStyle(
-                      fontFamily: 'Handjet',
-                      fontSize: 12,
-                      color: palette.inkMuted,
+                    subtitle: Text(
+                      w.meaning,
+                      style: TextStyle(
+                        fontFamily: 'Handjet',
+                        fontSize: 12,
+                        color: palette.inkMuted,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    onTap: () {
+                      setState(() {
+                        _selectedWord = w;
+                      });
+                    },
                   ),
-                  onTap: () {
-                    setState(() {
-                      _selectedWord = w;
-                    });
-                  },
                 );
               },
             ),

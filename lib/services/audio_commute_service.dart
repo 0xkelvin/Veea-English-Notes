@@ -45,6 +45,7 @@ class AudioCommuteService extends ChangeNotifier {
   bool _isShuffle = false;
   bool _isLoop = true;
   String _currentPhaseText = '';
+  String _playlistTitle = 'HÔM NAY';
 
   Timer? _stepTimer;
   bool _isDisposed = false;
@@ -55,11 +56,13 @@ class AudioCommuteService extends ChangeNotifier {
   CommutePlaybackMode get mode => _mode;
   int get currentIndex => _currentIndex;
   int get totalWords => _playlist.length;
+  List<VocabularyWord> get playlist => List.unmodifiable(_playlist);
   int get recallPauseSeconds => _recallPauseSeconds;
   int get repeatCountPerWord => _repeatCountPerWord;
   bool get isShuffle => _isShuffle;
   bool get isLoop => _isLoop;
   String get currentPhaseText => _currentPhaseText;
+  String get playlistTitle => _playlistTitle;
 
   VocabularyWord? get currentWord {
     if (_playlist.isEmpty || _order.isEmpty) return null;
@@ -68,8 +71,15 @@ class AudioCommuteService extends ChangeNotifier {
     return _playlist[safeIndex];
   }
 
-  void startPlayback(List<VocabularyWord> words, {int startIndex = 0}) {
+  void startPlayback(
+    List<VocabularyWord> words, {
+    int startIndex = 0,
+    String? playlistTitle,
+  }) {
     if (words.isEmpty) return;
+    if (playlistTitle != null) {
+      _playlistTitle = playlistTitle;
+    }
     _playlist = List.of(words);
     _generateOrder();
     _currentIndex = startIndex.clamp(0, _order.length - 1);
