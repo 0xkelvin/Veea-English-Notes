@@ -18,6 +18,7 @@ import 'providers/vocabulary_provider.dart';
 import 'providers/widget_provider.dart';
 import 'screens/home_screen.dart';
 import 'models/word_challenge.dart';
+import 'services/commute_playlist_service.dart';
 import 'services/friend_challenge_service.dart';
 import 'services/pronunciation_service.dart';
 import 'services/sync_service.dart';
@@ -212,6 +213,9 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
         ),
         ChangeNotifierProvider(
           create: (_) => CartridgeProvider(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => CommutePlaylistService()..init(),
         ),
         Provider<PronunciationService>.value(value: widget.pronunciation),
       ],

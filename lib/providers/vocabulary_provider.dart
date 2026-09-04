@@ -84,6 +84,16 @@ class VocabularyProvider extends ChangeNotifier {
     await _refresh(initialLoad: true);
   }
 
+  /// Fetches all active vocabulary words across all dates.
+  Future<List<VocabularyWord>> allWords({int limit = 5000}) {
+    return _repository.recentWords(limit: limit);
+  }
+
+  /// Fetches words for a specific date key (`YYYY-MM-DD`).
+  Future<List<VocabularyWord>> wordsForDate(String date) {
+    return _repository.wordsForDate(date);
+  }
+
   /// Fetches words due for Spaced Repetition (SM-2) review.
   Future<List<VocabularyWord>> wordsDueForReview({int limit = 30}) async {
     return _repository.wordsDueForReview(

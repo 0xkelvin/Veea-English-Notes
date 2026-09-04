@@ -4,10 +4,12 @@ import 'package:provider/provider.dart';
 
 import '../core/theme/pixel_metrics.dart';
 import '../core/theme/pixel_palette.dart';
+import '../models/vocabulary_word.dart';
 import '../providers/vocabulary_provider.dart';
 import '../services/audio_commute_service.dart';
 import '../services/pronunciation_service.dart';
 import '../services/tts_service.dart';
+import '../widgets/commute_tape_selector_sheet.dart';
 import '../widgets/pixel/pixel_box.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_icon.dart';
@@ -24,6 +26,7 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
     with SingleTickerProviderStateMixin {
   late final AudioCommuteService _commuteService;
   late final AnimationController _tapeController;
+  List<VocabularyWord> _allWords = [];
 
   @override
   void initState() {
@@ -38,13 +41,31 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
 
     _commuteService.addListener(_onServiceUpdate);
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final vocab = context.read<VocabularyProvider>();
-      final words = vocab.words;
-      if (words.isNotEmpty) {
-        _commuteService.startPlayback(words);
+      _allWords = await vocab.allWords();
+      final todayWords = vocab.words;
+      if (todayWords.isNotEmpty) {
+        _commuteService.startPlayback(
+          todayWords,
+          playlistTitle: 'HÔM NAY (${todayWords.length} TỪ)',
+        );
+      } else if (_allWords.isNotEmpty) {
+        _commuteService.startPlayback(
+          _allWords,
+          playlistTitle: 'TẤT CẢ (${_allWords.length} TỪ)',
+        );
       }
+      if (mounted) setState(() {});
     });
+  }
+
+  void _openTapeSelector() {
+    CommuteTapeSelectorSheet.show(
+      context,
+      allWords: _allWords,
+      commuteService: _commuteService,
+    );
   }
 
   void _onServiceUpdate() {
@@ -134,9 +155,19 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
                   _RetroCassetteWidget(
                     tapeAnimation: _tapeController,
                     isPlaying: _commuteService.isPlaying,
+                    playlistTitle: _commuteService.playlistTitle,
                     trackInfo: _commuteService.totalWords > 0
                         ? '${_commuteService.currentIndex + 1} / ${_commuteService.totalWords}'
                         : 'NO WORDS',
+                  ),
+
+                  const SizedBox(height: PixelMetrics.space3),
+
+                  // Tape Selector Strip
+                  _TapeSelectorStrip(
+                    playlistTitle: _commuteService.playlistTitle,
+                    wordCount: _commuteService.totalWords,
+                    onOpenSelector: _openTapeSelector,
                   ),
 
                   const SizedBox(height: PixelMetrics.space4),
@@ -179,9 +210,83 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
             ),
 
             // Bottom Transport Control Bar
-            _TransportControlsBar(commuteService: _commuteService),
+            _TransportControlsBar(
+              commuteService: _commuteService,
+              onOpenSelector: _openTapeSelector,
+            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _TapeSelectorStrip extends StatelessWidget {
+  const _TapeSelectorStrip({
+    required this.playlistTitle,
+    required this.wordCount,
+    required this.onOpenSelector,
+  });
+
+  final String playlistTitle;
+  final int wordCount;
+  final VoidCallback onOpenSelector;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: PixelMetrics.space3,
+        vertical: PixelMetrics.space2,
+      ),
+      decoration: BoxDecoration(
+        color: palette.surface,
+        border: Border.all(color: palette.border, width: PixelMetrics.border),
+        boxShadow: [
+          BoxShadow(
+            color: palette.border.withValues(alpha: 0.3),
+            offset: const Offset(2, 2),
+            blurRadius: 0,
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          PixelIcon(PixelGlyph.headphones, color: palette.accent, scale: 1.8),
+          const SizedBox(width: PixelMetrics.space2),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'BĂNG PHÁT: $playlistTitle',
+                  style: TextStyle(
+                    fontFamily: 'Handjet',
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: palette.ink,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  'Chọn 1 hoặc nhiều ngày • Tự tạo Playlist',
+                  style: TextStyle(
+                    fontFamily: 'Handjet',
+                    fontSize: 12,
+                    color: palette.inkMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          PixelButton(
+            label: 'ĐỔI BĂNG ⏏️',
+            onPressed: onOpenSelector,
+          ),
+        ],
       ),
     );
   }
@@ -192,11 +297,13 @@ class _RetroCassetteWidget extends StatelessWidget {
     required this.tapeAnimation,
     required this.isPlaying,
     required this.trackInfo,
+    this.playlistTitle = 'HÔM NAY',
   });
 
   final Animation<double> tapeAnimation;
   final bool isPlaying;
   final String trackInfo;
+  final String playlistTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -212,15 +319,20 @@ class _RetroCassetteWidget extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'SIDE A • AUTO-REVERSE',
-                style: TextStyle(
-                  fontFamily: 'Handjet',
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: palette.accent,
+              Expanded(
+                child: Text(
+                  'SIDE A • ${playlistTitle.toUpperCase()}',
+                  style: TextStyle(
+                    fontFamily: 'Handjet',
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: palette.accent,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
+              const SizedBox(width: 8),
               Text(
                 'TRACK: $trackInfo',
                 style: const TextStyle(
@@ -638,9 +750,13 @@ class _AudioModePill extends StatelessWidget {
 }
 
 class _TransportControlsBar extends StatelessWidget {
-  const _TransportControlsBar({required this.commuteService});
+  const _TransportControlsBar({
+    required this.commuteService,
+    required this.onOpenSelector,
+  });
 
   final AudioCommuteService commuteService;
+  final VoidCallback onOpenSelector;
 
   @override
   Widget build(BuildContext context) {
@@ -660,6 +776,13 @@ class _TransportControlsBar extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
+          // Eject / Select Playlist
+          PixelIconButton(
+            glyph: PixelGlyph.headphones,
+            semanticLabel: 'Select Tape / Playlist',
+            onPressed: onOpenSelector,
+          ),
+
           // Shuffle
           PixelIconButton(
             glyph: PixelGlyph.gamepad,
@@ -687,7 +810,7 @@ class _TransportControlsBar extends StatelessWidget {
             child: PixelBox(
               raised: true,
               color: palette.accent,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
