@@ -168,4 +168,51 @@ void main() {
     expect(commuteService.playlistTitle, 'TECH INTERVIEW');
     expect(commuteService.playlist.map((w) => w.word), containsAll(['resilient', 'paradigm']));
   });
+
+  testWidgets('Tapping TẠO + opens _PlaylistEditorSheet without ListTile/Material assertions', (tester) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      wrap(
+        CommuteTapeSelectorSheet(
+          allWords: words,
+          commuteService: commuteService,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Switch to custom playlist tab
+    await tester.tap(find.text('📼 DANH SÁCH TỰ TẠO'));
+    await tester.pumpAndSettle();
+
+    // Tap 'TẠO +' button
+    await tester.tap(find.text('TẠO +'));
+    await tester.pumpAndSettle();
+
+    // Verify Playlist Editor Sheet opened
+    expect(find.text('TẠO PLAYLIST MỚI'), findsOneWidget);
+    expect(find.text('Tên danh sách'), findsOneWidget);
+
+    // Verify CheckboxListTiles rendered for words without assertions
+    expect(find.text('resilient'), findsOneWidget);
+    expect(find.text('bottleneck'), findsOneWidget);
+
+    // Toggle word selection
+    await tester.tap(find.text('resilient'));
+    await tester.pump();
+
+    // Enter title
+    await tester.enterText(find.byType(TextField).first, 'My Custom Tape');
+    await tester.pump();
+
+    // Save playlist
+    await tester.tap(find.text('LƯU DANH SÁCH 💾'));
+    await tester.pumpAndSettle();
+
+    // Verify playlist was saved and displayed
+    expect(find.text('MY CUSTOM TAPE'), findsOneWidget);
+  });
 }

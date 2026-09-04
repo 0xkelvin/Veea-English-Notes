@@ -307,21 +307,23 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
         final palette = sheetContext.palette;
-        return Container(
-          margin: const EdgeInsets.all(PixelMetrics.space3),
-          padding: const EdgeInsets.all(PixelMetrics.space4),
-          decoration: BoxDecoration(
-            color: palette.surface,
-            border: Border.all(color: palette.border, width: PixelMetrics.border * 1.5),
-            boxShadow: [
-              BoxShadow(
-                color: palette.border.withValues(alpha: 0.6),
-                offset: const Offset(4, 4),
-                blurRadius: 0,
-              ),
-            ],
-          ),
-          child: SafeArea(
+        return Material(
+          color: Colors.transparent,
+          child: Container(
+            margin: const EdgeInsets.all(PixelMetrics.space3),
+            padding: const EdgeInsets.all(PixelMetrics.space4),
+            decoration: BoxDecoration(
+              color: palette.surface,
+              border: Border.all(color: palette.border, width: PixelMetrics.border * 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: palette.border.withValues(alpha: 0.6),
+                  offset: const Offset(4, 4),
+                  blurRadius: 0,
+                ),
+              ],
+            ),
+            child: SafeArea(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -343,35 +345,39 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                 ),
                 const SizedBox(height: PixelMetrics.space3),
                 for (final friend in friends) ...[
-                  ListTile(
-                    tileColor: palette.paper,
-                    title: Text(
-                      friend.name,
-                      style: TextStyle(
-                        fontFamily: 'Handjet',
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: palette.ink,
+                  Material(
+                    color: Colors.transparent,
+                    child: ListTile(
+                      tileColor: palette.paper,
+                      title: Text(
+                        friend.name,
+                        style: TextStyle(
+                          fontFamily: 'Handjet',
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: palette.ink,
+                        ),
                       ),
+                      trailing: PixelIcon(PixelGlyph.arrowRight, color: palette.accent, scale: 2),
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        context.read<FriendChallengeService>().createChallenge(
+                          friend: friend,
+                          word: existing,
+                          mode: ChallengeMode.vnToEn,
+                        );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Đã bắn từ thách đấu tới ${friend.name}!')),
+                        );
+                      },
                     ),
-                    trailing: PixelIcon(PixelGlyph.arrowRight, color: palette.accent, scale: 2),
-                    onTap: () {
-                      Navigator.of(sheetContext).pop();
-                      context.read<FriendChallengeService>().createChallenge(
-                        friend: friend,
-                        word: existing,
-                        mode: ChallengeMode.vnToEn,
-                      );
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Đã bắn từ thách đấu tới ${friend.name}!')),
-                      );
-                    },
                   ),
                   const SizedBox(height: PixelMetrics.space2),
                 ],
               ],
             ),
           ),
+        ),
         );
       },
     );

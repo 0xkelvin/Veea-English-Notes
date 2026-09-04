@@ -256,23 +256,25 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
   Widget build(BuildContext context) {
     final palette = context.palette;
 
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.88,
-      decoration: BoxDecoration(
-        color: palette.surface,
-        border: Border(
-          top: BorderSide(color: palette.border, width: PixelMetrics.border * 2),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: palette.border.withValues(alpha: 0.5),
-            offset: const Offset(0, -4),
-            blurRadius: 0,
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.88,
+        decoration: BoxDecoration(
+          color: palette.surface,
+          border: Border(
+            top: BorderSide(color: palette.border, width: PixelMetrics.border * 2),
           ),
-        ],
-      ),
-      child: SafeArea(
-        child: Column(
+          boxShadow: [
+            BoxShadow(
+              color: palette.border.withValues(alpha: 0.5),
+              offset: const Offset(0, -4),
+              blurRadius: 0,
+            ),
+          ],
+        ),
+        child: SafeArea(
+          child: Column(
           children: [
             // Top Bar of Sheet
             _buildTopBar(palette),
@@ -311,6 +313,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
           ],
         ),
       ),
+    ),
     );
   }
 
@@ -916,16 +919,18 @@ class _PlaylistEditorSheetState extends State<_PlaylistEditorSheet> {
           w.meaning.toLowerCase().contains(q);
     }).toList();
 
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
-      padding: const EdgeInsets.all(PixelMetrics.space4),
-      decoration: BoxDecoration(
-        color: palette.surface,
-        border: Border(
-          top: BorderSide(color: palette.border, width: PixelMetrics.border * 2),
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.85,
+        padding: const EdgeInsets.all(PixelMetrics.space4),
+        decoration: BoxDecoration(
+          color: palette.surface,
+          border: Border(
+            top: BorderSide(color: palette.border, width: PixelMetrics.border * 2),
+          ),
         ),
-      ),
-      child: Column(
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
@@ -1025,36 +1030,39 @@ class _PlaylistEditorSheetState extends State<_PlaylistEditorSheet> {
               itemBuilder: (context, i) {
                 final w = filteredWords[i];
                 final isSelected = _selectedIds.contains(w.id);
-                return CheckboxListTile(
-                  dense: true,
-                  value: isSelected,
-                  activeColor: palette.accent,
-                  title: Text(
-                    w.word,
-                    style: TextStyle(
-                      fontFamily: 'Handjet',
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: isSelected ? palette.accent : palette.ink,
+                return Material(
+                  color: Colors.transparent,
+                  child: CheckboxListTile(
+                    dense: true,
+                    value: isSelected,
+                    activeColor: palette.accent,
+                    title: Text(
+                      w.word,
+                      style: TextStyle(
+                        fontFamily: 'Handjet',
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: isSelected ? palette.accent : palette.ink,
+                      ),
                     ),
-                  ),
-                  subtitle: Text(
-                    w.meaning,
-                    style: TextStyle(
-                      fontFamily: 'Handjet',
-                      fontSize: 12,
-                      color: palette.inkMuted,
+                    subtitle: Text(
+                      w.meaning,
+                      style: TextStyle(
+                        fontFamily: 'Handjet',
+                        fontSize: 12,
+                        color: palette.inkMuted,
+                      ),
                     ),
+                    onChanged: (val) {
+                      setState(() {
+                        if (val == true) {
+                          _selectedIds.add(w.id);
+                        } else {
+                          _selectedIds.remove(w.id);
+                        }
+                      });
+                    },
                   ),
-                  onChanged: (val) {
-                    setState(() {
-                      if (val == true) {
-                        _selectedIds.add(w.id);
-                      } else {
-                        _selectedIds.remove(w.id);
-                      }
-                    });
-                  },
                 );
               },
             ),
@@ -1066,6 +1074,7 @@ class _PlaylistEditorSheetState extends State<_PlaylistEditorSheet> {
           ),
         ],
       ),
+    ),
     );
   }
 }
