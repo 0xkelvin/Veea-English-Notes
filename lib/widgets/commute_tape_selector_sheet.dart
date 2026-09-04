@@ -47,29 +47,15 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
   final Set<String> _selectedWordIds = {};
   final Set<String> _expandedDates = {};
 
-  late Map<String, List<VocabularyWord>> _wordsByDate;
-  late DateTime _calendarMonth;
+  Map<String, List<VocabularyWord>> _wordsByDate = const {};
+  DateTime _calendarMonth = DateTime(DateTime.now().year, DateTime.now().month, 1);
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _wordsByDate = CommutePlaylistService.groupWordsByDate(widget.allWords);
-
-    // Initialize calendar to the month of the newest recorded word, or current month
-    DateTime initialMonth = DateTime.now();
-    if (_wordsByDate.isNotEmpty) {
-      final newestDateStr = _wordsByDate.keys.first;
-      final parts = newestDateStr.split('-');
-      if (parts.length == 3) {
-        final y = int.tryParse(parts[0]);
-        final m = int.tryParse(parts[1]);
-        if (y != null && m != null) {
-          initialMonth = DateTime(y, m, 1);
-        }
-      }
-    }
-    _calendarMonth = DateTime(initialMonth.year, initialMonth.month, 1);
+    _initCalendarMonth();
 
     // Default selection: words currently in player, or the newest date's words
     if (widget.commuteService.playlist.isNotEmpty) {
@@ -86,6 +72,32 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
     // Auto-expand newest date
     if (_wordsByDate.isNotEmpty) {
       _expandedDates.add(_wordsByDate.keys.first);
+    }
+  }
+
+  void _initCalendarMonth() {
+    DateTime initialMonth = DateTime.now();
+    if (_wordsByDate.isNotEmpty) {
+      final newestDateStr = _wordsByDate.keys.first;
+      final parts = newestDateStr.split('-');
+      if (parts.length == 3) {
+        final y = int.tryParse(parts[0]);
+        final m = int.tryParse(parts[1]);
+        if (y != null && m != null) {
+          initialMonth = DateTime(y, m, 1);
+        }
+      }
+    }
+    _calendarMonth = DateTime(initialMonth.year, initialMonth.month, 1);
+  }
+
+  @override
+  void didUpdateWidget(covariant CommuteTapeSelectorSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.allWords != widget.allWords) {
+      setState(() {
+        _wordsByDate = CommutePlaylistService.groupWordsByDate(widget.allWords);
+      });
     }
   }
 
@@ -297,6 +309,10 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
 
   @override
   Widget build(BuildContext context) {
+    if (_wordsByDate.isEmpty && widget.allWords.isNotEmpty) {
+      _wordsByDate = CommutePlaylistService.groupWordsByDate(widget.allWords);
+      _initCalendarMonth();
+    }
     final palette = context.palette;
 
     return Material(
