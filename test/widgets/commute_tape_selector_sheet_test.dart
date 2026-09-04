@@ -70,7 +70,7 @@ void main() {
     ),
   );
 
-  testWidgets('CommuteTapeSelectorSheet displays dates and supports multi-day presets', (tester) async {
+  testWidgets('CommuteTapeSelectorSheet displays calendar and supports multi-day selection', (tester) async {
     tester.view.physicalSize = const Size(800, 1200);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -90,12 +90,18 @@ void main() {
     expect(find.text('📅 THEO NGÀY (MULTI-DAY)'), findsOneWidget);
     expect(find.text('📼 DANH SÁCH TỰ TẠO'), findsOneWidget);
 
-    // Verify Presets are present
+    // Verify Calendar header & actions
+    expect(find.text('THÁNG 8 / 2026'), findsOneWidget);
     expect(find.text('HÔM NAY'), findsOneWidget);
-    expect(find.text('3 NGÀY GẦN ĐÂY'), findsOneWidget);
     expect(find.text('TẤT CẢ TỪ'), findsOneWidget);
+    expect(find.text('BỎ CHỌN'), findsOneWidget);
 
-    // Verify Dates are rendered
+    // Verify Weekday row
+    expect(find.text('T2'), findsOneWidget);
+    expect(find.text('T7'), findsOneWidget);
+    expect(find.text('CN'), findsOneWidget);
+
+    // Verify Dates are rendered in list
     expect(find.text('NGÀY 2026-08-18'), findsOneWidget);
     expect(find.text('NGÀY 2026-08-17'), findsOneWidget);
     expect(find.text('NGÀY 2026-08-16'), findsOneWidget);
@@ -103,35 +109,59 @@ void main() {
     // Tap 'TẤT CẢ TỪ' preset
     await tester.tap(find.text('TẤT CẢ TỪ'));
     await tester.pump();
-    expect(find.text('ĐÃ CHỌN: 4 TỪ'), findsOneWidget);
+    expect(find.text('ĐÃ CHỌN: 4 TỪ'), findsWidgets);
 
     // Tap 'BỎ CHỌN'
     await tester.tap(find.text('BỎ CHỌN'));
     await tester.pump();
-    expect(find.text('ĐÃ CHỌN: 0 TỪ'), findsOneWidget);
+    expect(find.text('ĐÃ CHỌN: 0 TỪ'), findsWidgets);
 
-    // Toggle 2026-08-18 checkbox (2 words)
-    await tester.tap(find.text('NGÀY 2026-08-18'));
+    // Toggle day 18 on calendar (cell with text '18')
+    final day18Finder = find.widgetWithText(InkWell, '18');
+    expect(day18Finder, findsOneWidget);
+    await tester.tap(day18Finder);
     await tester.pump();
+    expect(find.text('ĐÃ CHỌN: 2 TỪ'), findsWidgets);
 
-    // Toggle 2026-08-17 day header checkbox
-    final day17Finder = find.ancestor(
-      of: find.text('NGÀY 2026-08-17'),
-      matching: find.byType(InkWell),
-    );
+    // Toggle day 17 on calendar (cell with text '17') - multi-day selection
+    final day17Finder = find.widgetWithText(InkWell, '17');
+    expect(day17Finder, findsOneWidget);
     await tester.tap(day17Finder);
     await tester.pump();
+    expect(find.text('ĐÃ CHỌN: 3 TỪ'), findsWidgets);
 
     // Tap play selection
-    await tester.tap(find.text('HÔM NAY'));
-    await tester.pump();
-    expect(find.text('ĐÃ CHỌN: 2 TỪ'), findsOneWidget);
-
     await tester.tap(find.text('▶ PHÁT NGAY'));
     await tester.pump();
 
-    expect(commuteService.totalWords, 2);
-    expect(commuteService.playlist.map((w) => w.word), containsAll(['resilient', 'bottleneck']));
+    expect(commuteService.totalWords, 3);
+    expect(commuteService.playlist.map((w) => w.word), containsAll(['resilient', 'bottleneck', 'paradigm']));
+  });
+
+  testWidgets('CommuteTapeSelectorSheet grays down days without words on calendar', (tester) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      wrap(
+        CommuteTapeSelectorSheet(
+          allWords: words,
+          commuteService: commuteService,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Day 15 has 0 words -> should NOT be an InkWell (disabled/grayed down)
+    expect(find.widgetWithText(InkWell, '15'), findsNothing);
+    // But text '15' is present inside the calendar grid
+    expect(find.text('15'), findsOneWidget);
+
+    // Days 16, 17, 18 have words -> they are interactive InkWells
+    expect(find.widgetWithText(InkWell, '16'), findsOneWidget);
+    expect(find.widgetWithText(InkWell, '17'), findsOneWidget);
+    expect(find.widgetWithText(InkWell, '18'), findsOneWidget);
   });
 
   testWidgets('CommuteTapeSelectorSheet supports custom playlist tab', (tester) async {

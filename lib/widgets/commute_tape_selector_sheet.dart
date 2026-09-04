@@ -48,12 +48,28 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
   final Set<String> _expandedDates = {};
 
   late Map<String, List<VocabularyWord>> _wordsByDate;
+  late DateTime _calendarMonth;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _wordsByDate = CommutePlaylistService.groupWordsByDate(widget.allWords);
+
+    // Initialize calendar to the month of the newest recorded word, or current month
+    DateTime initialMonth = DateTime.now();
+    if (_wordsByDate.isNotEmpty) {
+      final newestDateStr = _wordsByDate.keys.first;
+      final parts = newestDateStr.split('-');
+      if (parts.length == 3) {
+        final y = int.tryParse(parts[0]);
+        final m = int.tryParse(parts[1]);
+        if (y != null && m != null) {
+          initialMonth = DateTime(y, m, 1);
+        }
+      }
+    }
+    _calendarMonth = DateTime(initialMonth.year, initialMonth.month, 1);
 
     // Default selection: words currently in player, or the newest date's words
     if (widget.commuteService.playlist.isNotEmpty) {
@@ -79,21 +95,48 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
     super.dispose();
   }
 
-  void _selectPreset({int? lastNDays, bool all = false}) {
+  void _goToPreviousMonth() {
+    setState(() {
+      _calendarMonth = DateTime(_calendarMonth.year, _calendarMonth.month - 1, 1);
+    });
+  }
+
+  void _goToNextMonth() {
+    setState(() {
+      _calendarMonth = DateTime(_calendarMonth.year, _calendarMonth.month + 1, 1);
+    });
+  }
+
+  void _selectToday() {
+    final today = DateTime.now();
+    final todayKey = _dateKey(today);
+    setState(() {
+      _calendarMonth = DateTime(today.year, today.month, 1);
+      _selectedWordIds.clear();
+      if (_wordsByDate.containsKey(todayKey)) {
+        for (final w in _wordsByDate[todayKey]!) {
+          _selectedWordIds.add(w.id);
+        }
+        _expandedDates.add(todayKey);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Hôm nay chưa có từ vựng nào!')),
+        );
+      }
+    });
+  }
+
+  static String _dateKey(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
+
+  void _selectPreset({bool all = false}) {
     setState(() {
       _selectedWordIds.clear();
-      final dates = _wordsByDate.keys.toList();
-
       if (all) {
         for (final w in widget.allWords) {
           _selectedWordIds.add(w.id);
-        }
-      } else if (lastNDays != null) {
-        final targetDates = dates.take(lastNDays);
-        for (final d in targetDates) {
-          for (final w in _wordsByDate[d]!) {
-            _selectedWordIds.add(w.id);
-          }
         }
       }
     });
@@ -358,60 +401,96 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
   }
 
   Widget _buildByDateTab(PixelPalette palette) {
-    return Column(
-      children: [
-        // Quick Selection Preset Pills
-        Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: PixelMetrics.space3,
-            vertical: PixelMetrics.space2,
-          ),
-          decoration: BoxDecoration(
-            color: palette.surface,
-            border: Border(
-              bottom: BorderSide(color: palette.border, width: 1),
-            ),
-          ),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _buildFilterPill('HÔM NAY', () => _selectPreset(lastNDays: 1), palette),
-                const SizedBox(width: 6),
-                _buildFilterPill('3 NGÀY GẦN ĐÂY', () => _selectPreset(lastNDays: 3), palette),
-                const SizedBox(width: 6),
-                _buildFilterPill('7 NGÀY', () => _selectPreset(lastNDays: 7), palette),
-                const SizedBox(width: 6),
-                _buildFilterPill('TẤT CẢ TỪ', () => _selectPreset(all: true), palette),
-                const SizedBox(width: 6),
-                _buildFilterPill('BỎ CHỌN', () => setState(() => _selectedWordIds.clear()), palette),
-              ],
-            ),
+    if (_wordsByDate.isEmpty) {
+      return Center(
+        child: Text(
+          'CHƯA CÓ TỪ VỰNG NÀO ĐỂ PHÁT',
+          style: TextStyle(
+            fontFamily: 'Handjet',
+            fontSize: 16,
+            color: palette.inkFaint,
           ),
         ),
+      );
+    }
 
-        // Date groups & words list
+    final monthPrefix =
+        '${_calendarMonth.year.toString().padLeft(4, '0')}-${_calendarMonth.month.toString().padLeft(2, '0')}';
+
+    // Show dates from the currently viewed calendar month,
+    // plus any other dates that have active selected words
+    final datesToShow = _wordsByDate.keys.where((date) {
+      final inCurrentMonth = date.startsWith(monthPrefix);
+      final hasSelectedWords =
+          _wordsByDate[date]!.any((w) => _selectedWordIds.contains(w.id));
+      return inCurrentMonth || hasSelectedWords;
+    }).toList();
+
+    return Column(
+      children: [
         Expanded(
-          child: _wordsByDate.isEmpty
-              ? Center(
-                  child: Text(
-                    'CHƯA CÓ TỪ VỰNG NÀO ĐỂ PHÁT',
+          child: ListView(
+            padding: const EdgeInsets.symmetric(
+              horizontal: PixelMetrics.space3,
+              vertical: PixelMetrics.space2,
+            ),
+            children: [
+              // Retro Pixel Calendar
+              _buildCalendar(palette),
+              const SizedBox(height: PixelMetrics.space3),
+
+              // Section Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'DANH SÁCH TỪ VỰNG (${datesToShow.length} NGÀY)',
                     style: TextStyle(
                       fontFamily: 'Handjet',
-                      fontSize: 16,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: palette.ink,
+                    ),
+                  ),
+                  Text(
+                    'ĐÃ CHỌN: ${_selectedWordIds.length} TỪ',
+                    style: TextStyle(
+                      fontFamily: 'Handjet',
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: _selectedWordIds.isNotEmpty
+                          ? palette.accent
+                          : palette.inkFaint,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: PixelMetrics.space2),
+
+              // Date Group Cards
+              if (datesToShow.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(PixelMetrics.space4),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: palette.paper,
+                    border: Border.all(color: palette.border, width: 1),
+                  ),
+                  child: Text(
+                    'THÁNG NÀY CHƯA CÓ TỪ NÀO\nCHẠM VÀO MŨI TÊN ĐỔI THÁNG HOẶC BẤM "TẤT CẢ TỪ"',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Handjet',
+                      fontSize: 14,
                       color: palette.inkFaint,
                     ),
                   ),
                 )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(PixelMetrics.space3),
-                  itemCount: _wordsByDate.length,
-                  itemBuilder: (context, index) {
-                    final date = _wordsByDate.keys.elementAt(index);
-                    final words = _wordsByDate[date]!;
-                    return _buildDateGroupTile(date, words, palette);
-                  },
-                ),
+              else
+                for (final date in datesToShow)
+                  _buildDateGroupTile(date, _wordsByDate[date]!, palette),
+            ],
+          ),
         ),
 
         // Bottom Action Bar
@@ -420,11 +499,262 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
     );
   }
 
+  Widget _buildCalendar(PixelPalette palette) {
+    final firstDayOfMonth =
+        DateTime(_calendarMonth.year, _calendarMonth.month, 1);
+    final daysInMonth =
+        DateTime(_calendarMonth.year, _calendarMonth.month + 1, 0).day;
+    // Monday = 1, Sunday = 7
+    final leadingBlanks = firstDayOfMonth.weekday - 1;
+    final totalCells = leadingBlanks + daysInMonth;
+    final rowCount = (totalCells / 7).ceil();
+
+    final dayNames = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+
+    return Container(
+      padding: const EdgeInsets.all(PixelMetrics.space2),
+      decoration: BoxDecoration(
+        color: palette.surface,
+        border: Border.all(color: palette.border, width: PixelMetrics.border),
+        boxShadow: [
+          BoxShadow(
+            color: palette.border.withValues(alpha: 0.15),
+            offset: const Offset(2, 2),
+            blurRadius: 0,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Month navigation & action pills
+          Row(
+            children: [
+              _buildMonthNavButton(
+                Icons.chevron_left,
+                _goToPreviousMonth,
+                palette,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'THÁNG ${_calendarMonth.month} / ${_calendarMonth.year}',
+                style: TextStyle(
+                  fontFamily: 'Handjet',
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: palette.ink,
+                ),
+              ),
+              const SizedBox(width: 4),
+              _buildMonthNavButton(
+                Icons.chevron_right,
+                _goToNextMonth,
+                palette,
+              ),
+              const Spacer(),
+              _buildFilterPill('HÔM NAY', _selectToday, palette),
+              const SizedBox(width: 4),
+              _buildFilterPill('TẤT CẢ TỪ', () => _selectPreset(all: true), palette),
+              const SizedBox(width: 4),
+              _buildFilterPill(
+                'BỎ CHỌN',
+                () => setState(() => _selectedWordIds.clear()),
+                palette,
+              ),
+            ],
+          ),
+          const SizedBox(height: PixelMetrics.space2),
+
+          // Weekday header
+          Row(
+            children: [
+              for (final dayName in dayNames)
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      dayName,
+                      style: TextStyle(
+                        fontFamily: 'Handjet',
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: palette.inkMuted,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+
+          // Days Grid
+          for (var r = 0; r < rowCount; r++) ...[
+            Row(
+              children: [
+                for (var c = 0; c < 7; c++) ...[
+                  Expanded(
+                    child: _buildCalendarDayCell(
+                      r * 7 + c,
+                      leadingBlanks,
+                      daysInMonth,
+                      palette,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            if (r < rowCount - 1) const SizedBox(height: 3),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCalendarDayCell(
+    int cellIndex,
+    int leadingBlanks,
+    int daysInMonth,
+    PixelPalette palette,
+  ) {
+    final day = cellIndex - leadingBlanks + 1;
+    if (day < 1 || day > daysInMonth) {
+      return const SizedBox(height: 38);
+    }
+
+    final cellDate = DateTime(_calendarMonth.year, _calendarMonth.month, day);
+    final dateKey = _dateKey(cellDate);
+    final words = _wordsByDate[dateKey] ?? [];
+    final hasWords = words.isNotEmpty;
+
+    // Days without words are grayed down
+    if (!hasWords) {
+      return Container(
+        height: 38,
+        margin: const EdgeInsets.symmetric(horizontal: 1.5),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: palette.paper.withValues(alpha: 0.25),
+          border: Border.all(
+            color: palette.border.withValues(alpha: 0.12),
+            width: 1,
+          ),
+        ),
+        child: Text(
+          '$day',
+          style: TextStyle(
+            fontFamily: 'Handjet',
+            fontSize: 14,
+            color: palette.inkFaint.withValues(alpha: 0.3),
+          ),
+        ),
+      );
+    }
+
+    // Days with words: interactive & selectable
+    final selectedCount =
+        words.where((w) => _selectedWordIds.contains(w.id)).length;
+    final isFull = selectedCount == words.length;
+    final isPartial = selectedCount > 0 && selectedCount < words.length;
+
+    Color bgColor;
+    Color borderColor;
+    Color textColor;
+    Color badgeColor;
+    String badgeText;
+
+    if (isFull) {
+      bgColor = palette.accent;
+      borderColor = palette.border;
+      textColor = palette.onAccent;
+      badgeColor = palette.onAccent;
+      badgeText = '${words.length}';
+    } else if (isPartial) {
+      bgColor = palette.accent.withValues(alpha: 0.25);
+      borderColor = palette.accent;
+      textColor = palette.ink;
+      badgeColor = palette.accent;
+      badgeText = '$selectedCount/${words.length}';
+    } else {
+      bgColor = palette.paper;
+      borderColor = palette.border;
+      textColor = palette.ink;
+      badgeColor = palette.accent;
+      badgeText = '${words.length}';
+    }
+
+    return InkWell(
+      onTap: () {
+        _toggleDate(dateKey);
+        setState(() {
+          if (!_expandedDates.contains(dateKey)) {
+            _expandedDates.add(dateKey);
+          }
+        });
+      },
+      child: Container(
+        height: 38,
+        margin: const EdgeInsets.symmetric(horizontal: 1.5),
+        decoration: BoxDecoration(
+          color: bgColor,
+          border: Border.all(
+            color: borderColor,
+            width: isFull || isPartial ? PixelMetrics.border : 1.5,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              '$day',
+              style: TextStyle(
+                fontFamily: 'Handjet',
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: textColor,
+                height: 1.0,
+              ),
+            ),
+            const SizedBox(height: 1),
+            Text(
+              badgeText,
+              style: TextStyle(
+                fontFamily: 'Handjet',
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: badgeColor,
+                height: 1.0,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMonthNavButton(
+    IconData icon,
+    VoidCallback onPressed,
+    PixelPalette palette,
+  ) {
+    return InkWell(
+      onTap: onPressed,
+      child: Container(
+        width: 26,
+        height: 26,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: palette.paper,
+          border: Border.all(color: palette.border, width: 1.5),
+        ),
+        child: Icon(icon, size: 16, color: palette.ink),
+      ),
+    );
+  }
+
   Widget _buildFilterPill(String label, VoidCallback onTap, PixelPalette palette) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
         decoration: BoxDecoration(
           color: palette.paper,
           border: Border.all(color: palette.border, width: 1),
