@@ -5,7 +5,9 @@ import '../core/theme/pixel_metrics.dart';
 import '../core/theme/pixel_palette.dart';
 import '../models/part_of_speech.dart';
 import '../models/vocabulary_word.dart';
+import '../models/word_challenge.dart';
 import '../providers/vocabulary_provider.dart';
+import '../services/friend_challenge_service.dart';
 import '../services/pronunciation_service.dart';
 import '../services/word_suggestion_service.dart';
 import '../widgets/pixel/context_wizard_sheet.dart';
@@ -289,6 +291,92 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
     );
   }
 
+  void _dropWordToFriend() {
+    final existing = widget.existing;
+    if (existing == null) return;
+    final friends = context.read<FriendChallengeService>().friends;
+    if (friends.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Chưa có bạn bè nào! Hãy kết nối qua Game Link.')),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final palette = sheetContext.palette;
+        return Container(
+          margin: const EdgeInsets.all(PixelMetrics.space3),
+          padding: const EdgeInsets.all(PixelMetrics.space4),
+          decoration: BoxDecoration(
+            color: palette.surface,
+            border: Border.all(color: palette.border, width: PixelMetrics.border * 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: palette.border.withValues(alpha: 0.6),
+                offset: const Offset(4, 4),
+                blurRadius: 0,
+              ),
+            ],
+          ),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    PixelIcon(PixelGlyph.bolt, color: Colors.amber, scale: 2),
+                    const SizedBox(width: PixelMetrics.space2),
+                    Text(
+                      'BẮN TỪ CHO BẠN BÈ:',
+                      style: TextStyle(
+                        fontFamily: 'Handjet',
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: palette.ink,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: PixelMetrics.space3),
+                for (final friend in friends) ...[
+                  ListTile(
+                    tileColor: palette.paper,
+                    title: Text(
+                      friend.name,
+                      style: TextStyle(
+                        fontFamily: 'Handjet',
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: palette.ink,
+                      ),
+                    ),
+                    trailing: PixelIcon(PixelGlyph.arrowRight, color: palette.accent, scale: 2),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      context.read<FriendChallengeService>().createChallenge(
+                        friend: friend,
+                        word: existing,
+                        mode: ChallengeMode.vnToEn,
+                      );
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Đã bắn từ thách đấu tới ${friend.name}!')),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: PixelMetrics.space2),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -301,6 +389,7 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
             _EditorTopBar(
               title: widget.isEditing ? 'EDIT WORD' : 'NEW WORD',
               onClose: () => Navigator.of(context).pop(),
+              onDrop: widget.isEditing ? _dropWordToFriend : null,
             ),
             if (provider.lastError != null)
               _ErrorBanner(
@@ -552,10 +641,15 @@ class _PronunciationLine extends StatelessWidget {
 }
 
 class _EditorTopBar extends StatelessWidget {
-  const _EditorTopBar({required this.title, required this.onClose});
+  const _EditorTopBar({
+    required this.title,
+    required this.onClose,
+    this.onDrop,
+  });
 
   final String title;
   final VoidCallback onClose;
+  final VoidCallback? onDrop;
 
   @override
   Widget build(BuildContext context) {
@@ -576,6 +670,14 @@ class _EditorTopBar extends StatelessWidget {
         children: [
           Text(title, style: Theme.of(context).textTheme.titleMedium),
           const Spacer(),
+          if (onDrop != null) ...[
+            PixelIconButton(
+              glyph: PixelGlyph.bolt,
+              semanticLabel: 'Drop word to friend',
+              onPressed: onDrop,
+            ),
+            const SizedBox(width: PixelMetrics.space2),
+          ],
           PixelIconButton(
             glyph: PixelGlyph.close,
             semanticLabel: 'Close without saving',

@@ -302,6 +302,16 @@ class PixelGlyph {
     '.##....',
   ]);
 
+  static const link = PixelGlyph([
+    '.####..',
+    '#....#.',
+    '#..##..',
+    '..##..#',
+    '.#....#',
+    '..####.',
+    '.......',
+  ]);
+
   static const gear = PixelGlyph([
     '.#.##.#',
     '#######',

@@ -17,11 +17,14 @@ import 'providers/theme_provider.dart';
 import 'providers/vocabulary_provider.dart';
 import 'providers/widget_provider.dart';
 import 'screens/home_screen.dart';
+import 'models/word_challenge.dart';
+import 'services/friend_challenge_service.dart';
 import 'services/pronunciation_service.dart';
 import 'services/sync_service.dart';
 import 'services/tts_service.dart';
 import 'services/widget_service.dart';
 import 'widgets/pixel/pixel_field.dart';
+import 'widgets/word_drop_overlay.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -134,10 +137,22 @@ class VeeaEnglishApp extends StatefulWidget {
 class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
   late final AppLifecycleListener _lifecycleListener;
   final TtsService _ttsService = TtsService();
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  final FriendChallengeService _friendChallengeService = FriendChallengeService();
+  StreamSubscription<WordChallenge>? _challengeSubscription;
 
   @override
   void initState() {
     super.initState();
+    _friendChallengeService.init();
+    _challengeSubscription = _friendChallengeService.incomingChallenges.listen((challenge) {
+      if (!mounted) return;
+      final navState = _navigatorKey.currentState;
+      if (navState != null && navState.mounted) {
+        WordDropOverlay.show(navState.context, challenge: challenge);
+      }
+    });
+
     _lifecycleListener = AppLifecycleListener(
       onResume: _handleAppResume,
       onInactive: () => widget.vocabulary.refreshWidgetData(),
@@ -170,6 +185,8 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
 
   @override
   void dispose() {
+    _challengeSubscription?.cancel();
+    _friendChallengeService.dispose();
     _lifecycleListener.dispose();
     _ttsService.dispose();
     super.dispose();
@@ -183,6 +200,7 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
         ChangeNotifierProvider.value(value: widget.auth),
         ChangeNotifierProvider.value(value: widget.sync),
         ChangeNotifierProvider.value(value: _ttsService),
+        ChangeNotifierProvider.value(value: _friendChallengeService),
         ChangeNotifierProvider(
           create: (_) => widget.themeProvider ?? (ThemeProvider()..init()),
         ),
@@ -200,6 +218,7 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
       child: Consumer<ThemeProvider>(
         builder: (context, theme, _) {
           return MaterialApp(
+            navigatorKey: _navigatorKey,
             title: 'Veea English',
             debugShowCheckedModeBanner: false,
             theme: theme.activeTheme,
