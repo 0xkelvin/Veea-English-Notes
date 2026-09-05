@@ -58,12 +58,12 @@ void main() {
     await tester.pump();
 
     // Verify Title and Friend Code
-    expect(find.text('PIXEL LINK // BẮN TỪ BẠN BÈ'), findsOneWidget);
-    expect(find.text('MÃ GAME LINK CỦA BẠN'), findsOneWidget);
-    expect(find.text('COPY MÃ'), findsOneWidget);
+    expect(find.text('PIXEL LINK // FRIEND WORD DROP'), findsOneWidget);
+    expect(find.text('YOUR GAME LINK CODE'), findsOneWidget);
+    expect(find.text('COPY CODE'), findsOneWidget);
 
     // Verify Friends List
-    expect(find.textContaining('BẠN BÈ ĐÃ KẾT NỐI'), findsOneWidget);
+    expect(find.textContaining('CONNECTED FRIENDS'), findsOneWidget);
     expect(find.text('Alex (Senior FE)'), findsOneWidget);
     expect(find.text('Quốc (DevOps)'), findsOneWidget);
 

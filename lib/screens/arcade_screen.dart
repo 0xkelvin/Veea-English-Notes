@@ -246,7 +246,7 @@ class _PixelLinkDuelBanner extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Bắn từ thách đấu pop-up với bạn bè',
+                        'Drop word challenges & pop-up duels with friends',
                         style: TextStyle(
                           fontFamily: 'Handjet',
                           fontSize: 12,
@@ -257,7 +257,7 @@ class _PixelLinkDuelBanner extends StatelessWidget {
                   ),
                 ),
                 PixelButton(
-                  label: 'ĐẤU ⚡',
+                  label: 'DUEL ⚡',
                   onPressed: onTap,
                 ),
               ],

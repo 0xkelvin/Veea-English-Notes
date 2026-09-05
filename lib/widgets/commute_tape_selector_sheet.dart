@@ -132,7 +132,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
         _expandedDates.add(todayKey);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Hôm nay chưa có từ vựng nào!')),
+          const SnackBar(content: Text('No vocabulary words for today!')),
         );
       }
     });
@@ -188,7 +188,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
 
     if (selectedWords.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng chọn ít nhất 1 từ để phát!')),
+        const SnackBar(content: Text('Please select at least 1 word to play!')),
       );
       return;
     }
@@ -199,9 +199,9 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
         (d) => (_wordsByDate[d] ?? []).any((w) => _selectedWordIds.contains(w.id)),
       );
       if (selectedDates.length == 1) {
-        title = 'NGÀY ${selectedDates.first}';
+        title = 'DATE ${selectedDates.first}';
       } else {
-        title = '${selectedDates.length} NGÀY (${selectedWords.length} TỪ)';
+        title = '${selectedDates.length} DAYS (${selectedWords.length} WORDS)';
       }
     }
 
@@ -215,13 +215,13 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
   Future<void> _saveAsCustomPlaylist() async {
     if (_selectedWordIds.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Chưa chọn từ nào để lưu!')),
+        const SnackBar(content: Text('No words selected to save!')),
       );
       return;
     }
 
     final nameController = TextEditingController(
-      text: 'Băng Cassette ${_selectedWordIds.length} từ',
+      text: 'Cassette Tape ${_selectedWordIds.length} words',
     );
 
     final confirmed = await showDialog<bool>(
@@ -232,7 +232,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
           backgroundColor: palette.surface,
           shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
           title: Text(
-            'LƯU THÀNH PLAYLIST TỰ TẠO',
+            'SAVE AS CUSTOM PLAYLIST',
             style: TextStyle(
               fontFamily: 'Handjet',
               fontSize: 20,
@@ -244,7 +244,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
             controller: nameController,
             autofocus: true,
             decoration: InputDecoration(
-              labelText: 'Tên danh sách',
+              labelText: 'Playlist name',
               labelStyle: TextStyle(fontFamily: 'Handjet', color: palette.inkFaint),
               filled: true,
               fillColor: palette.paper,
@@ -265,12 +265,12 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
             TextButton(
               onPressed: () => Navigator.of(dialogCtx).pop(false),
               child: Text(
-                'HỦY',
+                'CANCEL',
                 style: TextStyle(fontFamily: 'Handjet', color: palette.inkFaint),
               ),
             ),
             PixelButton(
-              label: 'LƯU 💾',
+              label: 'SAVE 💾',
               onPressed: () => Navigator.of(dialogCtx).pop(true),
             ),
           ],
@@ -282,13 +282,13 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
       final name = nameController.text.trim();
       final playlistService = context.read<CommutePlaylistService>();
       await playlistService.createPlaylist(
-        name.isEmpty ? 'Băng tự chọn' : name,
+        name.isEmpty ? 'Custom Tape' : name,
         _selectedWordIds.toList(),
       );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Đã lưu playlist "$name"!')),
+          SnackBar(content: Text('Saved playlist "$name"!')),
         );
         _tabController.animateTo(1);
       }
@@ -353,8 +353,8 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                   fontWeight: FontWeight.bold,
                 ),
                 tabs: const [
-                  Tab(text: '📅 THEO NGÀY (MULTI-DAY)'),
-                  Tab(text: '📼 DANH SÁCH TỰ TẠO'),
+                  Tab(text: '📅 BY DATE (MULTI-DAY)'),
+                  Tab(text: '📼 CUSTOM PLAYLISTS'),
                 ],
               ),
             ),
@@ -420,7 +420,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
     if (_wordsByDate.isEmpty) {
       return Center(
         child: Text(
-          'CHƯA CÓ TỪ VỰNG NÀO ĐỂ PHÁT',
+          'NO VOCABULARY WORDS TO PLAY',
           style: TextStyle(
             fontFamily: 'Handjet',
             fontSize: 16,
@@ -460,7 +460,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'DANH SÁCH TỪ VỰNG (${datesToShow.length} NGÀY)',
+                    'VOCABULARY LIST (${datesToShow.length} DAYS)',
                     style: TextStyle(
                       fontFamily: 'Handjet',
                       fontSize: 15,
@@ -469,7 +469,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                     ),
                   ),
                   Text(
-                    'ĐÃ CHỌN: ${_selectedWordIds.length} TỪ',
+                    'SELECTED: ${_selectedWordIds.length} WORDS',
                     style: TextStyle(
                       fontFamily: 'Handjet',
                       fontSize: 13,
@@ -493,7 +493,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                     border: Border.all(color: palette.border, width: 1),
                   ),
                   child: Text(
-                    'THÁNG NÀY CHƯA CÓ TỪ NÀO\nCHẠM VÀO MŨI TÊN ĐỔI THÁNG HOẶC BẤM "TẤT CẢ TỪ"',
+                    'NO WORDS THIS MONTH\nTAP ARROWS TO CHANGE MONTH OR TAP "ALL WORDS"',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontFamily: 'Handjet',
@@ -525,7 +525,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
     final totalCells = leadingBlanks + daysInMonth;
     final rowCount = (totalCells / 7).ceil();
 
-    final dayNames = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+    final dayNames = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
 
     return Container(
       padding: const EdgeInsets.all(PixelMetrics.space2),
@@ -553,7 +553,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
               ),
               const SizedBox(width: 4),
               Text(
-                'THÁNG ${_calendarMonth.month} / ${_calendarMonth.year}',
+                'MONTH ${_calendarMonth.month} / ${_calendarMonth.year}',
                 style: TextStyle(
                   fontFamily: 'Handjet',
                   fontSize: 17,
@@ -568,12 +568,12 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                 palette,
               ),
               const Spacer(),
-              _buildFilterPill('HÔM NAY', _selectToday, palette),
+              _buildFilterPill('TODAY', _selectToday, palette),
               const SizedBox(width: 4),
-              _buildFilterPill('TẤT CẢ TỪ', () => _selectPreset(all: true), palette),
+              _buildFilterPill('ALL WORDS', () => _selectPreset(all: true), palette),
               const SizedBox(width: 4),
               _buildFilterPill(
-                'BỎ CHỌN',
+                'CLEAR',
                 () => setState(() => _selectedWordIds.clear()),
                 palette,
               ),
@@ -861,7 +861,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                   const SizedBox(width: PixelMetrics.space2),
                   Expanded(
                     child: Text(
-                      'NGÀY $date',
+                      'DATE $date',
                       style: TextStyle(
                         fontFamily: 'Handjet',
                         fontSize: 16,
@@ -874,7 +874,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     color: palette.surface,
                     child: Text(
-                      '$selectedCount / ${words.length} TỪ',
+                      '$selectedCount / ${words.length} WORDS',
                       style: TextStyle(
                         fontFamily: 'Handjet',
                         fontSize: 12,
@@ -911,8 +911,13 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
     return InkWell(
       onTap: () => _toggleWord(word.id),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        color: isSelected ? palette.accent.withValues(alpha: 0.08) : Colors.transparent,
+        padding: const EdgeInsets.symmetric(
+          horizontal: PixelMetrics.space3,
+          vertical: PixelMetrics.space2,
+        ),
+        color: isSelected
+            ? palette.accent.withValues(alpha: 0.08)
+            : Colors.transparent,
         child: Row(
           children: [
             Container(
@@ -948,24 +953,26 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                       color: isSelected ? palette.accent : palette.ink,
                     ),
                   ),
-                  Text(
-                    word.meaning,
-                    style: TextStyle(
-                      fontFamily: 'Handjet',
-                      fontSize: 12,
-                      color: palette.inkMuted,
+                  if (word.meaning.isNotEmpty)
+                    Text(
+                      word.meaning,
+                      style: TextStyle(
+                        fontFamily: 'Handjet',
+                        fontSize: 12,
+                        color: palette.inkMuted,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
                 ],
               ),
             ),
-            if (word.pronunciation != null)
+            if (word.pronunciation != null && word.pronunciation!.isNotEmpty)
               Text(
-                '/${word.pronunciation}/',
+                word.pronunciation!,
                 style: TextStyle(
-                  fontSize: 11,
+                  fontFamily: 'Handjet',
+                  fontSize: 12,
                   color: palette.inkFaint,
                 ),
               ),
@@ -977,7 +984,10 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
 
   Widget _buildBottomActionBar(PixelPalette palette) {
     return Container(
-      padding: const EdgeInsets.all(PixelMetrics.space3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: PixelMetrics.space4,
+        vertical: PixelMetrics.space3,
+      ),
       decoration: BoxDecoration(
         color: palette.surface,
         border: Border(
@@ -991,7 +1001,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'ĐÃ CHỌN: ${_selectedWordIds.length} TỪ',
+                  'SELECTED: ${_selectedWordIds.length} WORDS',
                   style: TextStyle(
                     fontFamily: 'Handjet',
                     fontSize: 16,
@@ -1002,7 +1012,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                 GestureDetector(
                   onTap: _saveAsCustomPlaylist,
                   child: Text(
-                    '💾 Lưu thành playlist tự tạo',
+                    '💾 Save as custom playlist',
                     style: TextStyle(
                       fontFamily: 'Handjet',
                       fontSize: 13,
@@ -1015,7 +1025,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
             ),
           ),
           PixelButton(
-            label: '▶ PHÁT NGAY',
+            label: '▶ PLAY NOW',
             onPressed: _selectedWordIds.isNotEmpty ? _playSelection : null,
           ),
         ],
@@ -1053,7 +1063,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                   const SizedBox(width: PixelMetrics.space2),
                   Expanded(
                     child: Text(
-                      'TẠO BĂNG CASSETTE MỚI (PLAYLIST TỰ CHỌN)',
+                      'CREATE NEW CASSETTE TAPE (CUSTOM PLAYLIST)',
                       style: TextStyle(
                         fontFamily: 'Handjet',
                         fontSize: 15,
@@ -1063,7 +1073,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                     ),
                   ),
                   PixelButton(
-                    label: 'TẠO +',
+                    label: 'CREATE +',
                     onPressed: () => _openCreateOrEditPlaylist(),
                   ),
                 ],
@@ -1077,7 +1087,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
           child: playlists.isEmpty
               ? Center(
                   child: Text(
-                    'CHƯA CÓ DANH SÁCH TỰ TẠO NÀO\nBẤM "+ TẠO" HOẶC LƯU TỪ TAB THEO NGÀY',
+                    'NO CUSTOM PLAYLISTS YET\nTAP "+ CREATE" OR SAVE FROM THE BY DATE TAB',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontFamily: 'Handjet',
@@ -1144,7 +1154,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                       ),
                     ),
                     Text(
-                      '${matchingWords.length} TỪ • TẠO NGÀY ${playlist.createdAt.toString().split(' ').first}',
+                      '${matchingWords.length} WORDS • CREATED ${playlist.createdAt.toString().split(' ').first}',
                       style: TextStyle(
                         fontFamily: 'Handjet',
                         fontSize: 12,
@@ -1182,7 +1192,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               PixelButton(
-                label: '▶ PHÁT BĂNG NÀY (${matchingWords.length} TỪ)',
+                label: '▶ PLAY THIS TAPE (${matchingWords.length} WORDS)',
                 onPressed: matchingWords.isNotEmpty
                     ? () {
                         widget.commuteService.startPlayback(
@@ -1223,7 +1233,7 @@ class _PlaylistEditorSheetState extends State<_PlaylistEditorSheet> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(
-      text: widget.existing?.name ?? 'Băng Cassette mới',
+      text: widget.existing?.name ?? 'New Cassette Tape',
     );
     if (widget.existing != null) {
       _selectedIds.addAll(widget.existing!.wordIds);
@@ -1283,7 +1293,7 @@ class _PlaylistEditorSheetState extends State<_PlaylistEditorSheet> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                widget.existing != null ? 'CHỈNH SỬA PLAYLIST' : 'TẠO PLAYLIST MỚI',
+                widget.existing != null ? 'EDIT PLAYLIST' : 'CREATE NEW PLAYLIST',
                 style: TextStyle(
                   fontFamily: 'Handjet',
                   fontSize: 20,
@@ -1301,7 +1311,7 @@ class _PlaylistEditorSheetState extends State<_PlaylistEditorSheet> {
           TextField(
             controller: _nameController,
             decoration: InputDecoration(
-              labelText: 'Tên danh sách',
+              labelText: 'Playlist name',
               filled: true,
               fillColor: palette.paper,
               border: OutlineInputBorder(
@@ -1321,7 +1331,7 @@ class _PlaylistEditorSheetState extends State<_PlaylistEditorSheet> {
           TextField(
             onChanged: (v) => setState(() => _searchQuery = v),
             decoration: InputDecoration(
-              hintText: 'Tìm kiếm từ vựng...',
+              hintText: 'Search vocabulary...',
               prefixIcon: const Icon(Icons.search),
               filled: true,
               fillColor: palette.paper,
@@ -1337,7 +1347,7 @@ class _PlaylistEditorSheetState extends State<_PlaylistEditorSheet> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'CHỌN TỪ (${_selectedIds.length} ĐÃ CHỌN)',
+                'SELECT WORDS (${_selectedIds.length} SELECTED)',
                 style: TextStyle(
                   fontFamily: 'Handjet',
                   fontSize: 14,
@@ -1357,8 +1367,8 @@ class _PlaylistEditorSheetState extends State<_PlaylistEditorSheet> {
                 },
                 child: Text(
                   _selectedIds.length == widget.allWords.length
-                      ? 'BỎ CHỌN TẤT CẢ'
-                      : 'CHỌN TẤT CẢ',
+                      ? 'DESELECT ALL'
+                      : 'SELECT ALL',
                   style: TextStyle(
                     fontFamily: 'Handjet',
                     fontSize: 12,
@@ -1415,7 +1425,7 @@ class _PlaylistEditorSheetState extends State<_PlaylistEditorSheet> {
           ),
           const SizedBox(height: PixelMetrics.space2),
           PixelButton(
-            label: 'LƯU DANH SÁCH 💾',
+            label: 'SAVE PLAYLIST 💾',
             onPressed: _selectedIds.isNotEmpty ? _save : null,
           ),
         ],

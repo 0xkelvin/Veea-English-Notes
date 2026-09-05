@@ -297,7 +297,7 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
     final friends = context.read<FriendChallengeService>().friends;
     if (friends.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Chưa có bạn bè nào! Hãy kết nối qua Game Link.')),
+        const SnackBar(content: Text('No friends connected yet! Connect via Game Link.')),
       );
       return;
     }
@@ -333,7 +333,7 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                     PixelIcon(PixelGlyph.bolt, color: Colors.amber, scale: 2),
                     const SizedBox(width: PixelMetrics.space2),
                     Text(
-                      'BẮN TỪ CHO BẠN BÈ:',
+                      'DROP WORD TO A FRIEND:',
                       style: TextStyle(
                         fontFamily: 'Handjet',
                         fontSize: 18,
@@ -367,7 +367,7 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                           mode: ChallengeMode.vnToEn,
                         );
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Đã bắn từ thách đấu tới ${friend.name}!')),
+                          SnackBar(content: Text('Sent word challenge to ${friend.name}!')),
                         );
                       },
                     ),

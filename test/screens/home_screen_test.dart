@@ -60,11 +60,11 @@ void main() {
     // Bottom Dock verification (Ergonomic thumb-friendly navigation)
     expect(find.text('AUDIO'), findsOneWidget);
     expect(find.text('ARCADE'), findsOneWidget);
-    expect(find.text('THÊM TỪ'), findsOneWidget);
+    expect(find.text('ADD'), findsOneWidget);
     expect(find.text('REVIEW'), findsOneWidget);
 
     // Tap Hero ADD button -> opens WordEditorScreen
-    await tester.tap(find.text('THÊM TỪ'));
+    await tester.tap(find.text('ADD'));
     await tester.pumpAndSettle();
     expect(find.byType(WordEditorScreen), findsOneWidget);
 

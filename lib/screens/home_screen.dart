@@ -206,7 +206,7 @@ class _HeroAddButton extends StatelessWidget {
             PixelIcon(PixelGlyph.plus, color: palette.onAccent, scale: 1.6),
             const SizedBox(width: 5),
             Text(
-              'THÊM TỪ',
+              'ADD',
               style: TextStyle(
                 fontFamily: 'Handjet',
                 fontSize: 16,

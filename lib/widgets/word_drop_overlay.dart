@@ -431,7 +431,7 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
               ),
               const SizedBox(height: PixelMetrics.space1),
               Text(
-                isCorrect ? '★ CHÍNH XÁC! ★' : '✖ CHƯA CHÍNH XÁC!',
+                isCorrect ? '★ CORRECT! ★' : '✖ INCORRECT!',
                 style: TextStyle(
                   fontFamily: 'Handjet',
                   fontSize: 20,
@@ -443,7 +443,7 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
               Text(
                 isCorrect
                     ? '+${res.xpEarned} XP • ⚡ ${res.timeTakenSeconds.toStringAsFixed(1)}s'
-                    : 'HẾT GIỜ HOẶC CHỌN SAI',
+                    : 'TIME OUT OR WRONG ANSWER',
                 style: TextStyle(
                   fontFamily: 'Handjet',
                   fontSize: 12,
@@ -467,7 +467,7 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'TỪ ĐƯỢC THÁCH ĐẤU:',
+                'CHALLENGE WORD:',
                 style: TextStyle(
                   fontFamily: 'Handjet',
                   fontSize: 11,
@@ -502,7 +502,7 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
         // 1-Tap Save to Notes (especially if incorrect or new)
         if (!_isWordSaved) ...[
           PixelButton(
-            label: '+ LƯU VÀO SỔ TỪ CỦA TÔI',
+            label: '+ SAVE TO MY JOURNAL',
             onPressed: _saveWordToNotebook,
           ),
           const SizedBox(height: PixelMetrics.space2),
@@ -517,7 +517,7 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
                 PixelIcon(PixelGlyph.check, color: palette.accent, scale: 1.5),
                 const SizedBox(width: 4),
                 Text(
-                  'ĐÃ LƯU VÀO SỔ TỪ!',
+                  'SAVED TO JOURNAL!',
                   style: TextStyle(
                     fontFamily: 'Handjet',
                     fontSize: 13,
@@ -536,7 +536,7 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
           children: [
             Expanded(
               child: PixelButton(
-                label: 'BẮN LẠI ⚡',
+                label: 'CHALLENGE BACK ⚡',
                 onPressed: () {
                   Navigator.of(context).pop();
                   widget.onRevenge?.call();
@@ -546,7 +546,7 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
             const SizedBox(width: PixelMetrics.space2),
             Expanded(
               child: PixelButton(
-                label: 'ĐÓNG',
+                label: 'CLOSE',
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ),

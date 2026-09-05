@@ -48,12 +48,12 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
       if (todayWords.isNotEmpty) {
         _commuteService.startPlayback(
           todayWords,
-          playlistTitle: 'HÔM NAY (${todayWords.length} TỪ)',
+          playlistTitle: 'TODAY (${todayWords.length} WORDS)',
         );
       } else if (_allWords.isNotEmpty) {
         _commuteService.startPlayback(
           _allWords,
-          playlistTitle: 'TẤT CẢ (${_allWords.length} TỪ)',
+          playlistTitle: 'ALL WORDS (${_allWords.length} WORDS)',
         );
       }
       if (mounted) setState(() {});
@@ -261,7 +261,7 @@ class _TapeSelectorStrip extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'BĂNG PHÁT: $playlistTitle',
+                  'CURRENT TAPE: $playlistTitle',
                   style: TextStyle(
                     fontFamily: 'Handjet',
                     fontSize: 16,
@@ -272,7 +272,7 @@ class _TapeSelectorStrip extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  'Chọn 1 hoặc nhiều ngày • Tự tạo Playlist',
+                  'Select 1 or more days • Custom Playlist',
                   style: TextStyle(
                     fontFamily: 'Handjet',
                     fontSize: 12,
@@ -283,7 +283,7 @@ class _TapeSelectorStrip extends StatelessWidget {
             ),
           ),
           PixelButton(
-            label: 'ĐỔI BĂNG ⏏️',
+            label: 'CHANGE TAPE ⏏️',
             onPressed: onOpenSelector,
           ),
         ],
@@ -297,7 +297,7 @@ class _RetroCassetteWidget extends StatelessWidget {
     required this.tapeAnimation,
     required this.isPlaying,
     required this.trackInfo,
-    this.playlistTitle = 'HÔM NAY',
+    this.playlistTitle = 'TODAY',
   });
 
   final Animation<double> tapeAnimation;
@@ -785,7 +785,7 @@ class _TransportControlsBar extends StatelessWidget {
 
           // Shuffle
           PixelIconButton(
-            glyph: PixelGlyph.gamepad,
+            glyph: PixelGlyph.shuffle,
             active: commuteService.isShuffle,
             semanticLabel: 'Shuffle Playlist',
             onPressed: commuteService.toggleShuffle,
@@ -835,11 +835,11 @@ class _TransportControlsBar extends StatelessWidget {
             onPressed: commuteService.next,
           ),
 
-          // Loop
+          // Repeat / Loop
           PixelIconButton(
-            glyph: PixelGlyph.bolt,
+            glyph: PixelGlyph.repeat,
             active: commuteService.isLoop,
-            semanticLabel: 'Loop Deck',
+            semanticLabel: 'Repeat Playlist',
             onPressed: commuteService.toggleLoop,
           ),
         ],

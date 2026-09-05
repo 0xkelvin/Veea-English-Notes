@@ -32,7 +32,7 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
     Clipboard.setData(ClipboardData(text: code));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Đã sao chép mã kết nối: $code'),
+        content: Text('Copied connection code: $code'),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -78,17 +78,16 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
 
     service.simulateIncomingDrop(
       word: sampleWord,
-      pool: vocab.words,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
     final theme = Theme.of(context);
-    final service = context.watch<FriendChallengeService>();
-    final profile = service.profile;
-    final friends = service.friends;
+    final palette = context.palette;
+    final challengeService = context.watch<FriendChallengeService>();
+    final friends = challengeService.friends;
+    final profile = challengeService.profile;
 
     return Scaffold(
       backgroundColor: palette.paper,
@@ -102,17 +101,14 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
                 children: [
                   // Game Link Profile Card
                   _buildProfileCard(context, profile, palette),
-
                   const SizedBox(height: PixelMetrics.space4),
 
-                  // Connect by Friend Code Section
+                  // Connect With Friend Form
                   _buildAddFriendSection(palette),
+                  const SizedBox(height: PixelMetrics.space3),
 
-                  const SizedBox(height: PixelMetrics.space4),
-
-                  // Test / Simulator Banner
+                  // Simulator / Instant Test Drop Banner
                   _buildSimulatorSection(palette),
-
                   const SizedBox(height: PixelMetrics.space4),
 
                   // Linked Friends Header
@@ -120,7 +116,7 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'BẠN BÈ ĐÃ KẾT NỐI (${friends.length})',
+                        'CONNECTED FRIENDS (${friends.length})',
                         style: theme.textTheme.labelMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                           color: palette.inkFaint,
@@ -140,7 +136,7 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
                       ),
                       child: Center(
                         child: Text(
-                          'CHƯA KẾT NỐI BẠN BÈ NÀO\nNHẬP MÃ ĐỂ BẮN TỪ THÁCH ĐẤU!',
+                          'NO FRIENDS CONNECTED YET\nENTER A CODE TO DROP WORDS & DUEL!',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontFamily: 'Handjet',
@@ -188,7 +184,7 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
           ),
           const SizedBox(width: PixelMetrics.space2),
           Text(
-            'PIXEL LINK // BẮN TỪ BẠN BÈ',
+            'PIXEL LINK // FRIEND WORD DROP',
             style: TextStyle(
               fontFamily: 'Handjet',
               fontSize: 18,
@@ -231,7 +227,7 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
                   PixelIcon(PixelGlyph.gamepad, color: palette.accent, scale: 2.2),
                   const SizedBox(width: PixelMetrics.space2),
                   Text(
-                    'MÃ GAME LINK CỦA BẠN',
+                    'YOUR GAME LINK CODE',
                     style: TextStyle(
                       fontFamily: 'Handjet',
                       fontSize: 13,
@@ -277,7 +273,7 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
               ),
               const SizedBox(width: PixelMetrics.space2),
               PixelButton(
-                label: 'COPY MÃ',
+                label: 'COPY CODE',
                 onPressed: () => _copyFriendCode(profile.friendCode),
               ),
             ],
@@ -286,7 +282,7 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
           Row(
             children: [
               Text(
-                'Thắng: ${profile.duelsWon} / ${profile.duelsPlayed} trận',
+                'Won: ${profile.duelsWon} / ${profile.duelsPlayed} duels',
                 style: TextStyle(
                   fontFamily: 'Handjet',
                   fontSize: 14,
@@ -311,7 +307,7 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'KẾT NỐI VỚI BẠN BÈ (NHẬP MÃ VEEA-XXXX)',
+            'CONNECT WITH A FRIEND (ENTER VEEA-XXXX)',
             style: TextStyle(
               fontFamily: 'Handjet',
               fontSize: 13,
@@ -327,7 +323,7 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
                   controller: _codeController,
                   textCapitalization: TextCapitalization.characters,
                   decoration: InputDecoration(
-                    hintText: 'VD: VEEA-77K2',
+                    hintText: 'e.g. VEEA-77K2',
                     hintStyle: TextStyle(
                       fontFamily: 'Handjet',
                       fontSize: 16,
@@ -357,7 +353,7 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
               ),
               const SizedBox(width: PixelMetrics.space2),
               PixelButton(
-                label: 'KẾT NỐI +',
+                label: 'CONNECT +',
                 onPressed: _connectFriend,
               ),
             ],
@@ -383,7 +379,7 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'THỬ NGHIỆM BẮN TỪ (SIMULATOR)',
+                  'TEST WORD DROP (SIMULATOR)',
                   style: TextStyle(
                     fontFamily: 'Handjet',
                     fontSize: 13,
@@ -392,7 +388,7 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
                   ),
                 ),
                 Text(
-                  'Bật ngay cửa sổ pop-up đố từ trên màn hình',
+                  'Launch instant word quiz pop-up on screen',
                   style: TextStyle(
                     fontFamily: 'Handjet',
                     fontSize: 12,
@@ -450,7 +446,7 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
                   ),
                 ),
                 Text(
-                  'Tỉ số: ${friend.duelScoreMe} thắng - ${friend.duelScoreThem} bại',
+                  'Score: ${friend.duelScoreMe} won - ${friend.duelScoreThem} lost',
                   style: TextStyle(
                     fontFamily: 'Handjet',
                     fontSize: 12,
@@ -461,7 +457,7 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
             ),
           ),
           PixelButton(
-            label: 'BẮN TỪ ⚡',
+            label: 'WORD DROP ⚡',
             onPressed: () => _openWordDropPicker(friend),
           ),
         ],
@@ -551,7 +547,7 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
         PixelIcon(PixelGlyph.bolt, color: Colors.amber, scale: 3),
         const SizedBox(height: PixelMetrics.space2),
         Text(
-          'ĐÃ BẮN TỪ THÁCH ĐẤU!',
+          'WORD DROP CHALLENGE SENT!',
           style: TextStyle(
             fontFamily: 'Handjet',
             fontSize: 22,
@@ -560,7 +556,7 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
           ),
         ),
         Text(
-          'Đã gửi tới ${widget.friend.name}',
+          'Sent to ${widget.friend.name}',
           style: TextStyle(
             fontFamily: 'Handjet',
             fontSize: 14,
@@ -582,7 +578,7 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
             const SizedBox(width: PixelMetrics.space2),
             Expanded(
               child: Text(
-                'BẮN TỪ CHO ${widget.friend.name.toUpperCase()}',
+                'DROP WORD TO ${widget.friend.name.toUpperCase()}',
                 style: TextStyle(
                   fontFamily: 'Handjet',
                   fontSize: 18,
@@ -597,7 +593,7 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
 
         // Direction Mode Selector
         Text(
-          'CHẾ ĐỘ THÁCH ĐẤU:',
+          'CHALLENGE MODE:',
           style: TextStyle(
             fontFamily: 'Handjet',
             fontSize: 12,
@@ -611,7 +607,7 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
             Expanded(
               child: _buildModeTab(
                 mode: ChallengeMode.vnToEn,
-                label: '🇻🇳 ➔ 🇬🇧 (ĐOÁN TỪ ANH)',
+                label: '🇻🇳 ➔ 🇬🇧 (GUESS ENGLISH)',
                 palette: palette,
               ),
             ),
@@ -619,7 +615,7 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
             Expanded(
               child: _buildModeTab(
                 mode: ChallengeMode.enToVn,
-                label: '🇬🇧 ➔ 🇻🇳 (ĐOÁN NGHĨA)',
+                label: '🇬🇧 ➔ 🇻🇳 (GUESS MEANING)',
                 palette: palette,
               ),
             ),
@@ -630,7 +626,7 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
 
         // Select Word from Notebook
         Text(
-          'CHỌN TỪ TỪ SỔ CỦA BẠN:',
+          'SELECT WORD FROM YOUR JOURNAL:',
           style: TextStyle(
             fontFamily: 'Handjet',
             fontSize: 12,
@@ -645,7 +641,7 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
             padding: const EdgeInsets.all(PixelMetrics.space3),
             color: palette.paper,
             child: Text(
-              'Sổ tay của bạn chưa có từ nào! Hãy thêm từ trước khi thách đấu.',
+              'No words in your journal yet! Add words before challenging friends.',
               style: TextStyle(
                 fontFamily: 'Handjet',
                 fontSize: 14,
@@ -705,7 +701,7 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
         const SizedBox(height: PixelMetrics.space4),
 
         PixelButton(
-          label: '⚡ BẮN THÁCH ĐẤU NGAY!',
+          label: '⚡ SEND CHALLENGE NOW!',
           onPressed: _selectedWord != null ? _sendDrop : null,
         ),
       ],

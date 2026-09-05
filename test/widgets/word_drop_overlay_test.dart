@@ -89,9 +89,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
 
     // Verify victory result view
-    expect(find.text('★ CHÍNH XÁC! ★'), findsOneWidget);
+    expect(find.text('★ CORRECT! ★'), findsOneWidget);
     expect(find.text('RESILIENT'), findsOneWidget);
-    expect(find.text('BẮN LẠI ⚡'), findsOneWidget);
+    expect(find.text('CHALLENGE BACK ⚡'), findsOneWidget);
   });
 
   testWidgets('WordDropOverlay allows 1-tap save to notebook on wrong answer', (tester) async {
@@ -121,17 +121,17 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
 
     // Verify wrong answer view
-    expect(find.text('✖ CHƯA CHÍNH XÁC!'), findsOneWidget);
-    expect(find.text('+ LƯU VÀO SỔ TỪ CỦA TÔI'), findsOneWidget);
+    expect(find.text('✖ INCORRECT!'), findsOneWidget);
+    expect(find.text('+ SAVE TO MY JOURNAL'), findsOneWidget);
 
     // Tap save to notebook
     await tester.runAsync(() async {
-      await tester.tap(find.text('+ LƯU VÀO SỔ TỪ CỦA TÔI'));
+      await tester.tap(find.text('+ SAVE TO MY JOURNAL'));
       await Future<void>.delayed(const Duration(milliseconds: 100));
     });
     await tester.pumpAndSettle();
 
-    expect(find.text('ĐÃ LƯU VÀO SỔ TỪ!'), findsOneWidget);
+    expect(find.text('SAVED TO JOURNAL!'), findsOneWidget);
     expect(vocabProvider.words.any((w) => w.word == 'bottleneck'), isTrue);
   });
 }

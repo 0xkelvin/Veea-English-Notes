@@ -87,51 +87,51 @@ void main() {
 
     // Verify Title and Tabs
     expect(find.text('COMMUTE TAPE SELECTOR ⏏️'), findsOneWidget);
-    expect(find.text('📅 THEO NGÀY (MULTI-DAY)'), findsOneWidget);
-    expect(find.text('📼 DANH SÁCH TỰ TẠO'), findsOneWidget);
+    expect(find.text('📅 BY DATE (MULTI-DAY)'), findsOneWidget);
+    expect(find.text('📼 CUSTOM PLAYLISTS'), findsOneWidget);
 
     // Verify Calendar header & actions
-    expect(find.text('THÁNG 8 / 2026'), findsOneWidget);
-    expect(find.text('HÔM NAY'), findsOneWidget);
-    expect(find.text('TẤT CẢ TỪ'), findsOneWidget);
-    expect(find.text('BỎ CHỌN'), findsOneWidget);
+    expect(find.text('MONTH 8 / 2026'), findsOneWidget);
+    expect(find.text('TODAY'), findsOneWidget);
+    expect(find.text('ALL WORDS'), findsOneWidget);
+    expect(find.text('CLEAR'), findsOneWidget);
 
     // Verify Weekday row
-    expect(find.text('T2'), findsOneWidget);
-    expect(find.text('T7'), findsOneWidget);
-    expect(find.text('CN'), findsOneWidget);
+    expect(find.text('MO'), findsOneWidget);
+    expect(find.text('SA'), findsOneWidget);
+    expect(find.text('SU'), findsOneWidget);
 
     // Verify Dates are rendered in list
-    expect(find.text('NGÀY 2026-08-18'), findsOneWidget);
-    expect(find.text('NGÀY 2026-08-17'), findsOneWidget);
-    expect(find.text('NGÀY 2026-08-16'), findsOneWidget);
+    expect(find.text('DATE 2026-08-18'), findsOneWidget);
+    expect(find.text('DATE 2026-08-17'), findsOneWidget);
+    expect(find.text('DATE 2026-08-16'), findsOneWidget);
 
-    // Tap 'TẤT CẢ TỪ' preset
-    await tester.tap(find.text('TẤT CẢ TỪ'));
+    // Tap 'ALL WORDS' preset
+    await tester.tap(find.text('ALL WORDS'));
     await tester.pump();
-    expect(find.text('ĐÃ CHỌN: 4 TỪ'), findsWidgets);
+    expect(find.text('SELECTED: 4 WORDS'), findsWidgets);
 
-    // Tap 'BỎ CHỌN'
-    await tester.tap(find.text('BỎ CHỌN'));
+    // Tap 'CLEAR'
+    await tester.tap(find.text('CLEAR'));
     await tester.pump();
-    expect(find.text('ĐÃ CHỌN: 0 TỪ'), findsWidgets);
+    expect(find.text('SELECTED: 0 WORDS'), findsWidgets);
 
     // Toggle day 18 on calendar (cell with text '18')
     final day18Finder = find.widgetWithText(InkWell, '18');
     expect(day18Finder, findsOneWidget);
     await tester.tap(day18Finder);
     await tester.pump();
-    expect(find.text('ĐÃ CHỌN: 2 TỪ'), findsWidgets);
+    expect(find.text('SELECTED: 2 WORDS'), findsWidgets);
 
     // Toggle day 17 on calendar (cell with text '17') - multi-day selection
     final day17Finder = find.widgetWithText(InkWell, '17');
     expect(day17Finder, findsOneWidget);
     await tester.tap(day17Finder);
     await tester.pump();
-    expect(find.text('ĐÃ CHỌN: 3 TỪ'), findsWidgets);
+    expect(find.text('SELECTED: 3 WORDS'), findsWidgets);
 
     // Tap play selection
-    await tester.tap(find.text('▶ PHÁT NGAY'));
+    await tester.tap(find.text('▶ PLAY NOW'));
     await tester.pump();
 
     expect(commuteService.totalWords, 3);
@@ -183,15 +183,15 @@ void main() {
     await tester.pumpAndSettle();
 
     // Switch to custom playlist tab
-    await tester.tap(find.text('📼 DANH SÁCH TỰ TẠO'));
+    await tester.tap(find.text('📼 CUSTOM PLAYLISTS'));
     await tester.pumpAndSettle();
 
     // Verify seeded playlist is shown
     expect(find.text('TECH INTERVIEW'), findsOneWidget);
-    expect(find.text('2 TỪ • TẠO NGÀY ${DateTime.now().toString().split(' ').first}'), findsOneWidget);
+    expect(find.text('2 WORDS • CREATED ${DateTime.now().toString().split(' ').first}'), findsOneWidget);
 
     // Tap play custom playlist
-    await tester.tap(find.text('▶ PHÁT BĂNG NÀY (2 TỪ)'));
+    await tester.tap(find.text('▶ PLAY THIS TAPE (2 WORDS)'));
     await tester.pump();
 
     expect(commuteService.totalWords, 2);
@@ -199,7 +199,7 @@ void main() {
     expect(commuteService.playlist.map((w) => w.word), containsAll(['resilient', 'paradigm']));
   });
 
-  testWidgets('Tapping TẠO + opens _PlaylistEditorSheet without ListTile/Material assertions', (tester) async {
+  testWidgets('Tapping CREATE + opens _PlaylistEditorSheet without ListTile/Material assertions', (tester) async {
     tester.view.physicalSize = const Size(800, 1200);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -215,16 +215,16 @@ void main() {
     await tester.pumpAndSettle();
 
     // Switch to custom playlist tab
-    await tester.tap(find.text('📼 DANH SÁCH TỰ TẠO'));
+    await tester.tap(find.text('📼 CUSTOM PLAYLISTS'));
     await tester.pumpAndSettle();
 
-    // Tap 'TẠO +' button
-    await tester.tap(find.text('TẠO +'));
+    // Tap 'CREATE +' button
+    await tester.tap(find.text('CREATE +'));
     await tester.pumpAndSettle();
 
     // Verify Playlist Editor Sheet opened
-    expect(find.text('TẠO PLAYLIST MỚI'), findsOneWidget);
-    expect(find.text('Tên danh sách'), findsOneWidget);
+    expect(find.text('CREATE NEW PLAYLIST'), findsOneWidget);
+    expect(find.text('Playlist name'), findsOneWidget);
 
     // Verify CheckboxListTiles rendered for words without assertions
     expect(find.text('resilient'), findsOneWidget);
@@ -239,7 +239,7 @@ void main() {
     await tester.pump();
 
     // Save playlist
-    await tester.tap(find.text('LƯU DANH SÁCH 💾'));
+    await tester.tap(find.text('SAVE PLAYLIST 💾'));
     await tester.pumpAndSettle();
 
     // Verify playlist was saved and displayed
