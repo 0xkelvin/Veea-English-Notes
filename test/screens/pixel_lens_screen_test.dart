@@ -90,4 +90,66 @@ void main() {
 
     expect(find.textContaining('Tech Summit Keynote'), findsOneWidget);
   });
+
+  testWidgets('Non-English words and symbols are grayed down and have capture disabled', (tester) async {
+    await tester.pumpWidget(buildApp());
+    await settle(tester);
+
+    // Open paste dialog via semantic label
+    final pasteFinder = find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.label == 'Paste text snippet',
+    );
+    expect(pasteFinder, findsOneWidget);
+    await tester.tap(pasteFinder);
+    await settle(tester);
+
+    expect(find.text('PASTE TEXT OR OCR SNIPPET'), findsOneWidget);
+
+    // Enter mixed Vietnamese, symbol, and English text
+    await tester.enterText(
+      find.byType(TextField),
+      'Học tiếng Anh với Flutter và #402 resilient code.',
+    );
+    await tester.tap(find.text('SCAN WORDS'));
+    await settle(tester);
+
+    // The English word 'Flutter' or 'resilient' should be found
+    expect(find.text('Flutter'), findsOneWidget);
+    expect(find.text('resilient'), findsOneWidget);
+
+    // Vietnamese word 'tiếng' should be rendered in the token cloud
+    final tiengToken = find.text('tiếng');
+    expect(tiengToken, findsOneWidget);
+
+    // Tap on the Vietnamese token 'tiếng'
+    await tester.tap(tiengToken);
+    await settle(tester);
+
+    // Verify it shows NOT ENGLISH WORD badge and CAPTURE DISABLED
+    expect(find.text('NOT ENGLISH WORD'), findsOneWidget);
+    expect(find.text('NON-ENGLISH TOKEN • CAPTURE DISABLED'), findsOneWidget);
+
+    // Tap on the English word 'resilient'
+    await tester.tap(find.text('resilient'));
+    await settle(tester);
+
+    // Verify it shows normal capture button
+    expect(find.text('NOT ENGLISH WORD'), findsNothing);
+    expect(find.textContaining('CAPTURE "RESILIENT"'), findsOneWidget);
+  });
+
+  testWidgets('PixelLensScreen does not overflow on narrow screens', (tester) async {
+    tester.view.physicalSize = const Size(320 * 2, 800 * 2);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(buildApp());
+    await settle(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('PIXEL LENS OCR'), findsOneWidget);
+  });
 }

@@ -120,9 +120,15 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
                     semanticLabel: 'Back',
                     onPressed: () => Navigator.of(context).pop(),
                   ),
+                  Expanded(
+                    child: Text(
+                      'COMMUTE PLAYER',
+                      style: theme.textTheme.titleMedium,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                   const SizedBox(width: PixelMetrics.space2),
-                  Text('COMMUTE PLAYER', style: theme.textTheme.titleMedium),
-                  const Spacer(),
                   Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

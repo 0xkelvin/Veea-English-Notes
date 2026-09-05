@@ -228,19 +228,15 @@ class WidgetService {
     }
   }
 
-  /// Processes a widget click: pronounces the word if enabled and rotates to next word.
+  /// Processes a widget click: rotates to next word if enabled.
   static Future<void> processWidgetTap({
     required WidgetProvider widgetProvider,
-    required TtsService ttsService,
+    TtsService? ttsService,
   }) async {
     try {
-      final currentWord = await getCurrentWidgetWord();
-      if (widgetProvider.pronounceOnTap &&
-          currentWord != null &&
-          currentWord.trim().isNotEmpty) {
-        await ttsService.speak(currentWord.trim());
+      if (widgetProvider.rotateOnTap) {
+        await rotateToNextWord();
       }
-      await rotateToNextWord();
     } catch (error, stack) {
       debugPrint('Could not process widget tap: $error\n$stack');
     }

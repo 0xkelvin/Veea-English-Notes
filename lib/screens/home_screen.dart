@@ -67,21 +67,27 @@ class _TopBar extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              PixelIcon(PixelGlyph.star, color: palette.accent, scale: 1.5),
-              const SizedBox(width: PixelMetrics.space2),
-              Text(
-                'VEEA // JOURNAL',
-                style: TextStyle(
-                  fontFamily: 'Handjet',
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: palette.ink,
-                  letterSpacing: 1.0,
+          Expanded(
+            child: Row(
+              children: [
+                PixelIcon(PixelGlyph.star, color: palette.accent, scale: 1.5),
+                const SizedBox(width: PixelMetrics.space2),
+                Flexible(
+                  child: Text(
+                    'VEEA // JOURNAL',
+                    style: TextStyle(
+                      fontFamily: 'Handjet',
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: palette.ink,
+                      letterSpacing: 1.0,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           Row(
             children: [

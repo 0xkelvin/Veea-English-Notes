@@ -8,21 +8,18 @@ class WidgetProvider extends ChangeNotifier {
   static const String _widgetKey = 'widget_enabled';
   static const String _reminderKey = 'daily_reminder_enabled';
   static const String _rotationIntervalKey = 'widget_rotation_interval_minutes';
-  static const String _rotateOnAppOpenKey = 'widget_rotate_on_app_open';
-  static const String _pronounceOnTapKey = 'widget_pronounce_on_tap';
+  static const String _rotateOnTapKey = 'widget_rotate_on_tap';
 
   bool _isWidgetEnabled = true;
   bool _isDailyReminderEnabled = true;
   int _rotationIntervalMinutes = 15;
-  bool _rotateOnAppOpen = true;
-  bool _pronounceOnTap = false;
+  bool _rotateOnTap = true;
   bool _isDisposed = false;
 
   bool get isWidgetEnabled => _isWidgetEnabled;
   bool get isDailyReminderEnabled => _isDailyReminderEnabled;
   int get rotationIntervalMinutes => _rotationIntervalMinutes;
-  bool get rotateOnAppOpen => _rotateOnAppOpen;
-  bool get pronounceOnTap => _pronounceOnTap;
+  bool get rotateOnTap => _rotateOnTap;
 
   Future<void> init() async {
     try {
@@ -30,8 +27,7 @@ class WidgetProvider extends ChangeNotifier {
       _isWidgetEnabled = prefs.getBool(_widgetKey) ?? true;
       _isDailyReminderEnabled = prefs.getBool(_reminderKey) ?? true;
       _rotationIntervalMinutes = prefs.getInt(_rotationIntervalKey) ?? 15;
-      _rotateOnAppOpen = prefs.getBool(_rotateOnAppOpenKey) ?? true;
-      _pronounceOnTap = prefs.getBool(_pronounceOnTapKey) ?? false;
+      _rotateOnTap = prefs.getBool(_rotateOnTapKey) ?? true;
 
       // Sync native widget interval preference
       await WidgetService.setRotationInterval(_rotationIntervalMinutes);
@@ -84,29 +80,16 @@ class WidgetProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> setRotateOnAppOpen(bool value) async {
-    if (_rotateOnAppOpen == value) return;
-    _rotateOnAppOpen = value;
+  Future<void> setRotateOnTap(bool value) async {
+    if (_rotateOnTap == value) return;
+    _rotateOnTap = value;
     notifyListeners();
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_rotateOnAppOpenKey, value);
+      await prefs.setBool(_rotateOnTapKey, value);
     } catch (error, stack) {
-      debugPrint('Could not save rotate-on-app-open setting: $error\n$stack');
-    }
-  }
-
-  Future<void> setPronounceOnTap(bool value) async {
-    if (_pronounceOnTap == value) return;
-    _pronounceOnTap = value;
-    notifyListeners();
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_pronounceOnTapKey, value);
-    } catch (error, stack) {
-      debugPrint('Could not save pronounce-on-tap setting: $error\n$stack');
+      debugPrint('Could not save rotate-on-tap setting: $error\n$stack');
     }
   }
 

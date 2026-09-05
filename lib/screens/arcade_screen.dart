@@ -63,11 +63,15 @@ class ArcadeScreen extends StatelessWidget {
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                   const SizedBox(width: PixelMetrics.space2),
-                  Text(
-                    'ARCADE CENTER',
-                    style: theme.textTheme.titleMedium,
+                  Expanded(
+                    child: Text(
+                      'ARCADE CENTER',
+                      style: theme.textTheme.titleMedium,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: PixelMetrics.space2),
                   GestureDetector(
                     onTap: () {
                       Navigator.of(context).push(

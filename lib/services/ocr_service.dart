@@ -8,6 +8,7 @@ class DetectedWord {
     required this.sentence,
     required this.rect,
     required this.lineNumber,
+    this.isEnglish = true,
   });
 
   /// The raw word token (e.g., 'resilient,').
@@ -23,6 +24,9 @@ class DetectedWord {
   final Rect rect;
 
   final int lineNumber;
+
+  /// Whether this token is a valid English word (vs. Vietnamese, numbers, symbols, noise).
+  final bool isEnglish;
 }
 
 /// The result of an OCR scan operation.
@@ -41,6 +45,83 @@ class OcrScanResult {
 /// 100% Offline OCR & Text Extraction Engine.
 class OcrService {
   static const MethodChannel _channel = MethodChannel('com.veea.english/ocr');
+
+  static final RegExp _vietnameseDiacriticsRegex = RegExp(
+    r'[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ'
+    r'ÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ]',
+  );
+
+  static final RegExp _specialSymbolsOrDigitsRegex = RegExp(
+    r'[@#$%&*+=<>/\\|~^_`0-9]',
+  );
+
+  static final RegExp _englishPattern = RegExp(
+    r"^[a-zA-Z]+(?:['\-][a-zA-Z]+)*$",
+  );
+
+  static final RegExp _vowelRegex = RegExp(r'[aeiouyAEIOUY]');
+
+  static const Set<String> _vietnameseUnaccentedWords = {
+    'khong', 'duoc', 'nguoi', 'nhung', 'nhieu', 'chuyen', 'nghiep', 'phuong',
+    'huong', 'truong', 'truoc', 'tieng', 'chao', 'biet', 'chua', 'xuat',
+    'chieu', 'muon', 'thoi', 'chung', 'buoi', 'buoc', 'vuot', 'nuoc',
+    'luon', 'duong', 'luong', 'tuong', 'cuoc', 'luat', 'toan', 'khoan',
+    'hoan', 'doan', 'ngoan', 'khoang', 'thoang', 'hoang', 'quyen', 'quyet',
+    'tuyen', 'khuyen', 'thuyen', 'duyet', 'tuyet', 'nguyet', 'huyet',
+    'khuyet', 'huynh', 'quynh', 'giang', 'rieng', 'sieng', 'mieng',
+    'chieng', 'gieng', 'duoi', 'cuoi', 'muoi', 'tuoi', 'chuoi', 'ruoi',
+    'suoi', 'xau', 'dau', 'cau', 'mau', 'tau', 'lau', 'trai', 'phai',
+    'ngoai', 'thoai', 'khoai', 'doai', 'choi', 'troi', 'khoi', 'nhom',
+    'trong', 'vong', 'xong', 'meo', 'deo', 'reo', 'gieo', 'giup', 'nhanh',
+    'manh', 'thieu', 'hieu', 'bieu', 'kieu', 'mieu', 'nieu', 'tieu',
+    'xieu', 'phong', 'tranh', 'gianh', 'lanh', 'sanh', 'danh', 'ganh',
+    'nganh', 'viet', 'tiengviet', 'vietnam', 'thanh', 'chinh', 'thang',
+    'ngay', 'tuan', 'giay', 'phut', 'gio', 'buon', 'vui', 'khoc',
+    'tiep', 'xuc', 'kiem', 'phat', 'trien', 'pham', 'dich',
+    'khach', 'doanh', 'anh', 'xin', 'loi', 'viec', 'hien', 'tai',
+    'lai',
+  };
+
+  /// Determines whether a token is an English word, or a non-English word
+  /// (e.g. Vietnamese words, special symbols, code tokens, numbers).
+  static bool isEnglishWord(String rawToken, String normalized) {
+    if (normalized.length < 2) return false;
+
+    // Reject tokens containing Vietnamese diacritics in raw or normalized form
+    if (_vietnameseDiacriticsRegex.hasMatch(rawToken) ||
+        _vietnameseDiacriticsRegex.hasMatch(normalized)) {
+      return false;
+    }
+
+    // Reject tokens containing code symbols, currency, handles, math, or digits
+    if (_specialSymbolsOrDigitsRegex.hasMatch(rawToken) ||
+        _specialSymbolsOrDigitsRegex.hasMatch(normalized)) {
+      return false;
+    }
+
+    // Must match English word morphology: pure ASCII letters with optional internal hyphen/apostrophe
+    if (!_englishPattern.hasMatch(normalized)) {
+      return false;
+    }
+
+    // Must contain at least one English vowel sound (a, e, i, o, u, y)
+    if (!_vowelRegex.hasMatch(normalized)) {
+      return false;
+    }
+
+    // Reject distinct Vietnamese unaccented syllable patterns impossible in English
+    final lower = normalized.toLowerCase();
+    if (lower.startsWith('ngh') || RegExp(r'^ng[aeiou]').hasMatch(lower)) {
+      return false;
+    }
+
+    // Reject common unaccented Vietnamese vocabulary words
+    if (_vietnameseUnaccentedWords.contains(lower)) {
+      return false;
+    }
+
+    return true;
+  }
 
   /// Extracts text and tokens from an image file using hardware-accelerated Apple Vision on-device OCR.
   static Future<OcrScanResult> scanImageFile(
@@ -92,7 +173,7 @@ class OcrService {
       for (var token in tokens) {
         if (token.trim().isEmpty) continue;
         final normalized = token
-            .replaceAll(RegExp(r'''[^\w\s'-]'''), '')
+            .replaceAll(RegExp(r'''[^\p{L}\p{N}\s'-]''', unicode: true), '')
             .trim()
             .toLowerCase();
 
@@ -108,6 +189,7 @@ class OcrService {
         final sentence = _findSentenceForWord(sentences, token, line);
 
         if (normalized.length >= 2) {
+          final isEnglish = isEnglishWord(token, normalized);
           detectedWords.add(
             DetectedWord(
               word: token,
@@ -115,6 +197,7 @@ class OcrService {
               sentence: sentence,
               rect: rect,
               lineNumber: lineIdx,
+              isEnglish: isEnglish,
             ),
           );
         }

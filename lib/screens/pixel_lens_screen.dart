@@ -39,7 +39,10 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
     super.initState();
     _currentResult = OcrService.sampleScans[_selectedSampleIndex];
     if (_currentResult.words.isNotEmpty) {
-      _selectedWord = _currentResult.words.first;
+      _selectedWord = _currentResult.words.firstWhere(
+        (w) => w.isEnglish,
+        orElse: () => _currentResult.words.first,
+      );
     }
   }
 
@@ -56,8 +59,12 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
       _scannedImagePath = null;
       _selectedSampleIndex = index;
       _currentResult = OcrService.sampleScans[index];
-      _selectedWord =
-          _currentResult.words.isNotEmpty ? _currentResult.words.first : null;
+      _selectedWord = _currentResult.words.isNotEmpty
+          ? _currentResult.words.firstWhere(
+              (w) => w.isEnglish,
+              orElse: () => _currentResult.words.first,
+            )
+          : null;
     });
   }
 
@@ -70,8 +77,12 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
       _scannedImagePath = null;
       _selectedSampleIndex = -1;
       _currentResult = OcrService.processText(text, sourceTitle: 'Pasted Text');
-      _selectedWord =
-          _currentResult.words.isNotEmpty ? _currentResult.words.first : null;
+      _selectedWord = _currentResult.words.isNotEmpty
+          ? _currentResult.words.firstWhere(
+              (w) => w.isEnglish,
+              orElse: () => _currentResult.words.first,
+            )
+          : null;
     });
   }
 
@@ -132,7 +143,10 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
               'No English words detected in image. Please ensure clear focus, good lighting, and avoid heavy glare.';
         } else {
           _currentResult = result;
-          _selectedWord = result.words.first;
+          _selectedWord = result.words.firstWhere(
+            (w) => w.isEnglish,
+            orElse: () => result.words.first,
+          );
         }
       });
     } catch (e) {
@@ -188,7 +202,7 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
   }
 
   void _captureSelectedWord() {
-    if (_selectedWord == null) return;
+    if (_selectedWord == null || !_selectedWord!.isEnglish) return;
     final word = _selectedWord!;
 
     Navigator.of(context).push(
@@ -238,24 +252,30 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                 children: [
                   PixelIcon(PixelGlyph.camera, color: palette.accent, scale: 2),
                   const SizedBox(width: PixelMetrics.space2),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'PIXEL LENS OCR',
-                        style: theme.textTheme.titleMedium,
-                      ),
-                      Text(
-                        'SNAP CAMERA • SNIFF VOCABULARY',
-                        style: TextStyle(
-                          fontFamily: 'Handjet',
-                          fontSize: 10,
-                          color: palette.inkMuted,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'PIXEL LENS OCR',
+                          style: theme.textTheme.titleMedium,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                    ],
+                        Text(
+                          'SNAP CAMERA • SNIFF VOCABULARY',
+                          style: TextStyle(
+                            fontFamily: 'Handjet',
+                            fontSize: 10,
+                            color: palette.inkMuted,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: PixelMetrics.space2),
                   PixelIconButton(
                     glyph: PixelGlyph.close,
                     semanticLabel: 'Close Lens',
@@ -317,24 +337,27 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                   bottom: BorderSide(color: palette.border, width: 1),
                 ),
               ),
-              child: Row(
-                children: [
-                  Text(
-                    'SAMPLES:',
-                    style: TextStyle(
-                      fontFamily: 'Handjet',
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: palette.inkMuted,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    Text(
+                      'SAMPLES:',
+                      style: TextStyle(
+                        fontFamily: 'Handjet',
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: palette.inkMuted,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  _sourceTab(0, 'PR REVIEW', palette),
-                  const SizedBox(width: 4),
-                  _sourceTab(1, 'TECH NEWS', palette),
-                  const SizedBox(width: 4),
-                  _sourceTab(2, 'ESSAY', palette),
-                ],
+                    const SizedBox(width: 6),
+                    _sourceTab(0, 'PR REVIEW', palette),
+                    const SizedBox(width: 4),
+                    _sourceTab(1, 'TECH NEWS', palette),
+                    const SizedBox(width: 4),
+                    _sourceTab(2, 'ESSAY', palette),
+                  ],
+                ),
               ),
             ),
 
@@ -352,28 +375,35 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                       // HUD Header
                       Row(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: palette.accent,
-                              border: Border.all(color: palette.border, width: 1),
-                            ),
-                            child: Text(
-                              _isScanning
-                                  ? 'SCANNING IN PROGRESS...'
-                                  : 'HUD: ${_currentResult.words.length} TOKENS • ${_currentResult.sourceTitle ?? "OCR"}',
-                              style: TextStyle(
-                                fontFamily: 'Handjet',
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: palette.onAccent,
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: palette.accent,
+                                  border: Border.all(color: palette.border, width: 1),
+                                ),
+                                child: Text(
+                                  _isScanning
+                                      ? 'SCANNING IN PROGRESS...'
+                                      : 'HUD: ${_currentResult.words.length} TOKENS • ${_currentResult.sourceTitle ?? "OCR"}',
+                                  style: TextStyle(
+                                    fontFamily: 'Handjet',
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: palette.onAccent,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                             ),
                           ),
-                          const Spacer(),
+                          const SizedBox(width: 8),
                           Text(
                             '┏ ━ ┓',
                             style: TextStyle(
@@ -504,7 +534,9 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                                         ),
                                       ),
                                       Text(
-                                        '${_currentResult.words.length} vocabulary words extracted',
+                                        _currentResult.words.any((w) => !w.isEnglish)
+                                            ? '${_currentResult.words.where((w) => w.isEnglish).length} English words (${_currentResult.words.where((w) => !w.isEnglish).length} dimmed)'
+                                            : '${_currentResult.words.length} vocabulary words extracted',
                                         style: TextStyle(
                                           fontFamily: 'Handjet',
                                           fontSize: 10,
@@ -532,6 +564,40 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                               runSpacing: 6,
                               children: _currentResult.words.map((dw) {
                                 final isSelected = _selectedWord == dw;
+                                final isEnglish = dw.isEnglish;
+
+                                final Color bgColor;
+                                final Color borderColor;
+                                final Color textColor;
+                                final FontWeight fontWeight;
+
+                                if (isSelected) {
+                                  if (isEnglish) {
+                                    bgColor = palette.accent;
+                                    borderColor = palette.border;
+                                    textColor = palette.onAccent;
+                                    fontWeight = FontWeight.bold;
+                                  } else {
+                                    bgColor = palette.paper;
+                                    borderColor = palette.inkFaint;
+                                    textColor = palette.inkMuted;
+                                    fontWeight = FontWeight.bold;
+                                  }
+                                } else {
+                                  if (isEnglish) {
+                                    bgColor = palette.paper;
+                                    borderColor = palette.border.withValues(alpha: 0.4);
+                                    textColor = palette.ink;
+                                    fontWeight = FontWeight.normal;
+                                  } else {
+                                    // Gray down if it is not an English word (Vietnamese, special symbols, etc.)
+                                    bgColor = palette.surface.withValues(alpha: 0.35);
+                                    borderColor = palette.border.withValues(alpha: 0.15);
+                                    textColor = palette.inkFaint.withValues(alpha: 0.45);
+                                    fontWeight = FontWeight.normal;
+                                  }
+                                }
+
                                 return GestureDetector(
                                   onTap: () {
                                     setState(() {
@@ -544,13 +610,9 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                                       vertical: 3,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: isSelected
-                                          ? palette.accent
-                                          : palette.paper,
+                                      color: bgColor,
                                       border: Border.all(
-                                        color: isSelected
-                                            ? palette.border
-                                            : palette.border.withValues(alpha: 0.4),
+                                        color: borderColor,
                                         width: isSelected ? 1.5 : 1.0,
                                       ),
                                     ),
@@ -559,12 +621,8 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                                       style: TextStyle(
                                         fontFamily: 'Handjet',
                                         fontSize: 13,
-                                        fontWeight: isSelected
-                                            ? FontWeight.bold
-                                            : FontWeight.normal,
-                                        color: isSelected
-                                            ? palette.onAccent
-                                            : palette.ink,
+                                        fontWeight: fontWeight,
+                                        color: textColor,
                                       ),
                                     ),
                                   ),
@@ -614,45 +672,77 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                   children: [
                     Row(
                       children: [
-                        Text(
-                          _selectedWord!.normalized.toUpperCase(),
-                          style: TextStyle(
-                            fontFamily: 'Handjet',
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: palette.accent,
+                        Flexible(
+                          child: Text(
+                            _selectedWord!.normalized.toUpperCase(),
+                            style: TextStyle(
+                              fontFamily: 'Handjet',
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: _selectedWord!.isEnglish
+                                  ? palette.accent
+                                  : palette.inkMuted,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        if (!_selectedWord!.isEnglish) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: palette.paper,
+                              border: Border.all(
+                                color: palette.border.withValues(alpha: 0.3),
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              'NOT ENGLISH WORD',
+                              style: TextStyle(
+                                fontFamily: 'Handjet',
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: palette.inkFaint,
+                              ),
+                            ),
+                          ),
+                        ],
                         const Spacer(),
-                        FutureBuilder<String?>(
-                          future: pronunciation.lookup(_selectedWord!.normalized),
-                          builder: (context, snapshot) {
-                            if (snapshot.hasData && snapshot.data != null) {
-                              return Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: palette.paper,
-                                  border: Border.all(
-                                    color: palette.border,
-                                    width: 1,
+                        if (_selectedWord!.isEnglish)
+                          FutureBuilder<String?>(
+                            future: pronunciation.lookup(_selectedWord!.normalized),
+                            builder: (context, snapshot) {
+                              if (snapshot.hasData && snapshot.data != null) {
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
                                   ),
-                                ),
-                                child: Text(
-                                  snapshot.data!,
-                                  style: TextStyle(
-                                    fontFamily: 'Handjet',
-                                    fontSize: 12,
-                                    color: palette.ink,
+                                  decoration: BoxDecoration(
+                                    color: palette.paper,
+                                    border: Border.all(
+                                      color: palette.border,
+                                      width: 1,
+                                    ),
                                   ),
-                                ),
-                              );
-                            }
-                            return const SizedBox.shrink();
-                          },
-                        ),
+                                  child: Text(
+                                    snapshot.data!,
+                                    style: TextStyle(
+                                      fontFamily: 'Handjet',
+                                      fontSize: 12,
+                                      color: palette.ink,
+                                    ),
+                                  ),
+                                );
+                              }
+                              return const SizedBox.shrink();
+                            },
+                          ),
                       ],
                     ),
                     const SizedBox(height: 4),
@@ -660,18 +750,53 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                       '“${_selectedWord!.sentence}”',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         fontStyle: FontStyle.italic,
+                        color: _selectedWord!.isEnglish ? null : palette.inkMuted,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: PixelMetrics.space3),
-                    PixelButton(
-                      label: 'Capture "${_selectedWord!.normalized}" to Notebook',
-                      glyph: PixelGlyph.plus,
-                      filled: true,
-                      expand: true,
-                      onPressed: _captureSelectedWord,
-                    ),
+                    if (_selectedWord!.isEnglish)
+                      PixelButton(
+                        label: 'Capture "${_selectedWord!.normalized}" to Notebook',
+                        glyph: PixelGlyph.plus,
+                        filled: true,
+                        expand: true,
+                        onPressed: _captureSelectedWord,
+                      )
+                    else
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: PixelMetrics.space2,
+                          horizontal: PixelMetrics.space3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: palette.paper.withValues(alpha: 0.6),
+                          border: Border.all(
+                            color: palette.border.withValues(alpha: 0.2),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                'NON-ENGLISH TOKEN • CAPTURE DISABLED',
+                                style: TextStyle(
+                                  fontFamily: 'Handjet',
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: palette.inkFaint,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
               ),

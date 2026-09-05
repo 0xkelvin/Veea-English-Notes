@@ -16,8 +16,7 @@ void main() {
     expect(provider.isWidgetEnabled, isTrue);
     expect(provider.isDailyReminderEnabled, isTrue);
     expect(provider.rotationIntervalMinutes, equals(15));
-    expect(provider.rotateOnAppOpen, isTrue);
-    expect(provider.pronounceOnTap, isFalse);
+    expect(provider.rotateOnTap, isTrue);
   });
 
   test('loads existing preferences from SharedPreferences', () async {
@@ -25,8 +24,7 @@ void main() {
       'widget_enabled': false,
       'daily_reminder_enabled': false,
       'widget_rotation_interval_minutes': 30,
-      'widget_rotate_on_app_open': false,
-      'widget_pronounce_on_tap': false,
+      'widget_rotate_on_tap': false,
     });
 
     final provider = WidgetProvider();
@@ -35,8 +33,7 @@ void main() {
     expect(provider.isWidgetEnabled, isFalse);
     expect(provider.isDailyReminderEnabled, isFalse);
     expect(provider.rotationIntervalMinutes, equals(30));
-    expect(provider.rotateOnAppOpen, isFalse);
-    expect(provider.pronounceOnTap, isFalse);
+    expect(provider.rotateOnTap, isFalse);
   });
 
   test('updating rotation interval saves to SharedPreferences and notifies', () async {
@@ -55,36 +52,20 @@ void main() {
     expect(prefs.getInt('widget_rotation_interval_minutes'), equals(60));
   });
 
-  test('updating rotateOnAppOpen saves to SharedPreferences and notifies', () async {
+  test('updating rotateOnTap saves to SharedPreferences and notifies', () async {
     final provider = WidgetProvider();
     await provider.init();
 
     var notified = false;
     provider.addListener(() => notified = true);
 
-    await provider.setRotateOnAppOpen(false);
+    await provider.setRotateOnTap(false);
 
-    expect(provider.rotateOnAppOpen, isFalse);
+    expect(provider.rotateOnTap, isFalse);
     expect(notified, isTrue);
 
     final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getBool('widget_rotate_on_app_open'), isFalse);
-  });
-
-  test('updating pronounceOnTap saves to SharedPreferences and notifies', () async {
-    final provider = WidgetProvider();
-    await provider.init();
-
-    var notified = false;
-    provider.addListener(() => notified = true);
-
-    await provider.setPronounceOnTap(true);
-
-    expect(provider.pronounceOnTap, isTrue);
-    expect(notified, isTrue);
-
-    final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getBool('widget_pronounce_on_tap'), isTrue);
+    expect(prefs.getBool('widget_rotate_on_tap'), isFalse);
   });
 
   test('disabling widget saves to SharedPreferences and notifies', () async {

@@ -60,24 +60,30 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
                 children: [
                   PixelIcon(PixelGlyph.gamepad, color: palette.accent, scale: 2),
                   const SizedBox(width: PixelMetrics.space2),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'CARTRIDGE LIBRARY',
-                        style: theme.textTheme.titleMedium,
-                      ),
-                      Text(
-                        'CAREER & INDUSTRY VOCABULARY',
-                        style: TextStyle(
-                          fontFamily: 'Handjet',
-                          fontSize: 10,
-                          color: palette.inkMuted,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'CARTRIDGE LIBRARY',
+                          style: theme.textTheme.titleMedium,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                    ],
+                        Text(
+                          'CAREER & INDUSTRY VOCABULARY',
+                          style: TextStyle(
+                            fontFamily: 'Handjet',
+                            fontSize: 10,
+                            color: palette.inkMuted,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: PixelMetrics.space2),
                   PixelIconButton(
                     glyph: PixelGlyph.close,
                     semanticLabel: 'Close Library',

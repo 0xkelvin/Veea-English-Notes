@@ -172,16 +172,7 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
   }
 
   void _handleAppResume() {
-    final widgetProvider = widget.widgetProvider;
-    if (widgetProvider != null && widgetProvider.isWidgetEnabled) {
-      if (widgetProvider.rotateOnAppOpen) {
-        WidgetService.rotateToNextWord();
-      } else {
-        widget.vocabulary.refreshWidgetData();
-      }
-    } else {
-      widget.vocabulary.refreshWidgetData();
-    }
+    widget.vocabulary.refreshWidgetData();
   }
 
   @override
