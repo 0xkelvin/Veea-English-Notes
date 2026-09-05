@@ -1,9 +1,12 @@
+name: english-notes-cloud
+
 services:
   # ── Application ──────────────────────────────────────────────────────────
   app:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: english-api
     ports:
       - "${APP_PORT:-18386}:18386"
     env_file:
@@ -20,16 +23,19 @@ services:
       nats:
         condition: service_started
     restart: unless-stopped
+    networks:
+      - default
+      - veea-camera
 
-  # ── PostgreSQL ───────────────────────────────────────────────────────────
+  # ── PostgreSQL (internal only — no host port, avoids clashing with other
+  #   projects' Postgres on 5432; the app reaches it via the "postgres"
+  #   service name on the default network) ────────────────────────────────
   postgres:
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: app_user
       POSTGRES_PASSWORD: app_password
       POSTGRES_DB: english_notes
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -39,11 +45,9 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # ── Redis ────────────────────────────────────────────────────────────────
+  # ── Redis (internal only) ───────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -53,15 +57,18 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # ── NATS ─────────────────────────────────────────────────────────────────
+  # ── NATS (internal only — no host port, avoids clashing with other
+  #   projects' NATS on 4222/8222) ─────────────────────────────────────────
   nats:
     image: nats:2-alpine
-    ports:
-      - "4222:4222"
-      - "8222:8222"
     command: ["--js", "--http_port", "8222"]
     restart: unless-stopped
 
 volumes:
   postgres_data:
   redis_data:
+
+networks:
+  veea-camera:
+    external: true
+    name: veea-camera_default

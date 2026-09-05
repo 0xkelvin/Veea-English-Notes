@@ -7,7 +7,7 @@ struct NextWordIntent: AppIntent {
     static var description = IntentDescription("Rotates to the next vocabulary word.")
 
     func perform() async throws -> some IntentResult {
-        let userDefaults = UserDefaults(suiteName: "group.com.veea.veea_english_app")
+        let userDefaults = UserDefaults(suiteName: "group.com.nintran.veeaEnglishApp")
         let jsonString = userDefaults?.string(forKey: "widget_words_json") ?? ""
 
         struct WordItem: Decodable {
@@ -74,7 +74,7 @@ struct WordOfDayProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<WordOfDayEntry>) -> Void) {
-        let userDefaults = UserDefaults(suiteName: "group.com.veea.veea_english_app")
+        let userDefaults = UserDefaults(suiteName: "group.com.nintran.veeaEnglishApp")
         let intervalMinutes = userDefaults?.object(forKey: "widget_rotation_interval_minutes") != nil
             ? userDefaults!.integer(forKey: "widget_rotation_interval_minutes")
             : 15
@@ -86,7 +86,7 @@ struct WordOfDayProvider: TimelineProvider {
     }
 
     private func loadEntries(intervalMinutes: Int) -> [WordOfDayEntry] {
-        let userDefaults = UserDefaults(suiteName: "group.com.veea.veea_english_app")
+        let userDefaults = UserDefaults(suiteName: "group.com.nintran.veeaEnglishApp")
         let streak = userDefaults?.integer(forKey: "widget_streak") ?? 12
         let jsonString = userDefaults?.string(forKey: "widget_words_json") ?? ""
 
@@ -131,7 +131,7 @@ struct WordOfDayProvider: TimelineProvider {
     }
 
     private func loadEntry() -> WordOfDayEntry {
-        let userDefaults = UserDefaults(suiteName: "group.com.veea.veea_english_app")
+        let userDefaults = UserDefaults(suiteName: "group.com.nintran.veeaEnglishApp")
         let streak = userDefaults?.integer(forKey: "widget_streak") ?? 12
         let jsonString = userDefaults?.string(forKey: "widget_words_json") ?? ""
 

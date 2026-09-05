@@ -10,7 +10,7 @@ import 'tts_service.dart';
 class WidgetService {
   WidgetService._();
 
-  static const String appGroupId = 'group.com.veea.veea_english_app';
+  static const String appGroupId = 'group.com.nintran.veeaEnglishApp';
   static const String iOSWidgetName = 'WordOfDayWidget';
   static const String androidWidgetName = 'WordOfDayWidgetProvider';
 
