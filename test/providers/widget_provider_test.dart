@@ -36,37 +36,43 @@ void main() {
     expect(provider.rotateOnTap, isFalse);
   });
 
-  test('updating rotation interval saves to SharedPreferences and notifies', () async {
-    final provider = WidgetProvider();
-    await provider.init();
+  test(
+    'updating rotation interval saves to SharedPreferences and notifies',
+    () async {
+      final provider = WidgetProvider();
+      await provider.init();
 
-    var notified = false;
-    provider.addListener(() => notified = true);
+      var notified = false;
+      provider.addListener(() => notified = true);
 
-    await provider.setRotationIntervalMinutes(60);
+      await provider.setRotationIntervalMinutes(60);
 
-    expect(provider.rotationIntervalMinutes, equals(60));
-    expect(notified, isTrue);
+      expect(provider.rotationIntervalMinutes, equals(60));
+      expect(notified, isTrue);
 
-    final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getInt('widget_rotation_interval_minutes'), equals(60));
-  });
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt('widget_rotation_interval_minutes'), equals(60));
+    },
+  );
 
-  test('updating rotateOnTap saves to SharedPreferences and notifies', () async {
-    final provider = WidgetProvider();
-    await provider.init();
+  test(
+    'updating rotateOnTap saves to SharedPreferences and notifies',
+    () async {
+      final provider = WidgetProvider();
+      await provider.init();
 
-    var notified = false;
-    provider.addListener(() => notified = true);
+      var notified = false;
+      provider.addListener(() => notified = true);
 
-    await provider.setRotateOnTap(false);
+      await provider.setRotateOnTap(false);
 
-    expect(provider.rotateOnTap, isFalse);
-    expect(notified, isTrue);
+      expect(provider.rotateOnTap, isFalse);
+      expect(notified, isTrue);
 
-    final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getBool('widget_rotate_on_tap'), isFalse);
-  });
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('widget_rotate_on_tap'), isFalse);
+    },
+  );
 
   test('disabling widget saves to SharedPreferences and notifies', () async {
     final provider = WidgetProvider();

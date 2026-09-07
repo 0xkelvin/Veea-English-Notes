@@ -32,6 +32,7 @@ class _SearchScreenState extends State<SearchScreen> {
   List<VocabularyWord> _results = const [];
   String _query = '';
   bool _searching = false;
+  int _searchToken = 0;
 
   @override
   void dispose() {
@@ -47,6 +48,7 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _run(String value) async {
+    final token = ++_searchToken;
     final trimmed = value.trim();
     if (trimmed.isEmpty) {
       setState(() {
@@ -59,7 +61,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
     setState(() => _searching = true);
     final results = await context.read<VocabularyProvider>().search(trimmed);
-    if (!mounted) return;
+    if (!mounted || token != _searchToken) return;
     setState(() {
       _query = trimmed;
       _results = results;

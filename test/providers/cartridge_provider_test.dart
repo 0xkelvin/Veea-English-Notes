@@ -30,35 +30,50 @@ void main() {
   tearDown(() => repo.close());
 
   group('CartridgeProvider', () {
-    test('installs cartridge words in full mode into VocabularyProvider', () async {
-      expect(cartridgeProvider.isInstalled('silicon_valley_tech_vol1'), isFalse);
+    test(
+      'installs cartridge words in full mode into VocabularyProvider',
+      () async {
+        expect(
+          cartridgeProvider.isInstalled('silicon_valley_tech_vol1'),
+          isFalse,
+        );
 
-      final count = await cartridgeProvider.installCartridge(
-        'silicon_valley_tech_vol1',
-        vocabProvider: vocabProvider,
-        mode: IngestMode.full,
-        baseDate: today,
-      );
+        final count = await cartridgeProvider.installCartridge(
+          'silicon_valley_tech_vol1',
+          vocabProvider: vocabProvider,
+          mode: IngestMode.full,
+          baseDate: today,
+        );
 
-      expect(count, greaterThan(0));
-      expect(cartridgeProvider.isInstalled('silicon_valley_tech_vol1'), isTrue);
-      expect(vocabProvider.words.any((w) => w.word == 'idempotent'), isTrue);
-    });
+        expect(count, greaterThan(0));
+        expect(
+          cartridgeProvider.isInstalled('silicon_valley_tech_vol1'),
+          isTrue,
+        );
+        expect(vocabProvider.words.any((w) => w.word == 'idempotent'), isTrue);
+      },
+    );
 
-    test('installs cartridge words in dailySprint mode scheduling across dates', () async {
-      final count = await cartridgeProvider.installCartridge(
-        'silicon_valley_tech_vol1',
-        vocabProvider: vocabProvider,
-        mode: IngestMode.dailySprint,
-        baseDate: today,
-      );
+    test(
+      'installs cartridge words in dailySprint mode scheduling across dates',
+      () async {
+        final count = await cartridgeProvider.installCartridge(
+          'silicon_valley_tech_vol1',
+          vocabProvider: vocabProvider,
+          mode: IngestMode.dailySprint,
+          baseDate: today,
+        );
 
-      expect(count, greaterThan(0));
-      expect(cartridgeProvider.isInstalled('silicon_valley_tech_vol1'), isTrue);
+        expect(count, greaterThan(0));
+        expect(
+          cartridgeProvider.isInstalled('silicon_valley_tech_vol1'),
+          isTrue,
+        );
 
-      final dates = await repo.datesWithWords();
-      expect(dates.length, greaterThan(1));
-    });
+        final dates = await repo.datesWithWords();
+        expect(dates.length, greaterThan(1));
+      },
+    );
 
     test('uninstalls cartridge words cleanly', () async {
       await cartridgeProvider.installCartridge(
@@ -76,7 +91,10 @@ void main() {
       );
 
       expect(removed, greaterThan(0));
-      expect(cartridgeProvider.isInstalled('silicon_valley_tech_vol1'), isFalse);
+      expect(
+        cartridgeProvider.isInstalled('silicon_valley_tech_vol1'),
+        isFalse,
+      );
     });
   });
 }

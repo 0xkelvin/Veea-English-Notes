@@ -27,11 +27,17 @@ class CommutePlaylistService extends ChangeNotifier {
 
   Future<void> _persist() async {
     _prefs ??= await SharedPreferences.getInstance();
-    await _prefs?.setString(_storageKey, CommutePlaylist.encodeList(_playlists));
+    await _prefs?.setString(
+      _storageKey,
+      CommutePlaylist.encodeList(_playlists),
+    );
     notifyListeners();
   }
 
-  Future<CommutePlaylist> createPlaylist(String name, List<String> wordIds) async {
+  Future<CommutePlaylist> createPlaylist(
+    String name,
+    List<String> wordIds,
+  ) async {
     final newPlaylist = CommutePlaylist(
       id: 'pl_${DateTime.now().millisecondsSinceEpoch}',
       name: name.trim().isEmpty ? 'Băng Cassette mới' : name.trim(),

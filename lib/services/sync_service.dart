@@ -4,7 +4,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../data/remote/api_client.dart';
 import '../data/remote/vocabulary_api.dart';
 import '../data/vocabulary_repository.dart';
-import '../models/vocabulary_word.dart';
 
 enum SyncState { idle, syncing, failed }
 
@@ -64,14 +63,14 @@ class SyncService extends ChangeNotifier {
   /// Refreshes [pendingCount] without contacting the server.
   Future<void> refreshPendingCount() async {
     try {
-      _pendingCount = (await _repository.pendingChanges()).length;
+      _pendingCount = await _repository.countPendingChanges();
       notifyListeners();
     } catch (error, stack) {
       debugPrint('Could not count pending changes: $error\n$stack');
     }
   }
 
-  /// Runs a full sync: push what is pending, pull what is new, repeat while
+  /// Runs a full sync: push all pending batches, pull what is new, repeat while
   /// the server reports more pages.
   ///
   /// Returns true when everything reconciled. Concurrent calls are ignored
@@ -86,31 +85,48 @@ class SyncService extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       var cursor = _readCursor(prefs);
-      var pages = 0;
 
-      while (pages < _maxPagesPerRun) {
-        pages++;
+      // Phase 1: Push all pending changes in batches until none remain
+      var pushBatches = 0;
+      const maxPushBatches = 50;
+      var hasMoreRemote = false;
 
-        // Only the first page carries the push; later pages are pure paging
-        // and re-sending would duplicate work.
-        final outgoing = pages == 1
-            ? await _repository.pendingChanges()
-            : const <VocabularyWord>[];
-
-        final result = await _api.sync(changes: outgoing, since: cursor);
-
-        // Apply the server's rows *before* moving the cursor, so a crash in
-        // between replays the page instead of skipping it.
-        await _repository.mergeFromServer(result.changes);
-
-        if (outgoing.isNotEmpty) {
-          await _repository.markSynced(result.acceptedIds, _now());
-          _warnAboutRejections(outgoing.map((w) => w.id), result.acceptedIds);
+      while (pushBatches < maxPushBatches) {
+        final outgoing = await _repository.pendingChanges(limit: 200);
+        if (outgoing.isEmpty) {
+          if (pushBatches == 0) {
+            final result = await _api.sync(changes: const [], since: cursor);
+            await _repository.mergeFromServer(result.changes);
+            cursor = result.serverTime;
+            await prefs.setString(_cursorKey, cursor.toUtc().toIso8601String());
+            hasMoreRemote = result.hasMore;
+          }
+          break;
         }
+
+        pushBatches++;
+        final result = await _api.sync(changes: outgoing, since: cursor);
+        await _repository.mergeFromServer(result.changes);
+        await _repository.markSynced(result.acceptedIds, _now());
+        _warnAboutRejections(outgoing.map((w) => w.id), result.acceptedIds);
 
         cursor = result.serverTime;
         await prefs.setString(_cursorKey, cursor.toUtc().toIso8601String());
+        hasMoreRemote = result.hasMore;
 
+        // If this batch had fewer than 200 items, all pending changes were sent.
+        // Also break if nothing was accepted to prevent infinite loops.
+        if (outgoing.length < 200 || result.acceptedIds.isEmpty) break;
+      }
+
+      // Phase 2: Pull any remaining pages from server
+      var pullPages = 0;
+      while (hasMoreRemote && pullPages < _maxPagesPerRun) {
+        pullPages++;
+        final result = await _api.sync(changes: const [], since: cursor);
+        await _repository.mergeFromServer(result.changes);
+        cursor = result.serverTime;
+        await prefs.setString(_cursorKey, cursor.toUtc().toIso8601String());
         if (!result.hasMore) break;
       }
 

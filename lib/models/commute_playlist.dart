@@ -21,16 +21,19 @@ class CommutePlaylist {
     'createdAt': createdAt.toIso8601String(),
   };
 
-  factory CommutePlaylist.fromJson(Map<String, dynamic> json) => CommutePlaylist(
-    id: json['id'] as String,
-    name: json['name'] as String,
-    wordIds: (json['wordIds'] as List<dynamic>?)
-            ?.map((e) => e.toString())
-            .toList() ??
-        const [],
-    createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??
-        DateTime.now(),
-  );
+  factory CommutePlaylist.fromJson(Map<String, dynamic> json) =>
+      CommutePlaylist(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        wordIds:
+            (json['wordIds'] as List<dynamic>?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            const [],
+        createdAt:
+            DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+            DateTime.now(),
+      );
 
   CommutePlaylist copyWith({
     String? id,

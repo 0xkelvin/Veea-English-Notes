@@ -14,6 +14,7 @@ class TokenStore {
   /// The email address or phone number the account signs in with, kept only
   /// so the account screen can show who is signed in while offline.
   static const _identifierKey = 'auth.identifier';
+  static const _lastAccountKey = 'auth.last_account_identifier';
 
   final FlutterSecureStorage _storage;
 
@@ -22,6 +23,13 @@ class TokenStore {
   Future<String?> readRefreshToken() => _storage.read(key: _refreshKey);
 
   Future<String?> readIdentifier() => _storage.read(key: _identifierKey);
+
+  Future<String?> readLastAccount() => _storage.read(key: _lastAccountKey);
+
+  Future<void> saveLastAccount(String account) =>
+      _storage.write(key: _lastAccountKey, value: account);
+
+  Future<void> clearLastAccount() => _storage.delete(key: _lastAccountKey);
 
   Future<bool> get hasSession async => await readRefreshToken() != null;
 

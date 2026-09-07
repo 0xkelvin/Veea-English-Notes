@@ -110,11 +110,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
       _direction = Direction.right;
       _nextDirection = Direction.right;
       _fallingMeanings = [];
-      _snake = [
-        const Point(5, 8),
-        const Point(4, 8),
-        const Point(3, 8),
-      ];
+      _snake = [const Point(5, 8), const Point(4, 8), const Point(3, 8)];
     });
 
     _spawnNewTargetAndPellets();
@@ -133,12 +129,13 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
     final random = Random();
     final target = _deck[random.nextInt(_deck.length)];
 
-    final distractors = _deck
-        .where((w) => w.id != target.id)
-        .map((w) => w.word)
-        .toSet()
-        .toList()
-      ..shuffle();
+    final distractors =
+        _deck
+            .where((w) => w.id != target.id)
+            .map((w) => w.word)
+            .toSet()
+            .toList()
+          ..shuffle();
 
     final pelletWords = <({String word, bool isCorrect})>[
       (word: target.word, isCorrect: true),
@@ -161,7 +158,9 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
         );
         attempts++;
       } while ((occupied.contains(pos) ||
-              chosenPositions.any((p) => (p.x - pos.x).abs() < 3 && (p.y - pos.y).abs() < 3)) &&
+              chosenPositions.any(
+                (p) => (p.x - pos.x).abs() < 3 && (p.y - pos.y).abs() < 3,
+              )) &&
           attempts < 100);
 
       chosenPositions.add(pos);
@@ -284,11 +283,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
       _hearts--;
       _pendingGrowth = 0;
       if (_hearts > 0) {
-        _snake = [
-          const Point(5, 8),
-          const Point(4, 8),
-          const Point(3, 8),
-        ];
+        _snake = [const Point(5, 8), const Point(4, 8), const Point(3, 8)];
         _direction = Direction.right;
         _nextDirection = Direction.right;
         _spawnNewTargetAndPellets();
@@ -360,10 +355,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
       decoration: BoxDecoration(
         color: palette.surface,
         border: Border(
-          bottom: BorderSide(
-            color: palette.border,
-            width: PixelMetrics.border,
-          ),
+          bottom: BorderSide(color: palette.border, width: PixelMetrics.border),
         ),
       ),
       child: Row(
@@ -374,10 +366,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
             onPressed: () => Navigator.of(context).pop(),
           ),
           const SizedBox(width: PixelMetrics.space2),
-          Text(
-            'VOCAB SNAKE',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+          Text('VOCAB SNAKE', style: Theme.of(context).textTheme.titleMedium),
           const Spacer(),
           Row(
             children: List.generate(3, (i) {
@@ -395,9 +384,9 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
           const SizedBox(width: PixelMetrics.space3),
           Text(
             'SCORE: $_score',
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.bold),
           ),
         ],
       ),
@@ -470,7 +459,9 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
         // 16x16 Game Board
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: PixelMetrics.space3),
+            padding: const EdgeInsets.symmetric(
+              horizontal: PixelMetrics.space3,
+            ),
             child: AspectRatio(
               aspectRatio: 1.0,
               child: GestureDetector(
@@ -517,7 +508,10 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
                                 margin: const EdgeInsets.all(1),
                                 decoration: BoxDecoration(
                                   color: i == 0 ? palette.accent : palette.ink,
-                                  border: Border.all(color: palette.border, width: 0.5),
+                                  border: Border.all(
+                                    color: palette.border,
+                                    width: 0.5,
+                                  ),
                                 ),
                               ),
                             ),
@@ -535,7 +529,10 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
                                   height: cellSize * 0.75,
                                   decoration: BoxDecoration(
                                     color: palette.danger,
-                                    border: Border.all(color: palette.border, width: 1),
+                                    border: Border.all(
+                                      color: palette.border,
+                                      width: 1,
+                                    ),
                                   ),
                                   child: Center(
                                     child: Container(
@@ -571,7 +568,9 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
                                     ),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: palette.border.withValues(alpha: 0.5),
+                                        color: palette.border.withValues(
+                                          alpha: 0.5,
+                                        ),
                                         offset: const Offset(1, 1),
                                         blurRadius: 0,
                                       ),
@@ -611,7 +610,9 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
                                     ),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: palette.accent.withValues(alpha: 0.3),
+                                        color: palette.accent.withValues(
+                                          alpha: 0.3,
+                                        ),
                                         offset: const Offset(1, 2),
                                         blurRadius: 0,
                                       ),
@@ -698,9 +699,7 @@ class _VocabSnakeGameState extends State<VocabSnakeGame> {
             ),
           ],
         ),
-        child: Center(
-          child: PixelIcon(glyph, color: palette.ink, scale: 2.4),
-        ),
+        child: Center(child: PixelIcon(glyph, color: palette.ink, scale: 2.4)),
       ),
     );
   }

@@ -82,7 +82,9 @@ void main() {
     expect(find.text('PIXEL TYPER'), findsOneWidget);
   });
 
-  testWidgets('WordRushGame launches and displays timer and score', (tester) async {
+  testWidgets('WordRushGame launches and displays timer and score', (
+    tester,
+  ) async {
     await tester.pumpWidget(buildApp(const WordRushGame()));
     await tester.pump();
     await tester.runAsync(
@@ -95,7 +97,9 @@ void main() {
     expect(find.textContaining('SCORE:'), findsOneWidget);
   });
 
-  testWidgets('VocabSnakeGame launches and shows D-Pad and grid', (tester) async {
+  testWidgets('VocabSnakeGame launches and shows D-Pad and grid', (
+    tester,
+  ) async {
     await tester.pumpWidget(buildApp(const VocabSnakeGame()));
     await tester.pump();
     await tester.runAsync(
@@ -107,7 +111,9 @@ void main() {
     expect(find.text('STEER SNAKE TO EAT:'), findsOneWidget);
   });
 
-  testWidgets('VocabInvadersGame launches and displays sector HUD', (tester) async {
+  testWidgets('VocabInvadersGame launches and displays sector HUD', (
+    tester,
+  ) async {
     await tester.pumpWidget(buildApp(const VocabInvadersGame()));
     await tester.pump();
     await tester.runAsync(

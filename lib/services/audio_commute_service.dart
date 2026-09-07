@@ -4,12 +4,7 @@ import 'package:flutter/foundation.dart';
 import '../models/vocabulary_word.dart';
 import 'tts_service.dart';
 
-enum AudioCommuteState {
-  idle,
-  playing,
-  paused,
-  stopped,
-}
+enum AudioCommuteState { idle, playing, paused, stopped }
 
 enum CommutePlaybackMode {
   wordOnly,
@@ -49,6 +44,7 @@ class AudioCommuteService extends ChangeNotifier {
 
   Timer? _stepTimer;
   bool _isDisposed = false;
+  int _generationToken = 0;
 
   AudioCommuteState get state => _state;
   bool get isPlaying => _state == AudioCommuteState.playing;
@@ -77,6 +73,7 @@ class AudioCommuteService extends ChangeNotifier {
     String? playlistTitle,
   }) {
     if (words.isEmpty) return;
+    _generationToken++;
     if (playlistTitle != null) {
       _playlistTitle = playlistTitle;
     }
@@ -91,6 +88,7 @@ class AudioCommuteService extends ChangeNotifier {
 
   void resume() {
     if (_state == AudioCommuteState.paused && _playlist.isNotEmpty) {
+      _generationToken++;
       _state = AudioCommuteState.playing;
       _notify();
       _runCurrentWordCycle();
@@ -98,6 +96,7 @@ class AudioCommuteService extends ChangeNotifier {
   }
 
   void pause() {
+    _generationToken++;
     _stepTimer?.cancel();
     _stepTimer = null;
     _tts.stop();
@@ -107,6 +106,7 @@ class AudioCommuteService extends ChangeNotifier {
   }
 
   void stop() {
+    _generationToken++;
     _stepTimer?.cancel();
     _stepTimer = null;
     _tts.stop();
@@ -116,6 +116,7 @@ class AudioCommuteService extends ChangeNotifier {
   }
 
   void next() {
+    _generationToken++;
     _stepTimer?.cancel();
     _stepTimer = null;
     _tts.stop();
@@ -138,6 +139,7 @@ class AudioCommuteService extends ChangeNotifier {
   }
 
   void previous() {
+    _generationToken++;
     _stepTimer?.cancel();
     _stepTimer = null;
     _tts.stop();
@@ -197,43 +199,69 @@ class AudioCommuteService extends ChangeNotifier {
       return;
     }
 
+    final token = _generationToken;
+
     try {
       // Step 1: Speak English Word ONLY (never speak Vietnamese meaning)
       _currentPhaseText = 'PLAYING: ${word.word.toUpperCase()}';
       _notify();
       await _tts.speak(word.word);
 
-      if (_state != AudioCommuteState.playing || _isDisposed) return;
+      if (_state != AudioCommuteState.playing ||
+          _isDisposed ||
+          token != _generationToken) {
+        return;
+      }
 
       // Step 2: Optional English Example Sentence
-      final wantsExample = _mode == CommutePlaybackMode.wordAndExample ||
+      final wantsExample =
+          _mode == CommutePlaybackMode.wordAndExample ||
           _mode == CommutePlaybackMode.wordMeaningExample;
       if (wantsExample && word.examples.isNotEmpty) {
         _currentPhaseText = 'PAUSE (${_recallPauseSeconds}s)…';
         _notify();
         await Future.delayed(Duration(seconds: _recallPauseSeconds));
 
-        if (_state != AudioCommuteState.playing || _isDisposed) return;
+        if (_state != AudioCommuteState.playing ||
+            _isDisposed ||
+            token != _generationToken) {
+          return;
+        }
 
         _currentPhaseText = 'EXAMPLE: "${word.examples.first}"';
         _notify();
         await _tts.speak(word.examples.first);
       }
 
-      if (_state != AudioCommuteState.playing || _isDisposed) return;
+      if (_state != AudioCommuteState.playing ||
+          _isDisposed ||
+          token != _generationToken) {
+        return;
+      }
 
       // Step 3: Check Repeat Count or Advance
       _currentRepeat++;
       if (_currentRepeat < _repeatCountPerWord) {
-        _currentPhaseText = 'REPEAT (${_currentRepeat + 1}/$_repeatCountPerWord)';
+        _currentPhaseText =
+            'REPEAT (${_currentRepeat + 1}/$_repeatCountPerWord)';
         _notify();
         await Future.delayed(Duration(seconds: _recallPauseSeconds));
+        if (_state != AudioCommuteState.playing ||
+            _isDisposed ||
+            token != _generationToken) {
+          return;
+        }
         _runCurrentWordCycle();
       } else {
         _currentRepeat = 0;
         _currentPhaseText = 'NEXT WORD…';
         _notify();
         await Future.delayed(Duration(seconds: _recallPauseSeconds));
+        if (_state != AudioCommuteState.playing ||
+            _isDisposed ||
+            token != _generationToken) {
+          return;
+        }
         next();
       }
     } catch (e) {

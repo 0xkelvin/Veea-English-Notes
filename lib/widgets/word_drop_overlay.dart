@@ -14,11 +14,7 @@ import 'pixel/pixel_icon.dart';
 
 /// Modal dialog that presents an instant incoming Word Drop challenge.
 class WordDropOverlay extends StatefulWidget {
-  const WordDropOverlay({
-    super.key,
-    required this.challenge,
-    this.onRevenge,
-  });
+  const WordDropOverlay({super.key, required this.challenge, this.onRevenge});
 
   final WordChallenge challenge;
   final VoidCallback? onRevenge;
@@ -33,10 +29,8 @@ class WordDropOverlay extends StatefulWidget {
       context: context,
       barrierDismissible: false,
       barrierColor: Colors.black.withValues(alpha: 0.75),
-      builder: (_) => WordDropOverlay(
-        challenge: challenge,
-        onRevenge: onRevenge,
-      ),
+      builder: (_) =>
+          WordDropOverlay(challenge: challenge, onRevenge: onRevenge),
     );
   }
 
@@ -274,7 +268,10 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
           ),
           decoration: BoxDecoration(
             color: palette.paper,
-            border: Border.all(color: palette.border, width: PixelMetrics.border),
+            border: Border.all(
+              color: palette.border,
+              width: PixelMetrics.border,
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -300,7 +297,11 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
                       },
                       child: Padding(
                         padding: const EdgeInsets.only(left: 4),
-                        child: PixelIcon(PixelGlyph.speaker, color: palette.accent, scale: 2),
+                        child: PixelIcon(
+                          PixelGlyph.speaker,
+                          color: palette.accent,
+                          scale: 2,
+                        ),
                       ),
                     ),
                 ],
@@ -308,7 +309,10 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
               if (c.partOfSpeech.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 1,
+                  ),
                   color: palette.border,
                   child: Text(
                     c.partOfSpeech,
@@ -461,7 +465,10 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
           padding: const EdgeInsets.all(PixelMetrics.space3),
           decoration: BoxDecoration(
             color: palette.paper,
-            border: Border.all(color: palette.border, width: PixelMetrics.border),
+            border: Border.all(
+              color: palette.border,
+              width: PixelMetrics.border,
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

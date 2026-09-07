@@ -34,7 +34,10 @@ void main() {
       expect(pet.calculateMood(streakDays: 5, dueCount: 0), PetMood.ecstatic);
 
       const petHungry = PetCompanion(wordsFedToday: 0);
-      expect(petHungry.calculateMood(streakDays: 0, dueCount: 3), PetMood.hungry);
+      expect(
+        petHungry.calculateMood(streakDays: 0, dueCount: 3),
+        PetMood.hungry,
+      );
     });
   });
 

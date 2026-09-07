@@ -141,10 +141,7 @@ class _PixelHeatmapState extends State<PixelHeatmap> {
                         ),
                         decoration: BoxDecoration(
                           color: active ? palette.accent : palette.paper,
-                          border: Border.all(
-                            color: palette.border,
-                            width: 1,
-                          ),
+                          border: Border.all(color: palette.border, width: 1),
                         ),
                         child: Text(
                           '${w}W',
@@ -218,7 +215,9 @@ class _PixelHeatmapState extends State<PixelHeatmap> {
                     style: TextStyle(
                       fontFamily: 'Handjet',
                       fontSize: 12,
-                      color: selectedCount > 0 ? palette.accent : palette.inkMuted,
+                      color: selectedCount > 0
+                          ? palette.accent
+                          : palette.inkMuted,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -296,7 +295,8 @@ class _PixelHeatmapState extends State<PixelHeatmap> {
     final isFuture = date.isAfter(today);
     final dateKey = _dateKey(date);
     final count = widget.dailyCounts[dateKey] ?? 0;
-    final isSelected = _selectedDate != null && _dateKey(_selectedDate!) == dateKey;
+    final isSelected =
+        _selectedDate != null && _dateKey(_selectedDate!) == dateKey;
 
     Color cellColor;
     Color borderColor;
@@ -336,10 +336,7 @@ class _PixelHeatmapState extends State<PixelHeatmap> {
         height: 11,
         decoration: BoxDecoration(
           color: cellColor,
-          border: Border.all(
-            color: borderColor,
-            width: isSelected ? 1.5 : 1.0,
-          ),
+          border: Border.all(color: borderColor, width: isSelected ? 1.5 : 1.0),
         ),
       ),
     );

@@ -94,7 +94,9 @@ class _PetCompanionWidgetState extends State<PetCompanionWidget> {
                         const SizedBox(width: 6),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 4, vertical: 1),
+                            horizontal: 4,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
                             color: palette.paper,
                             border: Border.all(color: palette.border, width: 1),
@@ -142,7 +144,10 @@ class _PetCompanionWidgetState extends State<PetCompanionWidget> {
                         color: palette.paper,
                         alignment: Alignment.centerLeft,
                         child: FractionallySizedBox(
-                          widthFactor: (pet.currentLevelXp / 50.0).clamp(0.05, 1.0),
+                          widthFactor: (pet.currentLevelXp / 50.0).clamp(
+                            0.05,
+                            1.0,
+                          ),
                           child: Container(color: palette.accent),
                         ),
                       ),
@@ -179,15 +184,16 @@ class _PetStatusDialog extends StatelessWidget {
 
   void _showRenameDialog(BuildContext context) {
     final petProvider = context.read<PetProvider>();
-    final textController =
-        TextEditingController(text: petProvider.pet.name);
+    final textController = TextEditingController(text: petProvider.pet.name);
 
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-        title: const Text('RENAME PET',
-            style: TextStyle(fontFamily: 'Handjet', fontWeight: FontWeight.bold)),
+        title: const Text(
+          'RENAME PET',
+          style: TextStyle(fontFamily: 'Handjet', fontWeight: FontWeight.bold),
+        ),
         content: TextField(
           controller: textController,
           maxLength: 12,

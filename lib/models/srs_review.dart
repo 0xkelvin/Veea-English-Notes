@@ -59,10 +59,7 @@ class SrsReview {
   final int lapses;
 
   /// Calculates the next spaced repetition schedule given a [rating].
-  SrsReview calculateNext({
-    required SrsRating rating,
-    DateTime? now,
-  }) {
+  SrsReview calculateNext({required SrsRating rating, DateTime? now}) {
     final currentTime = now ?? DateTime.now();
     int newReps = repetitions;
     int newInterval = intervalDays;

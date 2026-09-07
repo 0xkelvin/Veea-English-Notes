@@ -50,7 +50,9 @@ void main() {
     ),
   );
 
-  testWidgets('WordDropOverlay displays challenge and handles correct answer', (tester) async {
+  testWidgets('WordDropOverlay displays challenge and handles correct answer', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(800, 1200);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -94,7 +96,9 @@ void main() {
     expect(find.text('CHALLENGE BACK ⚡'), findsOneWidget);
   });
 
-  testWidgets('WordDropOverlay allows 1-tap save to notebook on wrong answer', (tester) async {
+  testWidgets('WordDropOverlay allows 1-tap save to notebook on wrong answer', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(800, 1200);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:veea_english_app/core/config/app_config.dart';
 import 'package:veea_english_app/core/theme/pixel_theme.dart';
@@ -32,6 +33,7 @@ void main() {
   final today = DateTime(2026, 8, 18, 10);
 
   setUp(() async {
+    SharedPreferences.setMockInitialValues({});
     repo = await SqliteVocabularyRepository.open(
       path: inMemoryDatabasePath,
       now: () => today,
@@ -54,10 +56,7 @@ void main() {
 
     const tokens = TokenStore();
     final client = ApiClient(tokenStore: tokens);
-    syncService = SyncService(
-      repository: repo,
-      api: VocabularyApi(client),
-    );
+    syncService = SyncService(repository: repo, api: VocabularyApi(client));
     authProvider = AuthProvider(
       authApi: AuthApi(client: client, tokens: tokens),
       tokens: tokens,
@@ -83,24 +82,72 @@ void main() {
     );
   }
 
-  testWidgets('SettingsScreen renders in 100% offline local mode without server', (tester) async {
+  testWidgets(
+    'SettingsScreen renders in 100% offline local mode without server',
+    (tester) async {
+      tester.view.physicalSize = const Size(600, 3500);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(buildApp(const SettingsScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('SETTINGS'), findsOneWidget);
+      expect(find.text('ACTIVITY HEATMAP'), findsOneWidget);
+      expect(find.textContaining('RETRO MILESTONES'), findsOneWidget);
+      expect(find.text('RETRO PIXEL THEME'), findsOneWidget);
+      expect(find.text('HOME SCREEN & LOCK SCREEN WIDGET'), findsOneWidget);
+      expect(
+        find.text('THIS BUILD RUNS IN FULLY LOCAL STORAGE MODE.'),
+        findsOneWidget,
+      );
+      expect(find.text('DAILY RETRO PRACTICE REMINDER'), findsOneWidget);
+      expect(find.text('DATA BACKUP & RESTORE'), findsOneWidget);
+      expect(find.text('FEEDBACK & SUPPORT'), findsOneWidget);
+    },
+  );
+
+  testWidgets('SettingsScreen opens Export and Import dialogs', (tester) async {
     tester.view.physicalSize = const Size(600, 3500);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(buildApp(const SettingsScreen()));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    expect(find.text('SETTINGS'), findsOneWidget);
-    expect(find.text('ACTIVITY HEATMAP'), findsOneWidget);
-    expect(find.textContaining('RETRO MILESTONES'), findsOneWidget);
-    expect(find.text('RETRO PIXEL THEME'), findsOneWidget);
-    expect(find.text('HOME SCREEN & LOCK SCREEN WIDGET'), findsOneWidget);
-    expect(find.text('THIS BUILD RUNS IN FULLY LOCAL STORAGE MODE.'), findsOneWidget);
+    // Tap Export Backup
+    final exportBtn = find.text('EXPORT BACKUP');
+    expect(exportBtn, findsOneWidget);
+    await tester.tap(exportBtn);
+    await tester.pumpAndSettle();
+
+    expect(find.text('EXPORT VOCABULARY'), findsOneWidget);
+    expect(find.text('JSON FORMAT'), findsOneWidget);
+    expect(find.text('CSV FORMAT'), findsOneWidget);
+
+    // Close export dialog
+    await tester.tap(find.text('CLOSE'));
+    await tester.pumpAndSettle();
+
+    // Tap Import Backup
+    final importBtn = find.text('IMPORT BACKUP');
+    expect(importBtn, findsOneWidget);
+    await tester.tap(importBtn);
+    await tester.pumpAndSettle();
+
+    expect(find.text('IMPORT BACKUP (JSON / CSV)'), findsOneWidget);
+    expect(find.text('BACKUP DATA'), findsOneWidget);
+
+    // Close import dialog
+    await tester.tap(find.text('CLOSE'));
+    await tester.pumpAndSettle();
   });
 
-  testWidgets('SettingsScreen renders cloud sync form when cloud is enabled', (tester) async {
+  testWidgets('SettingsScreen renders cloud sync form when cloud is enabled', (
+    tester,
+  ) async {
     AppConfig.overrideBaseUrl('https://example.test');
     addTearDown(() => AppConfig.overrideBaseUrl(null));
 

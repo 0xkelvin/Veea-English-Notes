@@ -85,10 +85,23 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> _handleAccountIsolation(String newIdentifier) async {
+    final lastAccount = await _tokens.readLastAccount();
+    if (lastAccount != null && lastAccount != newIdentifier) {
+      // Different account: isolate notebooks by clearing the previous account's local data
+      await _repository.deleteAll();
+      await _sync.resetCursor();
+    }
+    await _tokens.saveLastAccount(newIdentifier);
+  }
+
   Future<bool> signIn({required String identifier, required String password}) {
     return _run(
       () => _authApi.login(identifier: identifier, password: password),
-      onSuccess: () => _identifier = identifier,
+      onSuccess: () async {
+        _identifier = identifier;
+        await _handleAccountIsolation(identifier);
+      },
       // There is no session yet, so a 401 here means the credentials were
       // wrong — not that anything expired.
       unauthorizedMessage: 'That email, phone or password is not right',
@@ -101,7 +114,10 @@ class AuthProvider extends ChangeNotifier {
   }) {
     return _run(
       () => _authApi.register(identifier: identifier, password: password),
-      onSuccess: () => _identifier = identifier,
+      onSuccess: () async {
+        _identifier = identifier;
+        await _handleAccountIsolation(identifier);
+      },
       unauthorizedMessage: 'That email, phone or password is not right',
     );
   }
@@ -136,6 +152,7 @@ class AuthProvider extends ChangeNotifier {
       onSuccess: () async {
         await _repository.deleteAll();
         await _sync.resetCursor();
+        await _tokens.clearLastAccount();
         _clearSession();
       },
       signOutOnSuccess: true,

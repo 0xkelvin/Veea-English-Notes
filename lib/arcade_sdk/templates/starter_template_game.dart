@@ -38,13 +38,14 @@ class _StarterTemplateGameState extends State<StarterTemplateGame> {
   void _setupRound() {
     if (_deck.isEmpty) return;
     final currentWord = _deck[_currentIndex % _deck.length];
-    
+
     // Generate 3 choices (1 correct, 2 distractors)
-    final otherMeanings = _deck
-        .where((w) => w.id != currentWord.id)
-        .map((w) => w.meaning)
-        .toList()
-      ..shuffle();
+    final otherMeanings =
+        _deck
+            .where((w) => w.id != currentWord.id)
+            .map((w) => w.meaning)
+            .toList()
+          ..shuffle();
 
     _optionChoices = [
       currentWord.meaning,

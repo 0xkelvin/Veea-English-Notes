@@ -15,17 +15,41 @@ import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_field.dart';
 import '../widgets/pixel/pixel_icon.dart';
 
+class WordDraft {
+  const WordDraft({
+    this.word = '',
+    this.meaning = '',
+    this.pronunciation,
+    this.partOfSpeech,
+    this.source,
+    this.examples = const [],
+    this.tags = const [],
+  });
+
+  final String word;
+  final String meaning;
+  final String? pronunciation;
+  final PartOfSpeech? partOfSpeech;
+  final String? source;
+  final List<String> examples;
+  final List<String> tags;
+}
+
 /// Full-screen capture and edit form.
 ///
 /// This replaces the modal bottom sheet. A sheet capped at 85% height fought
 /// the keyboard on small phones, and the form now has more fields than a
 /// sheet can show at once.
 class WordEditorScreen extends StatefulWidget {
-  const WordEditorScreen({super.key, this.existing});
+  const WordEditorScreen({super.key, this.existing}) : draft = null;
+
+  const WordEditorScreen.draft({super.key, required this.draft})
+    : existing = null;
 
   final VocabularyWord? existing;
+  final WordDraft? draft;
 
-  bool get isEditing => existing != null;
+  bool get isEditing => existing != null && existing!.id.trim().isNotEmpty;
 
   @override
   State<WordEditorScreen> createState() => _WordEditorScreenState();
@@ -72,27 +96,37 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
   void initState() {
     super.initState();
     final existing = widget.existing;
-    _word = TextEditingController(text: existing?.word ?? '');
-    _meaning = TextEditingController(text: existing?.meaning ?? '');
-    _source = TextEditingController(text: existing?.source ?? '');
-    _tags = TextEditingController(text: existing?.tags.join(', ') ?? '');
-    _partOfSpeech = existing?.partOfSpeech;
-    _partOfSpeechIsManual = existing?.partOfSpeech != null;
-    for (final example in existing?.examples ?? const <String>[]) {
+    final draft = widget.draft;
+    final initialWord = existing?.word ?? draft?.word ?? '';
+    final initialMeaning = existing?.meaning ?? draft?.meaning ?? '';
+    final initialSource = existing?.source ?? draft?.source ?? '';
+    final initialTags =
+        existing?.tags.join(', ') ?? draft?.tags.join(', ') ?? '';
+
+    _word = TextEditingController(text: initialWord);
+    _meaning = TextEditingController(text: initialMeaning);
+    _source = TextEditingController(text: initialSource);
+    _tags = TextEditingController(text: initialTags);
+    _partOfSpeech = existing?.partOfSpeech ?? draft?.partOfSpeech;
+    _partOfSpeechIsManual = _partOfSpeech != null;
+
+    final examples = existing?.examples ?? draft?.examples ?? const <String>[];
+    for (final example in examples) {
       _examples.add(TextEditingController(text: example));
     }
 
-    _pronunciation = existing?.pronunciation;
+    _pronunciation = existing?.pronunciation ?? draft?.pronunciation;
     // An existing word already carries a transcription, but it may predate the
     // dictionary, so treat it as automatic and let a fresh lookup refresh it.
     _pronunciationIsManual = false;
-    if (existing != null) {
+    if (widget.isEditing && existing != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _refreshPronunciation(existing.word);
         _refreshSuggestions(existing.word);
       });
     } else if (_word.text.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        _refreshPronunciation(_word.text);
         _refreshSuggestions(_word.text);
       });
     }
@@ -219,19 +253,21 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
     final provider = context.read<VocabularyProvider>();
     final existing = widget.existing;
 
-    if (existing == null) {
+    if (!widget.isEditing) {
       await provider.addWord(
         word: _word.text,
         meaning: _meaning.text,
         pronunciation: _pronunciation,
         partOfSpeech: _partOfSpeech,
-        source: _source.text,
+        source: _source.text.isNotEmpty
+            ? _source.text
+            : (widget.draft?.source ?? 'Pixel Lens OCR'),
         examples: _exampleValues,
         tags: _tagValues,
       );
     } else {
       await provider.updateWord(
-        existing,
+        existing!,
         word: _word.text,
         meaning: _meaning.text,
         pronunciation: _pronunciation,
@@ -263,12 +299,14 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
   }
 
   void _openContextWizard() {
-    final targetWord =
-        _word.text.trim().isNotEmpty ? _word.text.trim() : 'resilient';
+    final targetWord = _word.text.trim().isNotEmpty
+        ? _word.text.trim()
+        : 'resilient';
     ContextWizardSheet.show(
       context: context,
       word: targetWord,
       meaning: _meaning.text.trim(),
+      partOfSpeech: _partOfSpeech,
       onSelectSentence: (sentence) {
         setState(() {
           if (_examples.isEmpty) {
@@ -297,7 +335,9 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
     final friends = context.read<FriendChallengeService>().friends;
     if (friends.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No friends connected yet! Connect via Game Link.')),
+        const SnackBar(
+          content: Text('No friends connected yet! Connect via Game Link.'),
+        ),
       );
       return;
     }
@@ -314,7 +354,10 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
             padding: const EdgeInsets.all(PixelMetrics.space4),
             decoration: BoxDecoration(
               color: palette.surface,
-              border: Border.all(color: palette.border, width: PixelMetrics.border * 1.5),
+              border: Border.all(
+                color: palette.border,
+                width: PixelMetrics.border * 1.5,
+              ),
               boxShadow: [
                 BoxShadow(
                   color: palette.border.withValues(alpha: 0.6),
@@ -324,60 +367,70 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
               ],
             ),
             child: SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    PixelIcon(PixelGlyph.bolt, color: Colors.amber, scale: 2),
-                    const SizedBox(width: PixelMetrics.space2),
-                    Text(
-                      'DROP WORD TO A FRIEND:',
-                      style: TextStyle(
-                        fontFamily: 'Handjet',
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: palette.ink,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: PixelMetrics.space3),
-                for (final friend in friends) ...[
-                  Material(
-                    color: Colors.transparent,
-                    child: ListTile(
-                      tileColor: palette.paper,
-                      title: Text(
-                        friend.name,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      PixelIcon(PixelGlyph.bolt, color: Colors.amber, scale: 2),
+                      const SizedBox(width: PixelMetrics.space2),
+                      Text(
+                        'DROP WORD TO A FRIEND:',
                         style: TextStyle(
                           fontFamily: 'Handjet',
-                          fontSize: 16,
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: palette.ink,
                         ),
                       ),
-                      trailing: PixelIcon(PixelGlyph.arrowRight, color: palette.accent, scale: 2),
-                      onTap: () {
-                        Navigator.of(sheetContext).pop();
-                        context.read<FriendChallengeService>().createChallenge(
-                          friend: friend,
-                          word: existing,
-                          mode: ChallengeMode.vnToEn,
-                        );
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Sent word challenge to ${friend.name}!')),
-                        );
-                      },
-                    ),
+                    ],
                   ),
-                  const SizedBox(height: PixelMetrics.space2),
+                  const SizedBox(height: PixelMetrics.space3),
+                  for (final friend in friends) ...[
+                    Material(
+                      color: Colors.transparent,
+                      child: ListTile(
+                        tileColor: palette.paper,
+                        title: Text(
+                          friend.name,
+                          style: TextStyle(
+                            fontFamily: 'Handjet',
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: palette.ink,
+                          ),
+                        ),
+                        trailing: PixelIcon(
+                          PixelGlyph.arrowRight,
+                          color: palette.accent,
+                          scale: 2,
+                        ),
+                        onTap: () {
+                          Navigator.of(sheetContext).pop();
+                          context
+                              .read<FriendChallengeService>()
+                              .createChallenge(
+                                friend: friend,
+                                word: existing,
+                                mode: ChallengeMode.vnToEn,
+                              );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Sent word challenge to ${friend.name}!',
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: PixelMetrics.space2),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
-        ),
         );
       },
     );
@@ -443,7 +496,8 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                     textCapitalization: TextCapitalization.sentences,
                     onChanged: (_) => setState(() {}),
                   ),
-                  if (_meaning.text.trim().isEmpty && _suggestedMeaning != null) ...[
+                  if (_meaning.text.trim().isEmpty &&
+                      _suggestedMeaning != null) ...[
                     const SizedBox(height: PixelMetrics.space1),
                     GestureDetector(
                       onTap: () {
@@ -716,7 +770,10 @@ class _PartOfSpeechPicker extends StatelessWidget {
       children: [
         Row(
           children: [
-            Text('PART OF SPEECH (OPTIONAL)', style: theme.textTheme.labelSmall),
+            Text(
+              'PART OF SPEECH (OPTIONAL)',
+              style: theme.textTheme.labelSmall,
+            ),
             if (suggested != null) ...[
               const SizedBox(width: PixelMetrics.space2),
               Container(
@@ -763,8 +820,8 @@ class _PartOfSpeechPicker extends StatelessWidget {
                       color: selected == value
                           ? palette.border
                           : (suggested == value
-                              ? palette.accent.withValues(alpha: 0.6)
-                              : palette.border),
+                                ? palette.accent.withValues(alpha: 0.6)
+                                : palette.border),
                       width: PixelMetrics.border,
                     ),
                   ),
@@ -774,7 +831,9 @@ class _PartOfSpeechPicker extends StatelessWidget {
                       Text(
                         value.label.toUpperCase(),
                         style: theme.textTheme.labelSmall?.copyWith(
-                          color: selected == value ? palette.onAccent : palette.ink,
+                          color: selected == value
+                              ? palette.onAccent
+                              : palette.ink,
                           fontWeight: (selected == value || suggested == value)
                               ? FontWeight.bold
                               : FontWeight.normal,
@@ -784,10 +843,7 @@ class _PartOfSpeechPicker extends StatelessWidget {
                         const SizedBox(width: 3),
                         Text(
                           '★',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: palette.accent,
-                          ),
+                          style: TextStyle(fontSize: 10, color: palette.accent),
                         ),
                       ],
                     ],

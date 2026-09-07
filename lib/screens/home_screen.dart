@@ -1,10 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/theme/pixel_metrics.dart';
 import '../core/theme/pixel_palette.dart';
 import '../providers/vocabulary_provider.dart';
+import '../services/clipboard_detector_service.dart';
+import '../services/pronunciation_service.dart';
 import '../widgets/date_bar.dart';
+import '../widgets/pixel/clipboard_detector_toast.dart';
+import '../widgets/pixel/pixel_box.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_icon.dart';
 import '../widgets/word_row.dart';
@@ -21,8 +27,109 @@ import 'word_editor_screen.dart';
 /// Chrome is held to two short bars so the words start near the top of the
 /// screen; the previous layout spent roughly 280px on a greeting, two stat
 /// cards, a date row and a section heading before the first word appeared.
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key, this.clipboardReader});
+
+  /// Optional clipboard reader override (primarily for automated testing).
+  final Future<String?> Function()? clipboardReader;
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  String? _detectedWord;
+  bool _isAdding = false;
+  final Set<String> _dismissedWords = {};
+  Timer? _autoDismissTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkClipboard());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _autoDismissTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkClipboard();
+    }
+  }
+
+  Future<void> _checkClipboard() async {
+    if (!mounted) return;
+    final provider = context.read<VocabularyProvider>();
+    final candidate = await ClipboardDetectorService.detectCandidate(
+      dismissedWords: _dismissedWords,
+      existingWords: provider.words.map((w) => w.word).toList(),
+      clipboardReader: widget.clipboardReader,
+    );
+
+    if (!mounted) return;
+    if (candidate != null && candidate != _detectedWord) {
+      setState(() {
+        _detectedWord = candidate;
+      });
+      _autoDismissTimer?.cancel();
+      _autoDismissTimer = Timer(const Duration(seconds: 8), () {
+        if (mounted && _detectedWord == candidate) {
+          setState(() {
+            _dismissedWords.add(candidate.toLowerCase());
+            _detectedWord = null;
+          });
+        }
+      });
+    }
+  }
+
+  void _dismissDetectedWord(String word) {
+    _autoDismissTimer?.cancel();
+    setState(() {
+      _dismissedWords.add(word.toLowerCase());
+      _detectedWord = null;
+    });
+  }
+
+  Future<void> _addDetectedWord(String word) async {
+    _autoDismissTimer?.cancel();
+    setState(() => _isAdding = true);
+
+    PronunciationService? pronService;
+    try {
+      pronService = context.read<PronunciationService>();
+    } catch (_) {
+      pronService = null;
+    }
+
+    final provider = context.read<VocabularyProvider>();
+    await ClipboardDetectorService.quickCapture(
+      word: word,
+      provider: provider,
+      pronunciationService: pronService,
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _dismissedWords.add(word.toLowerCase());
+      _detectedWord = null;
+      _isAdding = false;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('ADDED "$word" TO TODAY'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +143,13 @@ class HomeScreen extends StatelessWidget {
             const _TopBar(),
             const DateBar(),
             const StatusLine(),
+            if (_detectedWord != null)
+              ClipboardDetectorToast(
+                word: _detectedWord!,
+                isAdding: _isAdding,
+                onAdd: () => _addDetectedWord(_detectedWord!),
+                onDismiss: () => _dismissDetectedWord(_detectedWord!),
+              ),
             Expanded(child: _Body(provider: provider)),
             const _UndoBar(),
           ],
@@ -280,7 +394,10 @@ class _DockItem extends StatelessWidget {
                 right: 2,
                 top: -2,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 1,
+                  ),
                   decoration: BoxDecoration(
                     color: palette.danger,
                     border: Border.all(color: palette.paper, width: 1),
@@ -319,6 +436,9 @@ class _Body extends StatelessWidget {
       );
     }
     if (provider.words.isEmpty) {
+      if (provider.stats.totalWords == 0) {
+        return const _FirstRunStarterBanner();
+      }
       return _EmptyDay(isToday: provider.isToday);
     }
 
@@ -332,6 +452,179 @@ class _Body extends StatelessWidget {
           onTap: () => _open(context, WordEditorScreen(existing: word)),
         );
       },
+    );
+  }
+}
+
+class _FirstRunStarterBanner extends StatefulWidget {
+  const _FirstRunStarterBanner();
+
+  @override
+  State<_FirstRunStarterBanner> createState() => _FirstRunStarterBannerState();
+}
+
+class _FirstRunStarterBannerState extends State<_FirstRunStarterBanner> {
+  bool _loading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final theme = Theme.of(context);
+
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(
+          horizontal: PixelMetrics.space5,
+          vertical: PixelMetrics.space6,
+        ),
+        child: PixelBox(
+          raised: true,
+          padding: const EdgeInsets.all(PixelMetrics.space5),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  PixelIcon(PixelGlyph.star, color: palette.accent, scale: 2.2),
+                  const SizedBox(width: PixelMetrics.space3),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'WELCOME TO VEEA',
+                          style: TextStyle(
+                            fontFamily: 'Handjet',
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: palette.ink,
+                            letterSpacing: 1.0,
+                          ),
+                        ),
+                        Text(
+                          'RETRO VOCABULARY JOURNAL',
+                          style: TextStyle(
+                            fontFamily: 'Handjet',
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: palette.inkMuted,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: PixelMetrics.space4),
+              Container(height: 2, color: palette.border),
+              const SizedBox(height: PixelMetrics.space4),
+              Text(
+                'Notes for the English words you meet each day. Your notebook is empty right now. Load 5 curated starter words to immediately activate:',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  height: 1.3,
+                  color: palette.ink,
+                ),
+              ),
+              const SizedBox(height: PixelMetrics.space3),
+              const _FeatureBullet(
+                glyph: PixelGlyph.gamepad,
+                label: '4 Arcade Games (Snake, Invaders, Rush, Typer)',
+              ),
+              const SizedBox(height: PixelMetrics.space2),
+              const _FeatureBullet(
+                glyph: PixelGlyph.headphones,
+                label: 'Commute Audio Cassette Player',
+              ),
+              const SizedBox(height: PixelMetrics.space2),
+              const _FeatureBullet(
+                glyph: PixelGlyph.cards,
+                label: 'Spaced Repetition (SM-2) Review Queue',
+              ),
+              const SizedBox(height: PixelMetrics.space4),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: PixelMetrics.space3,
+                  vertical: PixelMetrics.space2,
+                ),
+                decoration: BoxDecoration(
+                  color: palette.border.withValues(alpha: 0.08),
+                  border: Border.all(
+                    color: palette.border.withValues(alpha: 0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  'Starter Pack: resilient • bottleneck • trade-off • serendipity • pragmatic',
+                  style: TextStyle(
+                    fontFamily: 'Handjet',
+                    fontSize: 14,
+                    color: palette.inkMuted,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: PixelMetrics.space5),
+              PixelButton(
+                label: _loading ? 'LOADING WORDS…' : 'LOAD 5 STARTER WORDS',
+                glyph: PixelGlyph.star,
+                filled: true,
+                expand: true,
+                onPressed: _loading
+                    ? null
+                    : () async {
+                        setState(() => _loading = true);
+                        try {
+                          await context
+                              .read<VocabularyProvider>()
+                              .loadStarterPack();
+                        } finally {
+                          if (mounted) setState(() => _loading = false);
+                        }
+                      },
+              ),
+              const SizedBox(height: PixelMetrics.space3),
+              PixelButton(
+                label: 'Add custom word instead',
+                glyph: PixelGlyph.plus,
+                expand: true,
+                onPressed: () => _open(context, const WordEditorScreen()),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FeatureBullet extends StatelessWidget {
+  const _FeatureBullet({required this.glyph, required this.label});
+
+  final PixelGlyph glyph;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Row(
+      children: [
+        PixelIcon(glyph, color: palette.accent, scale: 1.4),
+        const SizedBox(width: PixelMetrics.space2),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontFamily: 'Handjet',
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: palette.ink,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

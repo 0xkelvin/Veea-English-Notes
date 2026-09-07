@@ -71,7 +71,10 @@ class ArcadeCrtScreen extends StatelessWidget {
                     const SizedBox(width: 8),
                     Text(
                       '♥ ' * livesCount!,
-                      style: const TextStyle(color: Color(0xFFE53935), fontSize: 13),
+                      style: const TextStyle(
+                        color: Color(0xFFE53935),
+                        fontSize: 13,
+                      ),
                     ),
                   ],
                 ],

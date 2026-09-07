@@ -3,23 +3,26 @@ import 'package:flutter/services.dart';
 
 import '../../core/theme/pixel_metrics.dart';
 import '../../core/theme/pixel_palette.dart';
+import '../../models/part_of_speech.dart';
 import '../../services/context_wizard_service.dart';
 import 'pixel_box.dart';
 import 'pixel_button.dart';
 import 'pixel_icon.dart';
 
 /// 8-Bit Retro AI Context & Collocation Wizard Modal Sheet.
-class ContextWizardSheet extends StatelessWidget {
+class ContextWizardSheet extends StatefulWidget {
   const ContextWizardSheet({
     super.key,
     required this.word,
     this.meaning,
+    this.partOfSpeech,
     required this.onSelectSentence,
     required this.onAddTag,
   });
 
   final String word;
   final String? meaning;
+  final PartOfSpeech? partOfSpeech;
   final ValueChanged<String> onSelectSentence;
   final ValueChanged<String> onAddTag;
 
@@ -27,6 +30,7 @@ class ContextWizardSheet extends StatelessWidget {
     required BuildContext context,
     required String word,
     String? meaning,
+    PartOfSpeech? partOfSpeech,
     required ValueChanged<String> onSelectSentence,
     required ValueChanged<String> onAddTag,
   }) {
@@ -37,8 +41,32 @@ class ContextWizardSheet extends StatelessWidget {
       builder: (_) => ContextWizardSheet(
         word: word,
         meaning: meaning,
+        partOfSpeech: partOfSpeech,
         onSelectSentence: onSelectSentence,
         onAddTag: onAddTag,
+      ),
+    );
+  }
+
+  @override
+  State<ContextWizardSheet> createState() => _ContextWizardSheetState();
+}
+
+class _ContextWizardSheetState extends State<ContextWizardSheet> {
+  int _variation = 0;
+
+  void _shuffle() {
+    HapticFeedback.lightImpact();
+    setState(() {
+      _variation++;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Generated new sentence structures!',
+          style: TextStyle(fontFamily: 'Handjet'),
+        ),
+        duration: Duration(milliseconds: 900),
       ),
     );
   }
@@ -47,7 +75,12 @@ class ContextWizardSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final theme = Theme.of(context);
-    final result = ContextWizardService.generate(word, meaning: meaning);
+    final result = ContextWizardService.generate(
+      widget.word,
+      meaning: widget.meaning,
+      partOfSpeech: widget.partOfSpeech,
+      variation: _variation,
+    );
 
     return Container(
       constraints: BoxConstraints(
@@ -81,11 +114,14 @@ class ContextWizardSheet extends StatelessWidget {
                 children: [
                   PixelIcon(PixelGlyph.wand, color: palette.accent, scale: 2),
                   const SizedBox(width: PixelMetrics.space2),
-                  Text(
-                    'AI CONTEXT WIZARD',
-                    style: theme.textTheme.titleMedium,
-                  ),
+                  Text('AI CONTEXT WIZARD', style: theme.textTheme.titleMedium),
                   const Spacer(),
+                  PixelIconButton(
+                    glyph: PixelGlyph.shuffle,
+                    semanticLabel: 'Shuffle Sentences',
+                    onPressed: _shuffle,
+                  ),
+                  const SizedBox(width: PixelMetrics.space2),
                   PixelIconButton(
                     glyph: PixelGlyph.close,
                     semanticLabel: 'Close Wizard',
@@ -110,7 +146,7 @@ class ContextWizardSheet extends StatelessWidget {
                     child: Row(
                       children: [
                         Text(
-                          'WORD: ${word.toUpperCase()}',
+                          'WORD: ${widget.word.toUpperCase()}',
                           style: TextStyle(
                             fontFamily: 'Handjet',
                             fontSize: 18,
@@ -118,11 +154,37 @@ class ContextWizardSheet extends StatelessWidget {
                             color: palette.accent,
                           ),
                         ),
-                        if (meaning != null && meaning!.isNotEmpty) ...[
+                        if (result.partOfSpeech != null) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 1,
+                            ),
+                            decoration: BoxDecoration(
+                              color: palette.surface,
+                              border: Border.all(
+                                color: palette.accent,
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              result.partOfSpeech!.label.toUpperCase(),
+                              style: TextStyle(
+                                fontFamily: 'Handjet',
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: palette.accent,
+                              ),
+                            ),
+                          ),
+                        ],
+                        if (widget.meaning != null &&
+                            widget.meaning!.isNotEmpty) ...[
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              '($meaning)',
+                              '(${widget.meaning})',
                               style: TextStyle(
                                 fontFamily: 'Handjet',
                                 fontSize: 13,
@@ -139,20 +201,61 @@ class ContextWizardSheet extends StatelessWidget {
                   const SizedBox(height: PixelMetrics.space4),
 
                   // Section 1: Context Sentences
-                  Text(
-                    '1. REAL-WORLD CONTEXT SENTENCES (TAP TO INSERT)',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '1. REAL-WORLD CONTEXT SENTENCES (TAP TO INSERT)',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: _shuffle,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: palette.surface,
+                            border: Border.all(color: palette.border, width: 1),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              PixelIcon(
+                                PixelGlyph.shuffle,
+                                color: palette.accent,
+                                scale: 1.5,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'RE-ROLL',
+                                style: TextStyle(
+                                  fontFamily: 'Handjet',
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: palette.accent,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: PixelMetrics.space2),
 
                   for (final s in result.sentences) ...[
                     Padding(
-                      padding: const EdgeInsets.only(bottom: PixelMetrics.space2),
+                      padding: const EdgeInsets.only(
+                        bottom: PixelMetrics.space2,
+                      ),
                       child: GestureDetector(
                         onTap: () {
-                          onSelectSentence(s.sentence);
+                          widget.onSelectSentence(s.sentence);
                           Navigator.of(context).pop();
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
@@ -161,6 +264,19 @@ class ContextWizardSheet extends StatelessWidget {
                                 style: TextStyle(fontFamily: 'Handjet'),
                               ),
                               duration: Duration(seconds: 1),
+                            ),
+                          );
+                        },
+                        onLongPress: () {
+                          Clipboard.setData(ClipboardData(text: s.sentence));
+                          HapticFeedback.lightImpact();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Copied: "${s.sentence}"',
+                                style: const TextStyle(fontFamily: 'Handjet'),
+                              ),
+                              duration: const Duration(seconds: 1),
                             ),
                           );
                         },
@@ -181,7 +297,9 @@ class ContextWizardSheet extends StatelessWidget {
                                     decoration: BoxDecoration(
                                       color: palette.accent,
                                       border: Border.all(
-                                          color: palette.border, width: 1),
+                                        color: palette.border,
+                                        width: 1,
+                                      ),
                                     ),
                                     child: Text(
                                       s.domain,
@@ -193,6 +311,32 @@ class ContextWizardSheet extends StatelessWidget {
                                       ),
                                     ),
                                   ),
+                                  if (s.structureType != null) ...[
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                        vertical: 1,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: palette.surface,
+                                        border: Border.all(
+                                          color: palette.border.withValues(
+                                            alpha: 0.5,
+                                          ),
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        s.structureType!,
+                                        style: TextStyle(
+                                          fontFamily: 'Handjet',
+                                          fontSize: 9,
+                                          color: palette.inkMuted,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                   const Spacer(),
                                   Text(
                                     'TAP TO INSERT ↵',
@@ -236,7 +380,7 @@ class ContextWizardSheet extends StatelessWidget {
                       return GestureDetector(
                         onTap: () {
                           Clipboard.setData(ClipboardData(text: col));
-                          onAddTag(col);
+                          widget.onAddTag(col);
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
@@ -303,7 +447,7 @@ class ContextWizardSheet extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'vs ${n.synonym}:',
+                                '${n.synonym}:',
                                 style: TextStyle(
                                   fontFamily: 'Handjet',
                                   fontSize: 12,

@@ -26,10 +26,7 @@ class PetProvider extends ChangeNotifier {
         // Reset words fed today if date changed
         final todayKey = _todayKey();
         if (_pet.lastFedDateKey != todayKey) {
-          _pet = _pet.copyWith(
-            wordsFedToday: 0,
-            lastFedDateKey: todayKey,
-          );
+          _pet = _pet.copyWith(wordsFedToday: 0, lastFedDateKey: todayKey);
         }
       }
     } catch (e) {
@@ -51,7 +48,8 @@ class PetProvider extends ChangeNotifier {
     );
 
     if (_pet.level > prevLevel) {
-      _currentSpeech = '🎉 LEVEL UP! Now Lv. ${_pet.level} (${_pet.stage.displayName})!';
+      _currentSpeech =
+          '🎉 LEVEL UP! Now Lv. ${_pet.level} (${_pet.stage.displayName})!';
     } else {
       _currentSpeech = 'Yum! "$word" +15 XP! ✨';
     }

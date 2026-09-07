@@ -37,6 +37,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   int _hardCount = 0;
   int _goodCount = 0;
   int _easyCount = 0;
+  bool _isSubmitting = false;
 
   @override
   void initState() {
@@ -96,42 +97,49 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   Future<void> _rateCard(SrsRating rating) async {
-    if (!_isFlipped || _currentWord == null) return;
+    if (!_isFlipped || _currentWord == null || _isSubmitting) return;
+    setState(() => _isSubmitting = true);
 
     final word = _currentWord!;
     final provider = context.read<VocabularyProvider>();
 
-    // Update session metrics
-    switch (rating) {
-      case SrsRating.again:
-        _againCount++;
-        break;
-      case SrsRating.hard:
-        _hardCount++;
-        break;
-      case SrsRating.good:
-        _goodCount++;
-        break;
-      case SrsRating.easy:
-        _easyCount++;
-        break;
-    }
+    try {
+      // Update session metrics
+      switch (rating) {
+        case SrsRating.again:
+          _againCount++;
+          break;
+        case SrsRating.hard:
+          _hardCount++;
+          break;
+        case SrsRating.good:
+          _goodCount++;
+          break;
+        case SrsRating.easy:
+          _easyCount++;
+          break;
+      }
 
-    // Persist SM-2 schedule
-    await provider.recordSrsReview(wordId: word.id, rating: rating);
+      // Persist SM-2 schedule
+      await provider.recordSrsReview(wordId: word.id, rating: rating);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    if (_currentIndex + 1 < _queue.length) {
-      setState(() {
-        _currentIndex++;
-        _isFlipped = false;
-      });
-      _playCurrentWordAudio();
-    } else {
-      setState(() {
-        _isComplete = true;
-      });
+      if (_currentIndex + 1 < _queue.length) {
+        setState(() {
+          _currentIndex++;
+          _isFlipped = false;
+        });
+        _playCurrentWordAudio();
+      } else {
+        setState(() {
+          _isComplete = true;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
     }
   }
 
@@ -148,7 +156,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
         _playCurrentWordAudio();
       }
     } else {
-      if (key == LogicalKeyboardKey.digit1 || key == LogicalKeyboardKey.numpad1) {
+      if (key == LogicalKeyboardKey.digit1 ||
+          key == LogicalKeyboardKey.numpad1) {
         _rateCard(SrsRating.again);
       } else if (key == LogicalKeyboardKey.digit2 ||
           key == LogicalKeyboardKey.numpad2) {
@@ -201,7 +210,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
     return Container(
       padding: const EdgeInsets.symmetric(
-        horizontal: PixelMetrics.space4,
+        horizontal: PixelMetrics.space3,
         vertical: PixelMetrics.space2,
       ),
       decoration: BoxDecoration(
@@ -218,11 +227,15 @@ class _ReviewScreenState extends State<ReviewScreen> {
             onPressed: () => Navigator.of(context).pop(),
           ),
           const SizedBox(width: PixelMetrics.space2),
-          Text(
-            'SPACED REVIEW',
-            style: Theme.of(context).textTheme.titleMedium,
+          Expanded(
+            child: Text(
+              'SPACED REVIEW',
+              style: Theme.of(context).textTheme.titleMedium,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
           ),
-          const Spacer(),
+          const SizedBox(width: PixelMetrics.space2),
           if (!_isLoading && _queue.isNotEmpty && !_isComplete) ...[
             _buildProgressBar(context),
             const SizedBox(width: PixelMetrics.space2),
@@ -243,13 +256,16 @@ class _ReviewScreenState extends State<ReviewScreen> {
               vertical: 2,
             ),
             decoration: BoxDecoration(
-              border: Border.all(color: palette.border, width: PixelMetrics.border),
+              border: Border.all(
+                color: palette.border,
+                width: PixelMetrics.border,
+              ),
             ),
             child: Text(
               '🔥$streak',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.bold),
             ),
           ),
         ],
@@ -261,6 +277,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final palette = context.palette;
     final total = _queue.length;
     final current = _currentIndex + 1;
+    final numPips = total.clamp(1, 5);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -272,31 +289,25 @@ class _ReviewScreenState extends State<ReviewScreen> {
             fontWeight: FontWeight.bold,
           ),
         ),
-        const SizedBox(width: PixelMetrics.space2),
-        // Segmented 8-bit health / XP bar (max 10 blocks)
+        const SizedBox(width: PixelMetrics.space1),
+        // Segmented 8-bit health / XP bar (max 5 blocks)
         Row(
           mainAxisSize: MainAxisSize.min,
-          children: List.generate(
-            total.clamp(1, 10),
-            (i) {
-              final stepRatio = i / total.clamp(1, 10);
-              final progressRatio = current / total;
-              final isFilled = stepRatio < progressRatio;
+          children: List.generate(numPips, (i) {
+            final stepRatio = (i + 1) / numPips;
+            final progressRatio = current / total;
+            final isFilled = stepRatio <= progressRatio + 0.01;
 
-              return Container(
-                width: 6,
-                height: 10,
-                margin: const EdgeInsets.only(right: 2),
-                decoration: BoxDecoration(
-                  color: isFilled ? palette.accent : palette.paper,
-                  border: Border.all(
-                    color: palette.border,
-                    width: 1,
-                  ),
-                ),
-              );
-            },
-          ),
+            return Container(
+              width: 5,
+              height: 9,
+              margin: const EdgeInsets.only(right: 2),
+              decoration: BoxDecoration(
+                color: isFilled ? palette.accent : palette.paper,
+                border: Border.all(color: palette.border, width: 1),
+              ),
+            );
+          }),
         ),
       ],
     );
@@ -324,15 +335,18 @@ class _ReviewScreenState extends State<ReviewScreen> {
               padding: const EdgeInsets.all(PixelMetrics.space4),
               decoration: BoxDecoration(
                 color: palette.surface,
-                border: Border.all(color: palette.border, width: PixelMetrics.border),
+                border: Border.all(
+                  color: palette.border,
+                  width: PixelMetrics.border,
+                ),
               ),
               child: Column(
                 children: [
                   Text(
                     '★ ALL CAUGHT UP! ★',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: palette.accent,
-                    ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.titleMedium?.copyWith(color: palette.accent),
                   ),
                   const SizedBox(height: PixelMetrics.space3),
                   Text(
@@ -352,7 +366,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
               onPressed: () {
                 Navigator.of(context).pushReplacement(
                   PageRouteBuilder<void>(
-                    pageBuilder: (_, _, _) => const ReviewScreen(practiceAll: true),
+                    pageBuilder: (_, _, _) =>
+                        const ReviewScreen(practiceAll: true),
                     transitionDuration: Duration.zero,
                   ),
                 );
@@ -418,10 +433,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                           ),
                           decoration: BoxDecoration(
                             color: palette.paper,
-                            border: Border.all(
-                              color: palette.border,
-                              width: 1,
-                            ),
+                            border: Border.all(color: palette.border, width: 1),
                           ),
                           child: Text(
                             word.partOfSpeech!.short.toUpperCase(),
@@ -626,7 +638,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
                 subtitle: SrsRating.again.estimatedInterval,
                 borderColor: palette.danger,
                 textColor: palette.danger,
-                onPressed: () => _rateCard(SrsRating.again),
+                onPressed: _isSubmitting
+                    ? null
+                    : () => _rateCard(SrsRating.again),
               ),
             ),
             const SizedBox(width: PixelMetrics.space2),
@@ -637,7 +651,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
                 subtitle: SrsRating.hard.estimatedInterval,
                 borderColor: palette.inkFaint,
                 textColor: palette.inkMuted,
-                onPressed: () => _rateCard(SrsRating.hard),
+                onPressed: _isSubmitting
+                    ? null
+                    : () => _rateCard(SrsRating.hard),
               ),
             ),
           ],
@@ -652,7 +668,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
                 subtitle: SrsRating.good.estimatedInterval,
                 borderColor: palette.border,
                 textColor: palette.ink,
-                onPressed: () => _rateCard(SrsRating.good),
+                onPressed: _isSubmitting
+                    ? null
+                    : () => _rateCard(SrsRating.good),
               ),
             ),
             const SizedBox(width: PixelMetrics.space2),
@@ -664,7 +682,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
                 borderColor: palette.accent,
                 textColor: palette.onAccent,
                 fillColor: palette.accent,
-                onPressed: () => _rateCard(SrsRating.easy),
+                onPressed: _isSubmitting
+                    ? null
+                    : () => _rateCard(SrsRating.easy),
               ),
             ),
           ],
@@ -705,11 +725,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                   const SizedBox(height: PixelMetrics.space2),
                   _buildStatRow(context, 'ACCURACY RATE', '$accuracy%'),
                   const SizedBox(height: PixelMetrics.space2),
-                  _buildStatRow(
-                    context,
-                    'PERFECT RECALL',
-                    '$correct / $total',
-                  ),
+                  _buildStatRow(context, 'PERFECT RECALL', '$correct / $total'),
                   const SizedBox(height: PixelMetrics.space2),
                   _buildStatRow(
                     context,
@@ -772,7 +788,7 @@ class _RatingCardButton extends StatelessWidget {
     required this.borderColor,
     required this.textColor,
     this.fillColor,
-    required this.onPressed,
+    this.onPressed,
   });
 
   final String keyLabel;
@@ -781,7 +797,7 @@ class _RatingCardButton extends StatelessWidget {
   final Color borderColor;
   final Color textColor;
   final Color? fillColor;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -806,7 +822,10 @@ class _RatingCardButton extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 1,
+                  ),
                   decoration: BoxDecoration(
                     color: palette.paper,
                     border: Border.all(color: borderColor, width: 1),

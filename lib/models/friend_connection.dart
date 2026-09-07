@@ -103,13 +103,16 @@ class FriendConnection {
     'isOnline': isOnline,
   };
 
-  factory FriendConnection.fromJson(Map<String, dynamic> json) => FriendConnection(
-    id: json['id'] as String,
-    friendCode: json['friendCode'] as String,
-    name: json['name'] as String,
-    connectedAt: DateTime.tryParse(json['connectedAt'] as String? ?? '') ?? DateTime.now(),
-    duelScoreMe: json['duelScoreMe'] as int? ?? 0,
-    duelScoreThem: json['duelScoreThem'] as int? ?? 0,
-    isOnline: json['isOnline'] as bool? ?? true,
-  );
+  factory FriendConnection.fromJson(Map<String, dynamic> json) =>
+      FriendConnection(
+        id: json['id'] as String,
+        friendCode: json['friendCode'] as String,
+        name: json['name'] as String,
+        connectedAt:
+            DateTime.tryParse(json['connectedAt'] as String? ?? '') ??
+            DateTime.now(),
+        duelScoreMe: json['duelScoreMe'] as int? ?? 0,
+        duelScoreThem: json['duelScoreThem'] as int? ?? 0,
+        isOnline: json['isOnline'] as bool? ?? true,
+      );
 }

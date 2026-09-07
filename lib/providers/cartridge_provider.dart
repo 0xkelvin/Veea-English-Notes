@@ -27,6 +27,14 @@ class CartridgeProvider extends ChangeNotifier {
 
   List<Cartridge> get availableCartridges => CartridgesData.allCartridges;
 
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
   Future<void> _loadState() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -35,6 +43,7 @@ class CartridgeProvider extends ChangeNotifier {
     } catch (_) {
       // Graceful fallback for test or mock environments
     }
+    if (_disposed) return;
     _initialized = true;
     notifyListeners();
   }
@@ -103,8 +112,9 @@ class CartridgeProvider extends ChangeNotifier {
     );
 
     int removedCount = 0;
-    final cartridgeWordKeys =
-        cartridge.words.map((w) => w.word.toLowerCase()).toSet();
+    final cartridgeWordKeys = cartridge.words
+        .map((w) => w.word.toLowerCase())
+        .toSet();
 
     for (final w in vocabProvider.words.toList()) {
       if (cartridgeWordKeys.contains(w.word.toLowerCase()) &&

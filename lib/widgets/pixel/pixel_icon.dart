@@ -452,7 +452,6 @@ class PixelGlyph {
     '.#...#.',
   ]);
 
-
   static const food = PixelGlyph([
     '...##..',
     '..####.',
@@ -491,6 +490,16 @@ class PixelGlyph {
     '..###..',
     '#.....#',
     '##...##',
+  ]);
+
+  static const clipboard = PixelGlyph([
+    '..###..',
+    '.#...#.',
+    '#######',
+    '#.....#',
+    '#.###.#',
+    '#.....#',
+    '#######',
   ]);
 
   @override

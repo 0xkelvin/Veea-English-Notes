@@ -4,22 +4,27 @@ import 'package:veea_english_app/models/part_of_speech.dart';
 
 void main() {
   group('Cartridge Data & Models', () {
-    test('Silicon Valley Tech Cartridge contains curated modules and words', () {
-      final cartridge = CartridgesData.siliconValleyTech;
+    test(
+      'Silicon Valley Tech Cartridge contains curated modules and words',
+      () {
+        final cartridge = CartridgesData.siliconValleyTech;
 
-      expect(cartridge.id, 'silicon_valley_tech_vol1');
-      expect(cartridge.title, contains('SILICON VALLEY'));
-      expect(cartridge.words, isNotEmpty);
-      expect(cartridge.modules.length, 6);
+        expect(cartridge.id, 'silicon_valley_tech_vol1');
+        expect(cartridge.title, contains('SILICON VALLEY'));
+        expect(cartridge.words, isNotEmpty);
+        expect(cartridge.modules.length, 6);
 
-      // Verify word structure
-      final idempotent = cartridge.words.firstWhere((w) => w.word == 'idempotent');
-      expect(idempotent.partOfSpeech, PartOfSpeech.adjective);
-      expect(idempotent.prExample, contains('idempotent'));
-      expect(idempotent.standupExample, isNotEmpty);
-      expect(idempotent.collocations, isNotEmpty);
-      expect(idempotent.interviewNuance, isNotEmpty);
-    });
+        // Verify word structure
+        final idempotent = cartridge.words.firstWhere(
+          (w) => w.word == 'idempotent',
+        );
+        expect(idempotent.partOfSpeech, PartOfSpeech.adjective);
+        expect(idempotent.prExample, contains('idempotent'));
+        expect(idempotent.standupExample, isNotEmpty);
+        expect(idempotent.collocations, isNotEmpty);
+        expect(idempotent.interviewNuance, isNotEmpty);
+      },
+    );
 
     test('CartridgeWord converts to VocabularyWord correctly', () {
       final cartridge = CartridgesData.siliconValleyTech;

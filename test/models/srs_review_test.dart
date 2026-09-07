@@ -25,7 +25,10 @@ void main() {
         lapses: 0,
       );
 
-      final next = initial.calculateNext(rating: SrsRating.again, now: baseDate);
+      final next = initial.calculateNext(
+        rating: SrsRating.again,
+        now: baseDate,
+      );
       expect(next.repetitions, equals(0));
       expect(next.intervalDays, equals(1));
       expect(next.easeFactor, equals(2.3));
@@ -49,33 +52,36 @@ void main() {
       expect(next.nextReviewDate, equals('2026-08-24'));
     });
 
-    test('Rating Good follows standard progression: 1 -> 3 -> interval * easeFactor', () {
-      final rep0 = SrsReview.initial('word-1', now: baseDate);
+    test(
+      'Rating Good follows standard progression: 1 -> 3 -> interval * easeFactor',
+      () {
+        final rep0 = SrsReview.initial('word-1', now: baseDate);
 
-      // First review: 1 day
-      final rep1 = rep0.calculateNext(rating: SrsRating.good, now: baseDate);
-      expect(rep1.repetitions, equals(1));
-      expect(rep1.intervalDays, equals(1));
-      expect(rep1.nextReviewDate, equals('2026-08-19'));
+        // First review: 1 day
+        final rep1 = rep0.calculateNext(rating: SrsRating.good, now: baseDate);
+        expect(rep1.repetitions, equals(1));
+        expect(rep1.intervalDays, equals(1));
+        expect(rep1.nextReviewDate, equals('2026-08-19'));
 
-      // Second review: 3 days
-      final rep2 = rep1.calculateNext(
-        rating: SrsRating.good,
-        now: DateTime(2026, 8, 19),
-      );
-      expect(rep2.repetitions, equals(2));
-      expect(rep2.intervalDays, equals(3));
-      expect(rep2.nextReviewDate, equals('2026-08-22'));
+        // Second review: 3 days
+        final rep2 = rep1.calculateNext(
+          rating: SrsRating.good,
+          now: DateTime(2026, 8, 19),
+        );
+        expect(rep2.repetitions, equals(2));
+        expect(rep2.intervalDays, equals(3));
+        expect(rep2.nextReviewDate, equals('2026-08-22'));
 
-      // Third review: 3 * 2.5 = 7.5 -> 8 days
-      final rep3 = rep2.calculateNext(
-        rating: SrsRating.good,
-        now: DateTime(2026, 8, 22),
-      );
-      expect(rep3.repetitions, equals(3));
-      expect(rep3.intervalDays, equals(8));
-      expect(rep3.nextReviewDate, equals('2026-08-30'));
-    });
+        // Third review: 3 * 2.5 = 7.5 -> 8 days
+        final rep3 = rep2.calculateNext(
+          rating: SrsRating.good,
+          now: DateTime(2026, 8, 22),
+        );
+        expect(rep3.repetitions, equals(3));
+        expect(rep3.intervalDays, equals(8));
+        expect(rep3.nextReviewDate, equals('2026-08-30'));
+      },
+    );
 
     test('Rating Easy jumps intervals faster and boosts ease factor', () {
       final rep0 = SrsReview.initial('word-1', now: baseDate);

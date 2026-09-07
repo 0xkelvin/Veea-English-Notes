@@ -181,12 +181,13 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
     final random = Random();
     final target = _deck[random.nextInt(_deck.length)];
 
-    final distractors = _deck
-        .where((w) => w.id != target.id)
-        .map((w) => w.word)
-        .toSet()
-        .toList()
-      ..shuffle();
+    final distractors =
+        _deck
+            .where((w) => w.id != target.id)
+            .map((w) => w.word)
+            .toSet()
+            .toList()
+          ..shuffle();
 
     final words = <({String word, bool isCorrect})>[
       (word: target.word, isCorrect: true),
@@ -231,7 +232,12 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
     });
   }
 
-  void _spawnExplosion(double x, double y, {required bool isTarget, required String text}) {
+  void _spawnExplosion(
+    double x,
+    double y, {
+    required bool isTarget,
+    required String text,
+  }) {
     final random = Random();
     final palette = context.palette;
     final colors = isTarget
@@ -268,13 +274,7 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
   }
 
   void _spawnFallingMeaning(double x, double y, String meaning) {
-    _fallingMeanings.add(
-      FallingMeaningBadge(
-        x: x,
-        y: y,
-        meaning: meaning,
-      ),
-    );
+    _fallingMeanings.add(FallingMeaningBadge(x: x, y: y, meaning: meaning));
   }
 
   void _spawnCannonCatastrophe(double x, double y) {
@@ -526,7 +526,10 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
             onPressed: () => Navigator.of(context).pop(),
           ),
           const SizedBox(width: PixelMetrics.space2),
-          Text('VOCAB INVADERS', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            'VOCAB INVADERS',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const Spacer(),
           Row(
             children: List.generate(3, (i) {
@@ -544,9 +547,9 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
           const SizedBox(width: PixelMetrics.space3),
           Text(
             'SCORE: $_score',
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.bold),
           ),
         ],
       ),
@@ -569,7 +572,10 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
           ),
           decoration: BoxDecoration(
             color: palette.surface,
-            border: Border.all(color: palette.border, width: PixelMetrics.border),
+            border: Border.all(
+              color: palette.border,
+              width: PixelMetrics.border,
+            ),
           ),
           child: Row(
             children: [
@@ -595,7 +601,10 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
               ),
               if (_combo > 1)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: palette.danger,
                     border: Border.all(color: palette.border, width: 1),
@@ -615,13 +624,18 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
         // Space Sector Arena with Screen Shake
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: PixelMetrics.space3),
+            padding: const EdgeInsets.symmetric(
+              horizontal: PixelMetrics.space3,
+            ),
             child: Transform.translate(
               offset: Offset(_screenShakeX, _screenShakeY),
               child: Container(
                 decoration: BoxDecoration(
                   color: palette.surface,
-                  border: Border.all(color: palette.border, width: PixelMetrics.border),
+                  border: Border.all(
+                    color: palette.border,
+                    width: PixelMetrics.border,
+                  ),
                 ),
                 child: LayoutBuilder(
                   builder: (context, constraints) {
@@ -633,7 +647,8 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
                       onHorizontalDragUpdate: (details) {
                         if (!_isPlayerDying) {
                           setState(() {
-                            _cannonX = (_cannonX + (details.delta.dx / w)).clamp(0.08, 0.92);
+                            _cannonX = (_cannonX + (details.delta.dx / w))
+                                .clamp(0.08, 0.92);
                           });
                         }
                       },
@@ -673,7 +688,10 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
                                     ),
                                     decoration: BoxDecoration(
                                       color: palette.paper,
-                                      border: Border.all(color: palette.border, width: 1),
+                                      border: Border.all(
+                                        color: palette.border,
+                                        width: 1,
+                                      ),
                                     ),
                                     child: Text(
                                       alien.word.toUpperCase(),
@@ -738,10 +756,15 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
                                   ),
                                   decoration: BoxDecoration(
                                     color: palette.paper,
-                                    border: Border.all(color: s.color, width: 1.5),
+                                    border: Border.all(
+                                      color: s.color,
+                                      width: 1.5,
+                                    ),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: palette.border.withValues(alpha: 0.3),
+                                        color: palette.border.withValues(
+                                          alpha: 0.3,
+                                        ),
                                         offset: const Offset(1, 1),
                                         blurRadius: 0,
                                       ),
@@ -781,7 +804,9 @@ class _VocabInvadersGameState extends State<VocabInvadersGame> {
                                     ),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: palette.accent.withValues(alpha: 0.3),
+                                        color: palette.accent.withValues(
+                                          alpha: 0.3,
+                                        ),
                                         offset: const Offset(1, 2),
                                         blurRadius: 0,
                                       ),
@@ -1002,7 +1027,10 @@ class _ArcadeTouchButtonState extends State<_ArcadeTouchButton> {
           height: 48,
           decoration: BoxDecoration(
             color: _pressed ? palette.accent : palette.surface,
-            border: Border.all(color: palette.border, width: PixelMetrics.border),
+            border: Border.all(
+              color: palette.border,
+              width: PixelMetrics.border,
+            ),
             boxShadow: _pressed
                 ? []
                 : [
@@ -1092,11 +1120,7 @@ class _ArcadeFireButtonState extends State<_ArcadeFireButton> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            PixelIcon(
-              widget.glyph,
-              color: Colors.white,
-              scale: 2.0,
-            ),
+            PixelIcon(widget.glyph, color: Colors.white, scale: 2.0),
             const SizedBox(width: 8),
             Text(
               widget.label,

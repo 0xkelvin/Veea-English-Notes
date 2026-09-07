@@ -143,6 +143,46 @@ void main() {
       expect(auth.isSignedIn, isFalse);
       expect(auth.lastError, contains('password'));
     });
+
+    test(
+      'signing in with a different account clears previous local data and resets cursor',
+      () async {
+        // Previous session account was alice@example.com
+        tokens.lastAccount = 'alice@example.com';
+        await repo.insert(
+          VocabularyWord.create(
+            id: 'alice-w1',
+            word: 'confidential',
+            meaning: 'bí mật',
+            date: '2026-08-18',
+            now: today,
+          ),
+        );
+        expect((await repo.recentWords()).length, 1);
+
+        final auth = providerWith(
+          MockClient(
+            (_) async => ok({
+              'data': {
+                'access_token': 'new-access',
+                'refresh_token': 'new-refresh',
+              },
+            }),
+          ),
+        );
+
+        // Bob signs in
+        final okLogin = await auth.signIn(
+          identifier: 'bob@example.com',
+          password: 'password123',
+        );
+        expect(okLogin, isTrue);
+
+        // Previous user's records must have been wiped
+        expect(await repo.recentWords(), isEmpty);
+        expect(await tokens.readLastAccount(), 'bob@example.com');
+      },
+    );
   });
 
   group('register', () {

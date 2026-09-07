@@ -135,12 +135,13 @@ class _WordRushGameState extends State<WordRushGame> {
     final random = math.Random();
     final target = _deck[random.nextInt(_deck.length)];
 
-    final distractors = _deck
-        .where((w) => w.id != target.id)
-        .map((w) => w.meaning)
-        .toSet()
-        .toList()
-      ..shuffle();
+    final distractors =
+        _deck
+            .where((w) => w.id != target.id)
+            .map((w) => w.meaning)
+            .toSet()
+            .toList()
+          ..shuffle();
 
     final choices = <String>[target.meaning];
     for (var i = 0; i < 3 && i < distractors.length; i++) {
@@ -168,10 +169,7 @@ class _WordRushGameState extends State<WordRushGame> {
 
       _speakWord(_currentWord!.word);
       _fallingMeanings.add(
-        RushFallingMeaning(
-          meaning: _currentWord!.meaning,
-          y: 0.35,
-        ),
+        RushFallingMeaning(meaning: _currentWord!.meaning, y: 0.35),
       );
     } else {
       _combo = 1;
@@ -383,10 +381,7 @@ class _WordRushGameState extends State<WordRushGame> {
                   ),
                   decoration: BoxDecoration(
                     color: palette.paper,
-                    border: Border.all(
-                      color: palette.accent,
-                      width: 2,
-                    ),
+                    border: Border.all(color: palette.accent, width: 2),
                     boxShadow: [
                       BoxShadow(
                         color: palette.accent.withValues(alpha: 0.4),
@@ -454,8 +449,10 @@ class _WordRushGameState extends State<WordRushGame> {
                 children: [
                   Text('ACCURACY', style: theme.textTheme.labelSmall),
                   const Spacer(),
-                  Text('$accuracy% ($_correctCount/$_totalAnswered)',
-                      style: theme.textTheme.titleMedium),
+                  Text(
+                    '$accuracy% ($_correctCount/$_totalAnswered)',
+                    style: theme.textTheme.titleMedium,
+                  ),
                 ],
               ),
               const SizedBox(height: PixelMetrics.space2),

@@ -280,7 +280,10 @@ class _PixelTyperGameState extends State<PixelTyperGame> {
 
   void _startGameLoop() {
     _gameLoop?.cancel();
-    _gameLoop = Timer.periodic(const Duration(milliseconds: 50), (_) => _tick());
+    _gameLoop = Timer.periodic(
+      const Duration(milliseconds: 50),
+      (_) => _tick(),
+    );
   }
 
   /// How many targets may descend at once, and how fast, at the current wave.
@@ -577,7 +580,9 @@ class _PixelTyperGameState extends State<PixelTyperGame> {
     }
 
     final char = event.character?.toLowerCase();
-    if (char != null && char.length == 1 && RegExp(r'[a-z0-9]').hasMatch(char)) {
+    if (char != null &&
+        char.length == 1 &&
+        RegExp(r'[a-z0-9]').hasMatch(char)) {
       _typeLetter(char);
     }
   }

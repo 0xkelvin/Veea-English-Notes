@@ -130,8 +130,10 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
                   ),
                   const SizedBox(width: PixelMetrics.space2),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: palette.accent,
                       border: Border.all(
@@ -184,7 +186,8 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
                       word: currentWord.word,
                       ipa: currentWord.pronunciation != null
                           ? PronunciationService.format(
-                              currentWord.pronunciation!)
+                              currentWord.pronunciation!,
+                            )
                           : '',
                       partOfSpeech: currentWord.partOfSpeech?.short ?? '',
                       meaning: currentWord.meaning,
@@ -288,10 +291,7 @@ class _TapeSelectorStrip extends StatelessWidget {
               ],
             ),
           ),
-          PixelButton(
-            label: 'CHANGE TAPE ⏏️',
-            onPressed: onOpenSelector,
-          ),
+          PixelButton(label: 'CHANGE TAPE ⏏️', onPressed: onOpenSelector),
         ],
       ),
     );
@@ -400,8 +400,8 @@ class _RetroCassetteWidget extends StatelessWidget {
                           color: index > 4
                               ? const Color(0xFFE53935)
                               : (isPlaying
-                                  ? const Color(0xFFCBE32B)
-                                  : const Color(0xFF555A48)),
+                                    ? const Color(0xFFCBE32B)
+                                    : const Color(0xFF555A48)),
                         ),
                       ),
                     ),
@@ -598,8 +598,10 @@ class _PlaybackSettingsSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('COMMUTE PACING & AUDIO MODES',
-              style: theme.textTheme.titleSmall),
+          Text(
+            'COMMUTE PACING & AUDIO MODES',
+            style: theme.textTheme.titleSmall,
+          ),
           const SizedBox(height: PixelMetrics.space3),
 
           // Recall Pause Slider
@@ -619,7 +621,9 @@ class _PlaybackSettingsSection extends StatelessWidget {
                       onTap: () => commuteService.setRecallPauseSeconds(sec),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: active ? palette.accent : palette.surface,
                           border: Border.all(color: palette.border, width: 1),
@@ -660,7 +664,9 @@ class _PlaybackSettingsSection extends StatelessWidget {
                       onTap: () => commuteService.setRepeatCount(count),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: active ? palette.accent : palette.surface,
                           border: Border.all(color: palette.border, width: 1),
@@ -688,25 +694,25 @@ class _PlaybackSettingsSection extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'VOICE (ENGLISH ONLY):',
-                style: theme.textTheme.labelSmall,
-              ),
+              Text('VOICE (ENGLISH ONLY):', style: theme.textTheme.labelSmall),
               Row(
                 children: [
                   _AudioModePill(
                     label: 'WORD ONLY',
                     active: commuteService.mode == CommutePlaybackMode.wordOnly,
-                    onTap: () => commuteService
-                        .setPlaybackMode(CommutePlaybackMode.wordOnly),
+                    onTap: () => commuteService.setPlaybackMode(
+                      CommutePlaybackMode.wordOnly,
+                    ),
                   ),
                   const SizedBox(width: 4),
                   _AudioModePill(
                     label: 'WORD + EXAMPLE',
-                    active: commuteService.mode ==
+                    active:
+                        commuteService.mode ==
                         CommutePlaybackMode.wordAndExample,
-                    onTap: () => commuteService
-                        .setPlaybackMode(CommutePlaybackMode.wordAndExample),
+                    onTap: () => commuteService.setPlaybackMode(
+                      CommutePlaybackMode.wordAndExample,
+                    ),
                   ),
                 ],
               ),

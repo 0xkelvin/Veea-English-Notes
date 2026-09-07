@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../arcade_sdk/arcade_sdk.dart';
+import '../core/config/app_config.dart';
 import '../core/theme/pixel_metrics.dart';
 import '../core/theme/pixel_palette.dart';
 import '../widgets/pixel/pixel_box.dart';
@@ -95,8 +96,11 @@ class ArcadeScreen extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          PixelIcon(PixelGlyph.gamepad,
-                              color: palette.accent, scale: 1.2),
+                          PixelIcon(
+                            PixelGlyph.gamepad,
+                            color: palette.accent,
+                            scale: 1.2,
+                          ),
                           const SizedBox(width: 3),
                           Text(
                             'CARTRIDGES',
@@ -137,25 +141,26 @@ class ArcadeScreen extends StatelessWidget {
             ),
 
             // 2P Game Link Duels Banner
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                PixelMetrics.space4,
-                PixelMetrics.space3,
-                PixelMetrics.space4,
-                0,
+            if (AppConfig.isFriendDuelsEnabled)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  PixelMetrics.space4,
+                  PixelMetrics.space3,
+                  PixelMetrics.space4,
+                  0,
+                ),
+                child: _PixelLinkDuelBanner(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      PageRouteBuilder<void>(
+                        pageBuilder: (_, _, _) => const PixelLinkScreen(),
+                        transitionDuration: Duration.zero,
+                        reverseTransitionDuration: Duration.zero,
+                      ),
+                    );
+                  },
+                ),
               ),
-              child: _PixelLinkDuelBanner(
-                onTap: () {
-                  Navigator.of(context).push(
-                    PageRouteBuilder<void>(
-                      pageBuilder: (_, _, _) => const PixelLinkScreen(),
-                      transitionDuration: Duration.zero,
-                      reverseTransitionDuration: Duration.zero,
-                    ),
-                  );
-                },
-              ),
-            ),
 
             // Game Cards List
             Expanded(
@@ -214,7 +219,11 @@ class _PixelLinkDuelBanner extends StatelessWidget {
                   height: 42,
                   color: palette.accent.withValues(alpha: 0.15),
                   alignment: Alignment.center,
-                  child: PixelIcon(PixelGlyph.link, color: palette.accent, scale: 2.2),
+                  child: PixelIcon(
+                    PixelGlyph.link,
+                    color: palette.accent,
+                    scale: 2.2,
+                  ),
                 ),
                 const SizedBox(width: PixelMetrics.space3),
                 Expanded(
@@ -224,7 +233,10 @@ class _PixelLinkDuelBanner extends StatelessWidget {
                       Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 1,
+                            ),
                             color: palette.accent,
                             child: Text(
                               '2P VERSUS',
@@ -260,10 +272,7 @@ class _PixelLinkDuelBanner extends StatelessWidget {
                     ],
                   ),
                 ),
-                PixelButton(
-                  label: 'DUEL ⚡',
-                  onPressed: onTap,
-                ),
+                PixelButton(label: 'DUEL ⚡', onPressed: onTap),
               ],
             ),
           ),
@@ -274,10 +283,7 @@ class _PixelLinkDuelBanner extends StatelessWidget {
 }
 
 class _GameCabinetCard extends StatelessWidget {
-  const _GameCabinetCard({
-    required this.manifest,
-    required this.onPlay,
-  });
+  const _GameCabinetCard({required this.manifest, required this.onPlay});
 
   final ArcadeGameManifest manifest;
   final VoidCallback onPlay;
@@ -371,10 +377,7 @@ class _GameCabinetCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: PixelMetrics.space3),
-          Text(
-            manifest.tagline,
-            style: theme.textTheme.bodyMedium,
-          ),
+          Text(manifest.tagline, style: theme.textTheme.bodyMedium),
           const SizedBox(height: PixelMetrics.space3),
           PixelButton(
             label: 'Play Game',

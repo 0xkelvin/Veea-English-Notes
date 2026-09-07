@@ -30,7 +30,8 @@ class ArcadeDefaults {
       ArcadeGameManifest(
         id: 'vocab_snake',
         title: 'VOCAB SNAKE',
-        tagline: 'Slither through the grid and devour pellets of matching words.',
+        tagline:
+            'Slither through the grid and devour pellets of matching words.',
         author: '@veea_team',
         version: '1.0.0',
         glyph: PixelGlyph.target,
@@ -71,7 +72,8 @@ class ArcadeDefaults {
       ArcadeGameManifest(
         id: 'starter_template',
         title: 'COMMUNITY MATCH',
-        tagline: 'SDK starter template: tap the right definition and earn streak XP.',
+        tagline:
+            'SDK starter template: tap the right definition and earn streak XP.',
         author: '@community_dev',
         version: '1.0.0',
         glyph: PixelGlyph.cards,

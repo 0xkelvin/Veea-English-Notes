@@ -30,10 +30,13 @@ void main() {
     await service.init();
   });
 
-  test('FriendChallengeService initializes profile with friend code and default friends', () {
-    expect(service.profile.friendCode.startsWith('VEEA-'), isTrue);
-    expect(service.friends, isNotEmpty);
-  });
+  test(
+    'FriendChallengeService initializes profile with friend code and default friends',
+    () {
+      expect(service.profile.friendCode.startsWith('VEEA-'), isTrue);
+      expect(service.friends, isNotEmpty);
+    },
+  );
 
   test('addFriend creates a new connection with friend code', () async {
     final friend = await service.addFriend('VEEA-TEST', name: 'Bob');
@@ -42,33 +45,39 @@ void main() {
     expect(service.friends.any((f) => f.friendCode == 'VEEA-TEST'), isTrue);
   });
 
-  test('createChallenge creates VN to EN challenge with 4 shuffled options', () {
-    final friend = service.friends.first;
-    final challenge = service.createChallenge(
-      friend: friend,
-      word: sampleWord,
-      mode: ChallengeMode.vnToEn,
-    );
+  test(
+    'createChallenge creates VN to EN challenge with 4 shuffled options',
+    () {
+      final friend = service.friends.first;
+      final challenge = service.createChallenge(
+        friend: friend,
+        word: sampleWord,
+        mode: ChallengeMode.vnToEn,
+      );
 
-    expect(challenge.mode, ChallengeMode.vnToEn);
-    expect(challenge.correctAnswer, 'resilient');
-    expect(challenge.options.length, 4);
-    expect(challenge.options, contains('resilient'));
-  });
+      expect(challenge.mode, ChallengeMode.vnToEn);
+      expect(challenge.correctAnswer, 'resilient');
+      expect(challenge.options.length, 4);
+      expect(challenge.options, contains('resilient'));
+    },
+  );
 
-  test('createChallenge creates EN to VN challenge with 4 shuffled options', () {
-    final friend = service.friends.first;
-    final challenge = service.createChallenge(
-      friend: friend,
-      word: sampleWord,
-      mode: ChallengeMode.enToVn,
-    );
+  test(
+    'createChallenge creates EN to VN challenge with 4 shuffled options',
+    () {
+      final friend = service.friends.first;
+      final challenge = service.createChallenge(
+        friend: friend,
+        word: sampleWord,
+        mode: ChallengeMode.enToVn,
+      );
 
-    expect(challenge.mode, ChallengeMode.enToVn);
-    expect(challenge.correctAnswer, 'kiên cường');
-    expect(challenge.options.length, 4);
-    expect(challenge.options, contains('kiên cường'));
-  });
+      expect(challenge.mode, ChallengeMode.enToVn);
+      expect(challenge.correctAnswer, 'kiên cường');
+      expect(challenge.options.length, 4);
+      expect(challenge.options, contains('kiên cường'));
+    },
+  );
 
   test('submitResponse scores correctly and updates duel stats', () async {
     final friend = service.friends.first;

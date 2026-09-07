@@ -51,7 +51,10 @@ void main() {
     });
 
     test('reveals every letter once the whole word is typed', () {
-      final slots = typerDisplaySlots('ship it', typerCanonical('ship it').length);
+      final slots = typerDisplaySlots(
+        'ship it',
+        typerCanonical('ship it').length,
+      );
       expect(slots.every((s) => s.isRevealed), isTrue);
     });
   });

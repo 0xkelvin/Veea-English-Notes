@@ -36,13 +36,12 @@ void main() {
       ChangeNotifierProvider.value(value: vocabProvider),
       ChangeNotifierProvider(create: (_) => TtsService()),
     ],
-    child: MaterialApp(
-      theme: PixelTheme.light(),
-      home: child,
-    ),
+    child: MaterialApp(theme: PixelTheme.light(), home: child),
   );
 
-  testWidgets('HomeScreen renders Concept 3 Dual-Bar layout cleanly', (tester) async {
+  testWidgets('HomeScreen renders Concept 3 Dual-Bar layout cleanly', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(800, 1200);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -52,7 +51,10 @@ void main() {
 
     // Top Bar verification (Minimal & focused)
     expect(find.text('VEEA // JOURNAL'), findsOneWidget);
-    expect(find.byTooltip('Search all words'), findsNothing); // Using semanticLabels
+    expect(
+      find.byTooltip('Search all words'),
+      findsNothing,
+    ); // Using semanticLabels
     expect(find.bySemanticsLabel('Search all words'), findsOneWidget);
     expect(find.bySemanticsLabel('Pixel Lens OCR Scanner'), findsOneWidget);
     expect(find.bySemanticsLabel('Settings'), findsOneWidget);

@@ -1,10 +1,4 @@
-enum PetMood {
-  ecstatic,
-  happy,
-  studying,
-  hungry,
-  sleepy,
-}
+enum PetMood { ecstatic, happy, studying, hungry, sleepy }
 
 enum PetStage {
   egg(1, 'EGG SPROUT', 'Lv. 1-2'),
@@ -71,11 +65,11 @@ class PetCompanion {
   }
 
   Map<String, dynamic> toJson() => {
-        'name': name,
-        'xp': xp,
-        'wordsFedToday': wordsFedToday,
-        'lastFedDateKey': lastFedDateKey,
-      };
+    'name': name,
+    'xp': xp,
+    'wordsFedToday': wordsFedToday,
+    'lastFedDateKey': lastFedDateKey,
+  };
 
   factory PetCompanion.fromJson(Map<String, dynamic> json) {
     return PetCompanion(

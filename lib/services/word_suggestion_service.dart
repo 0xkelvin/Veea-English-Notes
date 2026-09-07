@@ -27,6 +27,9 @@ class WordSuggestion {
 class WordSuggestionService {
   static final Map<String, WordSuggestion> _cache = {};
 
+  /// Clears in-memory suggestion cache (useful in tests and when data changes).
+  static void clearCache() => _cache.clear();
+
   /// Fast synchronous lookup (cache -> user notes -> career cartridges -> offline dictionary -> heuristics).
   static WordSuggestion? suggestFast(
     String rawWord, {
@@ -98,12 +101,17 @@ class WordSuggestionService {
     return null;
   }
 
-  /// Full async suggestion: checks local sources, and if meaning is missing,
-  /// fetches online translation with automatic POS detection.
+  /// Flag for querying remote translation endpoint when meaning is missing from local dictionary.
+  /// Enabled by default so that users get Vietnamese meaning suggestions as words are typed.
+  static bool allowOnlineTranslation = true;
+
+  /// Full async suggestion: checks local sources, and if meaning is missing
+  /// and online translation is enabled/allowed, queries online dictionary.
   static Future<WordSuggestion?> suggest(
     String rawWord, {
     List<VocabularyWord>? userWords,
     http.Client? client,
+    bool? allowOnline,
   }) async {
     final clean = rawWord.trim().toLowerCase();
     if (clean.isEmpty || clean.length < 2) return null;
@@ -113,17 +121,31 @@ class WordSuggestionService {
       return local;
     }
 
-    // Online translation lookup
-    try {
-      final httpClient = client ?? http.Client();
-      final uri = Uri.parse(
-        'https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=vi&dt=t&dt=bd&q=${Uri.encodeComponent(clean)}',
-      );
-      final response = await httpClient.get(uri).timeout(
-        const Duration(seconds: 3),
-      );
+    final shouldQueryOnline = allowOnline ?? allowOnlineTranslation;
+    if (!shouldQueryOnline) {
+      return local;
+    }
 
-      if (response.statusCode == 200) {
+    // Online translation lookup with closed client guard
+    final httpClient = client ?? http.Client();
+    try {
+      // 1. Primary: Google Translate Dictionary endpoint with dict-chrome-ex client
+      final uri = Uri.parse(
+        'https://translate.googleapis.com/translate_a/single?client=dict-chrome-ex&sl=en&tl=vi&dt=t&dt=bd&q=${Uri.encodeComponent(clean)}',
+      );
+      final response = await httpClient
+          .get(
+            uri,
+            headers: const {
+              'User-Agent':
+                  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+              'Accept': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 3));
+
+      if (response.statusCode == 200 &&
+          !response.body.trimLeft().startsWith('<')) {
         final dynamic data = jsonDecode(response.body);
         String? primaryMeaning;
         PartOfSpeech? pos;
@@ -148,9 +170,11 @@ class WordSuggestionService {
             if (firstEntry.length > 1 && firstEntry[1] is List) {
               final alts = (firstEntry[1] as List)
                   .map((e) => e.toString().trim())
-                  .where((e) =>
-                      e.isNotEmpty &&
-                      e.toLowerCase() != primaryMeaning?.toLowerCase())
+                  .where(
+                    (e) =>
+                        e.isNotEmpty &&
+                        e.toLowerCase() != primaryMeaning?.toLowerCase(),
+                  )
                   .toList();
               if (alts.isNotEmpty && primaryMeaning != null) {
                 primaryMeaning = '$primaryMeaning, ${alts.first}';
@@ -173,7 +197,51 @@ class WordSuggestionService {
         }
       }
     } catch (_) {
-      // Fallback cleanly on network timeout
+      // Continue to secondary translation provider
+    }
+
+    // 2. Secondary fallback: MyMemory Translation API
+    try {
+      final fallbackUri = Uri.parse(
+        'https://api.mymemory.translated.net/get?q=${Uri.encodeComponent(clean)}&langpair=en|vi',
+      );
+      final fallbackResponse = await httpClient
+          .get(
+            fallbackUri,
+            headers: const {
+              'User-Agent':
+                  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+              'Accept': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 3));
+
+      if (fallbackResponse.statusCode == 200) {
+        final dynamic data = jsonDecode(fallbackResponse.body);
+        if (data is Map && data['responseData'] is Map) {
+          final translated = data['responseData']['translatedText']
+              ?.toString()
+              .trim();
+          if (translated != null &&
+              translated.isNotEmpty &&
+              translated.toLowerCase() != clean) {
+            final res = WordSuggestion(
+              word: clean,
+              meaning: translated,
+              partOfSpeech: local?.partOfSpeech ?? detectPartOfSpeech(clean),
+              source: 'Dictionary',
+            );
+            _cache[clean] = res;
+            return res;
+          }
+        }
+      }
+    } catch (_) {
+      // Fallback cleanly on network timeout or error
+    } finally {
+      if (client == null) {
+        httpClient.close();
+      }
     }
 
     return local;
@@ -275,6 +343,15 @@ class WordSuggestionService {
 
   static final Map<String, _DictEntry> _offlineDict = {
     // --- TECH & PRODUCT ESSENTIALS ---
+    'option': _DictEntry('lựa chọn, tùy chọn', PartOfSpeech.noun),
+    'choice': _DictEntry('sự lựa chọn, quyền chọn', PartOfSpeech.noun),
+    'choose': _DictEntry('chọn lựa, quyết định chọn', PartOfSpeech.verb),
+    'select': _DictEntry('lựa chọn, tuyển chọn', PartOfSpeech.verb),
+    'setting': _DictEntry('cài đặt, thiết lập cấu hình', PartOfSpeech.noun),
+    'custom': _DictEntry('tùy chỉnh, theo yêu cầu', PartOfSpeech.adjective),
+    'default': _DictEntry('mặc định ban đầu', PartOfSpeech.noun),
+    'target': _DictEntry('mục tiêu, đối tượng hướng tới', PartOfSpeech.noun),
+    'source': _DictEntry('nguồn gốc, điểm xuất phát', PartOfSpeech.noun),
     'solution': _DictEntry('giải pháp, cách giải quyết', PartOfSpeech.noun),
     'problem': _DictEntry('vấn đề, khó khăn cần giải quyết', PartOfSpeech.noun),
     'issue': _DictEntry('vấn đề, sự cố kỹ thuật', PartOfSpeech.noun),
@@ -297,15 +374,30 @@ class WordSuggestionService {
     'analysis': _DictEntry('sự phân tích, nghiên cứu', PartOfSpeech.noun),
     'design': _DictEntry('thiết kế, kiến trúc giao diện', PartOfSpeech.noun),
     'development': _DictEntry('sự phát triển, lập trình', PartOfSpeech.noun),
-    'requirement': _DictEntry('yêu cầu, điều kiện tiên quyết', PartOfSpeech.noun),
-    'environment': _DictEntry('môi trường (máy chủ, hệ thống)', PartOfSpeech.noun),
+    'requirement': _DictEntry(
+      'yêu cầu, điều kiện tiên quyết',
+      PartOfSpeech.noun,
+    ),
+    'environment': _DictEntry(
+      'môi trường (máy chủ, hệ thống)',
+      PartOfSpeech.noun,
+    ),
     'management': _DictEntry('sự quản lý, ban quản lý', PartOfSpeech.noun),
     'resource': _DictEntry('tài nguyên, nguồn lực', PartOfSpeech.noun),
-    'communication': _DictEntry('sự giao tiếp, trao đổi thông tin', PartOfSpeech.noun),
+    'communication': _DictEntry(
+      'sự giao tiếp, trao đổi thông tin',
+      PartOfSpeech.noun,
+    ),
     'interaction': _DictEntry('sự tương tác qua lại', PartOfSpeech.noun),
-    'interface': _DictEntry('giao diện người dùng hoặc phần cứng', PartOfSpeech.noun),
+    'interface': _DictEntry(
+      'giao diện người dùng hoặc phần cứng',
+      PartOfSpeech.noun,
+    ),
     'component': _DictEntry('thành phần, khối cấu trúc', PartOfSpeech.noun),
-    'framework': _DictEntry('bộ khung phần mềm, cấu trúc nền', PartOfSpeech.noun),
+    'framework': _DictEntry(
+      'bộ khung phần mềm, cấu trúc nền',
+      PartOfSpeech.noun,
+    ),
     'library': _DictEntry('thư viện mã nguồn', PartOfSpeech.noun),
     'database': _DictEntry('cơ sở dữ liệu', PartOfSpeech.noun),
     'service': _DictEntry('dịch vụ', PartOfSpeech.noun),
@@ -325,9 +417,18 @@ class WordSuggestionService {
     'condition': _DictEntry('điều kiện, trạng thái', PartOfSpeech.noun),
     'decision': _DictEntry('quyết định', PartOfSpeech.noun),
     'operation': _DictEntry('hoạt động, vận hành', PartOfSpeech.noun),
-    'execution': _DictEntry('sự thực thi câu lệnh hoặc chương trình', PartOfSpeech.noun),
-    'implementation': _DictEntry('sự triển khai, hiện thực hóa', PartOfSpeech.noun),
-    'configuration': _DictEntry('cấu hình, thiết lập hệ thống', PartOfSpeech.noun),
+    'execution': _DictEntry(
+      'sự thực thi câu lệnh hoặc chương trình',
+      PartOfSpeech.noun,
+    ),
+    'implementation': _DictEntry(
+      'sự triển khai, hiện thực hóa',
+      PartOfSpeech.noun,
+    ),
+    'configuration': _DictEntry(
+      'cấu hình, thiết lập hệ thống',
+      PartOfSpeech.noun,
+    ),
     'integration': _DictEntry('sự tích hợp hệ thống', PartOfSpeech.noun),
     'maintenance': _DictEntry('sự bảo trì, bảo dưỡng', PartOfSpeech.noun),
     'update': _DictEntry('cập nhật, làm mới', PartOfSpeech.verb),
@@ -349,7 +450,10 @@ class WordSuggestionService {
     'resolve': _DictEntry('giải quyết dứt điểm', PartOfSpeech.verb),
     'manage': _DictEntry('quản lý, điều hành', PartOfSpeech.verb),
     'control': _DictEntry('kiểm soát, điều khiển', PartOfSpeech.verb),
-    'monitor': _DictEntry('giám sát, theo dõi thời gian thực', PartOfSpeech.verb),
+    'monitor': _DictEntry(
+      'giám sát, theo dõi thời gian thực',
+      PartOfSpeech.verb,
+    ),
     'evaluate': _DictEntry('đánh giá, thẩm định', PartOfSpeech.verb),
     'analyze': _DictEntry('phân tích chi tiết', PartOfSpeech.verb),
     'identify': _DictEntry('nhận diện, phát hiện', PartOfSpeech.verb),
@@ -373,145 +477,376 @@ class WordSuggestionService {
     'disable': _DictEntry('vô hiệu hóa, tắt tính năng', PartOfSpeech.verb),
 
     // --- HIGH-FREQUENCY ESSENTIALS ---
-    'resilient': _DictEntry('kiên cường, bền bỉ (khả năng phục hồi nhanh)', PartOfSpeech.adjective),
-    'resilience': _DictEntry('sự kiên cường, khả năng hồi phục', PartOfSpeech.noun),
-    'tenacious': _DictEntry('kiên trì, dai dẳng, bám sát mục tiêu', PartOfSpeech.adjective),
+    'resilient': _DictEntry(
+      'kiên cường, bền bỉ (khả năng phục hồi nhanh)',
+      PartOfSpeech.adjective,
+    ),
+    'resilience': _DictEntry(
+      'sự kiên cường, khả năng hồi phục',
+      PartOfSpeech.noun,
+    ),
+    'tenacious': _DictEntry(
+      'kiên trì, dai dẳng, bám sát mục tiêu',
+      PartOfSpeech.adjective,
+    ),
     'tenacity': _DictEntry('sự bền bỉ, tính kiên cường', PartOfSpeech.noun),
-    'eloquent': _DictEntry('hùng biện, lưu loát, giàu sức thuyết phục', PartOfSpeech.adjective),
+    'eloquent': _DictEntry(
+      'hùng biện, lưu loát, giàu sức thuyết phục',
+      PartOfSpeech.adjective,
+    ),
     'eloquence': _DictEntry('tài hùng biện, sự lưu loát', PartOfSpeech.noun),
-    'serendipity': _DictEntry('sự tình cờ may mắn, duyên may', PartOfSpeech.noun),
+    'serendipity': _DictEntry(
+      'sự tình cờ may mắn, duyên may',
+      PartOfSpeech.noun,
+    ),
     'serendipitous': _DictEntry('tình cờ may mắn', PartOfSpeech.adjective),
-    'quintessential': _DictEntry('tinh túy, hoàn hảo, điển hình nhất', PartOfSpeech.adjective),
-    'meticulous': _DictEntry('tỉ mỉ, cẩn thận, chăm chút từng chi tiết', PartOfSpeech.adjective),
-    'inquisitive': _DictEntry('tò mò, ham học hỏi, thích tìm hiểu', PartOfSpeech.adjective),
-    'pragmatic': _DictEntry('thực dụng, thực tế, coi trọng hiệu quả', PartOfSpeech.adjective),
+    'quintessential': _DictEntry(
+      'tinh túy, hoàn hảo, điển hình nhất',
+      PartOfSpeech.adjective,
+    ),
+    'meticulous': _DictEntry(
+      'tỉ mỉ, cẩn thận, chăm chút từng chi tiết',
+      PartOfSpeech.adjective,
+    ),
+    'inquisitive': _DictEntry(
+      'tò mò, ham học hỏi, thích tìm hiểu',
+      PartOfSpeech.adjective,
+    ),
+    'pragmatic': _DictEntry(
+      'thực dụng, thực tế, coi trọng hiệu quả',
+      PartOfSpeech.adjective,
+    ),
     'pragmatism': _DictEntry('chủ nghĩa thực tế', PartOfSpeech.noun),
     'lucid': _DictEntry('rõ ràng, minh bạch, dễ hiểu', PartOfSpeech.adjective),
-    'ambiguous': _DictEntry('mơ hồ, nước đôi, không rõ ràng', PartOfSpeech.adjective),
+    'ambiguous': _DictEntry(
+      'mơ hồ, nước đôi, không rõ ràng',
+      PartOfSpeech.adjective,
+    ),
     'ambiguity': _DictEntry('sự mơ hồ, tính không rõ ràng', PartOfSpeech.noun),
-    'ubiquitous': _DictEntry('phổ biến khắp nơi, đâu đâu cũng thấy', PartOfSpeech.adjective),
-    'proactive': _DictEntry('chủ động, tiên phong giải quyết vấn đề', PartOfSpeech.adjective),
+    'ubiquitous': _DictEntry(
+      'phổ biến khắp nơi, đâu đâu cũng thấy',
+      PartOfSpeech.adjective,
+    ),
+    'proactive': _DictEntry(
+      'chủ động, tiên phong giải quyết vấn đề',
+      PartOfSpeech.adjective,
+    ),
     'paradigm': _DictEntry('mô hình, khuôn mẫu tư duy', PartOfSpeech.noun),
-    'benchmark': _DictEntry('tiêu chuẩn đối sánh, mốc chuẩn', PartOfSpeech.noun),
+    'benchmark': _DictEntry(
+      'tiêu chuẩn đối sánh, mốc chuẩn',
+      PartOfSpeech.noun,
+    ),
     'leverage': _DictEntry('tận dụng, khai thác đòn bẩy', PartOfSpeech.verb),
-    'streamline': _DictEntry('tinh gọn, tối ưu hoá quy trình', PartOfSpeech.verb),
+    'streamline': _DictEntry(
+      'tinh gọn, tối ưu hoá quy trình',
+      PartOfSpeech.verb,
+    ),
     'holistic': _DictEntry('toàn diện, tổng thể', PartOfSpeech.adjective),
     'catalyst': _DictEntry('chất xúc tác, nhân tố thúc đẩy', PartOfSpeech.noun),
     'empathy': _DictEntry('sự thấu cảm, đồng cảm sâu sắc', PartOfSpeech.noun),
-    'synergy': _DictEntry('sự cộng hưởng, sức mạnh tổng hợp', PartOfSpeech.noun),
+    'synergy': _DictEntry(
+      'sự cộng hưởng, sức mạnh tổng hợp',
+      PartOfSpeech.noun,
+    ),
     'scalable': _DictEntry('có khả năng mở rộng', PartOfSpeech.adjective),
     'scalability': _DictEntry('khả năng mở rộng quy mô', PartOfSpeech.noun),
     'robust': _DictEntry('mạnh mẽ, vững chắc, tin cậy', PartOfSpeech.adjective),
     'robustness': _DictEntry('tính vững chắc, độ tin cậy', PartOfSpeech.noun),
     'optimize': _DictEntry('tối ưu hoá', PartOfSpeech.verb),
     'optimization': _DictEntry('sự tối ưu hoá', PartOfSpeech.noun),
-    'refactor': _DictEntry('tái cấu trúc mã nguồn (không đổi tính năng)', PartOfSpeech.verb),
+    'refactor': _DictEntry(
+      'tái cấu trúc mã nguồn (không đổi tính năng)',
+      PartOfSpeech.verb,
+    ),
     'mitigate': _DictEntry('giảm thiểu, xoa dịu rủi ro', PartOfSpeech.verb),
     'mitigation': _DictEntry('sự giảm thiểu rủi ro', PartOfSpeech.noun),
     'bottleneck': _DictEntry('điểm nghẽn, nút cổ chai', PartOfSpeech.noun),
-    'bandwidth': _DictEntry('băng thông, năng lực xử lý công việc', PartOfSpeech.noun),
+    'bandwidth': _DictEntry(
+      'băng thông, năng lực xử lý công việc',
+      PartOfSpeech.noun,
+    ),
     'latency': _DictEntry('độ trễ thời gian phản hồi', PartOfSpeech.noun),
-    'throughput': _DictEntry('thông lượng, lượng xử lý trên đơn vị thời gian', PartOfSpeech.noun),
+    'throughput': _DictEntry(
+      'thông lượng, lượng xử lý trên đơn vị thời gian',
+      PartOfSpeech.noun,
+    ),
     'concurrency': _DictEntry('tính đồng thời, đa nhiệm', PartOfSpeech.noun),
     'synchronous': _DictEntry('đồng bộ', PartOfSpeech.adjective),
     'asynchronous': _DictEntry('bất đồng bộ', PartOfSpeech.adjective),
-    'immutable': _DictEntry('bất biến, không thể sửa đổi sau khi tạo', PartOfSpeech.adjective),
+    'immutable': _DictEntry(
+      'bất biến, không thể sửa đổi sau khi tạo',
+      PartOfSpeech.adjective,
+    ),
     'deprecate': _DictEntry('ngừng hỗ trợ, loại bỏ dần', PartOfSpeech.verb),
-    'deprecation': _DictEntry('sự ngừng hỗ trợ tính năng cũ', PartOfSpeech.noun),
-    'deterministic': _DictEntry('định tiền, xác định rõ ràng không ngẫu nhiên', PartOfSpeech.adjective),
-    'heuristic': _DictEntry('phương pháp suy nghiệm, phỏng đoán kinh nghiệm', PartOfSpeech.noun),
-    'redundancy': _DictEntry('sự dự phòng, tính dư thừa an toàn', PartOfSpeech.noun),
-    'redundant': _DictEntry('dư thừa, có tính dự phòng', PartOfSpeech.adjective),
-    'orchestration': _DictEntry('sự điều phối các dịch vụ tự động', PartOfSpeech.noun),
-    'seamless': _DictEntry('liền mạch, mượt mà, không gián đoạn', PartOfSpeech.adjective),
-    'seamlessly': _DictEntry('một cách liền mạch, trơn tru', PartOfSpeech.adverb),
+    'deprecation': _DictEntry(
+      'sự ngừng hỗ trợ tính năng cũ',
+      PartOfSpeech.noun,
+    ),
+    'deterministic': _DictEntry(
+      'định tiền, xác định rõ ràng không ngẫu nhiên',
+      PartOfSpeech.adjective,
+    ),
+    'heuristic': _DictEntry(
+      'phương pháp suy nghiệm, phỏng đoán kinh nghiệm',
+      PartOfSpeech.noun,
+    ),
+    'redundancy': _DictEntry(
+      'sự dự phòng, tính dư thừa an toàn',
+      PartOfSpeech.noun,
+    ),
+    'redundant': _DictEntry(
+      'dư thừa, có tính dự phòng',
+      PartOfSpeech.adjective,
+    ),
+    'orchestration': _DictEntry(
+      'sự điều phối các dịch vụ tự động',
+      PartOfSpeech.noun,
+    ),
+    'seamless': _DictEntry(
+      'liền mạch, mượt mà, không gián đoạn',
+      PartOfSpeech.adjective,
+    ),
+    'seamlessly': _DictEntry(
+      'một cách liền mạch, trơn tru',
+      PartOfSpeech.adverb,
+    ),
     'deadlock': _DictEntry('bế tắc, khóa chết lẫn nhau', PartOfSpeech.noun),
     'vulnerability': _DictEntry('lỗ hổng bảo mật, điểm yếu', PartOfSpeech.noun),
-    'vulnerable': _DictEntry('dễ bị tổn thương, dễ bị tấn công', PartOfSpeech.adjective),
-    'fallback': _DictEntry('phương án dự phòng khi thất bại', PartOfSpeech.noun),
+    'vulnerable': _DictEntry(
+      'dễ bị tổn thương, dễ bị tấn công',
+      PartOfSpeech.adjective,
+    ),
+    'fallback': _DictEntry(
+      'phương án dự phòng khi thất bại',
+      PartOfSpeech.noun,
+    ),
     'scaffold': _DictEntry('khung sườn dựng sẵn, giàn giáo', PartOfSpeech.noun),
     'tradeoff': _DictEntry('sự đánh đổi giữa hai lựa chọn', PartOfSpeech.noun),
-    'diligence': _DictEntry('sự siêng năng, chu toàn, cẩn trọng', PartOfSpeech.noun),
-    'diligent': _DictEntry('chăm chỉ, cần mẫn, chu đáo', PartOfSpeech.adjective),
-    'adversity': _DictEntry('nghịch cảnh, hoàn cảnh khó khăn', PartOfSpeech.noun),
-    'compromise': _DictEntry('sự thỏa hiệp, làm tổn hại đến', PartOfSpeech.verb),
-    'feasible': _DictEntry('khả thi, có thể thực hiện được', PartOfSpeech.adjective),
+    'diligence': _DictEntry(
+      'sự siêng năng, chu toàn, cẩn trọng',
+      PartOfSpeech.noun,
+    ),
+    'diligent': _DictEntry(
+      'chăm chỉ, cần mẫn, chu đáo',
+      PartOfSpeech.adjective,
+    ),
+    'adversity': _DictEntry(
+      'nghịch cảnh, hoàn cảnh khó khăn',
+      PartOfSpeech.noun,
+    ),
+    'compromise': _DictEntry(
+      'sự thỏa hiệp, làm tổn hại đến',
+      PartOfSpeech.verb,
+    ),
+    'feasible': _DictEntry(
+      'khả thi, có thể thực hiện được',
+      PartOfSpeech.adjective,
+    ),
     'feasibility': _DictEntry('tính khả thi', PartOfSpeech.noun),
-    'comprehensive': _DictEntry('toàn diện, bao quát mọi mặt', PartOfSpeech.adjective),
+    'comprehensive': _DictEntry(
+      'toàn diện, bao quát mọi mặt',
+      PartOfSpeech.adjective,
+    ),
     'comprehend': _DictEntry('thấu hiểu, lĩnh hội', PartOfSpeech.verb),
-    'ephemeral': _DictEntry('phù du, ngắn ngủi, tạm thời', PartOfSpeech.adjective),
+    'ephemeral': _DictEntry(
+      'phù du, ngắn ngủi, tạm thời',
+      PartOfSpeech.adjective,
+    ),
     'transient': _DictEntry('tạm thời, thoáng qua', PartOfSpeech.adjective),
-    'obsolete': _DictEntry('lỗi thời, không còn được dùng', PartOfSpeech.adjective),
-    'prolific': _DictEntry('năng suất cao, sáng tác nhiều', PartOfSpeech.adjective),
-    'innovative': _DictEntry('mang tính đổi mới, sáng tạo', PartOfSpeech.adjective),
+    'obsolete': _DictEntry(
+      'lỗi thời, không còn được dùng',
+      PartOfSpeech.adjective,
+    ),
+    'prolific': _DictEntry(
+      'năng suất cao, sáng tác nhiều',
+      PartOfSpeech.adjective,
+    ),
+    'innovative': _DictEntry(
+      'mang tính đổi mới, sáng tạo',
+      PartOfSpeech.adjective,
+    ),
     'innovate': _DictEntry('đổi mới, cách tân', PartOfSpeech.verb),
     'innovation': _DictEntry('sự đổi mới, sáng kiến', PartOfSpeech.noun),
     'collaborate': _DictEntry('hợp tác, phối hợp làm việc', PartOfSpeech.verb),
     'collaboration': _DictEntry('sự hợp tác làm việc nhóm', PartOfSpeech.noun),
-    'authentic': _DictEntry('đích thực, chân thực, nguyên bản', PartOfSpeech.adjective),
-    'authenticity': _DictEntry('tính chân thực, tính xác thực', PartOfSpeech.noun),
+    'authentic': _DictEntry(
+      'đích thực, chân thực, nguyên bản',
+      PartOfSpeech.adjective,
+    ),
+    'authenticity': _DictEntry(
+      'tính chân thực, tính xác thực',
+      PartOfSpeech.noun,
+    ),
     'authenticate': _DictEntry('xác thực danh tính', PartOfSpeech.verb),
     'authorize': _DictEntry('cấp quyền, ủy quyền', PartOfSpeech.verb),
     'authorization': _DictEntry('sự phân quyền, cấp phép', PartOfSpeech.noun),
 
     // --- DAILY & COMMON CONVERSATION ---
-    'acquire': _DictEntry('tiếp thu, thu nhận được (kỹ năng, kiến thức)', PartOfSpeech.verb),
-    'accomplish': _DictEntry('hoàn thành xuất sắc, đạt được', PartOfSpeech.verb),
+    'acquire': _DictEntry(
+      'tiếp thu, thu nhận được (kỹ năng, kiến thức)',
+      PartOfSpeech.verb,
+    ),
+    'accomplish': _DictEntry(
+      'hoàn thành xuất sắc, đạt được',
+      PartOfSpeech.verb,
+    ),
     'accurate': _DictEntry('chính xác, đúng đắn', PartOfSpeech.adjective),
-    'adequate': _DictEntry('đầy đủ, thỏa đáng, đáp ứng yêu cầu', PartOfSpeech.adjective),
+    'adequate': _DictEntry(
+      'đầy đủ, thỏa đáng, đáp ứng yêu cầu',
+      PartOfSpeech.adjective,
+    ),
     'anticipate': _DictEntry('dự đoán trước, lường trước', PartOfSpeech.verb),
     'apparent': _DictEntry('rõ ràng, hiển nhiên', PartOfSpeech.adjective),
-    'appreciate': _DictEntry('trân trọng, cảm kích, đánh giá cao', PartOfSpeech.verb),
-    'approach': _DictEntry('cách tiếp cận, phương pháp giải quyết', PartOfSpeech.noun),
+    'appreciate': _DictEntry(
+      'trân trọng, cảm kích, đánh giá cao',
+      PartOfSpeech.verb,
+    ),
+    'approach': _DictEntry(
+      'cách tiếp cận, phương pháp giải quyết',
+      PartOfSpeech.noun,
+    ),
     'appropriate': _DictEntry('thích hợp, phù hợp', PartOfSpeech.adjective),
     'aspire': _DictEntry('khao khát, hướng tới mục tiêu', PartOfSpeech.verb),
     'aspiration': _DictEntry('nguyện vọng, hoài bão', PartOfSpeech.noun),
     'assume': _DictEntry('giả định, cho rằng', PartOfSpeech.verb),
     'clarify': _DictEntry('làm sáng tỏ, giải thích rõ ràng', PartOfSpeech.verb),
     'clarity': _DictEntry('sự rõ ràng, tính mạch lạc', PartOfSpeech.noun),
-    'coherent': _DictEntry('mạch lạc, chặt chẽ, gắn kết', PartOfSpeech.adjective),
-    'cohesive': _DictEntry('gắn kết, có tính liên kết cao', PartOfSpeech.adjective),
-    'consistent': _DictEntry('nhất quán, kiên định trước sau như một', PartOfSpeech.adjective),
+    'coherent': _DictEntry(
+      'mạch lạc, chặt chẽ, gắn kết',
+      PartOfSpeech.adjective,
+    ),
+    'cohesive': _DictEntry(
+      'gắn kết, có tính liên kết cao',
+      PartOfSpeech.adjective,
+    ),
+    'consistent': _DictEntry(
+      'nhất quán, kiên định trước sau như một',
+      PartOfSpeech.adjective,
+    ),
     'consistency': _DictEntry('sự nhất quán', PartOfSpeech.noun),
-    'crucial': _DictEntry('cốt yếu, mang tính quyết định', PartOfSpeech.adjective),
+    'crucial': _DictEntry(
+      'cốt yếu, mang tính quyết định',
+      PartOfSpeech.adjective,
+    ),
     'dedicate': _DictEntry('cống hiến, dành riêng cho', PartOfSpeech.verb),
-    'deliberate': _DictEntry('có chủ đích, thận trọng, cân nhắc kỹ', PartOfSpeech.adjective),
-    'efficient': _DictEntry('hiệu quả, tiết kiệm thời gian công sức', PartOfSpeech.adjective),
-    'effective': _DictEntry('hiệu nghiệm, đạt kết quả mong muốn', PartOfSpeech.adjective),
-    'essential': _DictEntry('thiết yếu, không thể thiếu', PartOfSpeech.adjective),
-    'fundamental': _DictEntry('cơ bản, nền tảng, gốc rễ', PartOfSpeech.adjective),
-    'inevitable': _DictEntry('không thể tránh khỏi, tất yếu', PartOfSpeech.adjective),
+    'deliberate': _DictEntry(
+      'có chủ đích, thận trọng, cân nhắc kỹ',
+      PartOfSpeech.adjective,
+    ),
+    'efficient': _DictEntry(
+      'hiệu quả, tiết kiệm thời gian công sức',
+      PartOfSpeech.adjective,
+    ),
+    'effective': _DictEntry(
+      'hiệu nghiệm, đạt kết quả mong muốn',
+      PartOfSpeech.adjective,
+    ),
+    'essential': _DictEntry(
+      'thiết yếu, không thể thiếu',
+      PartOfSpeech.adjective,
+    ),
+    'fundamental': _DictEntry(
+      'cơ bản, nền tảng, gốc rễ',
+      PartOfSpeech.adjective,
+    ),
+    'inevitable': _DictEntry(
+      'không thể tránh khỏi, tất yếu',
+      PartOfSpeech.adjective,
+    ),
     'initiative': _DictEntry('sáng kiến, tính chủ động', PartOfSpeech.noun),
-    'insight': _DictEntry('sự thấu hiểu sâu sắc, góc nhìn đắt giá', PartOfSpeech.noun),
-    'insightful': _DictEntry('sâu sắc, mang lại nhiều góc nhìn hay', PartOfSpeech.adjective),
+    'insight': _DictEntry(
+      'sự thấu hiểu sâu sắc, góc nhìn đắt giá',
+      PartOfSpeech.noun,
+    ),
+    'insightful': _DictEntry(
+      'sâu sắc, mang lại nhiều góc nhìn hay',
+      PartOfSpeech.adjective,
+    ),
     'perspective': _DictEntry('góc nhìn, quan điểm cá nhân', PartOfSpeech.noun),
     'priority': _DictEntry('sự ưu tiên, thứ tự quan trọng', PartOfSpeech.noun),
-    'prioritize': _DictEntry('ưu tiên việc quan trọng trước', PartOfSpeech.verb),
+    'prioritize': _DictEntry(
+      'ưu tiên việc quan trọng trước',
+      PartOfSpeech.verb,
+    ),
     'profound': _DictEntry('sâu sắc, uyên thâm', PartOfSpeech.adjective),
-    'relentless': _DictEntry('không ngừng nghỉ, kiên quyết tới cùng', PartOfSpeech.adjective),
-    'substantial': _DictEntry('đáng kể, có giá trị lớn', PartOfSpeech.adjective),
-    'subtle': _DictEntry('tinh tế, phảng phất, khó nhận thấy', PartOfSpeech.adjective),
-    'sustainable': _DictEntry('bền vững, duy trì lâu dài', PartOfSpeech.adjective),
-    'tangible': _DictEntry('hữu hình, có thể thấy rõ ràng', PartOfSpeech.adjective),
-    'transparent': _DictEntry('minh bạch, trong suốt, rõ ràng', PartOfSpeech.adjective),
+    'relentless': _DictEntry(
+      'không ngừng nghỉ, kiên quyết tới cùng',
+      PartOfSpeech.adjective,
+    ),
+    'substantial': _DictEntry(
+      'đáng kể, có giá trị lớn',
+      PartOfSpeech.adjective,
+    ),
+    'subtle': _DictEntry(
+      'tinh tế, phảng phất, khó nhận thấy',
+      PartOfSpeech.adjective,
+    ),
+    'sustainable': _DictEntry(
+      'bền vững, duy trì lâu dài',
+      PartOfSpeech.adjective,
+    ),
+    'tangible': _DictEntry(
+      'hữu hình, có thể thấy rõ ràng',
+      PartOfSpeech.adjective,
+    ),
+    'transparent': _DictEntry(
+      'minh bạch, trong suốt, rõ ràng',
+      PartOfSpeech.adjective,
+    ),
     'transparency': _DictEntry('sự minh bạch', PartOfSpeech.noun),
     'unprecedented': _DictEntry('chưa từng có tiền lệ', PartOfSpeech.adjective),
     'vital': _DictEntry('sống còn, cực kỳ quan trọng', PartOfSpeech.adjective),
 
     // --- IDIOMS & PHRASES ---
-    'touch base': _DictEntry('liên lạc, trao đổi ngắn gọn để cập nhật tình hình', PartOfSpeech.phrase),
-    'in a nutshell': _DictEntry('tóm lại một cách ngắn gọn', PartOfSpeech.phrase),
-    'on the same page': _DictEntry('cùng chung quan điểm, đồng thuận hiểu ý nhau', PartOfSpeech.idiom),
-    'piece of cake': _DictEntry('dễ như ăn kẹo, việc cực kỳ dễ dàng', PartOfSpeech.idiom),
-    'call it a day': _DictEntry('kết thúc công việc hôm nay, nghỉ ngơi', PartOfSpeech.idiom),
-    'cut corners': _DictEntry('đốt cháy giai đoạn, làm cẩu thả để tiết kiệm', PartOfSpeech.idiom),
-    'bite the bullet': _DictEntry('ngậm đắng nuốt cay, can đảm đối mặt việc khó', PartOfSpeech.idiom),
-    'break a leg': _DictEntry('chúc may mắn (trong buổi biểu diễn / phỏng vấn)', PartOfSpeech.idiom),
-    'see eye to eye': _DictEntry('đồng lòng, hoàn toàn đồng tình với nhau', PartOfSpeech.idiom),
-    'at the end of the day': _DictEntry('suy cho cùng, xét đến cùng', PartOfSpeech.phrase),
-    'back to the drawing board': _DictEntry('làm lại từ đầu sau khi thất bại', PartOfSpeech.idiom),
+    'touch base': _DictEntry(
+      'liên lạc, trao đổi ngắn gọn để cập nhật tình hình',
+      PartOfSpeech.phrase,
+    ),
+    'in a nutshell': _DictEntry(
+      'tóm lại một cách ngắn gọn',
+      PartOfSpeech.phrase,
+    ),
+    'on the same page': _DictEntry(
+      'cùng chung quan điểm, đồng thuận hiểu ý nhau',
+      PartOfSpeech.idiom,
+    ),
+    'piece of cake': _DictEntry(
+      'dễ như ăn kẹo, việc cực kỳ dễ dàng',
+      PartOfSpeech.idiom,
+    ),
+    'call it a day': _DictEntry(
+      'kết thúc công việc hôm nay, nghỉ ngơi',
+      PartOfSpeech.idiom,
+    ),
+    'cut corners': _DictEntry(
+      'đốt cháy giai đoạn, làm cẩu thả để tiết kiệm',
+      PartOfSpeech.idiom,
+    ),
+    'bite the bullet': _DictEntry(
+      'ngậm đắng nuốt cay, can đảm đối mặt việc khó',
+      PartOfSpeech.idiom,
+    ),
+    'break a leg': _DictEntry(
+      'chúc may mắn (trong buổi biểu diễn / phỏng vấn)',
+      PartOfSpeech.idiom,
+    ),
+    'see eye to eye': _DictEntry(
+      'đồng lòng, hoàn toàn đồng tình với nhau',
+      PartOfSpeech.idiom,
+    ),
+    'at the end of the day': _DictEntry(
+      'suy cho cùng, xét đến cùng',
+      PartOfSpeech.phrase,
+    ),
+    'back to the drawing board': _DictEntry(
+      'làm lại từ đầu sau khi thất bại',
+      PartOfSpeech.idiom,
+    ),
     'hit the sack': _DictEntry('đi ngủ', PartOfSpeech.idiom),
-    'under the weather': _DictEntry('cảm thấy mệt mỏi, không được khỏe', PartOfSpeech.idiom),
+    'under the weather': _DictEntry(
+      'cảm thấy mệt mỏi, không được khỏe',
+      PartOfSpeech.idiom,
+    ),
   };
 }
 

@@ -45,10 +45,7 @@ class CartridgeWord {
       pronunciation: pronunciation,
       partOfSpeech: partOfSpeech,
       source: cartridgeTitle ?? 'Silicon Valley Tech Cartridge',
-      examples: [
-        '[PR Review] $prExample',
-        '[Standup] $standupExample',
-      ],
+      examples: ['[PR Review] $prExample', '[Standup] $standupExample'],
       tags: ['tech-career', module.toLowerCase().replaceAll(' ', '-'), ...tags],
     );
   }

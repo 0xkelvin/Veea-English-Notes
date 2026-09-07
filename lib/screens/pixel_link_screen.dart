@@ -55,10 +55,7 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => _WordDropPickerSheet(
-        friend: friend,
-        words: words,
-      ),
+      builder: (_) => _WordDropPickerSheet(friend: friend, words: words),
     );
   }
 
@@ -76,9 +73,7 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
             updatedAt: DateTime(2026, 8, 18),
           );
 
-    service.simulateIncomingDrop(
-      word: sampleWord,
-    );
+    service.simulateIncomingDrop(word: sampleWord);
   }
 
   @override
@@ -99,6 +94,38 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(PixelMetrics.space4),
                 children: [
+                  // Demo / Lab Simulator Disclaimer
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(PixelMetrics.space3),
+                    decoration: BoxDecoration(
+                      color: palette.accent.withValues(alpha: 0.12),
+                      border: Border.all(color: palette.accent, width: 1),
+                    ),
+                    child: Row(
+                      children: [
+                        PixelIcon(
+                          PixelGlyph.star,
+                          color: palette.accent,
+                          scale: 2,
+                        ),
+                        const SizedBox(width: PixelMetrics.space2),
+                        Expanded(
+                          child: Text(
+                            'DEMO LAB // SIMULATOR: Local mock environment for previewing peer challenges. Real multiplayer transport is in development.',
+                            style: TextStyle(
+                              fontFamily: 'Handjet',
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: palette.ink,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: PixelMetrics.space3),
+
                   // Game Link Profile Card
                   _buildProfileCard(context, profile, palette),
                   const SizedBox(height: PixelMetrics.space4),
@@ -122,7 +149,11 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
                           color: palette.inkFaint,
                         ),
                       ),
-                      PixelIcon(PixelGlyph.link, color: palette.accent, scale: 2),
+                      PixelIcon(
+                        PixelGlyph.link,
+                        color: palette.accent,
+                        scale: 2,
+                      ),
                     ],
                   ),
                   const SizedBox(height: PixelMetrics.space2),
@@ -169,10 +200,7 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
       decoration: BoxDecoration(
         color: palette.surface,
         border: Border(
-          bottom: BorderSide(
-            color: palette.border,
-            width: PixelMetrics.border,
-          ),
+          bottom: BorderSide(color: palette.border, width: PixelMetrics.border),
         ),
       ),
       child: Row(
@@ -224,7 +252,11 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
             children: [
               Row(
                 children: [
-                  PixelIcon(PixelGlyph.gamepad, color: palette.accent, scale: 2.2),
+                  PixelIcon(
+                    PixelGlyph.gamepad,
+                    color: palette.accent,
+                    scale: 2.2,
+                  ),
                   const SizedBox(width: PixelMetrics.space2),
                   Text(
                     'YOUR GAME LINK CODE',
@@ -257,7 +289,10 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
             children: [
               Expanded(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
                   color: palette.paper,
                   child: Text(
                     profile.friendCode,
@@ -352,10 +387,7 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
                 ),
               ),
               const SizedBox(width: PixelMetrics.space2),
-              PixelButton(
-                label: 'CONNECT +',
-                onPressed: _connectFriend,
-              ),
+              PixelButton(label: 'CONNECT +', onPressed: _connectFriend),
             ],
           ),
         ],
@@ -368,7 +400,10 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
       padding: const EdgeInsets.all(PixelMetrics.space3),
       decoration: BoxDecoration(
         color: Colors.amber.withValues(alpha: 0.1),
-        border: Border.all(color: Colors.amber.shade800, width: PixelMetrics.border),
+        border: Border.all(
+          color: Colors.amber.shade800,
+          width: PixelMetrics.border,
+        ),
       ),
       child: Row(
         children: [
@@ -398,10 +433,7 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
               ],
             ),
           ),
-          PixelButton(
-            label: 'TEST ⚡',
-            onPressed: _simulateIncomingDrop,
-          ),
+          PixelButton(label: 'TEST ⚡', onPressed: _simulateIncomingDrop),
         ],
       ),
     );
@@ -467,10 +499,7 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
 }
 
 class _WordDropPickerSheet extends StatefulWidget {
-  const _WordDropPickerSheet({
-    required this.friend,
-    required this.words,
-  });
+  const _WordDropPickerSheet({required this.friend, required this.words});
 
   final FriendConnection friend;
   final List<VocabularyWord> words;
@@ -522,7 +551,10 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
         padding: const EdgeInsets.all(PixelMetrics.space4),
         decoration: BoxDecoration(
           color: palette.surface,
-          border: Border.all(color: palette.border, width: PixelMetrics.border * 1.5),
+          border: Border.all(
+            color: palette.border,
+            width: PixelMetrics.border * 1.5,
+          ),
           boxShadow: [
             BoxShadow(
               color: palette.border.withValues(alpha: 0.6),
@@ -654,7 +686,10 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
             constraints: const BoxConstraints(maxHeight: 180),
             decoration: BoxDecoration(
               color: palette.paper,
-              border: Border.all(color: palette.border, width: PixelMetrics.border),
+              border: Border.all(
+                color: palette.border,
+                width: PixelMetrics.border,
+              ),
             ),
             child: ListView.builder(
               shrinkWrap: true,

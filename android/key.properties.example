@@ -1,0 +1,14 @@
+# Example Release Keystore Configuration for Veea English Notes
+#
+# 1. Generate a release keystore with:
+#    keytool -genkey -v -keystore android/app/upload-keystore.jks -storetype JKS -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+#
+# 2. Copy this file to android/key.properties:
+#    cp android/key.properties.example android/key.properties
+#
+# 3. Fill in your actual passwords below (never commit android/key.properties):
+
+keyAlias=upload
+keyPassword=YOUR_KEY_PASSWORD
+storeFile=upload-keystore.jks
+storePassword=YOUR_STORE_PASSWORD

@@ -49,7 +49,9 @@ void main() {
     ),
   );
 
-  testWidgets('PixelLinkScreen displays friend code and linked friends list', (tester) async {
+  testWidgets('PixelLinkScreen displays friend code and linked friends list', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(800, 1200);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);

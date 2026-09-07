@@ -26,26 +26,26 @@ class ThemeProvider extends ChangeNotifier {
   AppThemeMode get mode => _mode;
 
   ThemeMode get themeMode => switch (_mode) {
-        AppThemeMode.system => ThemeMode.system,
-        AppThemeMode.classicLight => ThemeMode.light,
-        _ => ThemeMode.dark,
-      };
+    AppThemeMode.system => ThemeMode.system,
+    AppThemeMode.classicLight => ThemeMode.light,
+    _ => ThemeMode.dark,
+  };
 
   ThemeData get activeTheme => switch (_mode) {
-        AppThemeMode.system => PixelTheme.light(),
-        AppThemeMode.classicLight => PixelTheme.light(),
-        AppThemeMode.classicDark => PixelTheme.dark(),
-        AppThemeMode.matrixGreen => PixelTheme.matrixGreen(),
-        AppThemeMode.cyberpunkNeon => PixelTheme.cyberpunkNeon(),
-        AppThemeMode.oledBlack => PixelTheme.oledBlack(),
-      };
+    AppThemeMode.system => PixelTheme.light(),
+    AppThemeMode.classicLight => PixelTheme.light(),
+    AppThemeMode.classicDark => PixelTheme.dark(),
+    AppThemeMode.matrixGreen => PixelTheme.matrixGreen(),
+    AppThemeMode.cyberpunkNeon => PixelTheme.cyberpunkNeon(),
+    AppThemeMode.oledBlack => PixelTheme.oledBlack(),
+  };
 
   ThemeData get darkTheme => switch (_mode) {
-        AppThemeMode.matrixGreen => PixelTheme.matrixGreen(),
-        AppThemeMode.cyberpunkNeon => PixelTheme.cyberpunkNeon(),
-        AppThemeMode.oledBlack => PixelTheme.oledBlack(),
-        _ => PixelTheme.dark(),
-      };
+    AppThemeMode.matrixGreen => PixelTheme.matrixGreen(),
+    AppThemeMode.cyberpunkNeon => PixelTheme.cyberpunkNeon(),
+    AppThemeMode.oledBlack => PixelTheme.oledBlack(),
+    _ => PixelTheme.dark(),
+  };
 
   Future<void> init() async {
     try {

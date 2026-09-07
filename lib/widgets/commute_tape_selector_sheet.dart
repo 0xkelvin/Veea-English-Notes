@@ -48,7 +48,11 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
   final Set<String> _expandedDates = {};
 
   Map<String, List<VocabularyWord>> _wordsByDate = const {};
-  DateTime _calendarMonth = DateTime(DateTime.now().year, DateTime.now().month, 1);
+  DateTime _calendarMonth = DateTime(
+    DateTime.now().year,
+    DateTime.now().month,
+    1,
+  );
 
   @override
   void initState() {
@@ -109,13 +113,21 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
 
   void _goToPreviousMonth() {
     setState(() {
-      _calendarMonth = DateTime(_calendarMonth.year, _calendarMonth.month - 1, 1);
+      _calendarMonth = DateTime(
+        _calendarMonth.year,
+        _calendarMonth.month - 1,
+        1,
+      );
     });
   }
 
   void _goToNextMonth() {
     setState(() {
-      _calendarMonth = DateTime(_calendarMonth.year, _calendarMonth.month + 1, 1);
+      _calendarMonth = DateTime(
+        _calendarMonth.year,
+        _calendarMonth.month + 1,
+        1,
+      );
     });
   }
 
@@ -156,7 +168,9 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
 
   void _toggleDate(String date) {
     final wordsOnDate = _wordsByDate[date] ?? [];
-    final allSelected = wordsOnDate.every((w) => _selectedWordIds.contains(w.id));
+    final allSelected = wordsOnDate.every(
+      (w) => _selectedWordIds.contains(w.id),
+    );
 
     setState(() {
       if (allSelected) {
@@ -196,7 +210,8 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
     String title = customTitle ?? '';
     if (title.isEmpty) {
       final selectedDates = _wordsByDate.keys.where(
-        (d) => (_wordsByDate[d] ?? []).any((w) => _selectedWordIds.contains(w.id)),
+        (d) =>
+            (_wordsByDate[d] ?? []).any((w) => _selectedWordIds.contains(w.id)),
       );
       if (selectedDates.length == 1) {
         title = 'DATE ${selectedDates.first}';
@@ -205,10 +220,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
       }
     }
 
-    widget.commuteService.startPlayback(
-      selectedWords,
-      playlistTitle: title,
-    );
+    widget.commuteService.startPlayback(selectedWords, playlistTitle: title);
     Navigator.of(context).pop();
   }
 
@@ -245,7 +257,10 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
             autofocus: true,
             decoration: InputDecoration(
               labelText: 'Playlist name',
-              labelStyle: TextStyle(fontFamily: 'Handjet', color: palette.inkFaint),
+              labelStyle: TextStyle(
+                fontFamily: 'Handjet',
+                color: palette.inkFaint,
+              ),
               filled: true,
               fillColor: palette.paper,
               border: OutlineInputBorder(
@@ -266,7 +281,10 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
               onPressed: () => Navigator.of(dialogCtx).pop(false),
               child: Text(
                 'CANCEL',
-                style: TextStyle(fontFamily: 'Handjet', color: palette.inkFaint),
+                style: TextStyle(
+                  fontFamily: 'Handjet',
+                  color: palette.inkFaint,
+                ),
               ),
             ),
             PixelButton(
@@ -287,9 +305,9 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Saved playlist "$name"!')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Saved playlist "$name"!')));
         _tabController.animateTo(1);
       }
     }
@@ -300,10 +318,8 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _PlaylistEditorSheet(
-        allWords: widget.allWords,
-        existing: existing,
-      ),
+      builder: (_) =>
+          _PlaylistEditorSheet(allWords: widget.allWords, existing: existing),
     );
   }
 
@@ -322,7 +338,10 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
         decoration: BoxDecoration(
           color: palette.surface,
           border: Border(
-            top: BorderSide(color: palette.border, width: PixelMetrics.border * 2),
+            top: BorderSide(
+              color: palette.border,
+              width: PixelMetrics.border * 2,
+            ),
           ),
           boxShadow: [
             BoxShadow(
@@ -334,45 +353,45 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
         ),
         child: SafeArea(
           child: Column(
-          children: [
-            // Top Bar of Sheet
-            _buildTopBar(palette),
+            children: [
+              // Top Bar of Sheet
+              _buildTopBar(palette),
 
-            // Tab Bar
-            Container(
-              color: palette.paper,
-              child: TabBar(
-                controller: _tabController,
-                indicatorColor: palette.accent,
-                indicatorWeight: 3,
-                labelColor: palette.ink,
-                unselectedLabelColor: palette.inkFaint,
-                labelStyle: const TextStyle(
-                  fontFamily: 'Handjet',
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
+              // Tab Bar
+              Container(
+                color: palette.paper,
+                child: TabBar(
+                  controller: _tabController,
+                  indicatorColor: palette.accent,
+                  indicatorWeight: 3,
+                  labelColor: palette.ink,
+                  unselectedLabelColor: palette.inkFaint,
+                  labelStyle: const TextStyle(
+                    fontFamily: 'Handjet',
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  tabs: const [
+                    Tab(text: '📅 BY DATE (MULTI-DAY)'),
+                    Tab(text: '📼 CUSTOM PLAYLISTS'),
+                  ],
                 ),
-                tabs: const [
-                  Tab(text: '📅 BY DATE (MULTI-DAY)'),
-                  Tab(text: '📼 CUSTOM PLAYLISTS'),
-                ],
               ),
-            ),
 
-            // Tab Views
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildByDateTab(palette),
-                  _buildCustomPlaylistsTab(palette),
-                ],
+              // Tab Views
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildByDateTab(palette),
+                    _buildCustomPlaylistsTab(palette),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
     );
   }
 
@@ -393,7 +412,11 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
         children: [
           Row(
             children: [
-              PixelIcon(PixelGlyph.headphones, color: palette.accent, scale: 1.8),
+              PixelIcon(
+                PixelGlyph.headphones,
+                color: palette.accent,
+                scale: 1.8,
+              ),
               const SizedBox(width: PixelMetrics.space2),
               Text(
                 'COMMUTE TAPE SELECTOR ⏏️',
@@ -437,8 +460,9 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
     // plus any other dates that have active selected words
     final datesToShow = _wordsByDate.keys.where((date) {
       final inCurrentMonth = date.startsWith(monthPrefix);
-      final hasSelectedWords =
-          _wordsByDate[date]!.any((w) => _selectedWordIds.contains(w.id));
+      final hasSelectedWords = _wordsByDate[date]!.any(
+        (w) => _selectedWordIds.contains(w.id),
+      );
       return inCurrentMonth || hasSelectedWords;
     }).toList();
 
@@ -516,10 +540,16 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
   }
 
   Widget _buildCalendar(PixelPalette palette) {
-    final firstDayOfMonth =
-        DateTime(_calendarMonth.year, _calendarMonth.month, 1);
-    final daysInMonth =
-        DateTime(_calendarMonth.year, _calendarMonth.month + 1, 0).day;
+    final firstDayOfMonth = DateTime(
+      _calendarMonth.year,
+      _calendarMonth.month,
+      1,
+    );
+    final daysInMonth = DateTime(
+      _calendarMonth.year,
+      _calendarMonth.month + 1,
+      0,
+    ).day;
     // Monday = 1, Sunday = 7
     final leadingBlanks = firstDayOfMonth.weekday - 1;
     final totalCells = leadingBlanks + daysInMonth;
@@ -570,7 +600,11 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
               const Spacer(),
               _buildFilterPill('TODAY', _selectToday, palette),
               const SizedBox(width: 4),
-              _buildFilterPill('ALL WORDS', () => _selectPreset(all: true), palette),
+              _buildFilterPill(
+                'ALL WORDS',
+                () => _selectPreset(all: true),
+                palette,
+              ),
               const SizedBox(width: 4),
               _buildFilterPill(
                 'CLEAR',
@@ -666,8 +700,9 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
     }
 
     // Days with words: interactive & selectable
-    final selectedCount =
-        words.where((w) => _selectedWordIds.contains(w.id)).length;
+    final selectedCount = words
+        .where((w) => _selectedWordIds.contains(w.id))
+        .length;
     final isFull = selectedCount == words.length;
     final isPartial = selectedCount > 0 && selectedCount < words.length;
 
@@ -766,7 +801,11 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
     );
   }
 
-  Widget _buildFilterPill(String label, VoidCallback onTap, PixelPalette palette) {
+  Widget _buildFilterPill(
+    String label,
+    VoidCallback onTap,
+    PixelPalette palette,
+  ) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -793,9 +832,12 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
     List<VocabularyWord> words,
     PixelPalette palette,
   ) {
-    final selectedCount = words.where((w) => _selectedWordIds.contains(w.id)).length;
+    final selectedCount = words
+        .where((w) => _selectedWordIds.contains(w.id))
+        .length;
     final isAllSelected = selectedCount == words.length;
-    final isPartiallySelected = selectedCount > 0 && selectedCount < words.length;
+    final isPartiallySelected =
+        selectedCount > 0 && selectedCount < words.length;
     final isExpanded = _expandedDates.contains(date);
 
     return Container(
@@ -832,8 +874,8 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                         color: isAllSelected
                             ? palette.accent
                             : (isPartiallySelected
-                                ? palette.accent.withValues(alpha: 0.3)
-                                : palette.surface),
+                                  ? palette.accent.withValues(alpha: 0.3)
+                                  : palette.surface),
                         border: Border.all(
                           color: palette.border,
                           width: PixelMetrics.border,
@@ -848,14 +890,14 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                               ),
                             )
                           : (isPartiallySelected
-                              ? Text(
-                                  '-',
-                                  style: TextStyle(
-                                    color: palette.ink,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                )
-                              : null),
+                                ? Text(
+                                    '-',
+                                    style: TextStyle(
+                                      color: palette.ink,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  )
+                                : null),
                     ),
                   ),
                   const SizedBox(width: PixelMetrics.space2),
@@ -871,7 +913,10 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     color: palette.surface,
                     child: Text(
                       '$selectedCount / ${words.length} WORDS',
@@ -879,13 +924,17 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                         fontFamily: 'Handjet',
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
-                        color: selectedCount > 0 ? palette.accent : palette.inkFaint,
+                        color: selectedCount > 0
+                            ? palette.accent
+                            : palette.inkFaint,
                       ),
                     ),
                   ),
                   const SizedBox(width: 4),
                   Icon(
-                    isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                    isExpanded
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
                     color: palette.inkMuted,
                   ),
                 ],
@@ -896,9 +945,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
           // Expanded individual words list
           if (isExpanded) ...[
             Divider(height: 1, color: palette.border),
-            for (final word in words) ...[
-              _buildWordRow(word, palette),
-            ],
+            for (final word in words) ...[_buildWordRow(word, palette)],
           ],
         ],
       ),
@@ -1048,7 +1095,10 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
               padding: const EdgeInsets.all(PixelMetrics.space3),
               decoration: BoxDecoration(
                 color: palette.paper,
-                border: Border.all(color: palette.border, width: PixelMetrics.border),
+                border: Border.all(
+                  color: palette.border,
+                  width: PixelMetrics.border,
+                ),
                 boxShadow: [
                   BoxShadow(
                     color: palette.border.withValues(alpha: 0.3),
@@ -1097,11 +1147,17 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                   ),
                 )
               : ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: PixelMetrics.space3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: PixelMetrics.space3,
+                  ),
                   itemCount: playlists.length,
                   itemBuilder: (context, index) {
                     final playlist = playlists[index];
-                    return _buildPlaylistCard(playlist, playlistService, palette);
+                    return _buildPlaylistCard(
+                      playlist,
+                      playlistService,
+                      palette,
+                    );
                   },
                 ),
         ),
@@ -1212,10 +1268,7 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
 }
 
 class _PlaylistEditorSheet extends StatefulWidget {
-  const _PlaylistEditorSheet({
-    required this.allWords,
-    this.existing,
-  });
+  const _PlaylistEditorSheet({required this.allWords, this.existing});
 
   final List<VocabularyWord> allWords;
   final CommutePlaylist? existing;
@@ -1253,10 +1306,7 @@ class _PlaylistEditorSheetState extends State<_PlaylistEditorSheet> {
     final service = context.read<CommutePlaylistService>();
     if (widget.existing != null) {
       await service.updatePlaylist(
-        widget.existing!.copyWith(
-          name: name,
-          wordIds: _selectedIds.toList(),
-        ),
+        widget.existing!.copyWith(name: name, wordIds: _selectedIds.toList()),
       );
     } else {
       await service.createPlaylist(name, _selectedIds.toList());
@@ -1283,154 +1333,159 @@ class _PlaylistEditorSheetState extends State<_PlaylistEditorSheet> {
         decoration: BoxDecoration(
           color: palette.surface,
           border: Border(
-            top: BorderSide(color: palette.border, width: PixelMetrics.border * 2),
+            top: BorderSide(
+              color: palette.border,
+              width: PixelMetrics.border * 2,
+            ),
           ),
         ),
         child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                widget.existing != null ? 'EDIT PLAYLIST' : 'CREATE NEW PLAYLIST',
-                style: TextStyle(
-                  fontFamily: 'Handjet',
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: palette.ink,
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ],
-          ),
-          const SizedBox(height: PixelMetrics.space2),
-          TextField(
-            controller: _nameController,
-            decoration: InputDecoration(
-              labelText: 'Playlist name',
-              filled: true,
-              fillColor: palette.paper,
-              border: OutlineInputBorder(
-                borderSide: BorderSide(
-                  color: palette.border,
-                  width: PixelMetrics.border,
-                ),
-              ),
-            ),
-            style: TextStyle(
-              fontFamily: 'Handjet',
-              fontSize: 18,
-              color: palette.ink,
-            ),
-          ),
-          const SizedBox(height: PixelMetrics.space2),
-          TextField(
-            onChanged: (v) => setState(() => _searchQuery = v),
-            decoration: InputDecoration(
-              hintText: 'Search vocabulary...',
-              prefixIcon: const Icon(Icons.search),
-              filled: true,
-              fillColor: palette.paper,
-              isDense: true,
-              border: OutlineInputBorder(
-                borderSide: BorderSide(color: palette.border, width: 1),
-              ),
-            ),
-            style: const TextStyle(fontFamily: 'Handjet', fontSize: 16),
-          ),
-          const SizedBox(height: PixelMetrics.space2),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'SELECT WORDS (${_selectedIds.length} SELECTED)',
-                style: TextStyle(
-                  fontFamily: 'Handjet',
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: palette.inkFaint,
-                ),
-              ),
-              GestureDetector(
-                onTap: () {
-                  setState(() {
-                    if (_selectedIds.length == widget.allWords.length) {
-                      _selectedIds.clear();
-                    } else {
-                      _selectedIds.addAll(widget.allWords.map((w) => w.id));
-                    }
-                  });
-                },
-                child: Text(
-                  _selectedIds.length == widget.allWords.length
-                      ? 'DESELECT ALL'
-                      : 'SELECT ALL',
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  widget.existing != null
+                      ? 'EDIT PLAYLIST'
+                      : 'CREATE NEW PLAYLIST',
                   style: TextStyle(
                     fontFamily: 'Handjet',
-                    fontSize: 12,
-                    color: palette.accent,
+                    fontSize: 20,
                     fontWeight: FontWeight.bold,
+                    color: palette.ink,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: PixelMetrics.space2),
+            TextField(
+              controller: _nameController,
+              decoration: InputDecoration(
+                labelText: 'Playlist name',
+                filled: true,
+                fillColor: palette.paper,
+                border: OutlineInputBorder(
+                  borderSide: BorderSide(
+                    color: palette.border,
+                    width: PixelMetrics.border,
                   ),
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: PixelMetrics.space2),
-          Expanded(
-            child: ListView.builder(
-              itemCount: filteredWords.length,
-              itemBuilder: (context, i) {
-                final w = filteredWords[i];
-                final isSelected = _selectedIds.contains(w.id);
-                return Material(
-                  color: Colors.transparent,
-                  child: CheckboxListTile(
-                    dense: true,
-                    value: isSelected,
-                    activeColor: palette.accent,
-                    title: Text(
-                      w.word,
-                      style: TextStyle(
-                        fontFamily: 'Handjet',
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: isSelected ? palette.accent : palette.ink,
-                      ),
-                    ),
-                    subtitle: Text(
-                      w.meaning,
-                      style: TextStyle(
-                        fontFamily: 'Handjet',
-                        fontSize: 12,
-                        color: palette.inkMuted,
-                      ),
-                    ),
-                    onChanged: (val) {
-                      setState(() {
-                        if (val == true) {
-                          _selectedIds.add(w.id);
-                        } else {
-                          _selectedIds.remove(w.id);
-                        }
-                      });
-                    },
-                  ),
-                );
-              },
+              style: TextStyle(
+                fontFamily: 'Handjet',
+                fontSize: 18,
+                color: palette.ink,
+              ),
             ),
-          ),
-          const SizedBox(height: PixelMetrics.space2),
-          PixelButton(
-            label: 'SAVE PLAYLIST 💾',
-            onPressed: _selectedIds.isNotEmpty ? _save : null,
-          ),
-        ],
+            const SizedBox(height: PixelMetrics.space2),
+            TextField(
+              onChanged: (v) => setState(() => _searchQuery = v),
+              decoration: InputDecoration(
+                hintText: 'Search vocabulary...',
+                prefixIcon: const Icon(Icons.search),
+                filled: true,
+                fillColor: palette.paper,
+                isDense: true,
+                border: OutlineInputBorder(
+                  borderSide: BorderSide(color: palette.border, width: 1),
+                ),
+              ),
+              style: const TextStyle(fontFamily: 'Handjet', fontSize: 16),
+            ),
+            const SizedBox(height: PixelMetrics.space2),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'SELECT WORDS (${_selectedIds.length} SELECTED)',
+                  style: TextStyle(
+                    fontFamily: 'Handjet',
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: palette.inkFaint,
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      if (_selectedIds.length == widget.allWords.length) {
+                        _selectedIds.clear();
+                      } else {
+                        _selectedIds.addAll(widget.allWords.map((w) => w.id));
+                      }
+                    });
+                  },
+                  child: Text(
+                    _selectedIds.length == widget.allWords.length
+                        ? 'DESELECT ALL'
+                        : 'SELECT ALL',
+                    style: TextStyle(
+                      fontFamily: 'Handjet',
+                      fontSize: 12,
+                      color: palette.accent,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: PixelMetrics.space2),
+            Expanded(
+              child: ListView.builder(
+                itemCount: filteredWords.length,
+                itemBuilder: (context, i) {
+                  final w = filteredWords[i];
+                  final isSelected = _selectedIds.contains(w.id);
+                  return Material(
+                    color: Colors.transparent,
+                    child: CheckboxListTile(
+                      dense: true,
+                      value: isSelected,
+                      activeColor: palette.accent,
+                      title: Text(
+                        w.word,
+                        style: TextStyle(
+                          fontFamily: 'Handjet',
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: isSelected ? palette.accent : palette.ink,
+                        ),
+                      ),
+                      subtitle: Text(
+                        w.meaning,
+                        style: TextStyle(
+                          fontFamily: 'Handjet',
+                          fontSize: 12,
+                          color: palette.inkMuted,
+                        ),
+                      ),
+                      onChanged: (val) {
+                        setState(() {
+                          if (val == true) {
+                            _selectedIds.add(w.id);
+                          } else {
+                            _selectedIds.remove(w.id);
+                          }
+                        });
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: PixelMetrics.space2),
+            PixelButton(
+              label: 'SAVE PLAYLIST 💾',
+              onPressed: _selectedIds.isNotEmpty ? _save : null,
+            ),
+          ],
+        ),
       ),
-    ),
     );
   }
 }

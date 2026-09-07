@@ -7,12 +7,13 @@ import '../core/theme/pixel_palette.dart';
 import '../providers/vocabulary_provider.dart';
 import 'pixel/pixel_button.dart';
 import 'pixel/pixel_icon.dart';
+import 'pixel/retro_calendar_sheet.dart';
 
 /// Day navigation: previous, the day itself, next.
 ///
-/// Tapping the label opens a picker. A marker under the label shows whether
-/// the day already holds words, so scrubbing back through empty days is
-/// visible rather than guesswork.
+/// Tapping the label or the calendar icon opens a retro pixel calendar.
+/// Days holding words show word counts and active styling, while empty days
+/// are grayed down so learning consistency is immediately visible.
 class DateBar extends StatelessWidget {
   const DateBar({super.key});
 
@@ -42,7 +43,7 @@ class DateBar extends StatelessWidget {
           ),
           Expanded(
             child: GestureDetector(
-              onTap: () => _pickDate(context, provider),
+              onTap: () => _openCalendar(context, provider),
               behavior: HitTestBehavior.opaque,
               child: Column(
                 children: [
@@ -70,6 +71,12 @@ class DateBar extends StatelessWidget {
             ),
           ),
           PixelIconButton(
+            glyph: PixelGlyph.calendar,
+            semanticLabel: 'Open calendar',
+            onPressed: () => _openCalendar(context, provider),
+          ),
+          const SizedBox(width: PixelMetrics.space1),
+          PixelIconButton(
             glyph: PixelGlyph.arrowRight,
             semanticLabel: 'Next day',
             onPressed: provider.goToNextDay,
@@ -84,35 +91,11 @@ class DateBar extends StatelessWidget {
     return DateFormat('EEE d MMM').format(date).toUpperCase();
   }
 
-  Future<void> _pickDate(
+  Future<void> _openCalendar(
     BuildContext context,
     VocabularyProvider provider,
   ) async {
-    final palette = context.palette;
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: provider.selectedDate,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-      builder: (context, child) => Theme(
-        // The platform picker is a Material component; it is themed to match
-        // rather than reimplemented, since a hand-built calendar would be a
-        // lot of surface area for a rarely-used control.
-        data: Theme.of(context).copyWith(
-          colorScheme: Theme.of(context).colorScheme.copyWith(
-            surface: palette.surface,
-            onSurface: palette.ink,
-            primary: palette.accent,
-            onPrimary: palette.onAccent,
-          ),
-          dialogTheme: const DialogThemeData(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-          ),
-        ),
-        child: child!,
-      ),
-    );
-    if (picked != null) await provider.selectDate(picked);
+    await RetroCalendarSheet.show(context: context, provider: provider);
   }
 }
 

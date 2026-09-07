@@ -16,7 +16,10 @@ abstract interface class VocabularyRepository {
   Future<List<VocabularyWord>> recentWords({int limit = 50});
 
   /// Words due for spaced repetition review as of [asOfDate] (`YYYY-MM-DD`).
-  Future<List<VocabularyWord>> wordsDueForReview({String? asOfDate, int limit = 30});
+  Future<List<VocabularyWord>> wordsDueForReview({
+    String? asOfDate,
+    int limit = 30,
+  });
 
   /// Total number of words due for review.
   Future<int> dueReviewCount({String? asOfDate});
@@ -72,6 +75,18 @@ abstract interface class VocabularyRepository {
   /// last-write-wins on `updatedAt`. Local dirty rows always win so unsent
   /// edits are never silently discarded.
   Future<void> mergeFromServer(List<VocabularyWord> remote);
+
+  /// Fetches every active word without any limit for full backup export.
+  Future<List<VocabularyWord>> exportAll();
+
+  /// Total number of pending unsynced changes.
+  Future<int> countPendingChanges();
+
+  /// Atomically inserts and updates imported words in a single transaction.
+  Future<void> bulkImport({
+    required List<VocabularyWord> toInsert,
+    required List<VocabularyWord> toUpdate,
+  });
 
   /// Removes every locally stored word.
   ///

@@ -3,15 +3,7 @@ import 'package:flutter/material.dart';
 import 'arcade_vocab_word.dart';
 
 /// 8-Bit Retro Sound FX enum for Arcade Games.
-enum ArcadeSfx {
-  hit,
-  explode,
-  coin,
-  levelUp,
-  dead,
-  jump,
-  score,
-}
+enum ArcadeSfx { hit, explode, coin, levelUp, dead, jump, score }
 
 /// Execution and environment context supplied to an Arcade Game.
 ///

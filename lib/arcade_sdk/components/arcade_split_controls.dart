@@ -220,17 +220,15 @@ class _ActionButton extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (icon != null) ...[
-              icon!,
-              const SizedBox(width: 6),
-            ],
+            if (icon != null) ...[icon!, const SizedBox(width: 6)],
             Text(
               label,
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
                 fontFamily: 'Handjet',
-                color: textColor ?? (isPrimary ? palette.onAccent : palette.ink),
+                color:
+                    textColor ?? (isPrimary ? palette.onAccent : palette.ink),
                 letterSpacing: 0.5,
               ),
             ),

@@ -59,7 +59,9 @@ class _WordOfDayWidgetCardState extends State<WordOfDayWidgetCard> {
 
     final raw = word.pronunciation;
     final normalised = raw == null ? '' : PronunciationService.normalise(raw);
-    final formattedIpa = normalised.isEmpty ? null : PronunciationService.format(normalised);
+    final formattedIpa = normalised.isEmpty
+        ? null
+        : PronunciationService.format(normalised);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -70,7 +72,8 @@ class _WordOfDayWidgetCardState extends State<WordOfDayWidgetCard> {
       ),
       child: Semantics(
         button: true,
-        label: 'Word of the Day Widget: ${word.word}. Tap to pronounce and rotate.',
+        label:
+            'Word of the Day Widget: ${word.word}. Tap to pronounce and rotate.',
         child: GestureDetector(
           onTap: () => _pronounceAndRotate(word, words.length),
           behavior: HitTestBehavior.opaque,
@@ -102,7 +105,10 @@ class _WordOfDayWidgetCardState extends State<WordOfDayWidgetCard> {
                     const Spacer(),
                     if (provider.stats.streakDays > 0)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 1,
+                        ),
                         decoration: BoxDecoration(
                           color: palette.paper,
                           border: Border.all(color: palette.border, width: 1),
@@ -198,7 +204,9 @@ class _WordOfDayWidgetCardState extends State<WordOfDayWidgetCard> {
                 Row(
                   children: [
                     Text(
-                      isSpeaking ? '🔊 PRONOUNCING…' : 'TAP WIDGET TO PRONOUNCE & ROTATE ❯',
+                      isSpeaking
+                          ? '🔊 PRONOUNCING…'
+                          : 'TAP WIDGET TO PRONOUNCE & ROTATE ❯',
                       style: TextStyle(
                         fontFamily: 'Handjet',
                         fontSize: 11,

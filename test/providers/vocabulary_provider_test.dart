@@ -60,8 +60,7 @@ class FlakyRepository implements VocabularyRepository {
   Future<int> dueReviewCount({String? asOfDate}) =>
       _inner.dueReviewCount(asOfDate: asOfDate);
   @override
-  Future<SrsReview?> getSrsReview(String wordId) =>
-      _inner.getSrsReview(wordId);
+  Future<SrsReview?> getSrsReview(String wordId) => _inner.getSrsReview(wordId);
   @override
   Future<SrsReview> recordSrsReview({
     required String wordId,
@@ -91,6 +90,19 @@ class FlakyRepository implements VocabularyRepository {
   @override
   Future<void> mergeFromServer(List<VocabularyWord> remote) =>
       _inner.mergeFromServer(remote);
+  @override
+  Future<List<VocabularyWord>> exportAll() => _inner.exportAll();
+  @override
+  Future<int> countPendingChanges() => _inner.countPendingChanges();
+  @override
+  Future<void> bulkImport({
+    required List<VocabularyWord> toInsert,
+    required List<VocabularyWord> toUpdate,
+  }) {
+    _guard();
+    return _inner.bulkImport(toInsert: toInsert, toUpdate: toUpdate);
+  }
+
   @override
   Future<void> deleteAll() => _inner.deleteAll();
   @override

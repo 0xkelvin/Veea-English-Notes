@@ -2,12 +2,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../core/theme/pixel_metrics.dart';
 import '../core/theme/pixel_palette.dart';
-import '../models/vocabulary_word.dart';
 import '../services/ocr_service.dart';
 import '../services/pronunciation_service.dart';
 import '../widgets/pixel/pixel_box.dart';
@@ -124,7 +122,10 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
     }
   }
 
-  Future<void> _processImageFile(String path, {required String sourceTitle}) async {
+  Future<void> _processImageFile(
+    String path, {
+    required String sourceTitle,
+  }) async {
     setState(() {
       _isScanning = true;
       _errorMessage = null;
@@ -134,7 +135,10 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
     });
 
     try {
-      final result = await OcrService.scanImageFile(path, sourceTitle: sourceTitle);
+      final result = await OcrService.scanImageFile(
+        path,
+        sourceTitle: sourceTitle,
+      );
       if (!mounted) return;
       setState(() {
         _isScanning = false;
@@ -207,15 +211,11 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
 
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => WordEditorScreen(
-          existing: VocabularyWord.create(
-            id: '',
+        builder: (_) => WordEditorScreen.draft(
+          draft: WordDraft(
             word: word.normalized,
-            meaning: '',
-            date: DateFormat('yyyy-MM-dd').format(DateTime.now()),
             source: _currentResult.sourceTitle ?? 'Pixel Lens OCR',
             examples: [word.sentence],
-            now: DateTime.now(),
           ),
         ),
       ),
@@ -385,7 +385,10 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                                 ),
                                 decoration: BoxDecoration(
                                   color: palette.accent,
-                                  border: Border.all(color: palette.border, width: 1),
+                                  border: Border.all(
+                                    color: palette.border,
+                                    width: 1,
+                                  ),
                                 ),
                                 child: Text(
                                   _isScanning
@@ -461,11 +464,17 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                         Expanded(
                           child: Center(
                             child: Padding(
-                              padding: const EdgeInsets.all(PixelMetrics.space3),
+                              padding: const EdgeInsets.all(
+                                PixelMetrics.space3,
+                              ),
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  PixelIcon(PixelGlyph.bolt, color: palette.danger, scale: 3),
+                                  PixelIcon(
+                                    PixelGlyph.bolt,
+                                    color: palette.danger,
+                                    scale: 3,
+                                  ),
                                   const SizedBox(height: PixelMetrics.space2),
                                   Text(
                                     'SCAN WARNING',
@@ -501,12 +510,18 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                       // Otherwise, show content:
                       else ...[
                         // Optional image thumbnail banner if scanned from photo
-                        if (_scannedImagePath != null && File(_scannedImagePath!).existsSync())
+                        if (_scannedImagePath != null &&
+                            File(_scannedImagePath!).existsSync())
                           Container(
                             height: 52,
-                            margin: const EdgeInsets.only(bottom: PixelMetrics.space2),
+                            margin: const EdgeInsets.only(
+                              bottom: PixelMetrics.space2,
+                            ),
                             decoration: BoxDecoration(
-                              border: Border.all(color: palette.border, width: 1),
+                              border: Border.all(
+                                color: palette.border,
+                                width: 1,
+                              ),
                               color: palette.paper,
                             ),
                             child: Row(
@@ -516,16 +531,19 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                                   width: 52,
                                   height: 52,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) => const SizedBox(width: 52),
+                                  errorBuilder: (_, _, _) =>
+                                      const SizedBox(width: 52),
                                 ),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       Text(
-                                        _currentResult.sourceTitle ?? 'Camera Scan',
+                                        _currentResult.sourceTitle ??
+                                            'Camera Scan',
                                         style: TextStyle(
                                           fontFamily: 'Handjet',
                                           fontSize: 12,
@@ -534,7 +552,9 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                                         ),
                                       ),
                                       Text(
-                                        _currentResult.words.any((w) => !w.isEnglish)
+                                        _currentResult.words.any(
+                                              (w) => !w.isEnglish,
+                                            )
                                             ? '${_currentResult.words.where((w) => w.isEnglish).length} English words (${_currentResult.words.where((w) => !w.isEnglish).length} dimmed)'
                                             : '${_currentResult.words.length} vocabulary words extracted',
                                         style: TextStyle(
@@ -586,14 +606,22 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                                 } else {
                                   if (isEnglish) {
                                     bgColor = palette.paper;
-                                    borderColor = palette.border.withValues(alpha: 0.4);
+                                    borderColor = palette.border.withValues(
+                                      alpha: 0.4,
+                                    );
                                     textColor = palette.ink;
                                     fontWeight = FontWeight.normal;
                                   } else {
                                     // Gray down if it is not an English word (Vietnamese, special symbols, etc.)
-                                    bgColor = palette.surface.withValues(alpha: 0.35);
-                                    borderColor = palette.border.withValues(alpha: 0.15);
-                                    textColor = palette.inkFaint.withValues(alpha: 0.45);
+                                    bgColor = palette.surface.withValues(
+                                      alpha: 0.35,
+                                    );
+                                    borderColor = palette.border.withValues(
+                                      alpha: 0.15,
+                                    );
+                                    textColor = palette.inkFaint.withValues(
+                                      alpha: 0.45,
+                                    );
                                     fontWeight = FontWeight.normal;
                                   }
                                 }
@@ -715,7 +743,9 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                         const Spacer(),
                         if (_selectedWord!.isEnglish)
                           FutureBuilder<String?>(
-                            future: pronunciation.lookup(_selectedWord!.normalized),
+                            future: pronunciation.lookup(
+                              _selectedWord!.normalized,
+                            ),
                             builder: (context, snapshot) {
                               if (snapshot.hasData && snapshot.data != null) {
                                 return Container(
@@ -750,7 +780,9 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                       '“${_selectedWord!.sentence}”',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         fontStyle: FontStyle.italic,
-                        color: _selectedWord!.isEnglish ? null : palette.inkMuted,
+                        color: _selectedWord!.isEnglish
+                            ? null
+                            : palette.inkMuted,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -758,7 +790,8 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                     const SizedBox(height: PixelMetrics.space3),
                     if (_selectedWord!.isEnglish)
                       PixelButton(
-                        label: 'Capture "${_selectedWord!.normalized}" to Notebook',
+                        label:
+                            'Capture "${_selectedWord!.normalized}" to Notebook',
                         glyph: PixelGlyph.plus,
                         filled: true,
                         expand: true,

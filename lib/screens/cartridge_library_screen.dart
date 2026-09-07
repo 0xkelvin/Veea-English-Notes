@@ -58,7 +58,11 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
               ),
               child: Row(
                 children: [
-                  PixelIcon(PixelGlyph.gamepad, color: palette.accent, scale: 2),
+                  PixelIcon(
+                    PixelGlyph.gamepad,
+                    color: palette.accent,
+                    scale: 2,
+                  ),
                   const SizedBox(width: PixelMetrics.space2),
                   Expanded(
                     child: Column(
@@ -215,7 +219,11 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    PixelIcon(PixelGlyph.gamepad, color: palette.onAccent, scale: 2),
+                    PixelIcon(
+                      PixelGlyph.gamepad,
+                      color: palette.onAccent,
+                      scale: 2,
+                    ),
                     const SizedBox(height: 2),
                     Text(
                       'VOL.1',
@@ -238,7 +246,9 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 4, vertical: 1),
+                            horizontal: 4,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
                             color: palette.paper,
                             border: Border.all(color: palette.border, width: 1),
@@ -286,10 +296,7 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
             ],
           ),
           const SizedBox(height: PixelMetrics.space3),
-          Text(
-            cartridge.description,
-            style: theme.textTheme.bodyMedium,
-          ),
+          Text(cartridge.description, style: theme.textTheme.bodyMedium),
         ],
       ),
     );
@@ -412,10 +419,7 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  '“${word.prExample}”',
-                  style: theme.textTheme.bodyMedium,
-                ),
+                Text('“${word.prExample}”', style: theme.textTheme.bodyMedium),
               ],
             ),
           ),
@@ -427,7 +431,9 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
               padding: const EdgeInsets.all(PixelMetrics.space2),
               decoration: BoxDecoration(
                 color: palette.paper,
-                border: Border.all(color: palette.border.withValues(alpha: 0.5)),
+                border: Border.all(
+                  color: palette.border.withValues(alpha: 0.5),
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -482,7 +488,9 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 Text(
-                  isExpanded ? '▲ LESS DETAILS' : '▼ STANDUP & INTERVIEW NUANCES',
+                  isExpanded
+                      ? '▲ LESS DETAILS'
+                      : '▼ STANDUP & INTERVIEW NUANCES',
                   style: TextStyle(
                     fontFamily: 'Handjet',
                     fontSize: 10,
@@ -523,10 +531,7 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
               children: [
                 PixelIcon(PixelGlyph.gamepad, color: palette.accent, scale: 2),
                 const SizedBox(width: PixelMetrics.space2),
-                Text(
-                  'INSERT CARTRIDGE',
-                  style: theme.textTheme.titleMedium,
-                ),
+                Text('INSERT CARTRIDGE', style: theme.textTheme.titleMedium),
                 const Spacer(),
                 PixelIconButton(
                   glyph: PixelGlyph.close,
@@ -542,7 +547,8 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
             ),
             const SizedBox(height: PixelMetrics.space4),
             PixelButton(
-              label: '🚀 Instant Import (All ${cartridge.words.length} Words for Today)',
+              label:
+                  '🚀 Instant Import (All ${cartridge.words.length} Words for Today)',
               filled: true,
               expand: true,
               onPressed: () async {

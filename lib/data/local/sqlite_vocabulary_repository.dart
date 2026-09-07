@@ -210,8 +210,7 @@ class SqliteVocabularyRepository implements VocabularyRepository {
       [cutoffDate],
     );
     final dailyCounts = <String, int>{
-      for (final r in dailyCountsRows)
-        r['date']! as String: r['count']! as int,
+      for (final r in dailyCountsRows) r['date']! as String: r['count']! as int,
     };
 
     return GamificationStats(
@@ -444,10 +443,7 @@ class SqliteVocabularyRepository implements VocabularyRepository {
       final updatedWord = wordObj.copyWith(pronunciation: ipa, isDirty: true);
       batch.update(
         _table,
-        {
-          ...updatedWord.toDbMap(),
-          'updated_at': stamp,
-        },
+        {...updatedWord.toDbMap(), 'updated_at': stamp},
         where: 'id = ?',
         whereArgs: [wordObj.id],
       );
@@ -466,6 +462,51 @@ class SqliteVocabularyRepository implements VocabularyRepository {
     // A hard delete, not a tombstone: there is no server left to tell, and
     // tombstones would only be re-uploaded to whatever account signs in next.
     await _db.delete(_table);
+  }
+
+  @override
+  Future<List<VocabularyWord>> exportAll() async {
+    final rows = await _db.query(
+      _table,
+      columns: _columns,
+      where: 'is_deleted = 0',
+      orderBy: 'created_at DESC',
+    );
+    return rows.map(VocabularyWord.fromDbMap).toList(growable: false);
+  }
+
+  @override
+  Future<int> countPendingChanges() async {
+    final result = await _db.rawQuery(
+      'SELECT COUNT(*) as count FROM $_table WHERE is_dirty = 1',
+    );
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  @override
+  Future<void> bulkImport({
+    required List<VocabularyWord> toInsert,
+    required List<VocabularyWord> toUpdate,
+  }) async {
+    await _db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final word in toInsert) {
+        batch.insert(
+          _table,
+          word.toDbMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      for (final word in toUpdate) {
+        batch.update(
+          _table,
+          word.toDbMap(),
+          where: 'id = ?',
+          whereArgs: [word.id],
+        );
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   @override

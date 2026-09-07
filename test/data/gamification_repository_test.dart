@@ -37,7 +37,13 @@ void main() {
     }
 
     // 3 words on 2026-08-18 (today)
-    await seed('1', 'resilient', 'kiên cường', '2026-08-18', tags: ['tech', 'mindset']);
+    await seed(
+      '1',
+      'resilient',
+      'kiên cường',
+      '2026-08-18',
+      tags: ['tech', 'mindset'],
+    );
     await seed('2', 'brittle', 'dễ vỡ', '2026-08-18', tags: ['tech']);
     await seed('3', 'ergonomic', 'tiện dụng', '2026-08-18', tags: ['design']);
 

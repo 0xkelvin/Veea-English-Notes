@@ -172,11 +172,23 @@ class _PixelBadgesGridState extends State<PixelBadgesGrid> {
             // Filter Tabs
             Row(
               children: [
-                _filterChip('ALL (${badges.length})', _BadgeFilter.all, palette),
+                _filterChip(
+                  'ALL (${badges.length})',
+                  _BadgeFilter.all,
+                  palette,
+                ),
                 const SizedBox(width: 4),
-                _filterChip('UNLOCKED ($unlockedCount)', _BadgeFilter.unlocked, palette),
+                _filterChip(
+                  'UNLOCKED ($unlockedCount)',
+                  _BadgeFilter.unlocked,
+                  palette,
+                ),
                 const SizedBox(width: 4),
-                _filterChip('LOCKED (${badges.length - unlockedCount})', _BadgeFilter.locked, palette),
+                _filterChip(
+                  'LOCKED (${badges.length - unlockedCount})',
+                  _BadgeFilter.locked,
+                  palette,
+                ),
               ],
             ),
 
@@ -285,7 +297,9 @@ class _BadgeRowTile extends StatelessWidget {
                       if (isUnlocked)
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 4, vertical: 1),
+                            horizontal: 4,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
                             color: palette.accent,
                             border: Border.all(color: palette.border, width: 1),
@@ -377,11 +391,15 @@ class _BadgeRowTile extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: badge.isUnlocked ? palette.accent : palette.surface,
                     border: Border.all(
-                        color: palette.border, width: PixelMetrics.border),
+                      color: palette.border,
+                      width: PixelMetrics.border,
+                    ),
                   ),
                   child: PixelIcon(
                     badge.iconGlyph,
-                    color: badge.isUnlocked ? palette.onAccent : palette.inkFaint,
+                    color: badge.isUnlocked
+                        ? palette.onAccent
+                        : palette.inkFaint,
                     scale: 2,
                   ),
                 ),
@@ -414,10 +432,7 @@ class _BadgeRowTile extends StatelessWidget {
               ],
             ),
             const SizedBox(height: PixelMetrics.space4),
-            Text(
-              badge.description,
-              style: theme.textTheme.bodyLarge,
-            ),
+            Text(badge.description, style: theme.textTheme.bodyLarge),
             const SizedBox(height: PixelMetrics.space4),
             Container(
               width: double.infinity,
@@ -425,7 +440,9 @@ class _BadgeRowTile extends StatelessWidget {
               decoration: BoxDecoration(
                 color: palette.surface,
                 border: Border.all(
-                    color: palette.border, width: PixelMetrics.border),
+                  color: palette.border,
+                  width: PixelMetrics.border,
+                ),
               ),
               child: Row(
                 children: [
@@ -434,7 +451,9 @@ class _BadgeRowTile extends StatelessWidget {
                         ? 'STATUS: UNLOCKED ★'
                         : 'STATUS: IN PROGRESS',
                     style: theme.textTheme.labelSmall?.copyWith(
-                      color: badge.isUnlocked ? palette.accent : palette.inkMuted,
+                      color: badge.isUnlocked
+                          ? palette.accent
+                          : palette.inkMuted,
                       fontWeight: FontWeight.bold,
                     ),
                   ),

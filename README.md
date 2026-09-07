@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter)](https://flutter.dev)
-[![Tests](https://img.shields.io/badge/Tests-173%20Passing-success)](https://github.com)
+[![Tests](https://img.shields.io/badge/Tests-256%20Passing-success)](https://github.com)
 [![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-brightgreen.svg)](CONTRIBUTING_GAMES.md)
 
 **A minimalist 8-bit retro vocabulary journal and arcade gaming center for English learners.**

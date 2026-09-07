@@ -11,11 +11,9 @@ import '../models/vocabulary_word.dart';
 import '../models/word_challenge.dart';
 
 class FriendChallengeService extends ChangeNotifier {
-  FriendChallengeService({
-    SharedPreferences? prefs,
-    Random? random,
-  })  : _prefs = prefs,
-        _random = random ?? Random();
+  FriendChallengeService({SharedPreferences? prefs, Random? random})
+    : _prefs = prefs,
+      _random = random ?? Random();
 
   SharedPreferences? _prefs;
   final Random _random;
@@ -32,15 +30,18 @@ class FriendChallengeService extends ChangeNotifier {
   List<FriendConnection> _friends = [];
   List<WordChallenge> _challengeHistory = [];
 
-  final _incomingChallengeController = StreamController<WordChallenge>.broadcast();
+  final _incomingChallengeController =
+      StreamController<WordChallenge>.broadcast();
   final _resultController = StreamController<WordChallengeResult>.broadcast();
 
-  Stream<WordChallenge> get incomingChallenges => _incomingChallengeController.stream;
+  Stream<WordChallenge> get incomingChallenges =>
+      _incomingChallengeController.stream;
   Stream<WordChallengeResult> get challengeResults => _resultController.stream;
 
   FriendProfile get profile => _profile;
   List<FriendConnection> get friends => List.unmodifiable(_friends);
-  List<WordChallenge> get challengeHistory => List.unmodifiable(_challengeHistory);
+  List<WordChallenge> get challengeHistory =>
+      List.unmodifiable(_challengeHistory);
 
   Future<void> init() async {
     _prefs ??= await SharedPreferences.getInstance();
@@ -49,7 +50,9 @@ class FriendChallengeService extends ChangeNotifier {
     final rawProfile = _prefs!.getString(_profileKey);
     if (rawProfile != null) {
       try {
-        _profile = FriendProfile.fromJson(jsonDecode(rawProfile) as Map<String, dynamic>);
+        _profile = FriendProfile.fromJson(
+          jsonDecode(rawProfile) as Map<String, dynamic>,
+        );
       } catch (_) {
         _profile = _generateNewProfile();
       }
@@ -64,7 +67,9 @@ class FriendChallengeService extends ChangeNotifier {
       try {
         final list = jsonDecode(rawFriends) as List;
         _friends = list
-            .map((item) => FriendConnection.fromJson(item as Map<String, dynamic>))
+            .map(
+              (item) => FriendConnection.fromJson(item as Map<String, dynamic>),
+            )
             .toList();
       } catch (_) {
         _friends = [];
@@ -110,7 +115,10 @@ class FriendChallengeService extends ChangeNotifier {
 
   FriendProfile _generateNewProfile() {
     const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-    final code = List.generate(4, (_) => chars[_random.nextInt(chars.length)]).join();
+    final code = List.generate(
+      4,
+      (_) => chars[_random.nextInt(chars.length)],
+    ).join();
     return FriendProfile(
       id: 'usr_${DateTime.now().millisecondsSinceEpoch}',
       friendCode: 'VEEA-$code',
@@ -178,7 +186,9 @@ class FriendChallengeService extends ChangeNotifier {
       pool: otherWordsPool,
     );
 
-    final correctAnswer = mode == ChallengeMode.vnToEn ? word.word : word.meaning;
+    final correctAnswer = mode == ChallengeMode.vnToEn
+        ? word.word
+        : word.meaning;
     final allOptions = List<String>.from(distractors)..add(correctAnswer);
     allOptions.shuffle(_random);
 
@@ -211,7 +221,8 @@ class FriendChallengeService extends ChangeNotifier {
     ChallengeMode? mode,
     List<VocabularyWord> pool = const [],
   }) {
-    final testWord = word ??
+    final testWord =
+        word ??
         VocabularyWord(
           id: 'demo_1',
           word: 'resilient',
@@ -222,7 +233,8 @@ class FriendChallengeService extends ChangeNotifier {
           updatedAt: DateTime(2026, 8, 18),
         );
 
-    final chosenMode = mode ??
+    final chosenMode =
+        mode ??
         (_random.nextBool() ? ChallengeMode.vnToEn : ChallengeMode.enToVn);
 
     final distractors = _generateDistractors(
@@ -231,15 +243,18 @@ class FriendChallengeService extends ChangeNotifier {
       pool: pool,
     );
 
-    final correctAnswer =
-        chosenMode == ChallengeMode.vnToEn ? testWord.word : testWord.meaning;
+    final correctAnswer = chosenMode == ChallengeMode.vnToEn
+        ? testWord.word
+        : testWord.meaning;
     final allOptions = List<String>.from(distractors)..add(correctAnswer);
     allOptions.shuffle(_random);
 
     final incoming = WordChallenge(
       id: 'drop_${DateTime.now().millisecondsSinceEpoch}',
       senderId: 'sim_friend',
-      senderName: senderName ?? (_friends.isNotEmpty ? _friends.first.name : 'Alex (Senior FE)'),
+      senderName:
+          senderName ??
+          (_friends.isNotEmpty ? _friends.first.name : 'Alex (Senior FE)'),
       targetWord: testWord.word,
       targetMeaning: testWord.meaning,
       partOfSpeech: testWord.partOfSpeech?.name.toUpperCase() ?? '',
@@ -319,7 +334,8 @@ class FriendChallengeService extends ChangeNotifier {
     required String selectedAnswer,
     required double timeTakenSeconds,
   }) async {
-    final isCorrect = selectedAnswer.trim().toLowerCase() ==
+    final isCorrect =
+        selectedAnswer.trim().toLowerCase() ==
         challenge.correctAnswer.trim().toLowerCase();
 
     final speedBonus = (isCorrect && timeTakenSeconds < 5.0) ? 50 : 0;

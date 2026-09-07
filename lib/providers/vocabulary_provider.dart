@@ -1,12 +1,14 @@
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
+import '../data/starter_words_data.dart';
 import '../data/vocabulary_repository.dart';
 import '../models/gamification_badge.dart';
 import '../models/part_of_speech.dart';
 import '../models/srs_review.dart';
 import '../models/vocabulary_stats.dart';
 import '../models/vocabulary_word.dart';
+import '../services/backup_service.dart';
 import '../services/widget_service.dart';
 
 enum LoadStatus { loading, ready, failed }
@@ -72,6 +74,9 @@ class VocabularyProvider extends ChangeNotifier {
 
   bool get isToday => dateKey(_selectedDate) == dateKey(_now());
 
+  /// Today's date according to the provider's reference clock.
+  DateTime get today => _now();
+
   /// Message for the last failed operation, cleared once shown.
   String? get lastError => _lastError;
 
@@ -85,7 +90,11 @@ class VocabularyProvider extends ChangeNotifier {
   }
 
   /// Fetches all active vocabulary words across all dates.
-  Future<List<VocabularyWord>> allWords({int limit = 5000}) {
+  /// If [limit] is null, exports all words without truncation.
+  Future<List<VocabularyWord>> allWords({int? limit}) {
+    if (limit == null) {
+      return _repository.exportAll();
+    }
     return _repository.recentWords(limit: limit);
   }
 
@@ -173,6 +182,21 @@ class VocabularyProvider extends ChangeNotifier {
     });
   }
 
+  /// Inserts the 5 curated starter words into the current [selectedDateKey].
+  Future<int> loadStarterPack() async {
+    final starterWords = StarterWordsData.createStarterWords(
+      date: selectedDateKey,
+      now: _now(),
+      uuid: _uuid,
+    );
+    await _mutate('Could not load starter pack', () async {
+      for (final word in starterWords) {
+        await _repository.insert(word);
+      }
+    });
+    return starterWords.length;
+  }
+
   Future<void> updateWord(
     VocabularyWord original, {
     required String word,
@@ -219,6 +243,40 @@ class VocabularyProvider extends ChangeNotifier {
     if (_undoableDeletionId == null) return;
     _undoableDeletionId = null;
     notifyListeners();
+  }
+
+  /// Exports all saved words to formatted JSON string without truncation.
+  Future<String> exportBackupJson() async {
+    final words = await _repository.exportAll();
+    return BackupService.exportToJson(words);
+  }
+
+  /// Exports all saved words to standard RFC 4180 CSV string without truncation.
+  Future<String> exportBackupCsv() async {
+    final words = await _repository.exportAll();
+    return BackupService.exportToCsv(words);
+  }
+
+  /// Previews changes that would be made by importing [text].
+  Future<BackupPreviewResult> previewBackup(String text) {
+    return BackupService.previewBackup(
+      rawContent: text,
+      repository: _repository,
+    );
+  }
+
+  /// Imports and merges words from raw JSON or CSV text, refreshing local state.
+  Future<BackupImportResult> importBackup(String text) async {
+    final result = await BackupService.importBackupText(
+      rawContent: text,
+      repository: _repository,
+      now: _now,
+      uuid: _uuid,
+    );
+    if (result.isSuccess) {
+      await _refresh();
+    }
+    return result;
   }
 
   Future<List<VocabularyWord>> search(String query) async {

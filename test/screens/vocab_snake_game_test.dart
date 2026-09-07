@@ -25,9 +25,24 @@ void main() {
     );
     provider = VocabularyProvider(repo, now: () => today);
     await provider.init();
-    await provider.addWord(word: 'resilient', meaning: 'kiên cường', source: 'test', tags: []);
-    await provider.addWord(word: 'tenacious', meaning: 'bền bỉ', source: 'test', tags: []);
-    await provider.addWord(word: 'eloquent', meaning: 'lưu loát', source: 'test', tags: []);
+    await provider.addWord(
+      word: 'resilient',
+      meaning: 'kiên cường',
+      source: 'test',
+      tags: [],
+    );
+    await provider.addWord(
+      word: 'tenacious',
+      meaning: 'bền bỉ',
+      source: 'test',
+      tags: [],
+    );
+    await provider.addWord(
+      word: 'eloquent',
+      meaning: 'lưu loát',
+      source: 'test',
+      tags: [],
+    );
   });
 
   tearDown(() => repo.close());
@@ -43,13 +58,17 @@ void main() {
     ),
   );
 
-  testWidgets('VocabSnakeGame D-pad displays all four arrow glyphs properly', (tester) async {
+  testWidgets('VocabSnakeGame D-pad displays all four arrow glyphs properly', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(800, 1200);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
     await tester.pumpWidget(wrap(const VocabSnakeGame()));
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
     await tester.pump();
 
     // Verify all 4 directional arrow icons are rendered on the D-Pad
@@ -71,32 +90,37 @@ void main() {
     await tester.pump();
   });
 
-  testWidgets('VocabSnakeGame renders all English words on board with identical ink color', (tester) async {
-    tester.view.physicalSize = const Size(800, 1200);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
+  testWidgets(
+    'VocabSnakeGame renders all English words on board with identical ink color',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
 
-    await tester.pumpWidget(wrap(const VocabSnakeGame()));
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
-    await tester.pump();
+      await tester.pumpWidget(wrap(const VocabSnakeGame()));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pump();
 
-    // Check all English word label texts on the pellets
-    const lightPalette = PixelPalette.light;
-    final pelletWords = ['RESILIENT', 'TENACIOUS', 'ELOQUENT'];
-    var checkedCount = 0;
+      // Check all English word label texts on the pellets
+      const lightPalette = PixelPalette.light;
+      final pelletWords = ['RESILIENT', 'TENACIOUS', 'ELOQUENT'];
+      var checkedCount = 0;
 
-    for (final pw in pelletWords) {
-      final matches = find.text(pw);
-      if (matches.evaluate().isNotEmpty) {
-        final text = tester.widget<Text>(matches.first);
-        expect(text.style?.color, equals(lightPalette.ink));
-        expect(text.style?.color, isNot(equals(lightPalette.accent)));
-        checkedCount++;
+      for (final pw in pelletWords) {
+        final matches = find.text(pw);
+        if (matches.evaluate().isNotEmpty) {
+          final text = tester.widget<Text>(matches.first);
+          expect(text.style?.color, equals(lightPalette.ink));
+          expect(text.style?.color, isNot(equals(lightPalette.accent)));
+          checkedCount++;
+        }
       }
-    }
 
-    expect(checkedCount, greaterThan(0));
-  });
+      expect(checkedCount, greaterThan(0));
+    },
+  );
 
   testWidgets('Initial snake has 3 segments', (tester) async {
     tester.view.physicalSize = const Size(800, 1200);
@@ -104,7 +128,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
 
     await tester.pumpWidget(wrap(const VocabSnakeGame()));
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
     await tester.pump();
 
     final containers = tester.widgetList<Container>(find.byType(Container));

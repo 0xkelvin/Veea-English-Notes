@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:home_widget/home_widget.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/vocabulary_word.dart';
 import '../providers/widget_provider.dart';
@@ -13,6 +14,22 @@ class WidgetService {
   static const String appGroupId = 'group.com.nintran.veeaEnglishApp';
   static const String iOSWidgetName = 'WordOfDayWidget';
   static const String androidWidgetName = 'WordOfDayWidgetProvider';
+
+  /// Checks whether widgets are enabled by the user before writing data.
+  static Future<bool> isWidgetEnabled() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool('widget_enabled') ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  static bool _shouldLog(Object error) {
+    final str = error.toString();
+    return !str.contains('MissingPluginException') &&
+        !str.contains('Binding has not yet been initialized');
+  }
 
   /// Sets widget rotation interval preference in native shared storage.
   static Future<void> setRotationInterval(int intervalMinutes) async {
@@ -28,7 +45,9 @@ class WidgetService {
         androidName: androidWidgetName,
       );
     } catch (error, stack) {
-      debugPrint('Could not set rotation interval: $error\n$stack');
+      if (_shouldLog(error)) {
+        debugPrint('Could not set rotation interval: $error\n$stack');
+      }
     }
   }
 
@@ -37,8 +56,9 @@ class WidgetService {
     if (kIsWeb) return;
     try {
       await HomeWidget.setAppGroupId(appGroupId);
-      final jsonString =
-          await HomeWidget.getWidgetData<String>('widget_words_json');
+      final jsonString = await HomeWidget.getWidgetData<String>(
+        'widget_words_json',
+      );
       if (jsonString == null || jsonString.isEmpty) return;
 
       final dynamic decoded = jsonDecode(jsonString);
@@ -78,7 +98,9 @@ class WidgetService {
         androidName: androidWidgetName,
       );
     } catch (error, stack) {
-      debugPrint('Could not rotate to next widget word: $error\n$stack');
+      if (_shouldLog(error)) {
+        debugPrint('Could not rotate to next widget word: $error\n$stack');
+      }
     }
   }
 
@@ -88,18 +110,23 @@ class WidgetService {
     required int streakDays,
   }) async {
     if (kIsWeb || words.isEmpty) return;
+    if (!await isWidgetEnabled()) return;
 
     try {
       await HomeWidget.setAppGroupId(appGroupId);
 
       final wordsJson = jsonEncode(
-        words.map((w) => {
-          'word': w.word,
-          'ipa': w.pronunciation ?? '',
-          'pos': w.partOfSpeech?.short ?? '',
-          'meaning': w.meaning,
-          'example': w.examples.isNotEmpty ? w.examples.first : '',
-        }).toList(),
+        words
+            .map(
+              (w) => {
+                'word': w.word,
+                'ipa': w.pronunciation ?? '',
+                'pos': w.partOfSpeech?.short ?? '',
+                'meaning': w.meaning,
+                'example': w.examples.isNotEmpty ? w.examples.first : '',
+              },
+            )
+            .toList(),
       );
 
       final currentIndex =
@@ -119,7 +146,10 @@ class WidgetService {
           'widget_pos',
           currentWord.partOfSpeech?.short ?? '',
         ),
-        HomeWidget.saveWidgetData<String>('widget_meaning', currentWord.meaning),
+        HomeWidget.saveWidgetData<String>(
+          'widget_meaning',
+          currentWord.meaning,
+        ),
         HomeWidget.saveWidgetData<String>(
           'widget_example',
           currentWord.examples.isNotEmpty ? currentWord.examples.first : '',
@@ -132,7 +162,9 @@ class WidgetService {
         androidName: androidWidgetName,
       );
     } catch (error, stack) {
-      debugPrint('Could not update native widget list: $error\n$stack');
+      if (_shouldLog(error)) {
+        debugPrint('Could not update native widget list: $error\n$stack');
+      }
     }
   }
 
@@ -147,6 +179,7 @@ class WidgetService {
   /// Clears native widget data.
   static Future<void> clearWidgetData() async {
     if (kIsWeb) return;
+    if (!await isWidgetEnabled()) return;
 
     try {
       await HomeWidget.setAppGroupId(appGroupId);
@@ -166,7 +199,9 @@ class WidgetService {
         androidName: androidWidgetName,
       );
     } catch (error, stack) {
-      debugPrint('Could not clear native widget data: $error\n$stack');
+      if (_shouldLog(error)) {
+        debugPrint('Could not clear native widget data: $error\n$stack');
+      }
     }
   }
 
@@ -178,8 +213,9 @@ class WidgetService {
       final word = await HomeWidget.getWidgetData<String>('widget_word');
       if (word != null && word.trim().isNotEmpty) return word.trim();
 
-      final jsonString =
-          await HomeWidget.getWidgetData<String>('widget_words_json');
+      final jsonString = await HomeWidget.getWidgetData<String>(
+        'widget_words_json',
+      );
       if (jsonString == null || jsonString.isEmpty) return null;
 
       final dynamic decoded = jsonDecode(jsonString);

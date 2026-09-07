@@ -27,6 +27,16 @@ class AppConfig {
   /// Whether a cloud server has been configured for this build.
   static bool get isCloudEnabled => apiBaseUrl.isNotEmpty;
 
+  /// Feature flag for Pixel Link friend battles / duels.
+  /// Set to false via --dart-define=VEEA_ENABLE_FRIEND_DUELS=false to disable.
+  static const bool isFriendDuelsEnabled = bool.fromEnvironment(
+    'VEEA_ENABLE_FRIEND_DUELS',
+    defaultValue: true,
+  );
+
+  /// Distinguishes the local offline challenge simulation from production real-time duels.
+  static const bool isFriendDuelsLabDemo = true;
+
   /// Root of the versioned API.
   static String get apiRoot => '$apiBaseUrl/api/v1';
 

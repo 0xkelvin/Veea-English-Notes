@@ -282,4 +282,24 @@ void main() {
     expect(await second, isFalse);
     expect(api.pushes, hasLength(1));
   });
+
+  test(
+    'pushes more than 200 pending changes across multiple batches',
+    () async {
+      for (var i = 0; i < 250; i++) {
+        await repo.insert(makeWord(id: 'w-$i', word: 'word-$i'));
+      }
+
+      expect(await repo.countPendingChanges(), 250);
+
+      final success = await sync.synchronise();
+      expect(success, isTrue);
+
+      // Should have made 2 pushes: 200 in batch 1, 50 in batch 2
+      expect(api.pushes.length, 2);
+      expect(api.pushes[0].length, 200);
+      expect(api.pushes[1].length, 50);
+      expect(await repo.countPendingChanges(), 0);
+    },
+  );
 }

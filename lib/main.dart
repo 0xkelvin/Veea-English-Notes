@@ -21,6 +21,7 @@ import 'models/word_challenge.dart';
 import 'services/commute_playlist_service.dart';
 import 'services/friend_challenge_service.dart';
 import 'services/pronunciation_service.dart';
+import 'services/reminder_notification_service.dart';
 import 'services/sync_service.dart';
 import 'services/tts_service.dart';
 import 'services/widget_service.dart';
@@ -30,57 +31,62 @@ import 'widgets/word_drop_overlay.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final repository = await SqliteVocabularyRepository.open();
-  await LegacyImport(repository).runIfNeeded();
-  final pronunciation = PronunciationService(repository.database);
+  try {
+    final repository = await SqliteVocabularyRepository.open();
+    await LegacyImport(repository).runIfNeeded();
+    final pronunciation = PronunciationService(repository.database);
 
-  final vocabulary = VocabularyProvider(repository);
-  await vocabulary.init();
+    final vocabulary = VocabularyProvider(repository);
+    await vocabulary.init();
 
-  const tokens = TokenStore();
-  final apiClient = ApiClient(tokenStore: tokens);
-  final sync = SyncService(
-    repository: repository,
-    api: VocabularyApi(apiClient),
-  );
-  final auth = AuthProvider(
-    authApi: AuthApi(client: apiClient, tokens: tokens),
-    tokens: tokens,
-    client: apiClient,
-    // Deleting an account has to wipe this device too, so the provider needs
-    // the local store and the sync cursor as well as the API.
-    repository: repository,
-    sync: sync,
-  );
-
-  // The app is usable immediately; the session and any sync catch up behind
-  // the first frame rather than blocking it.
-  unawaited(
-    _startBackgroundWork(
-      auth: auth,
-      sync: sync,
-      vocabulary: vocabulary,
-      pronunciation: pronunciation,
+    const tokens = TokenStore();
+    final apiClient = ApiClient(tokenStore: tokens);
+    final sync = SyncService(
       repository: repository,
-    ),
-  );
-
-  final themeProvider = ThemeProvider();
-  await themeProvider.init();
-
-  final widgetProvider = WidgetProvider();
-  await widgetProvider.init();
-
-  runApp(
-    VeeaEnglishApp(
-      vocabulary: vocabulary,
-      auth: auth,
+      api: VocabularyApi(apiClient),
+    );
+    final auth = AuthProvider(
+      authApi: AuthApi(client: apiClient, tokens: tokens),
+      tokens: tokens,
+      client: apiClient,
+      // Deleting an account has to wipe this device too, so the provider needs
+      // the local store and the sync cursor as well as the API.
+      repository: repository,
       sync: sync,
-      pronunciation: pronunciation,
-      themeProvider: themeProvider,
-      widgetProvider: widgetProvider,
-    ),
-  );
+    );
+
+    // The app is usable immediately; the session and any sync catch up behind
+    // the first frame rather than blocking it.
+    unawaited(
+      _startBackgroundWork(
+        auth: auth,
+        sync: sync,
+        vocabulary: vocabulary,
+        pronunciation: pronunciation,
+        repository: repository,
+      ),
+    );
+
+    final themeProvider = ThemeProvider();
+    await themeProvider.init();
+
+    final widgetProvider = WidgetProvider();
+    await widgetProvider.init();
+
+    runApp(
+      VeeaEnglishApp(
+        vocabulary: vocabulary,
+        auth: auth,
+        sync: sync,
+        pronunciation: pronunciation,
+        themeProvider: themeProvider,
+        widgetProvider: widgetProvider,
+      ),
+    );
+  } catch (error, stack) {
+    debugPrint('Startup failure: $error\n$stack');
+    runApp(StartupRecoveryApp(error: error.toString(), onRetry: () => main()));
+  }
 }
 
 /// Restores the session and performs an opening sync, if a server is
@@ -99,6 +105,8 @@ Future<void> _startBackgroundWork({
     if (await repository.backfillPronunciations(pronunciation.lookup)) {
       await vocabulary.init();
     }
+
+    await ReminderNotificationService.instance.initialize();
 
     await auth.restore();
     if (!AppConfig.isCloudEnabled || !auth.isSignedIn) return;
@@ -139,14 +147,17 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
   late final AppLifecycleListener _lifecycleListener;
   final TtsService _ttsService = TtsService();
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
-  final FriendChallengeService _friendChallengeService = FriendChallengeService();
+  final FriendChallengeService _friendChallengeService =
+      FriendChallengeService();
   StreamSubscription<WordChallenge>? _challengeSubscription;
 
   @override
   void initState() {
     super.initState();
     _friendChallengeService.init();
-    _challengeSubscription = _friendChallengeService.incomingChallenges.listen((challenge) {
+    _challengeSubscription = _friendChallengeService.incomingChallenges.listen((
+      challenge,
+    ) {
       if (!mounted) return;
       final navState = _navigatorKey.currentState;
       if (navState != null && navState.mounted) {
@@ -199,15 +210,9 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
         ChangeNotifierProvider(
           create: (_) => widget.widgetProvider ?? (WidgetProvider()..init()),
         ),
-        ChangeNotifierProvider(
-          create: (_) => PetProvider()..init(),
-        ),
-        ChangeNotifierProvider(
-          create: (_) => CartridgeProvider(),
-        ),
-        ChangeNotifierProvider(
-          create: (_) => CommutePlaylistService()..init(),
-        ),
+        ChangeNotifierProvider(create: (_) => PetProvider()..init()),
+        ChangeNotifierProvider(create: (_) => CartridgeProvider()),
+        ChangeNotifierProvider(create: (_) => CommutePlaylistService()..init()),
         Provider<PronunciationService>.value(value: widget.pronunciation),
       ],
       child: Consumer<ThemeProvider>(
@@ -223,6 +228,77 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
             home: const HomeScreen(),
           );
         },
+      ),
+    );
+  }
+}
+
+class StartupRecoveryApp extends StatelessWidget {
+  const StartupRecoveryApp({
+    super.key,
+    required this.error,
+    required this.onRetry,
+  });
+
+  final String error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        backgroundColor: const Color(0xFF1B1E17),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'INITIALIZATION FAILED',
+                  style: TextStyle(
+                    color: Color(0xFFFF5252),
+                    fontSize: 22,
+                    fontFamily: 'Handjet',
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'The database or system services could not be opened on startup. Your saved notes are safe.',
+                  style: TextStyle(color: Color(0xFFE6E4D8), fontSize: 15),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  color: const Color(0xFF2B2E24),
+                  child: Text(
+                    error,
+                    style: const TextStyle(
+                      color: Color(0xFF9A9C8C),
+                      fontSize: 12,
+                      fontFamily: 'monospace',
+                    ),
+                    maxLines: 6,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF9BBC0F),
+                    foregroundColor: const Color(0xFF0F380F),
+                  ),
+                  onPressed: onRetry,
+                  child: const Text('RETRY STARTUP'),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

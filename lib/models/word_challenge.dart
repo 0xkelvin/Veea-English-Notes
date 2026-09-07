@@ -3,11 +3,7 @@ enum ChallengeMode {
   enToVn, // English word given, choose/type the Vietnamese meaning
 }
 
-enum ChallengeStatus {
-  pending,
-  completed,
-  expired,
-}
+enum ChallengeStatus { pending, completed, expired }
 
 class WordChallenge {
   const WordChallenge({
@@ -118,7 +114,8 @@ class WordChallenge {
     ),
     options: List<String>.from(json['options'] as List? ?? const []),
     correctAnswer: json['correctAnswer'] as String,
-    createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
+    createdAt:
+        DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
     status: ChallengeStatus.values.firstWhere(
       (s) => s.name == json['status'],
       orElse: () => ChallengeStatus.pending,

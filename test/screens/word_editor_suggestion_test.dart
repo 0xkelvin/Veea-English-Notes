@@ -48,59 +48,71 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('Typing "solution" suggests "giải pháp" and NOUN without showing "kiên cường"', (tester) async {
-    await tester.pumpWidget(wrap(const WordEditorScreen()));
-    await settle(tester);
+  testWidgets(
+    'Typing "solution" suggests "giải pháp" and NOUN without showing "kiên cường"',
+    (tester) async {
+      await tester.pumpWidget(wrap(const WordEditorScreen()));
+      await settle(tester);
 
-    // Initial empty state has "kiên cường" as subtle default hint
-    expect(find.text('kiên cường'), findsOneWidget);
+      // Initial empty state has "kiên cường" as subtle default hint
+      expect(find.text('kiên cường'), findsOneWidget);
 
-    // Type "solution" into the word field
-    await tester.enterText(find.byType(TextField).first, 'solution');
-    await settle(tester);
+      // Type "solution" into the word field
+      await tester.enterText(find.byType(TextField).first, 'solution');
+      await settle(tester);
 
-    // "kiên cường" must NOT be displayed anymore
-    expect(find.text('kiên cường'), findsNothing);
+      // "kiên cường" must NOT be displayed anymore
+      expect(find.text('kiên cường'), findsNothing);
 
-    // Should display suggested meaning with "giải pháp"
-    expect(find.textContaining('giải pháp'), findsWidgets);
+      // Should display suggested meaning with "giải pháp"
+      expect(find.textContaining('giải pháp'), findsWidgets);
 
-    // Part of speech header should display suggested NOUN
-    expect(find.text('GỢI Ý: NOUN'), findsOneWidget);
+      // Part of speech header should display suggested NOUN
+      expect(find.text('GỢI Ý: NOUN'), findsOneWidget);
 
-    // Tapping the suggestion pill fills the meaning field
-    await tester.tap(find.text('[ÁP DỤNG]'));
-    await settle(tester);
+      // Tapping the suggestion pill fills the meaning field
+      await tester.tap(find.text('[ÁP DỤNG]'));
+      await settle(tester);
 
-    final meaningField = tester.widget<TextField>(find.byType(TextField).at(1));
-    expect(meaningField.controller?.text, contains('giải pháp'));
-  });
+      final meaningField = tester.widget<TextField>(
+        find.byType(TextField).at(1),
+      );
+      expect(meaningField.controller?.text, contains('giải pháp'));
+    },
+  );
 
-  testWidgets('Typing English word suggests Vietnamese meaning and PartOfSpeech', (tester) async {
-    await tester.pumpWidget(wrap(const WordEditorScreen()));
-    await settle(tester);
+  testWidgets(
+    'Typing English word suggests Vietnamese meaning and PartOfSpeech',
+    (tester) async {
+      await tester.pumpWidget(wrap(const WordEditorScreen()));
+      await settle(tester);
 
-    // Type "resilient" into the word field (first TextField)
-    await tester.enterText(find.byType(TextField).first, 'resilient');
-    await settle(tester);
+      // Type "resilient" into the word field (first TextField)
+      await tester.enterText(find.byType(TextField).first, 'resilient');
+      await settle(tester);
 
-    // Should display suggested meaning pill
-    expect(find.textContaining('GỢI Ý: '), findsWidgets);
-    expect(find.textContaining('kiên cường'), findsWidgets);
+      // Should display suggested meaning pill
+      expect(find.textContaining('GỢI Ý: '), findsWidgets);
+      expect(find.textContaining('kiên cường'), findsWidgets);
 
-    // Part of speech header should display suggested ADJECTIVE
-    expect(find.text('GỢI Ý: ADJECTIVE'), findsOneWidget);
+      // Part of speech header should display suggested ADJECTIVE
+      expect(find.text('GỢI Ý: ADJECTIVE'), findsOneWidget);
 
-    // Tapping the suggestion pill fills the meaning field
-    await tester.tap(find.text('[ÁP DỤNG]'));
-    await settle(tester);
+      // Tapping the suggestion pill fills the meaning field
+      await tester.tap(find.text('[ÁP DỤNG]'));
+      await settle(tester);
 
-    // Meaning field (second TextField) should now have the text
-    final meaningField = tester.widget<TextField>(find.byType(TextField).at(1));
-    expect(meaningField.controller?.text, contains('kiên cường'));
-  });
+      // Meaning field (second TextField) should now have the text
+      final meaningField = tester.widget<TextField>(
+        find.byType(TextField).at(1),
+      );
+      expect(meaningField.controller?.text, contains('kiên cường'));
+    },
+  );
 
-  testWidgets('User manual PartOfSpeech selection overrides suggestion', (tester) async {
+  testWidgets('User manual PartOfSpeech selection overrides suggestion', (
+    tester,
+  ) async {
     await tester.pumpWidget(wrap(const WordEditorScreen()));
     await settle(tester);
 
@@ -124,4 +136,26 @@ void main() {
     expect(provider.words.single.word, 'resilient');
     expect(provider.words.single.partOfSpeech, PartOfSpeech.noun);
   });
+
+  testWidgets(
+    'Typing "option" suggests Vietnamese meaning "lựa chọn" and NOUN',
+    (tester) async {
+      await tester.pumpWidget(wrap(const WordEditorScreen()));
+      await settle(tester);
+
+      await tester.enterText(find.byType(TextField).first, 'option');
+      await settle(tester);
+
+      expect(find.textContaining('lựa chọn'), findsWidgets);
+      expect(find.text('GỢI Ý: NOUN'), findsOneWidget);
+
+      await tester.tap(find.text('[ÁP DỤNG]'));
+      await settle(tester);
+
+      final meaningField = tester.widget<TextField>(
+        find.byType(TextField).at(1),
+      );
+      expect(meaningField.controller?.text, contains('lựa chọn'));
+    },
+  );
 }

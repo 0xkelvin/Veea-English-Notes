@@ -65,7 +65,9 @@ void main() {
 
   test('updatePlaylist updates existing playlist', () async {
     final pl = await service.createPlaylist('Tech Standup', ['w1']);
-    await service.updatePlaylist(pl.copyWith(name: 'Tech Interview', wordIds: ['w1', 'w2']));
+    await service.updatePlaylist(
+      pl.copyWith(name: 'Tech Interview', wordIds: ['w1', 'w2']),
+    );
 
     expect(service.playlists.first.name, 'Tech Interview');
     expect(service.playlists.first.wordIds, ['w1', 'w2']);

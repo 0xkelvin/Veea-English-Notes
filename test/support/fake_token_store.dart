@@ -8,6 +8,7 @@ class FakeTokenStore implements TokenStore {
   String? accessToken;
   String? refreshToken;
   String? identifier;
+  String? lastAccount;
 
   /// How many times the session was cleared, so tests can assert that a failed
   /// operation did *not* sign the user out.
@@ -44,6 +45,19 @@ class FakeTokenStore implements TokenStore {
   @override
   Future<void> saveIdentifier(String identifier) async {
     this.identifier = identifier;
+  }
+
+  @override
+  Future<String?> readLastAccount() async => lastAccount;
+
+  @override
+  Future<void> saveLastAccount(String account) async {
+    lastAccount = account;
+  }
+
+  @override
+  Future<void> clearLastAccount() async {
+    lastAccount = null;
   }
 
   @override

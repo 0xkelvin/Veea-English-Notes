@@ -29,10 +29,7 @@ class ArcadeFallingBadgeData {
 
 /// Overlay painter or widget rendering falling meaning badges.
 class ArcadeFallingBadgesOverlay extends StatelessWidget {
-  const ArcadeFallingBadgesOverlay({
-    super.key,
-    required this.badges,
-  });
+  const ArcadeFallingBadgesOverlay({super.key, required this.badges});
 
   final List<ArcadeFallingBadgeData> badges;
 
@@ -52,7 +49,10 @@ class ArcadeFallingBadgesOverlay extends StatelessWidget {
                 child: Container(
                   width: 160,
                   alignment: Alignment.center,
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFCBE32B).withValues(alpha: 0.92),
                     border: Border.all(color: Colors.black, width: 1.5),
