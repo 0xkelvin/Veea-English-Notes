@@ -1,0 +1,68 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build Type (release or debug)'
+        required: true
+        default: 'release'
+        type: choice
+        options:
+          - release
+          - debug
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Setup Keystore
+        run: |
+          keytool -genkey -v -keystore android/app/upload-keystore.jks \
+            -storetype JKS -keyalg RSA -keysize 2048 -validity 10000 \
+            -alias upload -storepass android -keypass android \
+            -dname "CN=Veea, OU=Dev, O=Veea, L=HCMC, S=HCMC, C=VN"
+          cat << 'KEYEOF' > android/key.properties
+          storePassword=android
+          keyPassword=android
+          keyAlias=upload
+          storeFile=upload-keystore.jks
+          KEYEOF
+
+      - name: Build APK
+        run: |
+          if [ "${{ github.event.inputs.build_type }}" = "debug" ]; then
+            flutter build apk --debug
+          else
+            flutter build apk --release
+          fi
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: veea-android-apk
+          path: build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
