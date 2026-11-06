@@ -19,11 +19,14 @@ enum AppThemeMode {
 /// Manages active retro pixel themes and persists selection.
 class ThemeProvider extends ChangeNotifier {
   static const String _key = 'app_theme_mode';
+  static const String _typographyKey = 'app_typography_mode';
 
   AppThemeMode _mode = AppThemeMode.system;
+  TypographyMode _typographyMode = TypographyMode.hybrid;
   bool _isDisposed = false;
 
   AppThemeMode get mode => _mode;
+  TypographyMode get typographyMode => _typographyMode;
 
   ThemeMode get themeMode => switch (_mode) {
     AppThemeMode.system => ThemeMode.system,
@@ -32,19 +35,28 @@ class ThemeProvider extends ChangeNotifier {
   };
 
   ThemeData get activeTheme => switch (_mode) {
-    AppThemeMode.system => PixelTheme.light(),
-    AppThemeMode.classicLight => PixelTheme.light(),
-    AppThemeMode.classicDark => PixelTheme.dark(),
-    AppThemeMode.matrixGreen => PixelTheme.matrixGreen(),
-    AppThemeMode.cyberpunkNeon => PixelTheme.cyberpunkNeon(),
-    AppThemeMode.oledBlack => PixelTheme.oledBlack(),
+    AppThemeMode.system =>
+      PixelTheme.light(typographyMode: _typographyMode),
+    AppThemeMode.classicLight =>
+      PixelTheme.light(typographyMode: _typographyMode),
+    AppThemeMode.classicDark =>
+      PixelTheme.dark(typographyMode: _typographyMode),
+    AppThemeMode.matrixGreen =>
+      PixelTheme.matrixGreen(typographyMode: _typographyMode),
+    AppThemeMode.cyberpunkNeon =>
+      PixelTheme.cyberpunkNeon(typographyMode: _typographyMode),
+    AppThemeMode.oledBlack =>
+      PixelTheme.oledBlack(typographyMode: _typographyMode),
   };
 
   ThemeData get darkTheme => switch (_mode) {
-    AppThemeMode.matrixGreen => PixelTheme.matrixGreen(),
-    AppThemeMode.cyberpunkNeon => PixelTheme.cyberpunkNeon(),
-    AppThemeMode.oledBlack => PixelTheme.oledBlack(),
-    _ => PixelTheme.dark(),
+    AppThemeMode.matrixGreen =>
+      PixelTheme.matrixGreen(typographyMode: _typographyMode),
+    AppThemeMode.cyberpunkNeon =>
+      PixelTheme.cyberpunkNeon(typographyMode: _typographyMode),
+    AppThemeMode.oledBlack =>
+      PixelTheme.oledBlack(typographyMode: _typographyMode),
+    _ => PixelTheme.dark(typographyMode: _typographyMode),
   };
 
   Future<void> init() async {
@@ -56,8 +68,15 @@ class ThemeProvider extends ChangeNotifier {
           (e) => e.name == saved,
           orElse: () => AppThemeMode.system,
         );
-        notifyListeners();
       }
+      final savedTypography = prefs.getString(_typographyKey);
+      if (savedTypography != null) {
+        _typographyMode = TypographyMode.values.firstWhere(
+          (e) => e.name == savedTypography,
+          orElse: () => TypographyMode.hybrid,
+        );
+      }
+      notifyListeners();
     } catch (error, stack) {
       debugPrint('Could not load theme setting: $error\n$stack');
     }
@@ -73,6 +92,19 @@ class ThemeProvider extends ChangeNotifier {
       await prefs.setString(_key, mode.name);
     } catch (error, stack) {
       debugPrint('Could not save theme setting: $error\n$stack');
+    }
+  }
+
+  Future<void> setTypographyMode(TypographyMode mode) async {
+    if (_typographyMode == mode) return;
+    _typographyMode = mode;
+    notifyListeners();
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_typographyKey, mode.name);
+    } catch (error, stack) {
+      debugPrint('Could not save typography setting: $error\n$stack');
     }
   }
 

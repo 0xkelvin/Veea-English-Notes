@@ -1,4 +1,5 @@
 import '../models/gamification_badge.dart';
+import '../models/gate_config.dart';
 import '../models/srs_review.dart';
 import '../models/vocabulary_stats.dart';
 import '../models/vocabulary_word.dart';
@@ -33,6 +34,36 @@ abstract interface class VocabularyRepository {
     required SrsRating rating,
     DateTime? now,
   });
+
+  /// Selects a single word for an App Gate challenge following the 4-tier
+  /// Smart Review Queue priority order:
+  /// 1. Previously failed gate words (`last_gate_failed = 1`).
+  /// 2. Recent captures in the last 72 hours with `srs_stage < 3`.
+  /// 3. Spaced repetition due (`next_review_at <= now`).
+  /// 4. Fallback: least-recently reviewed active word.
+  Future<VocabularyWord?> selectGateWord({DateTime? now});
+
+  /// Updates `srs_stage`, `next_review_at`, `last_reviewed_at`, and
+  /// `last_gate_failed` on the solved word and records a `gate_logs` entry.
+  ///
+  /// [attempts] is the number of wrong attempts before solving (`0` = solved on
+  /// 1st try, `1` = solved on 2nd try after hint, `>= 2` = solved after Teach &
+  /// Retype).
+  Future<VocabularyWord?> recordGateCompletion({
+    required String wordId,
+    required String targetApp,
+    required int attempts,
+    DateTime? now,
+  });
+
+  /// Reads the singleton App Gate configuration row (`id = 1`).
+  Future<GateConfig> getGateConfig();
+
+  /// Saves the singleton App Gate configuration row (`id = 1`).
+  Future<void> saveGateConfig(GateConfig config);
+
+  /// Recent App Gate completion logs, newest first.
+  Future<List<GateLog>> recentGateLogs({int limit = 20});
 
   /// Aggregate statistics for the activity heatmap and retro milestone badges.
   Future<GamificationStats> gamificationStats({int days = 112});

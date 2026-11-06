@@ -22,8 +22,14 @@ class AppDatabase {
   /// Spaced repetition review tracking table.
   static const String srsReviewsTable = 'srs_reviews';
 
+  /// Singleton configuration table for App Gate ("Word Toll").
+  static const String gateConfigTable = 'gate_config';
+
+  /// Completion history table for App Gate challenges.
+  static const String gateLogsTable = 'gate_logs';
+
   /// Bump this and add a branch to [_upgrade] whenever the schema changes.
-  static const int version = 4;
+  static const int version = 5;
 
   /// Opens the database, creating or migrating the schema as needed.
   ///
@@ -52,6 +58,7 @@ class AppDatabase {
     await _createV2Schema(db, wordsTable);
     await _createPronunciationsTable(db);
     await _createSrsReviewsTable(db);
+    await _migrateToV5(db);
   }
 
   static Future<void> _upgrade(Database db, int from, int to) async {
@@ -64,6 +71,68 @@ class AppDatabase {
     if (from < 4) {
       await _createSrsReviewsTable(db);
     }
+    if (from < 5) {
+      await _migrateToV5(db);
+    }
+  }
+
+  /// v5 migration for App Gate ("Word Toll"):
+  /// - Extends `words` with `srs_stage`, `next_review_at`, `last_reviewed_at`,
+  ///   and `last_gate_failed`.
+  /// - Creates `gate_config` singleton table (seeded with `id = 1`).
+  /// - Creates `gate_logs` history table.
+  static Future<void> _migrateToV5(DatabaseExecutor db) async {
+    final tableInfo = await db.rawQuery('PRAGMA table_info($wordsTable)');
+    final existingColumns = {
+      for (final row in tableInfo) row['name'] as String?,
+    };
+
+    if (!existingColumns.contains('srs_stage')) {
+      await db.execute(
+        'ALTER TABLE $wordsTable ADD COLUMN srs_stage INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    if (!existingColumns.contains('next_review_at')) {
+      await db.execute(
+        'ALTER TABLE $wordsTable ADD COLUMN next_review_at INTEGER',
+      );
+    }
+    if (!existingColumns.contains('last_reviewed_at')) {
+      await db.execute(
+        'ALTER TABLE $wordsTable ADD COLUMN last_reviewed_at INTEGER',
+      );
+    }
+    if (!existingColumns.contains('last_gate_failed')) {
+      await db.execute(
+        'ALTER TABLE $wordsTable ADD COLUMN last_gate_failed INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS $gateConfigTable (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        enabled INTEGER NOT NULL DEFAULT 0,
+        pass_duration_minutes INTEGER NOT NULL DEFAULT 15,
+        require_daily_capture INTEGER NOT NULL DEFAULT 0,
+        gated_apps_json TEXT NOT NULL DEFAULT '[]'
+      )
+    ''');
+
+    await db.execute('''
+      INSERT OR IGNORE INTO $gateConfigTable (
+        id, enabled, pass_duration_minutes, require_daily_capture, gated_apps_json
+      ) VALUES (1, 0, 15, 0, '[]')
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS $gateLogsTable (
+        id TEXT PRIMARY KEY,
+        word_id TEXT NOT NULL,
+        target_app TEXT NOT NULL,
+        attempts INTEGER NOT NULL,
+        passed_at INTEGER NOT NULL
+      )
+    ''');
   }
 
   /// Table for Spaced Repetition (SM-2) review states.

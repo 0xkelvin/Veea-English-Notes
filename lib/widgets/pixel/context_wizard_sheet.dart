@@ -5,6 +5,7 @@ import '../../core/theme/pixel_metrics.dart';
 import '../../core/theme/pixel_palette.dart';
 import '../../models/part_of_speech.dart';
 import '../../services/context_wizard_service.dart';
+import '../highlighted_text.dart';
 import 'pixel_box.dart';
 import 'pixel_button.dart';
 import 'pixel_icon.dart';
@@ -349,10 +350,18 @@ class _ContextWizardSheetState extends State<ContextWizardSheet> {
                                 ],
                               ),
                               const SizedBox(height: 6),
-                              Text(
-                                '“${s.sentence}”',
+                              HighlightedText(
+                                text: '“${s.sentence}”',
+                                targetWord: widget.word,
                                 style: theme.textTheme.bodyMedium?.copyWith(
                                   fontWeight: FontWeight.w500,
+                                  height: 1.35,
+                                ),
+                                highlightStyle:
+                                    theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: palette.accent,
+                                  height: 1.35,
                                 ),
                               ),
                             ],

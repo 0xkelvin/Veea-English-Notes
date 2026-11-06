@@ -10,12 +10,14 @@ import 'data/remote/api_client.dart';
 import 'data/remote/auth_api.dart';
 import 'data/remote/token_store.dart';
 import 'data/remote/vocabulary_api.dart';
+import 'providers/app_gate_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/cartridge_provider.dart';
 import 'providers/pet_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/vocabulary_provider.dart';
 import 'providers/widget_provider.dart';
+import 'screens/app_gate_screen.dart';
 import 'screens/home_screen.dart';
 import 'models/word_challenge.dart';
 import 'services/commute_playlist_service.dart';
@@ -73,6 +75,9 @@ Future<void> main() async {
     final widgetProvider = WidgetProvider();
     await widgetProvider.init();
 
+    final appGateProvider = AppGateProvider(repository: repository);
+    await appGateProvider.init();
+
     runApp(
       VeeaEnglishApp(
         vocabulary: vocabulary,
@@ -81,6 +86,7 @@ Future<void> main() async {
         pronunciation: pronunciation,
         themeProvider: themeProvider,
         widgetProvider: widgetProvider,
+        appGateProvider: appGateProvider,
       ),
     );
   } catch (error, stack) {
@@ -130,6 +136,7 @@ class VeeaEnglishApp extends StatefulWidget {
     required this.pronunciation,
     this.themeProvider,
     this.widgetProvider,
+    this.appGateProvider,
   });
 
   final VocabularyProvider vocabulary;
@@ -138,6 +145,7 @@ class VeeaEnglishApp extends StatefulWidget {
   final PronunciationService pronunciation;
   final ThemeProvider? themeProvider;
   final WidgetProvider? widgetProvider;
+  final AppGateProvider? appGateProvider;
 
   @override
   State<VeeaEnglishApp> createState() => _VeeaEnglishAppState();
@@ -145,15 +153,36 @@ class VeeaEnglishApp extends StatefulWidget {
 
 class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
   late final AppLifecycleListener _lifecycleListener;
+  late final AppGateProvider _appGateProvider;
   final TtsService _ttsService = TtsService();
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   final FriendChallengeService _friendChallengeService =
       FriendChallengeService();
   StreamSubscription<WordChallenge>? _challengeSubscription;
+  StreamSubscription<String>? _gateSubscription;
 
   @override
   void initState() {
     super.initState();
+    _appGateProvider =
+        widget.appGateProvider ??
+        (AppGateProvider(repository: widget.vocabulary.repository)..init());
+    _gateSubscription = _appGateProvider.service.onGateTriggered.listen((
+      targetApp,
+    ) {
+      if (!mounted) return;
+      final navState = _navigatorKey.currentState;
+      if (navState != null && navState.mounted) {
+        navState.push(
+          PageRouteBuilder<void>(
+            pageBuilder: (_, _, _) => AppGateScreen(targetApp: targetApp),
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+          ),
+        );
+      }
+    });
+
     _friendChallengeService.init();
     _challengeSubscription = _friendChallengeService.incomingChallenges.listen((
       challenge,
@@ -188,6 +217,10 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
 
   @override
   void dispose() {
+    _gateSubscription?.cancel();
+    if (widget.appGateProvider == null) {
+      _appGateProvider.dispose();
+    }
     _challengeSubscription?.cancel();
     _friendChallengeService.dispose();
     _lifecycleListener.dispose();
@@ -204,6 +237,7 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
         ChangeNotifierProvider.value(value: widget.sync),
         ChangeNotifierProvider.value(value: _ttsService),
         ChangeNotifierProvider.value(value: _friendChallengeService),
+        ChangeNotifierProvider.value(value: _appGateProvider),
         ChangeNotifierProvider(
           create: (_) => widget.themeProvider ?? (ThemeProvider()..init()),
         ),

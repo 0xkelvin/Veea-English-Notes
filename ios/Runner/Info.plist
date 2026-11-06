@@ -83,6 +83,38 @@
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>mailto</string>
+		<string>instagram</string>
+		<string>twitter</string>
+		<string>youtube</string>
+		<string>snssdk1233</string>
+		<string>snssdk1180</string>
+		<string>tiktok</string>
+		<string>musically</string>
+		<string>barcelona</string>
+		<string>reddit</string>
+		<string>fb</string>
+		<string>fb-messenger</string>
+		<string>whatsapp</string>
+		<string>tg</string>
+		<string>discord</string>
+		<string>snapchat</string>
+		<string>nflx</string>
+		<string>twitch</string>
+		<string>spotify</string>
+		<string>pinterest</string>
+		<string>linkedin</string>
+		<string>zalo</string>
+		<string>shopeevn</string>
+		<string>lazada</string>
+		<string>grab</string>
+		<string>googlechrome</string>
+		<string>googlegmail</string>
+		<string>comgooglemaps</string>
+		<string>duolingo</string>
+		<string>notion</string>
+		<string>slack</string>
+		<string>chatgpt</string>
+		<string>capcut</string>
 	</array>
 </dict>
 </plist>

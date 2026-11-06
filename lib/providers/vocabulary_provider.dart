@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import '../data/starter_words_data.dart';
 import '../data/vocabulary_repository.dart';
 import '../models/gamification_badge.dart';
+import '../models/gate_config.dart';
 import '../models/part_of_speech.dart';
 import '../models/srs_review.dart';
 import '../models/vocabulary_stats.dart';
@@ -30,12 +31,15 @@ class VocabularyProvider extends ChangeNotifier {
   final DateTime Function() _now;
   final Uuid _uuid;
 
+  VocabularyRepository get repository => _repository;
+
   LoadStatus _status = LoadStatus.loading;
   List<VocabularyWord> _words = const [];
   VocabularyStats _stats = VocabularyStats.empty;
   GamificationStats _gamificationStats = GamificationStats.empty;
   Set<String> _markedDates = const {};
   int _dueReviewCount = 0;
+  int _todayWordCount = 0;
   late DateTime _selectedDate;
   String? _lastError;
   String? _undoableDeletionId;
@@ -71,6 +75,10 @@ class VocabularyProvider extends ChangeNotifier {
   Set<String> get markedDates => _markedDates;
 
   int get dueReviewCount => _dueReviewCount;
+
+  /// Number of words captured on [today], used by the App Gate daily capture
+  /// guardrail regardless of which date is currently selected in the journal.
+  int get todayWordCount => _todayWordCount;
 
   bool get isToday => dateKey(_selectedDate) == dateKey(_now());
 
@@ -127,6 +135,37 @@ class VocabularyProvider extends ChangeNotifier {
     notifyListeners();
     return result;
   }
+
+  /// Selects the next word for an App Gate challenge using the 4-tier Smart
+  /// Review Queue priority order.
+  Future<VocabularyWord?> selectGateWord() {
+    return _repository.selectGateWord(now: _now());
+  }
+
+  /// Records completion of an App Gate challenge and updates the word's SRS
+  /// stage and review schedule.
+  Future<VocabularyWord?> recordGateCompletion({
+    required String wordId,
+    required String targetApp,
+    required int attempts,
+  }) async {
+    final updated = await _repository.recordGateCompletion(
+      wordId: wordId,
+      targetApp: targetApp,
+      attempts: attempts,
+      now: _now(),
+    );
+    await _refresh();
+    return updated;
+  }
+
+  Future<GateConfig> getGateConfig() => _repository.getGateConfig();
+
+  Future<void> saveGateConfig(GateConfig config) =>
+      _repository.saveGateConfig(config);
+
+  Future<List<GateLog>> recentGateLogs({int limit = 20}) =>
+      _repository.recentGateLogs(limit: limit);
 
   /// Switches the visible day and reloads it.
   ///
@@ -313,18 +352,23 @@ class VocabularyProvider extends ChangeNotifier {
 
   Future<void> _refresh({bool initialLoad = false}) async {
     try {
+      final todayKey = dateKey(_now());
       final results = await Future.wait([
         _repository.wordsForDate(selectedDateKey),
         _repository.stats(),
         _repository.datesWithWords(),
-        _repository.dueReviewCount(asOfDate: dateKey(_now())),
+        _repository.dueReviewCount(asOfDate: todayKey),
         _repository.gamificationStats(),
+        if (selectedDateKey != todayKey) _repository.wordsForDate(todayKey),
       ]);
       _words = results[0] as List<VocabularyWord>;
       _stats = results[1] as VocabularyStats;
       _markedDates = results[2] as Set<String>;
       _dueReviewCount = results[3] as int;
       _gamificationStats = results[4] as GamificationStats;
+      _todayWordCount = selectedDateKey == todayKey
+          ? _words.length
+          : (results[5] as List<VocabularyWord>).length;
       _status = LoadStatus.ready;
 
       if (_words.isNotEmpty) {

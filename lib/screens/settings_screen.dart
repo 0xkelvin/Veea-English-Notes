@@ -6,7 +6,10 @@ import 'package:provider/provider.dart';
 import '../core/config/app_config.dart';
 import '../core/theme/pixel_metrics.dart';
 import '../core/theme/pixel_palette.dart';
+import '../core/theme/pixel_theme.dart';
 import '../models/account_identifier.dart';
+import '../models/gate_config.dart';
+import '../providers/app_gate_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/cartridge_provider.dart';
 import '../providers/theme_provider.dart';
@@ -22,6 +25,7 @@ import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_field.dart';
 import '../widgets/pixel/pixel_heatmap.dart';
 import '../widgets/pixel/pixel_icon.dart';
+import 'app_gate_screen.dart';
 import 'cartridge_library_screen.dart';
 
 /// Unified Settings, Appearance, Stats, and Cloud Sync screen.
@@ -171,6 +175,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                   // Widget & Lock Screen Settings
                   const _WidgetSettingsSection(),
+                  const SizedBox(height: PixelMetrics.space5),
+
+                  // App Gate ("Word Toll") Settings
+                  const _AppGateSettingsSection(),
                   const SizedBox(height: PixelMetrics.space5),
 
                   // Daily Practice Reminder (Local Notifications)
@@ -532,6 +540,49 @@ class _ThemePickerSection extends StatelessWidget {
                     mode.label.toUpperCase(),
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: themeProvider.mode == mode
+                          ? palette.onAccent
+                          : palette.ink,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: PixelMetrics.space4),
+        Text('READING TYPOGRAPHY & COMFORT', style: theme.textTheme.labelSmall),
+        const SizedBox(height: PixelMetrics.space1),
+        Text(
+          'Retro-Modern uses crisp, eye-friendly text for definitions & examples, '
+          'while keeping 8-bit pixel art for headers and controls.',
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: PixelMetrics.space2),
+        Wrap(
+          spacing: PixelMetrics.space2,
+          runSpacing: PixelMetrics.space2,
+          children: [
+            for (final typoMode in TypographyMode.values)
+              GestureDetector(
+                onTap: () => themeProvider.setTypographyMode(typoMode),
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: PixelMetrics.space3,
+                    vertical: PixelMetrics.space2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: themeProvider.typographyMode == typoMode
+                        ? palette.accent
+                        : palette.surface,
+                    border: Border.all(
+                      color: palette.border,
+                      width: PixelMetrics.border,
+                    ),
+                  ),
+                  child: Text(
+                    typoMode.label.toUpperCase(),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: themeProvider.typographyMode == typoMode
                           ? palette.onAccent
                           : palette.ink,
                     ),
@@ -1635,6 +1686,541 @@ class _FeedbackDialogState extends State<_FeedbackDialog> {
               onPressed: () => Navigator.of(context).pop(),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AppGateSettingsSection extends StatefulWidget {
+  const _AppGateSettingsSection();
+
+  @override
+  State<_AppGateSettingsSection> createState() =>
+      _AppGateSettingsSectionState();
+}
+
+class _AppGateSettingsSectionState extends State<_AppGateSettingsSection> {
+  static const List<({int minutes, String label})> _passOptions = [
+    (minutes: 5, label: '5 MIN'),
+    (minutes: 15, label: '15 MIN'),
+    (minutes: 30, label: '30 MIN'),
+    (minutes: 0, label: 'EVERY OPEN'),
+  ];
+
+  AppGateProvider? _localFallbackProvider;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    AppGateProvider? treeProvider;
+    try {
+      treeProvider = Provider.of<AppGateProvider>(context, listen: false);
+    } catch (_) {
+      treeProvider = null;
+    }
+    if (treeProvider == null && _localFallbackProvider == null) {
+      final vocab = context.read<VocabularyProvider>();
+      _localFallbackProvider = AppGateProvider(repository: vocab.repository)
+        ..addListener(() {
+          if (mounted) setState(() {});
+        });
+    }
+  }
+
+  @override
+  void dispose() {
+    _localFallbackProvider?.dispose();
+    super.dispose();
+  }
+
+  AppGateProvider _resolveProvider(BuildContext context) {
+    try {
+      return context.watch<AppGateProvider>();
+    } catch (_) {
+      return _localFallbackProvider!;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final theme = Theme.of(context);
+    final vocabProvider = context.watch<VocabularyProvider>();
+    final gateProvider = _resolveProvider(context);
+    final config = gateProvider.config;
+    final totalWords = vocabProvider.stats.totalWords;
+    final canEnable = gateProvider.canEnable(totalWords);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('APP GATE ("WORD TOLL")', style: theme.textTheme.titleSmall),
+        const SizedBox(height: PixelMetrics.space2),
+        Text(
+          'Intercept distracting apps (Instagram, X, TikTok, YouTube) and require 1 English word from your notebook before unlocking.',
+          style: theme.textTheme.bodyMedium,
+        ),
+        const SizedBox(height: PixelMetrics.space3),
+        if (!canEnable) ...[
+          _Notice(
+            lines: [
+              'GUARDRAIL: ADD AT LEAST ${GateConfig.minRequiredWords} WORDS TO ENABLE APP GATE ($totalWords/${GateConfig.minRequiredWords} SAVED).',
+            ],
+            tone: palette.accent,
+          ),
+          const SizedBox(height: PixelMetrics.space3),
+        ],
+        if (gateProvider.lastError != null) ...[
+          _Notice(
+            lines: [gateProvider.lastError!.toUpperCase()],
+            tone: palette.danger,
+          ),
+          const SizedBox(height: PixelMetrics.space3),
+        ],
+        _ToggleTile(
+          title: 'ENABLE APP GATE SHIELD',
+          subtitle: canEnable
+              ? 'Requires 1 saved word before opening selected apps'
+              : 'Locked until ${GateConfig.minRequiredWords} words are saved in your notebook',
+          enabled: config.enabled,
+          onChanged: (value) async {
+            await gateProvider.setEnabled(value, totalWords: totalWords);
+          },
+        ),
+        const SizedBox(height: PixelMetrics.space3),
+        _ToggleTile(
+          title: 'REQUIRE 1 NEW WORD CAPTURED TODAY',
+          subtitle:
+              'Redirect to Add Word editor first if today\'s capture count is 0',
+          enabled: config.requireDailyCapture,
+          onChanged: (value) => gateProvider.setRequireDailyCapture(value),
+        ),
+        const SizedBox(height: PixelMetrics.space3),
+        Text('UNLOCK PASS DURATION', style: theme.textTheme.labelSmall),
+        const SizedBox(height: PixelMetrics.space2),
+        Wrap(
+          spacing: PixelMetrics.space2,
+          runSpacing: PixelMetrics.space2,
+          children: [
+            for (final opt in _passOptions)
+              GestureDetector(
+                onTap: () => gateProvider.setPassDurationMinutes(opt.minutes),
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: PixelMetrics.space3,
+                    vertical: PixelMetrics.space2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: config.passDurationMinutes == opt.minutes
+                        ? palette.accent
+                        : palette.surface,
+                    border: Border.all(
+                      color: palette.border,
+                      width: PixelMetrics.border,
+                    ),
+                  ),
+                  child: Text(
+                    opt.label,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: config.passDurationMinutes == opt.minutes
+                          ? palette.onAccent
+                          : palette.ink,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: PixelMetrics.space3),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              gateProvider.installedApps.isNotEmpty
+                  ? 'INSTALLED APPS ON THIS PHONE (${gateProvider.installedApps.length})'
+                  : 'GATED APPS',
+              style: theme.textTheme.labelSmall,
+            ),
+            Text(
+              '${config.gatedApps.length} SELECTED',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: config.gatedApps.isNotEmpty
+                    ? palette.accent
+                    : palette.inkMuted,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: PixelMetrics.space2),
+        Wrap(
+          spacing: PixelMetrics.space2,
+          runSpacing: PixelMetrics.space2,
+          children: [
+            for (final app in <String>{
+              ...(gateProvider.installedApps.isNotEmpty
+                  ? gateProvider.installedApps
+                  : GateConfig.defaultPresetApps),
+              ...config.gatedApps,
+            })
+              GestureDetector(
+                onTap: () => gateProvider.toggleGatedApp(app),
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: PixelMetrics.space3,
+                    vertical: PixelMetrics.space2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: config.gatedApps.contains(app)
+                        ? palette.accent
+                        : palette.surface,
+                    border: Border.all(
+                      color: palette.border,
+                      width: PixelMetrics.border,
+                    ),
+                  ),
+                  child: Text(
+                    app.toUpperCase(),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: config.gatedApps.contains(app)
+                          ? palette.onAccent
+                          : palette.ink,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        if (config.gatedApps.isNotEmpty) ...[
+          const SizedBox(height: PixelMetrics.space3),
+          Container(
+            padding: const EdgeInsets.all(PixelMetrics.space3),
+            decoration: BoxDecoration(
+              color: palette.surface,
+              border: Border.all(
+                color: palette.border,
+                width: PixelMetrics.border,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'OS INTERCEPTION & IPHONE SHORTCUT LINK',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: palette.accent,
+                  ),
+                ),
+                const SizedBox(height: PixelMetrics.space1),
+                Text(
+                  'On iPhone (without a paid Apple FamilyControls developer profile), '
+                  'open the iOS Shortcuts app → Automation → "+" → App → select your app '
+                  '("Is Opened", Run Immediately) → add action "Open URLs" with its link below:',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: palette.ink,
+                  ),
+                ),
+                const SizedBox(height: PixelMetrics.space2),
+                Wrap(
+                  spacing: PixelMetrics.space2,
+                  runSpacing: PixelMetrics.space2,
+                  children: [
+                    for (final app in config.gatedApps)
+                      PixelButton(
+                        label:
+                            'Copy veea://gate?app=${Uri.encodeComponent(app)}',
+                        glyph: PixelGlyph.link,
+                        onPressed: () {
+                          final url =
+                              'veea://gate?app=${Uri.encodeComponent(app)}';
+                          Clipboard.setData(ClipboardData(text: url));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('COPIED $url'),
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                        },
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: PixelMetrics.space3),
+        Row(
+          children: [
+            Expanded(
+              child: PixelButton(
+                label: 'Pick Apps to Gate',
+                glyph: PixelGlyph.shield,
+                expand: true,
+                onPressed: () async {
+                  await gateProvider.pickAppsFromSystem();
+                  if (!context.mounted) return;
+                  _openDialog(
+                    context,
+                    _AppGatePickerDialog(gateProvider: gateProvider),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: PixelMetrics.space2),
+            Expanded(
+              child: PixelButton(
+                label: 'Preview Gate',
+                glyph: PixelGlyph.bolt,
+                filled: true,
+                expand: true,
+                onPressed: () {
+                  final target = config.gatedApps.isNotEmpty
+                      ? config.gatedApps.first
+                      : 'Instagram';
+                  Navigator.of(context).push(
+                    PageRouteBuilder<void>(
+                      pageBuilder: (_, _, _) => ChangeNotifierProvider.value(
+                        value: gateProvider,
+                        child: AppGateScreen(
+                          targetApp: target,
+                          previewMode: true,
+                        ),
+                      ),
+                      transitionDuration: Duration.zero,
+                      reverseTransitionDuration: Duration.zero,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _AppGatePickerDialog extends StatefulWidget {
+  const _AppGatePickerDialog({required this.gateProvider});
+
+  final AppGateProvider gateProvider;
+
+  @override
+  State<_AppGatePickerDialog> createState() => _AppGatePickerDialogState();
+}
+
+class _AppGatePickerDialogState extends State<_AppGatePickerDialog> {
+  final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _customAppController = TextEditingController();
+  late Set<String> _selected;
+  List<String> _availableApps = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = Set<String>.from(widget.gateProvider.config.gatedApps);
+    final seed = widget.gateProvider.installedApps.isNotEmpty
+        ? widget.gateProvider.installedApps
+        : GateConfig.selectableAppsCatalog;
+    _availableApps = <String>{...seed, ..._selected}.toList();
+    _loadInstalled();
+  }
+
+  Future<void> _loadInstalled() async {
+    final loaded = await widget.gateProvider.loadAvailableApps();
+    if (!mounted) return;
+    setState(() {
+      _availableApps = <String>{...loaded, ..._selected}.toList();
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _customAppController.dispose();
+    super.dispose();
+  }
+
+  void _toggleApp(String app) {
+    setState(() {
+      if (_selected.contains(app)) {
+        _selected.remove(app);
+      } else {
+        _selected.add(app);
+      }
+    });
+  }
+
+  void _addCustomApp() {
+    final custom = _customAppController.text.trim();
+    if (custom.isEmpty) return;
+    setState(() {
+      if (!_availableApps.contains(custom)) {
+        _availableApps = [custom, ..._availableApps];
+      }
+      _selected.add(custom);
+      _customAppController.clear();
+    });
+  }
+
+  Future<void> _saveSelection() async {
+    await widget.gateProvider.setGatedApps(_selected.toList());
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final theme = Theme.of(context);
+    final query = _searchController.text.trim().toLowerCase();
+    final filtered = _availableApps
+        .where((app) => query.isEmpty || app.toLowerCase().contains(query))
+        .toList(growable: false);
+
+    return Dialog(
+      backgroundColor: palette.paper,
+      shape: const RoundedRectangleBorder(),
+      child: Padding(
+        padding: const EdgeInsets.all(PixelMetrics.space4),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('SELECT APPS TO GATE', style: theme.textTheme.titleSmall),
+                  Text(
+                    '${_selected.length} SELECTED',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: palette.accent,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: PixelMetrics.space2),
+              Text(
+                'Choose which apps require spelling 1 English word from your notebook before opening.',
+                style: theme.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: PixelMetrics.space3),
+              PixelSearchField(
+                controller: _searchController,
+                autofocus: false,
+                hint: 'Filter apps (e.g. Instagram, TikTok)…',
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: PixelMetrics.space3),
+              Container(
+                constraints: const BoxConstraints(maxHeight: 240),
+                decoration: BoxDecoration(
+                  color: palette.surface,
+                  border: Border.all(
+                    color: palette.border,
+                    width: PixelMetrics.border,
+                  ),
+                ),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: filtered.length,
+                  separatorBuilder: (_, _) =>
+                      Container(height: 1, color: palette.border),
+                  itemBuilder: (context, index) {
+                    final app = filtered[index];
+                    final isChecked = _selected.contains(app);
+                    return GestureDetector(
+                      onTap: () => _toggleApp(app),
+                      behavior: HitTestBehavior.opaque,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: PixelMetrics.space3,
+                          vertical: PixelMetrics.space2,
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 20,
+                              height: 20,
+                              decoration: BoxDecoration(
+                                color: isChecked
+                                    ? palette.accent
+                                    : palette.paper,
+                                border: Border.all(
+                                  color: palette.border,
+                                  width: PixelMetrics.border,
+                                ),
+                              ),
+                              child: isChecked
+                                  ? Center(
+                                      child: PixelIcon(
+                                        PixelGlyph.check,
+                                        color: palette.onAccent,
+                                        scale: 1.5,
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                            const SizedBox(width: PixelMetrics.space3),
+                            Expanded(
+                              child: Text(
+                                app,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: palette.ink,
+                                  fontWeight: isChecked
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: PixelMetrics.space3),
+              PixelField(
+                controller: _customAppController,
+                label: 'Add Custom App or Package',
+                hint: 'e.g. LinkedIn or com.linkedin.android',
+                onSubmitted: (_) => _addCustomApp(),
+                trailing: PixelButton(
+                  label: 'Add',
+                  glyph: PixelGlyph.plus,
+                  onPressed: _addCustomApp,
+                ),
+              ),
+              const SizedBox(height: PixelMetrics.space4),
+              Row(
+                children: [
+                  Expanded(
+                    child: PixelButton(
+                      label: 'Cancel',
+                      expand: true,
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ),
+                  const SizedBox(width: PixelMetrics.space2),
+                  Expanded(
+                    flex: 2,
+                    child: PixelButton(
+                      label: 'Save (${_selected.length})',
+                      glyph: PixelGlyph.check,
+                      filled: true,
+                      expand: true,
+                      onPressed: _saveSelection,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

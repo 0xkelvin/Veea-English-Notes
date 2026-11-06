@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../models/part_of_speech.dart';
+
 /// The app's colour tokens, exposed through [Theme] as an extension.
 ///
 /// The palette is deliberately tiny: paper, ink, a muted ink, a hard border
@@ -42,6 +44,27 @@ class PixelPalette extends ThemeExtension<PixelPalette> {
   final Color accent;
   final Color onAccent;
   final Color danger;
+
+  /// Semantic tint for grammatical parts of speech, calibrated for this palette.
+  Color posColor(PartOfSpeech? pos) {
+    if (pos == null) return inkMuted;
+    final isDark = ink.computeLuminance() > paper.computeLuminance();
+    return switch (pos) {
+      PartOfSpeech.noun =>
+        isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8),
+      PartOfSpeech.verb =>
+        isDark ? const Color(0xFF34D399) : const Color(0xFF047857),
+      PartOfSpeech.adjective =>
+        isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
+      PartOfSpeech.adverb =>
+        isDark ? const Color(0xFFA78BFA) : const Color(0xFF6D28D9),
+      PartOfSpeech.phrase =>
+        isDark ? const Color(0xFFF472B6) : const Color(0xFFBE185D),
+      PartOfSpeech.idiom =>
+        isDark ? const Color(0xFFFB923C) : const Color(0xFFC2410C),
+      PartOfSpeech.other => accent,
+    };
+  }
 
   /// Warm paper, near-black ink, deep green accent.
   static const light = PixelPalette(

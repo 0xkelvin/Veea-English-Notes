@@ -3,6 +3,17 @@ import 'package:flutter/material.dart';
 import 'pixel_metrics.dart';
 import 'pixel_palette.dart';
 
+/// Typography mode selection: Retro-Modern Hybrid (recommended for eye comfort)
+/// or Pure 8-Bit Pixel (100% Handjet across all UI).
+enum TypographyMode {
+  hybrid(label: 'Retro-Modern Hybrid'),
+  pixel(label: 'Pure 8-Bit Pixel');
+
+  const TypographyMode({required this.label});
+
+  final String label;
+}
+
 /// Builds the app theme.
 ///
 /// Handjet is a variable pixel font. [_ELSH] selects the solid element shape —
@@ -31,6 +42,7 @@ class PixelTheme {
     'Roboto', // Android
     'Noto Sans',
     'Arial',
+    'sans-serif',
   ];
 
   static List<FontVariation> _axes(double weight) => [
@@ -68,26 +80,85 @@ class PixelTheme {
     );
   }
 
-  static ThemeData light() => _build(PixelPalette.light, Brightness.light);
+  /// Clean, high-legibility sans-serif style for body text and long reading.
+  static TextStyle _readableStyle(
+    double size,
+    FontWeight weight,
+    Color color, {
+    double height = 1.45,
+    double letterSpacing = 0.1,
+  }) {
+    return TextStyle(
+      fontFamilyFallback: _fallback,
+      fontSize: size,
+      fontWeight: weight,
+      height: height,
+      color: color,
+      letterSpacing: letterSpacing,
+    );
+  }
 
-  static ThemeData dark() => _build(PixelPalette.dark, Brightness.dark);
+  static ThemeData light({
+    TypographyMode typographyMode = TypographyMode.hybrid,
+  }) => _build(
+    PixelPalette.light,
+    Brightness.light,
+    typographyMode: typographyMode,
+  );
 
-  static ThemeData matrixGreen() =>
-      _build(PixelPalette.matrixGreen, Brightness.dark);
+  static ThemeData dark({
+    TypographyMode typographyMode = TypographyMode.hybrid,
+  }) =>
+      _build(PixelPalette.dark, Brightness.dark, typographyMode: typographyMode);
 
-  static ThemeData cyberpunkNeon() =>
-      _build(PixelPalette.cyberpunkNeon, Brightness.dark);
+  static ThemeData matrixGreen({
+    TypographyMode typographyMode = TypographyMode.hybrid,
+  }) => _build(
+    PixelPalette.matrixGreen,
+    Brightness.dark,
+    typographyMode: typographyMode,
+  );
 
-  static ThemeData oledBlack() =>
-      _build(PixelPalette.oledBlack, Brightness.dark);
+  static ThemeData cyberpunkNeon({
+    TypographyMode typographyMode = TypographyMode.hybrid,
+  }) => _build(
+    PixelPalette.cyberpunkNeon,
+    Brightness.dark,
+    typographyMode: typographyMode,
+  );
 
-  static ThemeData _build(PixelPalette palette, Brightness brightness) {
+  static ThemeData oledBlack({
+    TypographyMode typographyMode = TypographyMode.hybrid,
+  }) => _build(
+    PixelPalette.oledBlack,
+    Brightness.dark,
+    typographyMode: typographyMode,
+  );
+
+  static ThemeData _build(
+    PixelPalette palette,
+    Brightness brightness, {
+    TypographyMode typographyMode = TypographyMode.hybrid,
+  }) {
+    final isHybrid = typographyMode == TypographyMode.hybrid;
+
     final textTheme = TextTheme(
+      displayLarge: _style(sizeDisplay + 8, 700, palette.ink),
+      displayMedium: _style(sizeDisplay + 4, 700, palette.ink),
       displaySmall: _style(sizeDisplay, 700, palette.ink),
+      headlineMedium: _style(sizeDisplay, 700, palette.ink),
       titleLarge: _style(sizeTitle, 700, palette.ink),
       titleMedium: _style(sizeBody, 700, palette.ink),
-      bodyLarge: _style(sizeBody, 400, palette.ink, height: 1.3),
-      bodyMedium: _style(sizeLabel, 400, palette.inkMuted, height: 1.3),
+      titleSmall: _style(sizeLabel, 700, palette.ink),
+      bodyLarge: isHybrid
+          ? _readableStyle(16, FontWeight.w400, palette.ink, height: 1.45)
+          : _style(sizeBody, 400, palette.ink, height: 1.3),
+      bodyMedium: isHybrid
+          ? _readableStyle(14.5, FontWeight.w400, palette.inkMuted, height: 1.4)
+          : _style(sizeLabel, 400, palette.inkMuted, height: 1.3),
+      bodySmall: isHybrid
+          ? _readableStyle(13, FontWeight.w400, palette.inkFaint, height: 1.35)
+          : _style(sizeCaption, 400, palette.inkFaint, height: 1.3),
       // Chrome labels are uppercased and tracked out, the way a status bar in
       // a sprite game is set.
       labelSmall: _style(
@@ -97,12 +168,13 @@ class PixelTheme {
         letterSpacing: 1.2,
       ),
       labelMedium: _style(sizeLabel, 700, palette.ink, letterSpacing: 0.5),
+      labelLarge: _style(sizeBody, 700, palette.ink, letterSpacing: 0.5),
     );
 
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
-      fontFamily: fontFamily,
+      fontFamily: isHybrid ? null : fontFamily,
       scaffoldBackgroundColor: palette.paper,
       canvasColor: palette.paper,
       splashFactory: NoSplash.splashFactory,

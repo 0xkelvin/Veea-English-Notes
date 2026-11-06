@@ -24,6 +24,10 @@ class VocabularyWord {
     this.isDeleted = false,
     this.isDirty = true,
     this.syncedAt,
+    this.srsStage = 0,
+    this.nextReviewAt,
+    this.lastReviewedAt,
+    this.lastGateFailed = false,
   });
 
   /// Builds a brand-new word, stamping [createdAt]/[updatedAt] from [now].
@@ -97,6 +101,18 @@ class VocabularyWord {
 
   final DateTime? syncedAt;
 
+  /// App Gate / SRS stage counter (`0` = new or reset after failure).
+  final int srsStage;
+
+  /// Epoch milliseconds when this word is next due in the App Gate queue.
+  final int? nextReviewAt;
+
+  /// Epoch milliseconds when this word was last reviewed in the App Gate.
+  final int? lastReviewedAt;
+
+  /// Whether the user missed this word 2+ times on its previous gate challenge.
+  final bool lastGateFailed;
+
   bool get hasExamples => examples.isNotEmpty;
 
   bool get hasTags => tags.isNotEmpty;
@@ -124,6 +140,10 @@ class VocabularyWord {
     bool? isDeleted,
     bool? isDirty,
     Object? syncedAt = _unset,
+    int? srsStage,
+    Object? nextReviewAt = _unset,
+    Object? lastReviewedAt = _unset,
+    bool? lastGateFailed,
   }) {
     return VocabularyWord(
       id: id,
@@ -144,6 +164,14 @@ class VocabularyWord {
       isDeleted: isDeleted ?? this.isDeleted,
       isDirty: isDirty ?? this.isDirty,
       syncedAt: syncedAt == _unset ? this.syncedAt : syncedAt as DateTime?,
+      srsStage: srsStage ?? this.srsStage,
+      nextReviewAt: nextReviewAt == _unset
+          ? this.nextReviewAt
+          : nextReviewAt as int?,
+      lastReviewedAt: lastReviewedAt == _unset
+          ? this.lastReviewedAt
+          : lastReviewedAt as int?,
+      lastGateFailed: lastGateFailed ?? this.lastGateFailed,
     );
   }
 
@@ -188,6 +216,10 @@ class VocabularyWord {
     'is_deleted': isDeleted ? 1 : 0,
     'is_dirty': isDirty ? 1 : 0,
     'synced_at': syncedAt?.toUtc().toIso8601String(),
+    'srs_stage': srsStage,
+    'next_review_at': nextReviewAt,
+    'last_reviewed_at': lastReviewedAt,
+    'last_gate_failed': lastGateFailed ? 1 : 0,
   };
 
   factory VocabularyWord.fromDbMap(Map<String, Object?> map) {
@@ -208,6 +240,10 @@ class VocabularyWord {
       syncedAt: map['synced_at'] == null
           ? null
           : DateTime.parse(map['synced_at']! as String).toLocal(),
+      srsStage: (map['srs_stage'] as int?) ?? 0,
+      nextReviewAt: map['next_review_at'] as int?,
+      lastReviewedAt: map['last_reviewed_at'] as int?,
+      lastGateFailed: (map['last_gate_failed'] as int? ?? 0) == 1,
     );
   }
 

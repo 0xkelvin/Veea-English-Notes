@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../../models/gamification_badge.dart';
+import '../../models/gate_config.dart';
 import '../../models/srs_review.dart';
 import '../../models/text_normalizer.dart';
 import '../../models/vocabulary_stats.dart';
@@ -47,6 +49,10 @@ class SqliteVocabularyRepository implements VocabularyRepository {
     'is_deleted',
     'is_dirty',
     'synced_at',
+    'srs_stage',
+    'next_review_at',
+    'last_reviewed_at',
+    'last_gate_failed',
   ];
 
   final Database _db;
@@ -158,6 +164,182 @@ class SqliteVocabularyRepository implements VocabularyRepository {
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
     return next;
+  }
+
+  @override
+  Future<VocabularyWord?> selectGateWord({DateTime? now}) async {
+    final currentTime = now ?? _now();
+
+    // 1. Previously Failed Gate Words: last_gate_failed = 1
+    final failedRows = await _db.query(
+      _table,
+      columns: _columns,
+      where: 'is_deleted = 0 AND last_gate_failed = 1',
+      orderBy:
+          'CASE WHEN last_reviewed_at IS NULL THEN 0 ELSE 1 END ASC, '
+          'last_reviewed_at ASC, created_at DESC',
+      limit: 1,
+    );
+    if (failedRows.isNotEmpty) {
+      return VocabularyWord.fromDbMap(failedRows.first);
+    }
+
+    // 2. Recent Captures (Last 3 Days / 72 Hours) with srs_stage < 3
+    final recentCutoff = currentTime
+        .subtract(const Duration(hours: 72))
+        .toUtc()
+        .toIso8601String();
+    final recentRows = await _db.query(
+      _table,
+      columns: _columns,
+      where: 'is_deleted = 0 AND created_at >= ? AND srs_stage < 3',
+      whereArgs: [recentCutoff],
+      orderBy: 'created_at DESC',
+      limit: 1,
+    );
+    if (recentRows.isNotEmpty) {
+      return VocabularyWord.fromDbMap(recentRows.first);
+    }
+
+    // 3. Spaced Repetition Due: next_review_at <= now
+    final nowMs = currentTime.millisecondsSinceEpoch;
+    final dueRows = await _db.query(
+      _table,
+      columns: _columns,
+      where:
+          'is_deleted = 0 AND next_review_at IS NOT NULL AND next_review_at <= ?',
+      whereArgs: [nowMs],
+      orderBy: 'srs_stage ASC, next_review_at ASC',
+      limit: 1,
+    );
+    if (dueRows.isNotEmpty) {
+      return VocabularyWord.fromDbMap(dueRows.first);
+    }
+
+    // 4. Fallback: Least-recently reviewed active word
+    final fallbackRows = await _db.query(
+      _table,
+      columns: _columns,
+      where: 'is_deleted = 0',
+      orderBy:
+          'CASE WHEN last_reviewed_at IS NULL THEN 0 ELSE 1 END ASC, '
+          'last_reviewed_at ASC, created_at ASC',
+      limit: 1,
+    );
+    if (fallbackRows.isNotEmpty) {
+      return VocabularyWord.fromDbMap(fallbackRows.first);
+    }
+
+    return null;
+  }
+
+  @override
+  Future<VocabularyWord?> recordGateCompletion({
+    required String wordId,
+    required String targetApp,
+    required int attempts,
+    DateTime? now,
+  }) async {
+    final currentTime = now ?? _now();
+    final nowMs = currentTime.millisecondsSinceEpoch;
+    final existing = await findById(wordId);
+    if (existing == null) return null;
+
+    final int newSrsStage;
+    final bool newLastGateFailed;
+    final int newNextReviewAt;
+
+    if (attempts == 0) {
+      // Stage 0 — Solved on Attempt 1
+      newSrsStage = existing.srsStage + 1;
+      newLastGateFailed = false;
+      const intervals = [1, 3, 7, 14, 30];
+      final intervalDays =
+          intervals[math.min(newSrsStage - 1, intervals.length - 1)];
+      newNextReviewAt = currentTime
+          .add(Duration(days: intervalDays))
+          .millisecondsSinceEpoch;
+    } else if (attempts == 1) {
+      // Stage 1 — Solved on Attempt 2 (keep srs_stage unchanged)
+      newSrsStage = existing.srsStage;
+      newLastGateFailed = false;
+      newNextReviewAt = currentTime
+          .add(const Duration(days: 1))
+          .millisecondsSinceEpoch;
+    } else {
+      // Stage 2 — Solved after Teach & Retype (reset srs_stage = 0, last_gate_failed = 1)
+      newSrsStage = 0;
+      newLastGateFailed = true;
+      newNextReviewAt = currentTime
+          .add(const Duration(hours: 4))
+          .millisecondsSinceEpoch;
+    }
+
+    final updated = existing.copyWith(
+      srsStage: newSrsStage,
+      nextReviewAt: newNextReviewAt,
+      lastReviewedAt: nowMs,
+      lastGateFailed: newLastGateFailed,
+    );
+
+    await _db.transaction((txn) async {
+      await txn.update(
+        _table,
+        {
+          'srs_stage': newSrsStage,
+          'next_review_at': newNextReviewAt,
+          'last_reviewed_at': nowMs,
+          'last_gate_failed': newLastGateFailed ? 1 : 0,
+        },
+        where: 'id = ?',
+        whereArgs: [wordId],
+      );
+
+      final logId = '${wordId}_${nowMs}_${targetApp.hashCode.abs()}';
+      await txn.insert(
+        AppDatabase.gateLogsTable,
+        GateLog(
+          id: logId,
+          wordId: wordId,
+          targetApp: targetApp,
+          attempts: attempts,
+          passedAt: nowMs,
+        ).toDbMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    });
+
+    return updated;
+  }
+
+  @override
+  Future<GateConfig> getGateConfig() async {
+    final rows = await _db.query(
+      AppDatabase.gateConfigTable,
+      where: 'id = 1',
+      limit: 1,
+    );
+    if (rows.isEmpty) return const GateConfig();
+    return GateConfig.fromDbMap(rows.first);
+  }
+
+  @override
+  Future<void> saveGateConfig(GateConfig config) async {
+    await _db.insert(
+      AppDatabase.gateConfigTable,
+      config.toDbMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  @override
+  Future<List<GateLog>> recentGateLogs({int limit = 20}) async {
+    final rows = await _db.query(
+      AppDatabase.gateLogsTable,
+      orderBy: 'passed_at DESC',
+      limit: limit,
+    );
+    return rows.map(GateLog.fromDbMap).toList(growable: false);
   }
 
   @override

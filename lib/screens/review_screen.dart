@@ -8,6 +8,7 @@ import '../models/srs_review.dart';
 import '../models/vocabulary_word.dart';
 import '../providers/vocabulary_provider.dart';
 import '../services/tts_service.dart';
+import '../widgets/highlighted_text.dart';
 import '../widgets/pixel/pixel_box.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_icon.dart';
@@ -564,10 +565,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
                         const SizedBox(height: PixelMetrics.space1),
                         Text(
                           word.meaning,
-                          style: theme.textTheme.titleMedium?.copyWith(
+                          style: theme.textTheme.bodyLarge?.copyWith(
                             color: palette.ink,
                             fontWeight: FontWeight.bold,
-                            fontSize: 20,
+                            fontSize: 18,
+                            height: 1.35,
                           ),
                         ),
                         if (word.examples.isNotEmpty) ...[
@@ -581,11 +583,20 @@ class _ReviewScreenState extends State<ReviewScreen> {
                           const SizedBox(height: PixelMetrics.space1),
                           for (final ex in word.examples)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 2),
-                              child: Text(
-                                '• "$ex"',
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: HighlightedText(
+                                text: '• “$ex”',
+                                targetWord: word.word,
                                 style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: palette.inkMuted,
+                                  color: palette.ink,
+                                  fontStyle: FontStyle.italic,
+                                  height: 1.35,
+                                ),
+                                highlightStyle:
+                                    theme.textTheme.bodyMedium?.copyWith(
+                                  color: palette.accent,
+                                  fontWeight: FontWeight.bold,
+                                  fontStyle: FontStyle.italic,
                                 ),
                               ),
                             ),

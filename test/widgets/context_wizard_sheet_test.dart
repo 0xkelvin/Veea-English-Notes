@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:veea_english_app/core/theme/pixel_theme.dart';
 import 'package:veea_english_app/models/part_of_speech.dart';
+import 'package:veea_english_app/widgets/highlighted_text.dart';
 import 'package:veea_english_app/widgets/pixel/context_wizard_sheet.dart';
 
 void main() {
@@ -70,18 +71,18 @@ void main() {
       await tester.pumpAndSettle();
 
       // Find the first sentence text
-      final firstTextFinder = find.byWidgetPredicate(
-        (widget) => widget is Text && widget.data != null && widget.data!.startsWith('“'),
-      );
+      final firstTextFinder = find.byType(HighlightedText);
       expect(firstTextFinder, findsWidgets);
-      final initialSentence = (tester.firstWidget(firstTextFinder) as Text).data;
+      final initialSentence =
+          tester.firstWidget<HighlightedText>(firstTextFinder).text;
 
       // Tap RE-ROLL
       await tester.tap(find.text('RE-ROLL'));
       await tester.pumpAndSettle();
 
       // Sentence should have shifted
-      final newSentence = (tester.firstWidget(firstTextFinder) as Text).data;
+      final newSentence =
+          tester.firstWidget<HighlightedText>(firstTextFinder).text;
       expect(newSentence, isNot(equals(initialSentence)));
     });
 
