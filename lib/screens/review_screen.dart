@@ -286,7 +286,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
         Text(
           '$current/$total',
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            fontFamily: 'Handjet',
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -457,7 +456,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
                       Text(
                         word.word,
                         style: theme.textTheme.headlineMedium?.copyWith(
-                          fontFamily: 'Handjet',
                           fontWeight: FontWeight.bold,
                           fontSize: 36,
                           letterSpacing: 1.5,
@@ -726,7 +724,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
                     '★ STAGE CLEARED! ★',
                     style: theme.textTheme.headlineSmall?.copyWith(
                       color: palette.accent,
-                      fontFamily: 'Handjet',
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.2,
                     ),
@@ -844,7 +841,6 @@ class _RatingCardButton extends StatelessWidget {
                   child: Text(
                     keyLabel,
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                       color: textColor,
@@ -855,7 +851,6 @@ class _RatingCardButton extends StatelessWidget {
                 Text(
                   title,
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
                     color: textColor,
@@ -867,7 +862,6 @@ class _RatingCardButton extends StatelessWidget {
             Text(
               subtitle,
               style: TextStyle(
-                fontFamily: 'Handjet',
                 fontSize: 11,
                 color: fillColor != null ? textColor : palette.inkMuted,
               ),

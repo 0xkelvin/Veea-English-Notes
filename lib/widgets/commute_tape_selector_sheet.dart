@@ -246,7 +246,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
           title: Text(
             'SAVE AS CUSTOM PLAYLIST',
             style: TextStyle(
-              fontFamily: 'Handjet',
               fontSize: 20,
               fontWeight: FontWeight.bold,
               color: palette.ink,
@@ -258,7 +257,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
             decoration: InputDecoration(
               labelText: 'Playlist name',
               labelStyle: TextStyle(
-                fontFamily: 'Handjet',
                 color: palette.inkFaint,
               ),
               filled: true,
@@ -271,7 +269,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
               ),
             ),
             style: TextStyle(
-              fontFamily: 'Handjet',
               fontSize: 18,
               color: palette.ink,
             ),
@@ -282,7 +279,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
               child: Text(
                 'CANCEL',
                 style: TextStyle(
-                  fontFamily: 'Handjet',
                   color: palette.inkFaint,
                 ),
               ),
@@ -367,7 +363,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                   labelColor: palette.ink,
                   unselectedLabelColor: palette.inkFaint,
                   labelStyle: const TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
                   ),
@@ -421,7 +416,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
               Text(
                 'COMMUTE TAPE SELECTOR ⏏️',
                 style: TextStyle(
-                  fontFamily: 'Handjet',
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                   color: palette.ink,
@@ -445,7 +439,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
         child: Text(
           'NO VOCABULARY WORDS TO PLAY',
           style: TextStyle(
-            fontFamily: 'Handjet',
             fontSize: 16,
             color: palette.inkFaint,
           ),
@@ -486,7 +479,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                   Text(
                     'VOCABULARY LIST (${datesToShow.length} DAYS)',
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
                       color: palette.ink,
@@ -495,7 +487,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                   Text(
                     'SELECTED: ${_selectedWordIds.length} WORDS',
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
                       color: _selectedWordIds.isNotEmpty
@@ -520,7 +511,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                     'NO WORDS THIS MONTH\nTAP ARROWS TO CHANGE MONTH OR TAP "ALL WORDS"',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 14,
                       color: palette.inkFaint,
                     ),
@@ -585,7 +575,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
               Text(
                 'MONTH ${_calendarMonth.month} / ${_calendarMonth.year}',
                 style: TextStyle(
-                  fontFamily: 'Handjet',
                   fontSize: 17,
                   fontWeight: FontWeight.bold,
                   color: palette.ink,
@@ -624,7 +613,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                     child: Text(
                       dayName,
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
                         color: palette.inkMuted,
@@ -691,7 +679,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
         child: Text(
           '$day',
           style: TextStyle(
-            fontFamily: 'Handjet',
             fontSize: 14,
             color: palette.inkFaint.withValues(alpha: 0.3),
           ),
@@ -757,7 +744,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
             Text(
               '$day',
               style: TextStyle(
-                fontFamily: 'Handjet',
                 fontSize: 15,
                 fontWeight: FontWeight.bold,
                 color: textColor,
@@ -768,7 +754,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
             Text(
               badgeText,
               style: TextStyle(
-                fontFamily: 'Handjet',
                 fontSize: 10,
                 fontWeight: FontWeight.bold,
                 color: badgeColor,
@@ -817,7 +802,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
         child: Text(
           label,
           style: TextStyle(
-            fontFamily: 'Handjet',
             fontSize: 12,
             fontWeight: FontWeight.bold,
             color: palette.ink,
@@ -905,7 +889,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                     child: Text(
                       'DATE $date',
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                         color: palette.ink,
@@ -921,7 +904,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                     child: Text(
                       '$selectedCount / ${words.length} WORDS',
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
                         color: selectedCount > 0
@@ -994,7 +976,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                   Text(
                     word.word,
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       color: isSelected ? palette.accent : palette.ink,
@@ -1004,7 +985,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                     Text(
                       word.meaning,
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 12,
                         color: palette.inkMuted,
                       ),
@@ -1018,7 +998,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
               Text(
                 word.pronunciation!,
                 style: TextStyle(
-                  fontFamily: 'Handjet',
                   fontSize: 12,
                   color: palette.inkFaint,
                 ),
@@ -1050,7 +1029,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                 Text(
                   'SELECTED: ${_selectedWordIds.length} WORDS',
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
                     color: palette.accent,
@@ -1061,7 +1039,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                   child: Text(
                     '💾 Save as custom playlist',
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 13,
                       color: palette.inkMuted,
                       decoration: TextDecoration.underline,
@@ -1115,7 +1092,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                     child: Text(
                       'CREATE NEW CASSETTE TAPE (CUSTOM PLAYLIST)',
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
                         color: palette.ink,
@@ -1140,7 +1116,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                     'NO CUSTOM PLAYLISTS YET\nTAP "+ CREATE" OR SAVE FROM THE BY DATE TAB',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 15,
                       color: palette.inkFaint,
                     ),
@@ -1203,7 +1178,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                     Text(
                       playlist.name.toUpperCase(),
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                         color: palette.ink,
@@ -1212,7 +1186,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
                     Text(
                       '${matchingWords.length} WORDS • CREATED ${playlist.createdAt.toString().split(' ').first}',
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 12,
                         color: palette.inkFaint,
                       ),
@@ -1238,7 +1211,6 @@ class _CommuteTapeSelectorSheetState extends State<CommuteTapeSelectorSheet>
             matchingWords.map((w) => w.word).take(6).join(', ') +
                 (matchingWords.length > 6 ? '...' : ''),
             style: TextStyle(
-              fontFamily: 'Handjet',
               fontSize: 13,
               color: palette.inkMuted,
             ),
@@ -1350,7 +1322,6 @@ class _PlaylistEditorSheetState extends State<_PlaylistEditorSheet> {
                       ? 'EDIT PLAYLIST'
                       : 'CREATE NEW PLAYLIST',
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                     color: palette.ink,
@@ -1377,7 +1348,6 @@ class _PlaylistEditorSheetState extends State<_PlaylistEditorSheet> {
                 ),
               ),
               style: TextStyle(
-                fontFamily: 'Handjet',
                 fontSize: 18,
                 color: palette.ink,
               ),
@@ -1395,7 +1365,7 @@ class _PlaylistEditorSheetState extends State<_PlaylistEditorSheet> {
                   borderSide: BorderSide(color: palette.border, width: 1),
                 ),
               ),
-              style: const TextStyle(fontFamily: 'Handjet', fontSize: 16),
+              style: const TextStyle(fontSize: 16),
             ),
             const SizedBox(height: PixelMetrics.space2),
             Row(
@@ -1404,7 +1374,6 @@ class _PlaylistEditorSheetState extends State<_PlaylistEditorSheet> {
                 Text(
                   'SELECT WORDS (${_selectedIds.length} SELECTED)',
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
                     color: palette.inkFaint,
@@ -1425,7 +1394,6 @@ class _PlaylistEditorSheetState extends State<_PlaylistEditorSheet> {
                         ? 'DESELECT ALL'
                         : 'SELECT ALL',
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 12,
                       color: palette.accent,
                       fontWeight: FontWeight.bold,
@@ -1450,7 +1418,6 @@ class _PlaylistEditorSheetState extends State<_PlaylistEditorSheet> {
                       title: Text(
                         w.word,
                         style: TextStyle(
-                          fontFamily: 'Handjet',
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                           color: isSelected ? palette.accent : palette.ink,
@@ -1459,7 +1426,6 @@ class _PlaylistEditorSheetState extends State<_PlaylistEditorSheet> {
                       subtitle: Text(
                         w.meaning,
                         style: TextStyle(
-                          fontFamily: 'Handjet',
                           fontSize: 12,
                           color: palette.inkMuted,
                         ),

@@ -226,7 +226,6 @@ class _ActionButton extends StatelessWidget {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
-                fontFamily: 'Handjet',
                 color:
                     textColor ?? (isPrimary ? palette.onAccent : palette.ink),
                 letterSpacing: 0.5,

@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 
 import '../core/theme/pixel_metrics.dart';
 import '../core/theme/pixel_palette.dart';
-import '../core/theme/pixel_theme.dart';
 import '../models/gate_config.dart';
 import '../models/vocabulary_word.dart';
 import '../providers/app_gate_provider.dart';
@@ -359,7 +358,6 @@ class _AppGateScreenState extends State<AppGateScreen> {
                 child: Text(
                   posLabel,
                   style: TextStyle(
-                    fontFamily: PixelTheme.fontFamily,
                     fontSize: 15,
                     fontWeight: FontWeight.bold,
                     color: palette.posColor(word.partOfSpeech),
@@ -374,7 +372,6 @@ class _AppGateScreenState extends State<AppGateScreen> {
           Text(
             word.meaning,
             style: TextStyle(
-              fontFamily: PixelTheme.fontFamily,
               fontSize: 28,
               fontWeight: FontWeight.bold,
               color: palette.ink,
@@ -412,7 +409,6 @@ class _AppGateScreenState extends State<AppGateScreen> {
                       child: Text(
                         mask,
                         style: TextStyle(
-                          fontFamily: PixelTheme.fontFamily,
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 1.5,
@@ -481,7 +477,6 @@ class _AppGateScreenState extends State<AppGateScreen> {
                               Text(
                                 word.word,
                                 style: TextStyle(
-                                  fontFamily: PixelTheme.fontFamily,
                                   fontSize: 32,
                                   fontWeight: FontWeight.bold,
                                   color: palette.ink,
@@ -524,7 +519,6 @@ class _AppGateScreenState extends State<AppGateScreen> {
                                   child: Text(
                                     'peek again',
                                     style: TextStyle(
-                                      fontFamily: PixelTheme.fontFamily,
                                       fontSize: 15,
                                       fontWeight: FontWeight.bold,
                                       color: palette.onAccent,
@@ -664,7 +658,6 @@ class _AppGateScreenState extends State<AppGateScreen> {
           Text(
             word.word,
             style: TextStyle(
-              fontFamily: PixelTheme.fontFamily,
               fontSize: 34,
               fontWeight: FontWeight.bold,
               color: palette.ink,

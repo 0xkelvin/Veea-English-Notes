@@ -295,7 +295,6 @@ class StartupRecoveryApp extends StatelessWidget {
                   style: TextStyle(
                     color: Color(0xFFFF5252),
                     fontSize: 22,
-                    fontFamily: 'Handjet',
                     fontWeight: FontWeight.bold,
                   ),
                 ),

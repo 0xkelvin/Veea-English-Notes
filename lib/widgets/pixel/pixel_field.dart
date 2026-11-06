@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/pixel_metrics.dart';
 import '../../core/theme/pixel_palette.dart';
 
-/// A text input framed by a hard outline that switches to the accent colour
-/// when focused. No fill animation, no floating label.
+/// A modern rounded text input that highlights with a soft accent ring when focused.
 class PixelField extends StatefulWidget {
   const PixelField({
     super.key,
@@ -64,27 +63,37 @@ class _PixelFieldState extends State<PixelField> {
     final theme = Theme.of(context);
     final focused = _focusNode.hasFocus;
 
-    final field = Container(
+    final field = AnimatedContainer(
+      duration: const Duration(milliseconds: 140),
       decoration: BoxDecoration(
         color: palette.surface,
+        borderRadius: BorderRadius.circular(PixelMetrics.radiusSm),
         border: Border.all(
           color: focused ? palette.accent : palette.border,
-          width: PixelMetrics.border,
+          width: focused ? 1.5 : PixelMetrics.border,
         ),
+        boxShadow: focused
+            ? [
+                BoxShadow(
+                  color: palette.accent.withValues(alpha: 0.12),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
       ),
       child: TextField(
         controller: widget.controller,
         focusNode: _focusNode,
         autofocus: widget.autofocus,
-        // A password field must stay on one line; obscured text cannot wrap.
         maxLines: widget.obscure ? 1 : widget.maxLines,
         obscureText: widget.obscure,
         textInputAction: widget.textInputAction,
         onSubmitted: widget.onSubmitted,
         onChanged: widget.onChanged,
         textCapitalization: widget.textCapitalization,
-        cursorWidth: PixelMetrics.border,
-        cursorRadius: Radius.zero,
+        cursorWidth: 2.0,
+        cursorRadius: const Radius.circular(2),
         style: theme.textTheme.bodyLarge,
         decoration: InputDecoration(
           isDense: true,
@@ -111,7 +120,7 @@ class _PixelFieldState extends State<PixelField> {
             Text(
               widget.label.toUpperCase(),
               style: theme.textTheme.labelSmall?.copyWith(
-                color: focused ? palette.accent : palette.inkFaint,
+                color: focused ? palette.accent : palette.inkMuted,
               ),
             ),
             if (widget.optional) ...[
@@ -125,7 +134,7 @@ class _PixelFieldState extends State<PixelField> {
             ],
           ],
         ),
-        const SizedBox(height: PixelMetrics.space1),
+        const SizedBox(height: PixelMetrics.space1 + 2),
         if (widget.trailing == null)
           field
         else
@@ -142,7 +151,7 @@ class _PixelFieldState extends State<PixelField> {
   }
 }
 
-/// The search input: a single bordered row with no label above it.
+/// The search input: a clean rounded search bar.
 class PixelSearchField extends StatelessWidget {
   const PixelSearchField({
     super.key,
@@ -163,6 +172,7 @@ class PixelSearchField extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: palette.surface,
+        borderRadius: BorderRadius.circular(PixelMetrics.radiusSm),
         border: Border.all(color: palette.border, width: PixelMetrics.border),
       ),
       child: TextField(
@@ -170,8 +180,8 @@ class PixelSearchField extends StatelessWidget {
         onChanged: onChanged,
         autofocus: autofocus,
         textInputAction: TextInputAction.search,
-        cursorWidth: PixelMetrics.border,
-        cursorRadius: Radius.zero,
+        cursorWidth: 2.0,
+        cursorRadius: const Radius.circular(2),
         style: Theme.of(context).textTheme.bodyLarge,
         decoration: InputDecoration(
           isDense: true,
@@ -192,10 +202,7 @@ class PixelSearchField extends StatelessWidget {
   }
 }
 
-/// Strips the platform overscroll effect.
-///
-/// Android's stretch and the glow indicator both bend the layout's hard
-/// edges, which reads as wrong against square-cornered blocks.
+/// Smooth scroll behavior across platforms.
 class PixelScrollBehavior extends MaterialScrollBehavior {
   const PixelScrollBehavior();
 

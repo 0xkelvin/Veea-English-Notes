@@ -48,6 +48,8 @@ import DeviceActivity
     ("CapCut", ["capcut://"])
   ]
 
+  private var ocrChannelRegistered = false
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -70,6 +72,13 @@ import DeviceActivity
     open url: URL,
     options: [UIApplication.OpenURLOptionsKey: Any] = [:]
   ) -> Bool {
+    if handleIncomingUrl(url) {
+      return true
+    }
+    return super.application(app, open: url, options: options)
+  }
+
+  func handleIncomingUrl(_ url: URL) -> Bool {
     if url.scheme == "veea" && url.host == "gate" {
       let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
       let targetApp = components?.queryItems?.first(where: { $0.name == "app" })?.value
@@ -88,14 +97,14 @@ import DeviceActivity
       appGateChannel?.invokeMethod("onGateTriggered", arguments: ["targetApp": targetApp])
       return true
     }
-    return super.application(app, open: url, options: options)
+    return false
   }
 
   private func sharedDefaults() -> UserDefaults? {
     return UserDefaults(suiteName: Self.appGroupSuite) ?? UserDefaults.standard
   }
 
-  private func checkPendingGateTargetFromAppGroup() {
+  func checkPendingGateTargetFromAppGroup() {
     guard let defaults = sharedDefaults(),
           let pendingTarget = defaults.string(forKey: "pending_gate_target_app"),
           !pendingTarget.isEmpty else {
@@ -139,6 +148,7 @@ import DeviceActivity
   }
 
   private func registerAppGateChannel(messenger: FlutterBinaryMessenger) {
+    guard self.appGateChannel == nil else { return }
     let channel = FlutterMethodChannel(
       name: "app.veea.english/app_gate",
       binaryMessenger: messenger
@@ -227,11 +237,21 @@ import DeviceActivity
     result(true)
   }
 
+  private func activeRootViewController() -> UIViewController? {
+    if let root = self.window?.rootViewController {
+      return root
+    }
+    return UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .flatMap { $0.windows }
+      .first(where: { $0.isKeyWindow })?.rootViewController
+  }
+
   private func handlePickAppsToGate(result: @escaping FlutterResult) {
     #if canImport(FamilyControls) && !targetEnvironment(simulator)
     if #available(iOS 16.0, *),
        AuthorizationCenter.shared.authorizationStatus == .approved,
-       let rootVC = self.window?.rootViewController {
+       let rootVC = self.activeRootViewController() {
       DispatchQueue.main.async {
         let pickerView = FamilyActivityPickerWrapperView { selection in
           ScreenTimeSelectionStore.shared.selection = selection
@@ -296,6 +316,8 @@ import DeviceActivity
   }
 
   private func registerOcrChannel(messenger: FlutterBinaryMessenger) {
+    guard !ocrChannelRegistered else { return }
+    ocrChannelRegistered = true
     let channel = FlutterMethodChannel(name: "com.veea.english/ocr", binaryMessenger: messenger)
 
     channel.setMethodCallHandler { (call: FlutterMethodCall, result: @escaping FlutterResult) in
@@ -357,6 +379,34 @@ import DeviceActivity
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    let messenger = engineBridge.applicationRegistrar.messenger()
+    registerOcrChannel(messenger: messenger)
+    registerAppGateChannel(messenger: messenger)
+  }
+}
+
+class SceneDelegate: FlutterSceneDelegate {
+  override func scene(
+    _ scene: UIScene,
+    willConnectTo session: UISceneSession,
+    options connectionOptions: UIScene.ConnectionOptions
+  ) {
+    super.scene(scene, willConnectTo: session, options: connectionOptions)
+    for urlContext in connectionOptions.urlContexts {
+      _ = (UIApplication.shared.delegate as? AppDelegate)?.handleIncomingUrl(urlContext.url)
+    }
+  }
+
+  override func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+    super.scene(scene, openURLContexts: URLContexts)
+    for urlContext in URLContexts {
+      _ = (UIApplication.shared.delegate as? AppDelegate)?.handleIncomingUrl(urlContext.url)
+    }
+  }
+
+  override func sceneDidBecomeActive(_ scene: UIScene) {
+    super.sceneDidBecomeActive(scene)
+    (UIApplication.shared.delegate as? AppDelegate)?.checkPendingGateTargetFromAppGroup()
   }
 }
 

@@ -179,7 +179,6 @@ class _RetroCalendarSheetState extends State<RetroCalendarSheet> {
                       child: Text(
                         'LOADING CALENDAR…',
                         style: TextStyle(
-                          fontFamily: 'Handjet',
                           fontSize: 16,
                           color: palette.inkMuted,
                         ),
@@ -249,7 +248,6 @@ class _RetroCalendarSheetState extends State<RetroCalendarSheet> {
               Text(
                 'MONTH ${_calendarMonth.month} / ${_calendarMonth.year}',
                 style: TextStyle(
-                  fontFamily: 'Handjet',
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                   color: palette.ink,
@@ -276,7 +274,6 @@ class _RetroCalendarSheetState extends State<RetroCalendarSheet> {
                   child: Text(
                     'TODAY',
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
                       color: palette.accent,
@@ -305,7 +302,6 @@ class _RetroCalendarSheetState extends State<RetroCalendarSheet> {
             child: Text(
               'MONTH ACTIVITY: $monthWordCount WORDS · $monthActiveDays DAYS LEARNED',
               style: TextStyle(
-                fontFamily: 'Handjet',
                 fontSize: 11,
                 fontWeight: FontWeight.bold,
                 color: palette.inkMuted,
@@ -325,7 +321,6 @@ class _RetroCalendarSheetState extends State<RetroCalendarSheet> {
                     child: Text(
                       d,
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
                         color: palette.inkMuted,
@@ -409,7 +404,6 @@ class _RetroCalendarSheetState extends State<RetroCalendarSheet> {
               Text(
                 '$day',
                 style: TextStyle(
-                  fontFamily: 'Handjet',
                   fontSize: 14,
                   color: isSelected
                       ? palette.ink
@@ -478,7 +472,6 @@ class _RetroCalendarSheetState extends State<RetroCalendarSheet> {
             Text(
               '$day',
               style: TextStyle(
-                fontFamily: 'Handjet',
                 fontSize: 15,
                 fontWeight: FontWeight.bold,
                 color: textColor,
@@ -489,7 +482,6 @@ class _RetroCalendarSheetState extends State<RetroCalendarSheet> {
             Text(
               '$count',
               style: TextStyle(
-                fontFamily: 'Handjet',
                 fontSize: 11,
                 fontWeight: FontWeight.bold,
                 color: badgeColor,
@@ -524,7 +516,6 @@ class _RetroCalendarSheetState extends State<RetroCalendarSheet> {
                 child: Text(
                   formattedDate,
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 15,
                     fontWeight: FontWeight.bold,
                     color: palette.ink,
@@ -543,7 +534,6 @@ class _RetroCalendarSheetState extends State<RetroCalendarSheet> {
                       ? '${words.length} ${words.length == 1 ? 'WORD' : 'WORDS'}'
                       : 'EMPTY',
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
                     color: words.isNotEmpty ? palette.onAccent : palette.inkMuted,
@@ -572,7 +562,6 @@ class _RetroCalendarSheetState extends State<RetroCalendarSheet> {
                   child: Text(
                     w.word,
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
                       color: palette.ink,
@@ -586,7 +575,6 @@ class _RetroCalendarSheetState extends State<RetroCalendarSheet> {
               Text(
                 '+ ${words.length - 12} more words',
                 style: TextStyle(
-                  fontFamily: 'Handjet',
                   fontSize: 11,
                   color: palette.inkMuted,
                 ),
@@ -598,7 +586,6 @@ class _RetroCalendarSheetState extends State<RetroCalendarSheet> {
                   ? 'No words captured today yet. Tap below to start capturing!'
                   : 'No words were recorded on this day.',
               style: TextStyle(
-                fontFamily: 'Handjet',
                 fontSize: 13,
                 color: palette.inkMuted,
               ),

@@ -378,7 +378,6 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                       Text(
                         'DROP WORD TO A FRIEND:',
                         style: TextStyle(
-                          fontFamily: 'Handjet',
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: palette.ink,
@@ -395,7 +394,6 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                         title: Text(
                           friend.name,
                           style: TextStyle(
-                            fontFamily: 'Handjet',
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                             color: palette.ink,
@@ -522,7 +520,6 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                             Text(
                               'GỢI Ý: ',
                               style: TextStyle(
-                                fontFamily: 'Handjet',
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
                                 color: palette.inkFaint,
@@ -532,7 +529,6 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                               child: Text(
                                 _suggestedMeaning!,
                                 style: TextStyle(
-                                  fontFamily: 'Handjet',
                                   fontSize: 12,
                                   color: palette.inkMuted,
                                 ),
@@ -543,7 +539,6 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                             Text(
                               '[ÁP DỤNG]',
                               style: TextStyle(
-                                fontFamily: 'Handjet',
                                 fontSize: 10,
                                 color: palette.accent,
                                 fontWeight: FontWeight.bold,
@@ -768,14 +763,16 @@ class _PartOfSpeechPicker extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
+        Wrap(
+          spacing: PixelMetrics.space2,
+          runSpacing: PixelMetrics.space1,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             Text(
               'PART OF SPEECH (OPTIONAL)',
               style: theme.textTheme.labelSmall,
             ),
-            if (suggested != null) ...[
-              const SizedBox(width: PixelMetrics.space2),
+            if (suggested != null)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                 decoration: BoxDecoration(
@@ -788,14 +785,12 @@ class _PartOfSpeechPicker extends StatelessWidget {
                 child: Text(
                   'GỢI Ý: ${suggested!.label.toUpperCase()}',
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
                     color: palette.inkMuted,
                   ),
                 ),
               ),
-            ],
           ],
         ),
         const SizedBox(height: PixelMetrics.space2),
@@ -880,11 +875,13 @@ class _ExamplesSection extends StatelessWidget {
       children: [
         Row(
           children: [
-            Text(
-              'THE SENTENCE YOU HEARD (OPTIONAL)',
-              style: theme.textTheme.labelSmall,
+            Expanded(
+              child: Text(
+                'THE SENTENCE YOU HEARD (OPTIONAL)',
+                style: theme.textTheme.labelSmall,
+              ),
             ),
-            const Spacer(),
+            const SizedBox(width: PixelMetrics.space2),
             GestureDetector(
               onTap: onOpenWizard,
               child: Container(
@@ -905,7 +902,6 @@ class _ExamplesSection extends StatelessWidget {
                     Text(
                       'AI WIZARD',
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
                         color: palette.onAccent,

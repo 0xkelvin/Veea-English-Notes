@@ -6,7 +6,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:veea_english_app/core/theme/pixel_theme.dart';
 import 'package:veea_english_app/data/local/sqlite_vocabulary_repository.dart';
 import 'package:veea_english_app/providers/vocabulary_provider.dart';
-import 'package:veea_english_app/screens/arcade_screen.dart';
+// import 'package:veea_english_app/screens/arcade_screen.dart';
 import 'package:veea_english_app/screens/home_screen.dart';
 import 'package:veea_english_app/screens/word_editor_screen.dart';
 import 'package:veea_english_app/services/tts_service.dart';
@@ -39,7 +39,7 @@ void main() {
     child: MaterialApp(theme: PixelTheme.light(), home: child),
   );
 
-  testWidgets('HomeScreen renders Concept 3 Dual-Bar layout cleanly', (
+  testWidgets('HomeScreen renders Dual-Bar layout cleanly with games hidden', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(800, 1200);
@@ -49,8 +49,8 @@ void main() {
     await tester.pumpWidget(wrap(const HomeScreen()));
     await tester.pumpAndSettle();
 
-    // Top Bar verification (Minimal & focused)
-    expect(find.text('VEEA // JOURNAL'), findsOneWidget);
+    // Top Bar verification (Minimal & focused, "VEEA // JOURNAL" removed)
+    expect(find.text('VEEA // JOURNAL'), findsNothing);
     expect(
       find.byTooltip('Search all words'),
       findsNothing,
@@ -59,9 +59,9 @@ void main() {
     expect(find.bySemanticsLabel('Pixel Lens OCR Scanner'), findsOneWidget);
     expect(find.bySemanticsLabel('Settings'), findsOneWidget);
 
-    // Bottom Dock verification (Ergonomic thumb-friendly navigation)
+    // Bottom Dock verification (ARCADE is hidden)
     expect(find.text('AUDIO'), findsOneWidget);
-    expect(find.text('ARCADE'), findsOneWidget);
+    expect(find.text('ARCADE'), findsNothing);
     expect(find.text('ADD'), findsOneWidget);
     expect(find.text('REVIEW'), findsOneWidget);
 
@@ -73,11 +73,5 @@ void main() {
     // Close editor
     await tester.tap(find.bySemanticsLabel('Close without saving'));
     await tester.pumpAndSettle();
-
-    // Tap ARCADE item -> opens ArcadeScreen with 2P Game Link banner
-    await tester.tap(find.text('ARCADE'));
-    await tester.pumpAndSettle();
-    expect(find.byType(ArcadeScreen), findsOneWidget);
-    expect(find.text('PIXEL LINK DUELS'), findsOneWidget);
   });
 }

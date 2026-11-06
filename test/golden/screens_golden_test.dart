@@ -1,6 +1,3 @@
-import 'dart:io';
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -14,6 +11,7 @@ import 'package:veea_english_app/data/remote/token_store.dart';
 import 'package:veea_english_app/data/remote/vocabulary_api.dart';
 import 'package:veea_english_app/models/part_of_speech.dart';
 import 'package:veea_english_app/models/vocabulary_word.dart';
+import 'package:veea_english_app/providers/app_gate_provider.dart';
 import 'package:veea_english_app/providers/auth_provider.dart';
 import 'package:veea_english_app/providers/cartridge_provider.dart';
 import 'package:veea_english_app/providers/pet_provider.dart';
@@ -29,22 +27,11 @@ import 'package:veea_english_app/services/sync_service.dart';
 import 'package:veea_english_app/services/tts_service.dart';
 import 'package:veea_english_app/widgets/pixel/pixel_field.dart';
 
-/// Renders whole screens to PNG so the pixel styling — and in particular the
-/// Vietnamese diacritics in the bundled font — can be reviewed and regressions
+/// Renders whole screens to PNG so the styling can be reviewed and regressions
 /// caught. Regenerate with `flutter test --update-goldens`.
 void main() {
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
-
-  // Without this the test renderer substitutes its placeholder font and every
-  // glyph paints as a filled box — which would hide the whole point of these
-  // goldens, namely that Vietnamese diacritics render in the pixel face.
-  setUpAll(() async {
-    await ui.loadFontFromList(
-      File('assets/fonts/Handjet.ttf').readAsBytesSync(),
-      fontFamily: PixelTheme.fontFamily,
-    );
-  });
 
   final today = DateTime(2026, 8, 18, 10);
 
@@ -151,6 +138,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => WidgetProvider()),
         ChangeNotifierProvider(create: (_) => PetProvider()),
         ChangeNotifierProvider(create: (_) => CartridgeProvider()),
+        ChangeNotifierProvider(create: (_) => AppGateProvider(repository: repo)),
         Provider<PronunciationService>.value(value: pronunciation),
         ChangeNotifierProvider(create: (_) => syncService),
         ChangeNotifierProvider(

@@ -96,7 +96,6 @@ void main() {
       expect(find.text('SETTINGS'), findsOneWidget);
       expect(find.text('ACTIVITY HEATMAP'), findsOneWidget);
       expect(find.textContaining('RETRO MILESTONES'), findsOneWidget);
-      expect(find.text('RETRO PIXEL THEME'), findsOneWidget);
       expect(find.text('HOME SCREEN & LOCK SCREEN WIDGET'), findsOneWidget);
       expect(
         find.text('THIS BUILD RUNS IN FULLY LOCAL STORAGE MODE.'),

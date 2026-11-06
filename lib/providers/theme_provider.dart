@@ -5,23 +5,23 @@ import '../core/theme/pixel_theme.dart';
 
 enum AppThemeMode {
   system(label: 'System Default'),
-  classicLight(label: 'Paper Light'),
-  classicDark(label: 'Night Dark'),
-  matrixGreen(label: 'GameBoy Matrix Green'),
-  cyberpunkNeon(label: 'Cyberpunk Neon'),
-  oledBlack(label: 'OLED True Black');
+  classicLight(label: 'Liquid Light'),
+  classicDark(label: 'Liquid Dark'),
+  matrixGreen(label: 'Liquid Dark'),
+  cyberpunkNeon(label: 'Liquid Dark'),
+  oledBlack(label: 'Liquid Dark');
 
   const AppThemeMode({required this.label});
 
   final String label;
 }
 
-/// Manages active retro pixel themes and persists selection.
+/// Manages active modern app theme (defaults to clean modern light/system).
 class ThemeProvider extends ChangeNotifier {
-  static const String _key = 'app_theme_mode';
+  static const String _key = 'app_theme_mode_v2';
   static const String _typographyKey = 'app_typography_mode';
 
-  AppThemeMode _mode = AppThemeMode.system;
+  AppThemeMode _mode = AppThemeMode.classicLight;
   TypographyMode _typographyMode = TypographyMode.hybrid;
   bool _isDisposed = false;
 
@@ -39,25 +39,10 @@ class ThemeProvider extends ChangeNotifier {
       PixelTheme.light(typographyMode: _typographyMode),
     AppThemeMode.classicLight =>
       PixelTheme.light(typographyMode: _typographyMode),
-    AppThemeMode.classicDark =>
-      PixelTheme.dark(typographyMode: _typographyMode),
-    AppThemeMode.matrixGreen =>
-      PixelTheme.matrixGreen(typographyMode: _typographyMode),
-    AppThemeMode.cyberpunkNeon =>
-      PixelTheme.cyberpunkNeon(typographyMode: _typographyMode),
-    AppThemeMode.oledBlack =>
-      PixelTheme.oledBlack(typographyMode: _typographyMode),
-  };
-
-  ThemeData get darkTheme => switch (_mode) {
-    AppThemeMode.matrixGreen =>
-      PixelTheme.matrixGreen(typographyMode: _typographyMode),
-    AppThemeMode.cyberpunkNeon =>
-      PixelTheme.cyberpunkNeon(typographyMode: _typographyMode),
-    AppThemeMode.oledBlack =>
-      PixelTheme.oledBlack(typographyMode: _typographyMode),
     _ => PixelTheme.dark(typographyMode: _typographyMode),
   };
+
+  ThemeData get darkTheme => PixelTheme.dark(typographyMode: _typographyMode);
 
   Future<void> init() async {
     try {
@@ -66,7 +51,7 @@ class ThemeProvider extends ChangeNotifier {
       if (saved != null) {
         _mode = AppThemeMode.values.firstWhere(
           (e) => e.name == saved,
-          orElse: () => AppThemeMode.system,
+          orElse: () => AppThemeMode.classicLight,
         );
       }
       final savedTypography = prefs.getString(_typographyKey);

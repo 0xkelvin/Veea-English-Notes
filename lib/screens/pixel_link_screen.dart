@@ -114,7 +114,6 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
                           child: Text(
                             'DEMO LAB // SIMULATOR: Local mock environment for previewing peer challenges. Real multiplayer transport is in development.',
                             style: TextStyle(
-                              fontFamily: 'Handjet',
                               fontSize: 14,
                               fontWeight: FontWeight.bold,
                               color: palette.ink,
@@ -170,7 +169,6 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
                           'NO FRIENDS CONNECTED YET\nENTER A CODE TO DROP WORDS & DUEL!',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontFamily: 'Handjet',
                             fontSize: 14,
                             color: palette.inkFaint,
                           ),
@@ -214,7 +212,6 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
           Text(
             'PIXEL LINK // FRIEND WORD DROP',
             style: TextStyle(
-              fontFamily: 'Handjet',
               fontSize: 18,
               fontWeight: FontWeight.bold,
               color: palette.ink,
@@ -261,7 +258,6 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
                   Text(
                     'YOUR GAME LINK CODE',
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
                       color: palette.inkFaint,
@@ -275,7 +271,6 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
                 child: Text(
                   '${profile.xp} XP',
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                     color: palette.paper,
@@ -297,7 +292,6 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
                   child: Text(
                     profile.friendCode,
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 26,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 2.0,
@@ -319,7 +313,6 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
               Text(
                 'Won: ${profile.duelsWon} / ${profile.duelsPlayed} duels',
                 style: TextStyle(
-                  fontFamily: 'Handjet',
                   fontSize: 14,
                   color: palette.inkMuted,
                 ),
@@ -344,7 +337,6 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
           Text(
             'CONNECT WITH A FRIEND (ENTER VEEA-XXXX)',
             style: TextStyle(
-              fontFamily: 'Handjet',
               fontSize: 13,
               fontWeight: FontWeight.bold,
               color: palette.inkFaint,
@@ -360,7 +352,6 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
                   decoration: InputDecoration(
                     hintText: 'e.g. VEEA-77K2',
                     hintStyle: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 16,
                       color: palette.inkFaint,
                     ),
@@ -379,7 +370,6 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
                     ),
                   ),
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                     color: palette.ink,
@@ -416,7 +406,6 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
                 Text(
                   'TEST WORD DROP (SIMULATOR)',
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
                     color: Colors.amber.shade900,
@@ -425,7 +414,6 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
                 Text(
                   'Launch instant word quiz pop-up on screen',
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 12,
                     color: palette.inkMuted,
                   ),
@@ -456,7 +444,6 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
             child: Text(
               friend.name.isNotEmpty ? friend.name[0].toUpperCase() : '?',
               style: TextStyle(
-                fontFamily: 'Handjet',
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
                 color: palette.accent,
@@ -471,7 +458,6 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
                 Text(
                   friend.name,
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
                     color: palette.ink,
@@ -480,7 +466,6 @@ class _PixelLinkScreenState extends State<PixelLinkScreen> {
                 Text(
                   'Score: ${friend.duelScoreMe} won - ${friend.duelScoreThem} lost',
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 12,
                     color: palette.inkFaint,
                   ),
@@ -581,7 +566,6 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
         Text(
           'WORD DROP CHALLENGE SENT!',
           style: TextStyle(
-            fontFamily: 'Handjet',
             fontSize: 22,
             fontWeight: FontWeight.bold,
             color: palette.accent,
@@ -590,7 +574,6 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
         Text(
           'Sent to ${widget.friend.name}',
           style: TextStyle(
-            fontFamily: 'Handjet',
             fontSize: 14,
             color: palette.inkMuted,
           ),
@@ -612,7 +595,6 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
               child: Text(
                 'DROP WORD TO ${widget.friend.name.toUpperCase()}',
                 style: TextStyle(
-                  fontFamily: 'Handjet',
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                   color: palette.ink,
@@ -627,7 +609,6 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
         Text(
           'CHALLENGE MODE:',
           style: TextStyle(
-            fontFamily: 'Handjet',
             fontSize: 12,
             color: palette.inkFaint,
             fontWeight: FontWeight.bold,
@@ -660,7 +641,6 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
         Text(
           'SELECT WORD FROM YOUR JOURNAL:',
           style: TextStyle(
-            fontFamily: 'Handjet',
             fontSize: 12,
             color: palette.inkFaint,
             fontWeight: FontWeight.bold,
@@ -675,7 +655,6 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
             child: Text(
               'No words in your journal yet! Add words before challenging friends.',
               style: TextStyle(
-                fontFamily: 'Handjet',
                 fontSize: 14,
                 color: palette.danger,
               ),
@@ -706,7 +685,6 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
                     title: Text(
                       w.word,
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                         color: isSelected ? palette.accent : palette.ink,
@@ -715,7 +693,6 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
                     subtitle: Text(
                       w.meaning,
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 12,
                         color: palette.inkMuted,
                       ),
@@ -761,7 +738,6 @@ class _WordDropPickerSheetState extends State<_WordDropPickerSheet> {
         child: Text(
           label,
           style: TextStyle(
-            fontFamily: 'Handjet',
             fontSize: 12,
             fontWeight: FontWeight.bold,
             color: isSelected ? palette.paper : palette.ink,

@@ -10,10 +10,6 @@ import 'pixel/pixel_icon.dart';
 import 'pixel/retro_calendar_sheet.dart';
 
 /// Day navigation: previous, the day itself, next.
-///
-/// Tapping the label or the calendar icon opens a retro pixel calendar.
-/// Days holding words show word counts and active styling, while empty days
-/// are grayed down so learning consistency is immediately visible.
 class DateBar extends StatelessWidget {
   const DateBar({super.key});
 
@@ -26,10 +22,11 @@ class DateBar extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.symmetric(
-        horizontal: PixelMetrics.space2,
+        horizontal: PixelMetrics.space3,
         vertical: PixelMetrics.space2,
       ),
       decoration: BoxDecoration(
+        color: palette.surface,
         border: Border(
           bottom: BorderSide(color: palette.border, width: PixelMetrics.border),
         ),
@@ -100,9 +97,6 @@ class DateBar extends StatelessWidget {
 }
 
 /// One-line counters: what is on this day, and the running totals.
-///
-/// This replaces the two gradient stat cards, which took roughly a sixth of
-/// the screen to show numbers you rarely act on.
 class StatusLine extends StatelessWidget {
   const StatusLine({super.key});
 
@@ -120,7 +114,7 @@ class StatusLine extends StatelessWidget {
         vertical: PixelMetrics.space2,
       ),
       decoration: BoxDecoration(
-        color: palette.surface,
+        color: palette.paper,
         border: Border(
           bottom: BorderSide(color: palette.border, width: PixelMetrics.border),
         ),

@@ -134,7 +134,6 @@ class _WordOfDayWidgetCardState extends State<WordOfDayWidgetCard> {
                     Text(
                       word.word,
                       style: theme.textTheme.titleLarge?.copyWith(
-                        fontFamily: 'Handjet',
                         fontSize: 26,
                         fontWeight: FontWeight.bold,
                         color: isSpeaking ? palette.accent : palette.ink,
@@ -208,7 +207,6 @@ class _WordOfDayWidgetCardState extends State<WordOfDayWidgetCard> {
                           ? '🔊 PRONOUNCING…'
                           : 'TAP WIDGET TO PRONOUNCE & ROTATE ❯',
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
                         color: isSpeaking ? palette.accent : palette.inkFaint,
@@ -218,7 +216,6 @@ class _WordOfDayWidgetCardState extends State<WordOfDayWidgetCard> {
                     Text(
                       '${safeIndex + 1}/${words.length}',
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 11,
                         color: palette.inkFaint,
                       ),

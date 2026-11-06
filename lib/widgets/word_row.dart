@@ -11,10 +11,7 @@ import 'highlighted_text.dart';
 import 'pixel/pixel_button.dart';
 import 'pixel/pixel_icon.dart';
 
-/// One captured word rendered as a collectible retro-modern cartridge card.
-///
-/// Balances authentic 8-bit chunky aesthetics for the chrome & badges with
-/// high-readability typography for meanings and context sentences.
+/// One captured word rendered as a clean, modern liquid-elevated card.
 class WordRow extends StatelessWidget {
   const WordRow({
     super.key,
@@ -48,15 +45,16 @@ class WordRow extends StatelessWidget {
           padding: const EdgeInsets.all(PixelMetrics.space4),
           decoration: BoxDecoration(
             color: palette.surface,
+            borderRadius: BorderRadius.circular(PixelMetrics.radius),
             border: Border.all(
               color: palette.border,
               width: PixelMetrics.border,
             ),
             boxShadow: [
               BoxShadow(
-                color: palette.border.withValues(alpha: 0.14),
-                offset: const Offset(2, 2),
-                blurRadius: 0,
+                color: Colors.black.withValues(alpha: 0.04),
+                offset: const Offset(0, 4),
+                blurRadius: 12,
               ),
             ],
           ),
@@ -80,9 +78,9 @@ class WordRow extends StatelessWidget {
               Text(
                 word.meaning,
                 style: theme.textTheme.bodyLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                   fontSize: 16,
-                  height: 1.35,
+                  height: 1.4,
                 ),
               ),
 
@@ -94,10 +92,14 @@ class WordRow extends StatelessWidget {
                     margin: const EdgeInsets.only(bottom: PixelMetrics.space1),
                     padding: const EdgeInsets.symmetric(
                       horizontal: PixelMetrics.space3,
-                      vertical: 6,
+                      vertical: 5,
                     ),
                     decoration: BoxDecoration(
-                      color: palette.paper.withValues(alpha: 0.65),
+                      color: palette.paper.withValues(alpha: 0.75),
+                      borderRadius: const BorderRadius.only(
+                        topRight: Radius.circular(8),
+                        bottomRight: Radius.circular(8),
+                      ),
                       border: Border(
                         left: BorderSide(
                           color: palette.accent,
@@ -114,7 +116,7 @@ class WordRow extends StatelessWidget {
                       ),
                       highlightStyle: theme.textTheme.bodyMedium?.copyWith(
                         fontStyle: FontStyle.italic,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w700,
                         color: palette.accent,
                       ),
                     ),
@@ -132,42 +134,40 @@ class WordRow extends StatelessWidget {
                     if (word.source != null && word.source!.isNotEmpty)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
+                          horizontal: 8,
+                          vertical: 3,
                         ),
                         decoration: BoxDecoration(
                           color: palette.paper,
+                          borderRadius: BorderRadius.circular(6),
                           border: Border.all(
-                            color: palette.border.withValues(alpha: 0.4),
+                            color: palette.border,
                             width: 1,
                           ),
                         ),
                         child: Text(
                           'FROM ${word.source!.toUpperCase()}',
                           style: theme.textTheme.labelSmall?.copyWith(
-                            fontSize: 10,
-                            letterSpacing: 0.5,
+                            fontSize: 10.5,
+                            letterSpacing: 0.3,
                           ),
                         ),
                       ),
                     for (final tag in word.tags)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
+                          horizontal: 8,
+                          vertical: 3,
                         ),
                         decoration: BoxDecoration(
-                          color: palette.paper,
-                          border: Border.all(
-                            color: palette.border.withValues(alpha: 0.4),
-                            width: 1,
-                          ),
+                          color: palette.accent.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
                           '#$tag',
                           style: theme.textTheme.bodySmall?.copyWith(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
                             color: palette.accent,
                           ),
                         ),
@@ -212,24 +212,25 @@ class _WordHeadline extends StatelessWidget {
         Wrap(
           crossAxisAlignment: WrapCrossAlignment.center,
           spacing: PixelMetrics.space2,
-          runSpacing: 4,
+          runSpacing: 6,
           children: [
             Text(
               word.word,
               style: theme.textTheme.titleLarge?.copyWith(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
+                fontSize: 21,
+                fontWeight: FontWeight.w700,
               ),
             ),
             if (word.partOfSpeech != null)
               _PartOfSpeechChip(partOfSpeech: word.partOfSpeech!),
             if (pronunciation != null)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: palette.paper,
+                  borderRadius: BorderRadius.circular(6),
                   border: Border.all(
-                    color: palette.border.withValues(alpha: 0.35),
+                    color: palette.border,
                     width: 1,
                   ),
                 ),
@@ -249,7 +250,7 @@ class _WordHeadline extends StatelessWidget {
   }
 }
 
-/// Colorful retro micro-badge identifying grammatical category.
+/// Colorful modern pill badge identifying grammatical category.
 class _PartOfSpeechChip extends StatelessWidget {
   const _PartOfSpeechChip({required this.partOfSpeech});
 
@@ -261,26 +262,25 @@ class _PartOfSpeechChip extends StatelessWidget {
     final color = palette.posColor(partOfSpeech);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
-        border: Border.all(color: color, width: 1),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
         partOfSpeech.short.toUpperCase(),
         style: TextStyle(
-          fontFamily: 'Handjet',
           fontSize: 11,
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w700,
           color: color,
-          letterSpacing: 0.5,
+          letterSpacing: 0.3,
         ),
       ),
     );
   }
 }
 
-/// Speak button, inverted while this word is the one being read aloud.
+/// Speak button, highlighted while this word is the one being read aloud.
 class _SpeakButton extends StatelessWidget {
   const _SpeakButton({required this.word});
 
@@ -299,4 +299,3 @@ class _SpeakButton extends StatelessWidget {
     );
   }
 }
-

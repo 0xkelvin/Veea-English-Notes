@@ -6,13 +6,11 @@ import 'package:provider/provider.dart';
 import '../core/config/app_config.dart';
 import '../core/theme/pixel_metrics.dart';
 import '../core/theme/pixel_palette.dart';
-import '../core/theme/pixel_theme.dart';
 import '../models/account_identifier.dart';
 import '../models/gate_config.dart';
 import '../providers/app_gate_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/cartridge_provider.dart';
-import '../providers/theme_provider.dart';
 import '../providers/vocabulary_provider.dart';
 import '../providers/widget_provider.dart';
 import '../services/backup_service.dart';
@@ -167,10 +165,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                   // Career DLC Cartridges Library
                   const _CartridgeLibrarySection(),
-                  const SizedBox(height: PixelMetrics.space5),
-
-                  // Theme Appearance
-                  const _ThemePickerSection(),
                   const SizedBox(height: PixelMetrics.space5),
 
                   // Widget & Lock Screen Settings
@@ -500,101 +494,7 @@ class _Notice extends StatelessWidget {
   }
 }
 
-class _ThemePickerSection extends StatelessWidget {
-  const _ThemePickerSection();
-
-  @override
-  Widget build(BuildContext context) {
-    final themeProvider = context.watch<ThemeProvider>();
-    final palette = context.palette;
-    final theme = Theme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('RETRO PIXEL THEME', style: theme.textTheme.labelSmall),
-        const SizedBox(height: PixelMetrics.space2),
-        Wrap(
-          spacing: PixelMetrics.space2,
-          runSpacing: PixelMetrics.space2,
-          children: [
-            for (final mode in AppThemeMode.values)
-              GestureDetector(
-                onTap: () => themeProvider.setMode(mode),
-                behavior: HitTestBehavior.opaque,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: PixelMetrics.space3,
-                    vertical: PixelMetrics.space2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: themeProvider.mode == mode
-                        ? palette.accent
-                        : palette.surface,
-                    border: Border.all(
-                      color: palette.border,
-                      width: PixelMetrics.border,
-                    ),
-                  ),
-                  child: Text(
-                    mode.label.toUpperCase(),
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: themeProvider.mode == mode
-                          ? palette.onAccent
-                          : palette.ink,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: PixelMetrics.space4),
-        Text('READING TYPOGRAPHY & COMFORT', style: theme.textTheme.labelSmall),
-        const SizedBox(height: PixelMetrics.space1),
-        Text(
-          'Retro-Modern uses crisp, eye-friendly text for definitions & examples, '
-          'while keeping 8-bit pixel art for headers and controls.',
-          style: theme.textTheme.bodySmall,
-        ),
-        const SizedBox(height: PixelMetrics.space2),
-        Wrap(
-          spacing: PixelMetrics.space2,
-          runSpacing: PixelMetrics.space2,
-          children: [
-            for (final typoMode in TypographyMode.values)
-              GestureDetector(
-                onTap: () => themeProvider.setTypographyMode(typoMode),
-                behavior: HitTestBehavior.opaque,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: PixelMetrics.space3,
-                    vertical: PixelMetrics.space2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: themeProvider.typographyMode == typoMode
-                        ? palette.accent
-                        : palette.surface,
-                    border: Border.all(
-                      color: palette.border,
-                      width: PixelMetrics.border,
-                    ),
-                  ),
-                  child: Text(
-                    typoMode.label.toUpperCase(),
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: themeProvider.typographyMode == typoMode
-                          ? palette.onAccent
-                          : palette.ink,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-}
+// _ThemePickerSection removed: app uses unified clean modern Liquid theme.
 
 class _WidgetSettingsSection extends StatelessWidget {
   const _WidgetSettingsSection();
@@ -997,7 +897,6 @@ class _LocalImportDialogState extends State<_LocalImportDialog> {
                     child: Text(
                       _preview!.summary,
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                         color: _preview!.isSuccess
@@ -1061,7 +960,6 @@ class _LocalImportDialogState extends State<_LocalImportDialog> {
                             ? 'IMPORT COMPLETE'
                             : 'IMPORT FAILED',
                         style: TextStyle(
-                          fontFamily: 'Handjet',
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: _result!.isSuccess
@@ -1073,7 +971,6 @@ class _LocalImportDialogState extends State<_LocalImportDialog> {
                       Text(
                         _result!.summary,
                         style: TextStyle(
-                          fontFamily: 'Handjet',
                           fontSize: 15,
                           color: palette.ink,
                         ),
@@ -1282,7 +1179,6 @@ class _CartridgeLibrarySection extends StatelessWidget {
                     Text(
                       'Curated vocabulary for PR reviews & FAANG standups',
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 11,
                         color: palette.inkMuted,
                       ),
@@ -1303,7 +1199,6 @@ class _CartridgeLibrarySection extends StatelessWidget {
                   child: Text(
                     'ACTIVE ★',
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                       color: palette.onAccent,
@@ -1458,7 +1353,6 @@ class _DailyReminderSectionState extends State<_DailyReminderSection> {
                         Text(
                           'DAILY PRACTICE ALARM',
                           style: TextStyle(
-                            fontFamily: 'Handjet',
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                             color: palette.ink,
@@ -1469,7 +1363,6 @@ class _DailyReminderSectionState extends State<_DailyReminderSection> {
                               ? 'Scheduled daily at ${_settings.formattedTime}'
                               : 'Reminder disabled',
                           style: TextStyle(
-                            fontFamily: 'Handjet',
                             fontSize: 13,
                             color: palette.inkMuted,
                           ),
@@ -1662,7 +1555,6 @@ class _FeedbackDialogState extends State<_FeedbackDialog> {
               child: Text(
                 widget.report,
                 style: TextStyle(
-                  fontFamily: 'Handjet',
                   fontSize: 12,
                   color: palette.inkMuted,
                 ),

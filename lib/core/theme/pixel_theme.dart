@@ -3,92 +3,53 @@ import 'package:flutter/material.dart';
 import 'pixel_metrics.dart';
 import 'pixel_palette.dart';
 
-/// Typography mode selection: Retro-Modern Hybrid (recommended for eye comfort)
-/// or Pure 8-Bit Pixel (100% Handjet across all UI).
+/// Typography mode selection: Clean Modern (default) or Compact.
 enum TypographyMode {
-  hybrid(label: 'Retro-Modern Hybrid'),
-  pixel(label: 'Pure 8-Bit Pixel');
+  hybrid(label: 'Clean Modern'),
+  pixel(label: 'Compact Clear');
 
   const TypographyMode({required this.label});
 
   final String label;
 }
 
-/// Builds the app theme.
-///
-/// Handjet is a variable pixel font. [_ELSH] selects the solid element shape —
-/// at the default of 2 the glyphs are hairline-thin and at 0 they vanish
-/// entirely, so it is pinned here rather than left to the font's default.
+/// Builds the app theme using clean, modern, liquid-elevated styling and
+/// high-legibility system typography.
 class PixelTheme {
   PixelTheme._();
 
-  static const String fontFamily = 'Handjet';
+  /// Modern system sans-serif font family used across the app.
+  static const String fontFamily = 'SF Pro Text';
 
-  /// Element shape: 16 renders solid, filled pixels.
-  static const double _elsh = 16;
-
-  /// Element grid: 1 is the denser, more legible grid.
-  static const double _elgr = 1;
-
-  /// Families consulted for glyphs Handjet does not contain.
-  ///
-  /// No pixel font on Google Fonts carries the IPA block, so a phonetic
-  /// transcription like `/rɪˈzɪliənt/` would otherwise paint as empty boxes.
-  /// Only the missing characters fall through — everything Handjet covers,
-  /// including all Vietnamese diacritics, still renders as pixels.
+  /// Clean, modern system font stack for maximum clarity and native rendering
+  /// of English, IPA phonetics, and Vietnamese diacritics.
   static const List<String> _fallback = [
+    'SF Pro Display',
     'SF Pro Text', // iOS / macOS
-    'Helvetica Neue',
+    'Inter',
     'Roboto', // Android
     'Noto Sans',
+    'Helvetica Neue',
     'Arial',
     'sans-serif',
   ];
 
-  static List<FontVariation> _axes(double weight) => [
-    FontVariation('wght', weight),
-    FontVariation('ELGR', _elgr),
-    FontVariation('ELSH', _elsh),
-  ];
+  /// Clean, readable typographic scale.
+  static const double sizeCaption = 12;
+  static const double sizeLabel = 14;
+  static const double sizeBody = 16;
+  static const double sizeTitle = 20;
+  static const double sizeDisplay = 28;
 
-  /// Handjet sits small on the body, so the scale runs larger than a
-  /// conventional one — 20px here reads like 15px of a normal text face.
-  static const double sizeCaption = 15;
-  static const double sizeLabel = 17;
-  static const double sizeBody = 20;
-  static const double sizeTitle = 25;
-  static const double sizeDisplay = 34;
-
-  static TextStyle _style(
-    double size,
-    double weight,
-    Color color, {
-    double height = 1.15,
-    double letterSpacing = 0,
-  }) {
-    return TextStyle(
-      fontFamily: fontFamily,
-      fontFamilyFallback: _fallback,
-      fontSize: size,
-      height: height,
-      color: color,
-      letterSpacing: letterSpacing,
-      fontVariations: _axes(weight),
-      // The font carries its own weight axis; letting the engine synthesise a
-      // fake bold would smear the pixel edges.
-      fontWeight: FontWeight.normal,
-    );
-  }
-
-  /// Clean, high-legibility sans-serif style for body text and long reading.
   static TextStyle _readableStyle(
     double size,
     FontWeight weight,
     Color color, {
-    double height = 1.45,
-    double letterSpacing = 0.1,
+    double height = 1.4,
+    double letterSpacing = 0.0,
   }) {
     return TextStyle(
+      fontFamily: fontFamily,
       fontFamilyFallback: _fallback,
       fontSize: size,
       fontWeight: weight,
@@ -114,7 +75,7 @@ class PixelTheme {
   static ThemeData matrixGreen({
     TypographyMode typographyMode = TypographyMode.hybrid,
   }) => _build(
-    PixelPalette.matrixGreen,
+    PixelPalette.dark,
     Brightness.dark,
     typographyMode: typographyMode,
   );
@@ -122,7 +83,7 @@ class PixelTheme {
   static ThemeData cyberpunkNeon({
     TypographyMode typographyMode = TypographyMode.hybrid,
   }) => _build(
-    PixelPalette.cyberpunkNeon,
+    PixelPalette.dark,
     Brightness.dark,
     typographyMode: typographyMode,
   );
@@ -130,7 +91,7 @@ class PixelTheme {
   static ThemeData oledBlack({
     TypographyMode typographyMode = TypographyMode.hybrid,
   }) => _build(
-    PixelPalette.oledBlack,
+    PixelPalette.dark,
     Brightness.dark,
     typographyMode: typographyMode,
   );
@@ -140,48 +101,106 @@ class PixelTheme {
     Brightness brightness, {
     TypographyMode typographyMode = TypographyMode.hybrid,
   }) {
-    final isHybrid = typographyMode == TypographyMode.hybrid;
-
     final textTheme = TextTheme(
-      displayLarge: _style(sizeDisplay + 8, 700, palette.ink),
-      displayMedium: _style(sizeDisplay + 4, 700, palette.ink),
-      displaySmall: _style(sizeDisplay, 700, palette.ink),
-      headlineMedium: _style(sizeDisplay, 700, palette.ink),
-      titleLarge: _style(sizeTitle, 700, palette.ink),
-      titleMedium: _style(sizeBody, 700, palette.ink),
-      titleSmall: _style(sizeLabel, 700, palette.ink),
-      bodyLarge: isHybrid
-          ? _readableStyle(16, FontWeight.w400, palette.ink, height: 1.45)
-          : _style(sizeBody, 400, palette.ink, height: 1.3),
-      bodyMedium: isHybrid
-          ? _readableStyle(14.5, FontWeight.w400, palette.inkMuted, height: 1.4)
-          : _style(sizeLabel, 400, palette.inkMuted, height: 1.3),
-      bodySmall: isHybrid
-          ? _readableStyle(13, FontWeight.w400, palette.inkFaint, height: 1.35)
-          : _style(sizeCaption, 400, palette.inkFaint, height: 1.3),
-      // Chrome labels are uppercased and tracked out, the way a status bar in
-      // a sprite game is set.
-      labelSmall: _style(
-        sizeCaption,
-        700,
-        palette.inkFaint,
-        letterSpacing: 1.2,
+      displayLarge: _readableStyle(
+        sizeDisplay + 6,
+        FontWeight.w700,
+        palette.ink,
+        height: 1.2,
+        letterSpacing: -0.4,
       ),
-      labelMedium: _style(sizeLabel, 700, palette.ink, letterSpacing: 0.5),
-      labelLarge: _style(sizeBody, 700, palette.ink, letterSpacing: 0.5),
+      displayMedium: _readableStyle(
+        sizeDisplay + 2,
+        FontWeight.w700,
+        palette.ink,
+        height: 1.2,
+        letterSpacing: -0.3,
+      ),
+      displaySmall: _readableStyle(
+        sizeDisplay,
+        FontWeight.w700,
+        palette.ink,
+        height: 1.25,
+        letterSpacing: -0.3,
+      ),
+      headlineMedium: _readableStyle(
+        sizeDisplay - 2,
+        FontWeight.w700,
+        palette.ink,
+        height: 1.25,
+        letterSpacing: -0.2,
+      ),
+      titleLarge: _readableStyle(
+        sizeTitle,
+        FontWeight.w700,
+        palette.ink,
+        height: 1.3,
+        letterSpacing: -0.2,
+      ),
+      titleMedium: _readableStyle(
+        17,
+        FontWeight.w600,
+        palette.ink,
+        height: 1.3,
+        letterSpacing: -0.1,
+      ),
+      titleSmall: _readableStyle(
+        15,
+        FontWeight.w600,
+        palette.ink,
+        height: 1.3,
+      ),
+      bodyLarge: _readableStyle(
+        sizeBody,
+        FontWeight.w400,
+        palette.ink,
+        height: 1.45,
+      ),
+      bodyMedium: _readableStyle(
+        14.5,
+        FontWeight.w400,
+        palette.inkMuted,
+        height: 1.4,
+      ),
+      bodySmall: _readableStyle(
+        13,
+        FontWeight.w400,
+        palette.inkFaint,
+        height: 1.35,
+      ),
+      labelSmall: _readableStyle(
+        sizeCaption,
+        FontWeight.w600,
+        palette.inkMuted,
+        height: 1.25,
+        letterSpacing: 0.2,
+      ),
+      labelMedium: _readableStyle(
+        sizeLabel,
+        FontWeight.w600,
+        palette.ink,
+        height: 1.25,
+        letterSpacing: 0.1,
+      ),
+      labelLarge: _readableStyle(
+        sizeBody,
+        FontWeight.w600,
+        palette.ink,
+        height: 1.25,
+        letterSpacing: 0.1,
+      ),
     );
 
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
-      fontFamily: isHybrid ? null : fontFamily,
+      fontFamily: fontFamily,
+      fontFamilyFallback: _fallback,
       scaffoldBackgroundColor: palette.paper,
       canvasColor: palette.paper,
-      splashFactory: NoSplash.splashFactory,
-      // Ripples are the opposite of a pixel press; buttons swap to a pressed
-      // sprite state instead.
-      highlightColor: Colors.transparent,
-      splashColor: Colors.transparent,
+      splashFactory: InkSparkle.splashFactory,
+      highlightColor: palette.accent.withValues(alpha: 0.06),
+      splashColor: palette.accent.withValues(alpha: 0.08),
       hoverColor: Colors.transparent,
       colorScheme: ColorScheme(
         brightness: brightness,
@@ -194,10 +213,28 @@ class PixelTheme {
         error: palette.danger,
         onError: palette.onAccent,
       ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: palette.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(PixelMetrics.radiusLg),
+        ),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: palette.ink,
+        contentTextStyle: TextStyle(
+          fontFamily: fontFamily,
+          color: palette.surface,
+          fontWeight: FontWeight.w600,
+        ),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(PixelMetrics.radius),
+        ),
+      ),
       textTheme: textTheme,
       textSelectionTheme: TextSelectionThemeData(
         cursorColor: palette.accent,
-        selectionColor: palette.accent.withValues(alpha: 0.25),
+        selectionColor: palette.accent.withValues(alpha: 0.22),
         selectionHandleColor: palette.accent,
       ),
       dividerTheme: DividerThemeData(

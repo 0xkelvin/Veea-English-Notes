@@ -51,7 +51,6 @@ class ClipboardDetectorToast extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 TextSpan(
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 15,
                     color: palette.ink,
                   ),

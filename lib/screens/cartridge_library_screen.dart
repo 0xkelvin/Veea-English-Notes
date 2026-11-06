@@ -77,7 +77,6 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
                         Text(
                           'CAREER & INDUSTRY VOCABULARY',
                           style: TextStyle(
-                            fontFamily: 'Handjet',
                             fontSize: 10,
                             color: palette.inkMuted,
                           ),
@@ -228,7 +227,6 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
                     Text(
                       'VOL.1',
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 8,
                         fontWeight: FontWeight.bold,
                         color: palette.onAccent,
@@ -256,7 +254,6 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
                           child: Text(
                             cartridge.badgeLabel,
                             style: TextStyle(
-                              fontFamily: 'Handjet',
                               fontSize: 9,
                               fontWeight: FontWeight.bold,
                               color: palette.accent,
@@ -267,7 +264,6 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
                         Text(
                           isInstalled ? 'INSTALLED ★' : cartridge.priceLabel,
                           style: TextStyle(
-                            fontFamily: 'Handjet',
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                             color: isInstalled ? palette.accent : palette.ink,
@@ -285,7 +281,6 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
                     Text(
                       cartridge.subtitle,
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 11,
                         color: palette.inkMuted,
                       ),
@@ -315,7 +310,6 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
         child: Text(
           label.toUpperCase(),
           style: TextStyle(
-            fontFamily: 'Handjet',
             fontSize: 11,
             fontWeight: FontWeight.bold,
             color: active ? palette.onAccent : palette.ink,
@@ -346,7 +340,6 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
               Text(
                 word.word.toUpperCase(),
                 style: TextStyle(
-                  fontFamily: 'Handjet',
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                   color: palette.accent,
@@ -356,7 +349,6 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
               Text(
                 word.pronunciation,
                 style: TextStyle(
-                  fontFamily: 'Handjet',
                   fontSize: 13,
                   color: palette.inkMuted,
                 ),
@@ -371,7 +363,6 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
                 child: Text(
                   word.module.toUpperCase(),
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 9,
                     fontWeight: FontWeight.bold,
                     color: palette.ink,
@@ -412,7 +403,6 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
                 Text(
                   '💻 PR REVIEW USAGE:',
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
                     color: palette.accent,
@@ -441,7 +431,6 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
                   Text(
                     '🗣️ STANDUP PHRASING:',
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                       color: palette.accent,
@@ -459,7 +448,6 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
             Text(
               '⚡ COLLOCATIONS: ${word.collocations.join(' • ')}',
               style: TextStyle(
-                fontFamily: 'Handjet',
                 fontSize: 11,
                 fontWeight: FontWeight.bold,
                 color: palette.ink,
@@ -469,7 +457,6 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
             Text(
               '💡 INTERVIEW STRATEGY: ${word.interviewNuance}',
               style: TextStyle(
-                fontFamily: 'Handjet',
                 fontSize: 11,
                 color: palette.inkMuted,
               ),
@@ -492,7 +479,6 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
                       ? '▲ LESS DETAILS'
                       : '▼ STANDUP & INTERVIEW NUANCES',
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
                     color: palette.accent,
@@ -563,7 +549,7 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
                     SnackBar(
                       content: Text(
                         'Successfully inserted $count words into your notebook!',
-                        style: const TextStyle(fontFamily: 'Handjet'),
+                        style: const TextStyle(),
                       ),
                     ),
                   );
@@ -586,7 +572,7 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
                     SnackBar(
                       content: Text(
                         'Scheduled $count words across your daily sprint calendar!',
-                        style: const TextStyle(fontFamily: 'Handjet'),
+                        style: const TextStyle(),
                       ),
                     ),
                   );
@@ -610,11 +596,11 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
         shape: const RoundedRectangleBorder(),
         title: const Text(
           'REMOVE CARTRIDGE WORDS?',
-          style: TextStyle(fontFamily: 'Handjet', fontWeight: FontWeight.bold),
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
         content: const Text(
           'This will remove the cartridge words from your notebook. Any notes you edited by hand will remain untouched.',
-          style: TextStyle(fontFamily: 'Handjet', fontSize: 13),
+          style: TextStyle(fontSize: 13),
         ),
         actions: [
           PixelButton(
@@ -635,7 +621,7 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
                   SnackBar(
                     content: Text(
                       'Removed $removed cartridge words.',
-                      style: const TextStyle(fontFamily: 'Handjet'),
+                      style: const TextStyle(),
                     ),
                   ),
                 );

@@ -149,7 +149,6 @@ class _StarterTemplateGameState extends State<StarterTemplateGame> {
                   Text(
                     'SCORE: $_score',
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       color: palette.accent,
@@ -174,7 +173,6 @@ class _StarterTemplateGameState extends State<StarterTemplateGame> {
                           Text(
                             'MATCH THE MEANING',
                             style: TextStyle(
-                              fontFamily: 'Handjet',
                               fontSize: 12,
                               color: palette.inkFaint,
                               letterSpacing: 1.2,
@@ -184,7 +182,6 @@ class _StarterTemplateGameState extends State<StarterTemplateGame> {
                           Text(
                             currentWord.word,
                             style: const TextStyle(
-                              fontFamily: 'Handjet',
                               fontSize: 32,
                               fontWeight: FontWeight.bold,
                               color: Color(0xFFE0DFD5),
@@ -195,7 +192,6 @@ class _StarterTemplateGameState extends State<StarterTemplateGame> {
                             Text(
                               currentWord.ipa,
                               style: const TextStyle(
-                                fontFamily: 'Handjet',
                                 fontSize: 16,
                                 color: Color(0xFFCBE32B),
                               ),

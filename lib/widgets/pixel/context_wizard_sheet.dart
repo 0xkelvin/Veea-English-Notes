@@ -65,7 +65,7 @@ class _ContextWizardSheetState extends State<ContextWizardSheet> {
       const SnackBar(
         content: Text(
           'Generated new sentence structures!',
-          style: TextStyle(fontFamily: 'Handjet'),
+          style: TextStyle(),
         ),
         duration: Duration(milliseconds: 900),
       ),
@@ -149,7 +149,6 @@ class _ContextWizardSheetState extends State<ContextWizardSheet> {
                         Text(
                           'WORD: ${widget.word.toUpperCase()}',
                           style: TextStyle(
-                            fontFamily: 'Handjet',
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                             color: palette.accent,
@@ -172,7 +171,6 @@ class _ContextWizardSheetState extends State<ContextWizardSheet> {
                             child: Text(
                               result.partOfSpeech!.label.toUpperCase(),
                               style: TextStyle(
-                                fontFamily: 'Handjet',
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
                                 color: palette.accent,
@@ -187,7 +185,6 @@ class _ContextWizardSheetState extends State<ContextWizardSheet> {
                             child: Text(
                               '(${widget.meaning})',
                               style: TextStyle(
-                                fontFamily: 'Handjet',
                                 fontSize: 13,
                                 color: palette.inkMuted,
                               ),
@@ -235,7 +232,6 @@ class _ContextWizardSheetState extends State<ContextWizardSheet> {
                               Text(
                                 'RE-ROLL',
                                 style: TextStyle(
-                                  fontFamily: 'Handjet',
                                   fontSize: 10,
                                   fontWeight: FontWeight.bold,
                                   color: palette.accent,
@@ -262,7 +258,7 @@ class _ContextWizardSheetState extends State<ContextWizardSheet> {
                             const SnackBar(
                               content: Text(
                                 'Inserted sentence into example field!',
-                                style: TextStyle(fontFamily: 'Handjet'),
+                                style: TextStyle(),
                               ),
                               duration: Duration(seconds: 1),
                             ),
@@ -275,7 +271,7 @@ class _ContextWizardSheetState extends State<ContextWizardSheet> {
                             SnackBar(
                               content: Text(
                                 'Copied: "${s.sentence}"',
-                                style: const TextStyle(fontFamily: 'Handjet'),
+                                style: const TextStyle(),
                               ),
                               duration: const Duration(seconds: 1),
                             ),
@@ -305,7 +301,6 @@ class _ContextWizardSheetState extends State<ContextWizardSheet> {
                                     child: Text(
                                       s.domain,
                                       style: TextStyle(
-                                        fontFamily: 'Handjet',
                                         fontSize: 9,
                                         fontWeight: FontWeight.bold,
                                         color: palette.onAccent,
@@ -331,7 +326,6 @@ class _ContextWizardSheetState extends State<ContextWizardSheet> {
                                       child: Text(
                                         s.structureType!,
                                         style: TextStyle(
-                                          fontFamily: 'Handjet',
                                           fontSize: 9,
                                           color: palette.inkMuted,
                                         ),
@@ -342,7 +336,6 @@ class _ContextWizardSheetState extends State<ContextWizardSheet> {
                                   Text(
                                     'TAP TO INSERT ↵',
                                     style: TextStyle(
-                                      fontFamily: 'Handjet',
                                       fontSize: 10,
                                       color: palette.inkFaint,
                                     ),
@@ -394,7 +387,7 @@ class _ContextWizardSheetState extends State<ContextWizardSheet> {
                             SnackBar(
                               content: Text(
                                 'Added tag & copied: "$col"',
-                                style: const TextStyle(fontFamily: 'Handjet'),
+                                style: const TextStyle(),
                               ),
                               duration: const Duration(seconds: 1),
                             ),
@@ -415,7 +408,6 @@ class _ContextWizardSheetState extends State<ContextWizardSheet> {
                               Text(
                                 '+ $col',
                                 style: TextStyle(
-                                  fontFamily: 'Handjet',
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                   color: palette.ink,
@@ -458,7 +450,6 @@ class _ContextWizardSheetState extends State<ContextWizardSheet> {
                               Text(
                                 '${n.synonym}:',
                                 style: TextStyle(
-                                  fontFamily: 'Handjet',
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                   color: palette.accent,
@@ -469,7 +460,6 @@ class _ContextWizardSheetState extends State<ContextWizardSheet> {
                                 child: Text(
                                   n.difference,
                                   style: TextStyle(
-                                    fontFamily: 'Handjet',
                                     fontSize: 12,
                                     color: palette.inkMuted,
                                   ),

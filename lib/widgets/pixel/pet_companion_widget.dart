@@ -85,7 +85,6 @@ class _PetCompanionWidgetState extends State<PetCompanionWidget> {
                         Text(
                           '${pet.name} (LV. ${pet.level})',
                           style: TextStyle(
-                            fontFamily: 'Handjet',
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
                             color: palette.ink,
@@ -104,7 +103,6 @@ class _PetCompanionWidgetState extends State<PetCompanionWidget> {
                           child: Text(
                             pet.stage.displayName,
                             style: TextStyle(
-                              fontFamily: 'Handjet',
                               fontSize: 9,
                               fontWeight: FontWeight.bold,
                               color: palette.accent,
@@ -115,7 +113,6 @@ class _PetCompanionWidgetState extends State<PetCompanionWidget> {
                         Text(
                           '🍖 ${pet.wordsFedToday} FED',
                           style: TextStyle(
-                            fontFamily: 'Handjet',
                             fontSize: 11,
                             color: palette.inkMuted,
                           ),
@@ -126,7 +123,6 @@ class _PetCompanionWidgetState extends State<PetCompanionWidget> {
                     Text(
                       petProvider.currentSpeech,
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 12,
                         color: palette.inkFaint,
                       ),
@@ -192,7 +188,7 @@ class _PetStatusDialog extends StatelessWidget {
         shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
         title: const Text(
           'RENAME PET',
-          style: TextStyle(fontFamily: 'Handjet', fontWeight: FontWeight.bold),
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
         content: TextField(
           controller: textController,
@@ -239,7 +235,6 @@ class _PetStatusDialog extends StatelessWidget {
                 Text(
                   '${pet.name} STATUS',
                   style: const TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
@@ -287,7 +282,6 @@ class _PetStatusDialog extends StatelessWidget {
                         Text(
                           'STAGE ${pet.stage.stageNumber}: ${pet.stage.displayName}',
                           style: TextStyle(
-                            fontFamily: 'Handjet',
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
                             color: palette.accent,
@@ -297,14 +291,12 @@ class _PetStatusDialog extends StatelessWidget {
                         Text(
                           'LEVEL ${pet.level} • TOTAL XP: ${pet.xp}',
                           style: const TextStyle(
-                            fontFamily: 'Handjet',
                             fontSize: 12,
                           ),
                         ),
                         Text(
                           'XP to next level: ${50 - pet.currentLevelXp} XP',
                           style: TextStyle(
-                            fontFamily: 'Handjet',
                             fontSize: 11,
                             color: palette.inkFaint,
                           ),

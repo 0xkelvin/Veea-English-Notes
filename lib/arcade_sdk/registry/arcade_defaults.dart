@@ -1,17 +1,19 @@
-import '../../screens/games/pixel_typer_game.dart';
-import '../../screens/games/vocab_invaders_game.dart';
-import '../../screens/games/vocab_snake_game.dart';
-import '../../screens/games/word_rush_game.dart';
-import '../../widgets/pixel/pixel_icon.dart';
-import '../contracts/arcade_game_manifest.dart';
-import '../templates/starter_template_game.dart';
+// import '../../screens/games/pixel_typer_game.dart';
+// import '../../screens/games/vocab_invaders_game.dart';
+// import '../../screens/games/vocab_snake_game.dart';
+// import '../../screens/games/word_rush_game.dart';
+// import '../../widgets/pixel/pixel_icon.dart';
+// import '../contracts/arcade_game_manifest.dart';
+// import '../templates/starter_template_game.dart';
 import 'arcade_registry.dart';
 
 /// Pre-registers all standard official and community mini-games into the registry.
+/// (Arcade games are currently commented out / hidden per user feedback.)
 class ArcadeDefaults {
   static void registerDefaults() {
     if (ArcadeRegistry.isInitialized) return;
 
+    /*
     ArcadeRegistry.registerAll([
       // 1. Word Rush 60s
       ArcadeGameManifest(
@@ -82,6 +84,7 @@ class ArcadeDefaults {
         builder: (ctx) => StarterTemplateGame(gameContext: ctx),
       ),
     ]);
+    */
 
     ArcadeRegistry.markInitialized();
   }

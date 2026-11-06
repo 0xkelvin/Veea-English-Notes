@@ -1,11 +1,8 @@
-/// Geometry constants for the pixel look.
-///
-/// Every dimension is a multiple of [unit] so edges land on whole pixels and
-/// the layout reads as a grid rather than as free-floating boxes.
+/// Geometry constants for the clean modern liquid theme.
 class PixelMetrics {
   PixelMetrics._();
 
-  /// Base grid step. All spacing is a multiple of this.
+  /// Base spacing unit.
   static const double unit = 4;
 
   static const double space1 = unit; // 4
@@ -17,17 +14,18 @@ class PixelMetrics {
   static const double space8 = unit * 8; // 32
   static const double space12 = unit * 12; // 48
 
-  /// Outline thickness. Two logical pixels reads as a deliberate hard edge on
-  /// high-density screens, where a 1px hairline looks like an accident.
-  static const double border = 2;
+  /// Subtle 1px hairline border for modern liquid cards and inputs.
+  static const double border = 1;
 
-  /// Offset of the solid drop block behind a raised element. Not a shadow —
-  /// a second hard-edged rectangle, the way sprite UIs fake depth.
-  static const double raise = 4;
+  /// Legacy raise offset (replaced by soft diffused shadows).
+  static const double raise = 0;
 
-  /// Minimum tap target. Kept at 44 to stay accessible despite the tight look.
+  /// Minimum accessible tap target.
   static const double tapTarget = 44;
 
-  /// Zero, everywhere. Rounded corners would defeat the whole style.
-  static const double radius = 0;
+  /// Smooth rounded corner radii.
+  static const double radiusSm = 10;
+  static const double radius = 14;
+  static const double radiusLg = 18;
+  static const double radiusPill = 999;
 }

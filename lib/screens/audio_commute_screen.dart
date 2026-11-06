@@ -204,7 +204,7 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
                         child: Text(
                           'NO VOCABULARY LOADED TODAY\nADD WORDS TO START COMMUTE PLAYLIST',
                           textAlign: TextAlign.center,
-                          style: TextStyle(fontFamily: 'Handjet', fontSize: 16),
+                          style: TextStyle(fontSize: 16),
                         ),
                       ),
                     ),
@@ -272,7 +272,6 @@ class _TapeSelectorStrip extends StatelessWidget {
                 Text(
                   'CURRENT TAPE: $playlistTitle',
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
                     color: palette.ink,
@@ -283,7 +282,6 @@ class _TapeSelectorStrip extends StatelessWidget {
                 Text(
                   'Select 1 or more days • Custom Playlist',
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 12,
                     color: palette.inkMuted,
                   ),
@@ -329,7 +327,6 @@ class _RetroCassetteWidget extends StatelessWidget {
                 child: Text(
                   'SIDE A • ${playlistTitle.toUpperCase()}',
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                     color: palette.accent,
@@ -342,7 +339,6 @@ class _RetroCassetteWidget extends StatelessWidget {
               Text(
                 'TRACK: $trackInfo',
                 style: const TextStyle(
-                  fontFamily: 'Handjet',
                   fontSize: 12,
                   color: Color(0xFFE0DFD5),
                 ),
@@ -510,7 +506,6 @@ class _WordDisplayCard extends StatelessWidget {
             child: Text(
               phaseText.toUpperCase(),
               style: TextStyle(
-                fontFamily: 'Handjet',
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
                 color: palette.accent,
@@ -529,7 +524,6 @@ class _WordDisplayCard extends StatelessWidget {
               Text(
                 word,
                 style: theme.textTheme.titleLarge?.copyWith(
-                  fontFamily: 'Handjet',
                   fontSize: 30,
                   fontWeight: FontWeight.bold,
                   color: palette.ink,
@@ -631,7 +625,6 @@ class _PlaybackSettingsSection extends StatelessWidget {
                         child: Text(
                           '${sec}s',
                           style: TextStyle(
-                            fontFamily: 'Handjet',
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                             color: active ? palette.onAccent : palette.ink,
@@ -674,7 +667,6 @@ class _PlaybackSettingsSection extends StatelessWidget {
                         child: Text(
                           '${count}x',
                           style: TextStyle(
-                            fontFamily: 'Handjet',
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                             color: active ? palette.onAccent : palette.ink,
@@ -750,7 +742,6 @@ class _AudioModePill extends StatelessWidget {
         child: Text(
           label,
           style: TextStyle(
-            fontFamily: 'Handjet',
             fontSize: 11,
             fontWeight: FontWeight.bold,
             color: active ? palette.onAccent : palette.ink,
@@ -829,7 +820,6 @@ class _TransportControlsBar extends StatelessWidget {
                   Text(
                     commuteService.isPlaying ? '❚❚ PAUSE' : '▶ PLAY',
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       color: palette.onAccent,

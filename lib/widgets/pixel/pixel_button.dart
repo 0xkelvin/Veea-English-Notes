@@ -1,20 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/theme/pixel_metrics.dart';
 import '../../core/theme/pixel_palette.dart';
-import '../../core/theme/pixel_theme.dart';
-import 'pixel_box.dart';
 import 'pixel_icon.dart';
 
-/// A blocky button that physically sinks when held.
-///
-/// There is no ripple and no colour fade: the face drops onto its drop block,
-/// which is the whole feedback vocabulary of a sprite interface.
+/// A modern liquid-style button with smooth rounded corners, subtle tactile
+/// scale/opacity feedback, and soft elevation.
 class PixelButton extends StatefulWidget {
   const PixelButton({
     super.key,
     required this.label,
-    this.onPressed,
+    required this.onPressed,
     this.glyph,
     this.filled = false,
     this.danger = false,
@@ -25,14 +22,14 @@ class PixelButton extends StatefulWidget {
   final VoidCallback? onPressed;
   final PixelGlyph? glyph;
 
-  /// Fills with the accent colour. Reserved for the single primary action on
-  /// a screen.
+  /// Accent fill when true; elevated surface fill when false.
   final bool filled;
 
+  /// Uses the danger colour for the fill when true.
   final bool danger;
-  final bool expand;
 
-  bool get isEnabled => onPressed != null;
+  /// Stretches horizontally to fill its parent.
+  final bool expand;
 
   @override
   State<PixelButton> createState() => _PixelButtonState();
@@ -41,8 +38,10 @@ class PixelButton extends StatefulWidget {
 class _PixelButtonState extends State<PixelButton> {
   bool _pressed = false;
 
+  bool get _enabled => widget.onPressed != null;
+
   void _setPressed(bool value) {
-    if (!widget.isEnabled || _pressed == value) return;
+    if (!_enabled || _pressed == value) return;
     setState(() => _pressed = value);
   }
 
@@ -50,62 +49,99 @@ class _PixelButtonState extends State<PixelButton> {
   Widget build(BuildContext context) {
     final palette = context.palette;
 
-    final Color background;
-    final Color foreground;
-    if (!widget.isEnabled) {
-      background = palette.surface;
-      foreground = palette.inkFaint;
+    final Color fill;
+    final Color fg;
+    final Color borderColor;
+    if (!_enabled) {
+      fill = palette.paper;
+      fg = palette.inkFaint;
+      borderColor = palette.border;
     } else if (widget.danger) {
-      background = palette.danger;
-      foreground = palette.onAccent;
+      fill = palette.danger;
+      fg = palette.onAccent;
+      borderColor = palette.danger;
     } else if (widget.filled) {
-      background = palette.accent;
-      foreground = palette.onAccent;
+      fill = palette.accent;
+      fg = palette.onAccent;
+      borderColor = palette.accent;
     } else {
-      background = palette.surface;
-      foreground = palette.ink;
+      fill = palette.surface;
+      fg = palette.ink;
+      borderColor = palette.border;
     }
 
-    final border = widget.isEnabled ? palette.border : palette.inkFaint;
+    final content = Row(
+      mainAxisSize: widget.expand ? MainAxisSize.max : MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        if (widget.glyph != null) ...[
+          PixelIcon(widget.glyph!, color: fg),
+          const SizedBox(width: PixelMetrics.space2),
+        ],
+        Flexible(
+          child: Text(
+            widget.label.toUpperCase(),
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: fg,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ),
+      ],
+    );
 
     return Semantics(
       button: true,
-      enabled: widget.isEnabled,
+      enabled: _enabled,
       label: widget.label,
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTapDown: (_) => _setPressed(true),
         onTapUp: (_) => _setPressed(false),
         onTapCancel: () => _setPressed(false),
-        onTap: widget.onPressed,
-        behavior: HitTestBehavior.opaque,
-        child: PixelBox(
-          raised: true,
-          pressed: _pressed,
-          color: background,
-          borderColor: border,
-          padding: const EdgeInsets.symmetric(
-            horizontal: PixelMetrics.space4,
-            vertical: PixelMetrics.space3,
-          ),
-          child: Row(
-            mainAxisSize: widget.expand ? MainAxisSize.max : MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (widget.glyph != null) ...[
-                PixelIcon(widget.glyph!, color: foreground),
-                const SizedBox(width: PixelMetrics.space2),
-              ],
-              Flexible(
-                child: Text(
-                  widget.label.toUpperCase(),
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: foreground,
-                    fontSize: PixelTheme.sizeLabel,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
+        onTap: _enabled
+            ? () {
+                HapticFeedback.selectionClick();
+                widget.onPressed!();
+              }
+            : null,
+        child: AnimatedScale(
+          scale: _pressed ? 0.97 : 1.0,
+          duration: const Duration(milliseconds: 100),
+          child: AnimatedOpacity(
+            opacity: _pressed ? 0.85 : 1.0,
+            duration: const Duration(milliseconds: 100),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                minHeight: PixelMetrics.tapTarget,
               ),
-            ],
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: PixelMetrics.space4,
+                  vertical: PixelMetrics.space2 + 2,
+                ),
+                decoration: BoxDecoration(
+                  color: fill,
+                  borderRadius: BorderRadius.circular(PixelMetrics.radiusSm),
+                  border: Border.all(
+                    color: borderColor,
+                    width: PixelMetrics.border,
+                  ),
+                  boxShadow: _enabled && (widget.filled || widget.danger)
+                      ? [
+                          BoxShadow(
+                            color: fill.withValues(alpha: 0.24),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: content,
+              ),
+            ),
           ),
         ),
       ),
@@ -113,25 +149,21 @@ class _PixelButtonState extends State<PixelButton> {
   }
 }
 
-/// A square icon-only button, used for the compact controls in the top bar
-/// and on each word row.
+/// Modern rounded icon button used in top bars, date navigation, and word cards.
 class PixelIconButton extends StatefulWidget {
   const PixelIconButton({
     super.key,
     required this.glyph,
+    required this.onPressed,
     required this.semanticLabel,
-    this.onPressed,
-    this.color,
     this.active = false,
   });
 
   final PixelGlyph glyph;
-  final String semanticLabel;
   final VoidCallback? onPressed;
-  final Color? color;
+  final String semanticLabel;
 
-  /// Inverts the button — how a sprite UI shows a live/selected state, in
-  /// place of a colour tint.
+  /// Highlights the button in the accent colour when true.
   final bool active;
 
   @override
@@ -141,35 +173,65 @@ class PixelIconButton extends StatefulWidget {
 class _PixelIconButtonState extends State<PixelIconButton> {
   bool _pressed = false;
 
+  bool get _enabled => widget.onPressed != null;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final enabled = widget.onPressed != null;
-    final background = widget.active ? palette.accent : palette.surface;
-    final foreground = widget.active
-        ? palette.onAccent
-        : (widget.color ?? (enabled ? palette.ink : palette.inkFaint));
+
+    final Color fill;
+    final Color fg;
+    final Color borderColor;
+    if (!_enabled) {
+      fill = palette.paper;
+      fg = palette.inkFaint;
+      borderColor = palette.border.withValues(alpha: 0.5);
+    } else if (widget.active || _pressed) {
+      fill = palette.accent.withValues(alpha: 0.12);
+      fg = palette.accent;
+      borderColor = palette.accent.withValues(alpha: 0.35);
+    } else {
+      fill = palette.paper.withValues(alpha: 0.7);
+      fg = palette.ink;
+      borderColor = palette.border;
+    }
 
     return Semantics(
       button: true,
-      enabled: enabled,
+      enabled: _enabled,
       label: widget.semanticLabel,
       child: GestureDetector(
-        onTapDown: (_) => setState(() => _pressed = true),
-        onTapUp: (_) => setState(() => _pressed = false),
-        onTapCancel: () => setState(() => _pressed = false),
-        onTap: widget.onPressed,
         behavior: HitTestBehavior.opaque,
+        onTapDown: _enabled ? (_) => setState(() => _pressed = true) : null,
+        onTapUp: _enabled ? (_) => setState(() => _pressed = false) : null,
+        onTapCancel: _enabled ? () => setState(() => _pressed = false) : null,
+        onTap: _enabled
+            ? () {
+                HapticFeedback.selectionClick();
+                widget.onPressed!();
+              }
+            : null,
         child: SizedBox(
           width: PixelMetrics.tapTarget,
           height: PixelMetrics.tapTarget,
           child: Center(
-            child: PixelBox(
-              raised: true,
-              pressed: _pressed,
-              color: background,
-              padding: const EdgeInsets.all(PixelMetrics.space2),
-              child: PixelIcon(widget.glyph, color: foreground),
+            child: AnimatedScale(
+              scale: _pressed ? 0.92 : 1.0,
+              duration: const Duration(milliseconds: 90),
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: fill,
+                  borderRadius: BorderRadius.circular(PixelMetrics.radiusSm),
+                  border: Border.all(
+                    color: borderColor,
+                    width: PixelMetrics.border,
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: PixelIcon(widget.glyph, color: fg),
+              ),
             ),
           ),
         ),

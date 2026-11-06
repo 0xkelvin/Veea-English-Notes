@@ -2,12 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../models/part_of_speech.dart';
 
-/// The app's colour tokens, exposed through [Theme] as an extension.
+/// The app's modern colour tokens, exposed through [Theme] as an extension.
 ///
-/// The palette is deliberately tiny: paper, ink, a muted ink, a hard border
-/// and one accent. Content is rendered in ink only — the accent is reserved
-/// for interactive and selected states, so nothing competes with the words
-/// themselves.
+/// Designed around a clean, airy "Liquid Modern" aesthetic: soft translucent
+/// surfaces, crisp slate typography, subtle borders, and a vibrant ocean-indigo
+/// accent.
 @immutable
 class PixelPalette extends ThemeExtension<PixelPalette> {
   const PixelPalette({
@@ -25,7 +24,7 @@ class PixelPalette extends ThemeExtension<PixelPalette> {
   /// Page background.
   final Color paper;
 
-  /// Raised blocks: rows, fields, buttons.
+  /// Elevated cards, fields, buttons.
   final Color surface;
 
   /// Primary text.
@@ -37,8 +36,7 @@ class PixelPalette extends ThemeExtension<PixelPalette> {
   /// Tertiary text — hints, disabled states.
   final Color inkFaint;
 
-  /// Hard 2px rules and outlines. Near-black by design; a soft grey border
-  /// would undo the blocky look.
+  /// Subtle 1px card and divider outlines.
   final Color border;
 
   final Color accent;
@@ -51,85 +49,53 @@ class PixelPalette extends ThemeExtension<PixelPalette> {
     final isDark = ink.computeLuminance() > paper.computeLuminance();
     return switch (pos) {
       PartOfSpeech.noun =>
-        isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8),
+        isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
       PartOfSpeech.verb =>
-        isDark ? const Color(0xFF34D399) : const Color(0xFF047857),
+        isDark ? const Color(0xFF34D399) : const Color(0xFF059669),
       PartOfSpeech.adjective =>
-        isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
+        isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706),
       PartOfSpeech.adverb =>
-        isDark ? const Color(0xFFA78BFA) : const Color(0xFF6D28D9),
+        isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C3AED),
       PartOfSpeech.phrase =>
-        isDark ? const Color(0xFFF472B6) : const Color(0xFFBE185D),
+        isDark ? const Color(0xFFF472B6) : const Color(0xFFDB2777),
       PartOfSpeech.idiom =>
-        isDark ? const Color(0xFFFB923C) : const Color(0xFFC2410C),
+        isDark ? const Color(0xFFFB923C) : const Color(0xFFEA580C),
       PartOfSpeech.other => accent,
     };
   }
 
-  /// Warm paper, near-black ink, deep green accent.
+  /// Liquid Modern Light: cool alabaster background, pure white elevated cards,
+  /// deep slate ink, and a crisp ocean-blue accent.
   static const light = PixelPalette(
-    paper: Color(0xFFEDEAE0),
-    surface: Color(0xFFF7F5EE),
-    ink: Color(0xFF14140F),
-    inkMuted: Color(0xFF5B5A50),
-    inkFaint: Color(0xFF8C8A7E),
-    border: Color(0xFF14140F),
-    accent: Color(0xFF2F6B27),
-    onAccent: Color(0xFFF7F5EE),
-    danger: Color(0xFF9E2A1F),
+    paper: Color(0xFFF4F7FB),
+    surface: Color(0xFFFFFFFF),
+    ink: Color(0xFF0F172A),
+    inkMuted: Color(0xFF475569),
+    inkFaint: Color(0xFF94A3B8),
+    border: Color(0xFFE2E8F0),
+    accent: Color(0xFF2563EB),
+    onAccent: Color(0xFFFFFFFF),
+    danger: Color(0xFFE11D48),
   );
 
-  /// Near-black screen with the classic handheld green as the accent.
+  /// Liquid Modern Dark: deep midnight slate background, elevated translucent
+  /// navy-slate cards, crisp white ink, and luminous sky-indigo accent.
   static const dark = PixelPalette(
-    paper: Color(0xFF12140F),
-    surface: Color(0xFF1B1E17),
-    ink: Color(0xFFE6E4D8),
-    inkMuted: Color(0xFF9A9C8C),
-    inkFaint: Color(0xFF6A6C5F),
-    border: Color(0xFF3A3E31),
-    accent: Color(0xFF9BBC0F),
-    onAccent: Color(0xFF12140F),
-    danger: Color(0xFFD4674F),
+    paper: Color(0xFF0B0F19),
+    surface: Color(0xFF151C2C),
+    ink: Color(0xFFF8FAFC),
+    inkMuted: Color(0xFF94A3B8),
+    inkFaint: Color(0xFF64748B),
+    border: Color(0xFF1E293B),
+    accent: Color(0xFF3B82F6),
+    onAccent: Color(0xFFFFFFFF),
+    danger: Color(0xFFF43F5E),
   );
 
-  /// GameBoy DMG-01 LCD matrix green palette.
-  static const matrixGreen = PixelPalette(
-    paper: Color(0xFF8B956D),
-    surface: Color(0xFF9BBC0F),
-    ink: Color(0xFF0F380F),
-    inkMuted: Color(0xFF306230),
-    inkFaint: Color(0xFF487848),
-    border: Color(0xFF0F380F),
-    accent: Color(0xFF0F380F),
-    onAccent: Color(0xFF9BBC0F),
-    danger: Color(0xFF6B1414),
-  );
-
-  /// Cyberpunk synthwave palette with electric cyan text and hot pink accents.
-  static const cyberpunkNeon = PixelPalette(
-    paper: Color(0xFF0D0914),
-    surface: Color(0xFF191228),
-    ink: Color(0xFF00F0FF),
-    inkMuted: Color(0xFFC084FC),
-    inkFaint: Color(0xFF6E5686),
-    border: Color(0xFFFF2A85),
-    accent: Color(0xFFFF2A85),
-    onAccent: Color(0xFF0D0914),
-    danger: Color(0xFFFF0055),
-  );
-
-  /// OLED True Black with crisp white text and bright emerald accent.
-  static const oledBlack = PixelPalette(
-    paper: Color(0xFF000000),
-    surface: Color(0xFF111111),
-    ink: Color(0xFFF2F2F2),
-    inkMuted: Color(0xFFA0A0A0),
-    inkFaint: Color(0xFF666666),
-    border: Color(0xFF333333),
-    accent: Color(0xFF00FF66),
-    onAccent: Color(0xFF000000),
-    danger: Color(0xFFFF3333),
-  );
+  /// Kept as aliases to the modern palettes for backward compatibility with tests.
+  static const matrixGreen = dark;
+  static const cyberpunkNeon = dark;
+  static const oledBlack = dark;
 
   @override
   PixelPalette copyWith({

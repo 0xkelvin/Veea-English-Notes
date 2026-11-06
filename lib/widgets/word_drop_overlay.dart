@@ -182,7 +182,6 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
             child: Text(
               'INCOMING WORD DROP!',
               style: TextStyle(
-                fontFamily: 'Handjet',
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
                 color: palette.paper,
@@ -193,7 +192,6 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
           Text(
             widget.challenge.senderName.toUpperCase(),
             style: TextStyle(
-              fontFamily: 'Handjet',
               fontSize: 12,
               color: palette.accent,
             ),
@@ -233,7 +231,6 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
               child: Text(
                 c.promptTitle,
                 style: TextStyle(
-                  fontFamily: 'Handjet',
                   fontSize: 12,
                   color: palette.inkFaint,
                   fontWeight: FontWeight.bold,
@@ -248,7 +245,6 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
                 Text(
                   '${_secondsLeft}S',
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
                     color: _secondsLeft <= 4 ? palette.danger : palette.ink,
@@ -282,7 +278,6 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
                     child: Text(
                       c.clue,
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
                         color: palette.ink,
@@ -317,7 +312,6 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
                   child: Text(
                     c.partOfSpeech,
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 10,
                       color: palette.paper,
                       fontWeight: FontWeight.bold,
@@ -379,7 +373,6 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
               child: Text(
                 optionLetter,
                 style: TextStyle(
-                  fontFamily: 'Handjet',
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
                   color: palette.paper,
@@ -391,7 +384,6 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
               child: Text(
                 text,
                 style: TextStyle(
-                  fontFamily: 'Handjet',
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
                   color: palette.ink,
@@ -437,7 +429,6 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
               Text(
                 isCorrect ? '★ CORRECT! ★' : '✖ INCORRECT!',
                 style: TextStyle(
-                  fontFamily: 'Handjet',
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                   color: isCorrect ? palette.accent : palette.danger,
@@ -449,7 +440,6 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
                     ? '+${res.xpEarned} XP • ⚡ ${res.timeTakenSeconds.toStringAsFixed(1)}s'
                     : 'TIME OUT OR WRONG ANSWER',
                 style: TextStyle(
-                  fontFamily: 'Handjet',
                   fontSize: 12,
                   color: palette.inkFaint,
                 ),
@@ -476,7 +466,6 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
               Text(
                 'CHALLENGE WORD:',
                 style: TextStyle(
-                  fontFamily: 'Handjet',
                   fontSize: 11,
                   color: palette.inkFaint,
                   fontWeight: FontWeight.bold,
@@ -486,7 +475,6 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
               Text(
                 widget.challenge.targetWord.toUpperCase(),
                 style: TextStyle(
-                  fontFamily: 'Handjet',
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                   color: palette.accent,
@@ -495,7 +483,6 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
               Text(
                 widget.challenge.targetMeaning,
                 style: TextStyle(
-                  fontFamily: 'Handjet',
                   fontSize: 14,
                   color: palette.ink,
                 ),
@@ -526,7 +513,6 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
                 Text(
                   'SAVED TO JOURNAL!',
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
                     color: palette.accent,

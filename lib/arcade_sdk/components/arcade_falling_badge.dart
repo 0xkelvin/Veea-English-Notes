@@ -60,7 +60,6 @@ class ArcadeFallingBadgesOverlay extends StatelessWidget {
                   child: Text(
                     badge.meaning,
                     style: const TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
                       color: Color(0xFF1C1E17),

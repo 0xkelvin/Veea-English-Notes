@@ -171,12 +171,12 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
         shape: const RoundedRectangleBorder(),
         title: const Text(
           'PASTE TEXT OR OCR SNIPPET',
-          style: TextStyle(fontFamily: 'Handjet', fontWeight: FontWeight.bold),
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
         content: TextField(
           controller: _customTextController,
           maxLines: 5,
-          style: const TextStyle(fontFamily: 'Handjet', fontSize: 14),
+          style: const TextStyle(fontSize: 14),
           decoration: InputDecoration(
             hintText: 'Paste any English paragraph, article, or PR comment...',
             filled: true,
@@ -265,7 +265,6 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                         Text(
                           'SNAP CAMERA • SNIFF VOCABULARY',
                           style: TextStyle(
-                            fontFamily: 'Handjet',
                             fontSize: 10,
                             color: palette.inkMuted,
                           ),
@@ -344,7 +343,6 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                     Text(
                       'SAMPLES:',
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
                         color: palette.inkMuted,
@@ -395,7 +393,6 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                                       ? 'SCANNING IN PROGRESS...'
                                       : 'HUD: ${_currentResult.words.length} TOKENS • ${_currentResult.sourceTitle ?? "OCR"}',
                                   style: TextStyle(
-                                    fontFamily: 'Handjet',
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
                                     color: palette.onAccent,
@@ -410,7 +407,6 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                           Text(
                             '┏ ━ ┓',
                             style: TextStyle(
-                              fontFamily: 'Handjet',
                               fontSize: 12,
                               color: palette.accent,
                               fontWeight: FontWeight.bold,
@@ -440,7 +436,6 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                                 Text(
                                   'ANALYZING PHOTO WITH ON-DEVICE OCR...',
                                   style: TextStyle(
-                                    fontFamily: 'Handjet',
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
                                     color: palette.accent,
@@ -450,7 +445,6 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                                 Text(
                                   'HOLD STEADY • EXTRACTING WORDS & EXAMPLES',
                                   style: TextStyle(
-                                    fontFamily: 'Handjet',
                                     fontSize: 12,
                                     color: palette.inkMuted,
                                   ),
@@ -479,7 +473,6 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                                   Text(
                                     'SCAN WARNING',
                                     style: TextStyle(
-                                      fontFamily: 'Handjet',
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold,
                                       color: palette.danger,
@@ -490,7 +483,6 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                                     _errorMessage!,
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
-                                      fontFamily: 'Handjet',
                                       fontSize: 13,
                                       color: palette.ink,
                                     ),
@@ -545,7 +537,6 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                                         _currentResult.sourceTitle ??
                                             'Camera Scan',
                                         style: TextStyle(
-                                          fontFamily: 'Handjet',
                                           fontSize: 12,
                                           fontWeight: FontWeight.bold,
                                           color: palette.ink,
@@ -558,7 +549,6 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                                             ? '${_currentResult.words.where((w) => w.isEnglish).length} English words (${_currentResult.words.where((w) => !w.isEnglish).length} dimmed)'
                                             : '${_currentResult.words.length} vocabulary words extracted',
                                         style: TextStyle(
-                                          fontFamily: 'Handjet',
                                           fontSize: 10,
                                           color: palette.inkMuted,
                                         ),
@@ -647,7 +637,6 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                                     child: Text(
                                       dw.word,
                                       style: TextStyle(
-                                        fontFamily: 'Handjet',
                                         fontSize: 13,
                                         fontWeight: fontWeight,
                                         color: textColor,
@@ -668,7 +657,6 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                           Text(
                             '┗ ━ ┛',
                             style: TextStyle(
-                              fontFamily: 'Handjet',
                               fontSize: 12,
                               color: palette.accent,
                               fontWeight: FontWeight.bold,
@@ -704,7 +692,6 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                           child: Text(
                             _selectedWord!.normalized.toUpperCase(),
                             style: TextStyle(
-                              fontFamily: 'Handjet',
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
                               color: _selectedWord!.isEnglish
@@ -732,7 +719,6 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                             child: Text(
                               'NOT ENGLISH WORD',
                               style: TextStyle(
-                                fontFamily: 'Handjet',
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
                                 color: palette.inkFaint,
@@ -763,7 +749,6 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                                   child: Text(
                                     snapshot.data!,
                                     style: TextStyle(
-                                      fontFamily: 'Handjet',
                                       fontSize: 12,
                                       color: palette.ink,
                                     ),
@@ -818,7 +803,6 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
                               child: Text(
                                 'NON-ENGLISH TOKEN • CAPTURE DISABLED',
                                 style: TextStyle(
-                                  fontFamily: 'Handjet',
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                   color: palette.inkFaint,
@@ -852,7 +836,6 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
         child: Text(
           title,
           style: TextStyle(
-            fontFamily: 'Handjet',
             fontSize: 11,
             fontWeight: FontWeight.bold,
             color: active ? palette.onAccent : palette.ink,

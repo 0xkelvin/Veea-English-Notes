@@ -86,7 +86,6 @@ class _PixelBadgesGridState extends State<PixelBadgesGrid> {
                             ? 'Tap header to collapse list'
                             : 'Tap to view achievement progression',
                         style: TextStyle(
-                          fontFamily: 'Handjet',
                           fontSize: 11,
                           color: palette.inkMuted,
                         ),
@@ -106,7 +105,6 @@ class _PixelBadgesGridState extends State<PixelBadgesGrid> {
                   child: Text(
                     '★ $unlockedCount / ${badges.length}',
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
                       color: palette.accent,
@@ -117,7 +115,6 @@ class _PixelBadgesGridState extends State<PixelBadgesGrid> {
                 Text(
                   _isExpanded ? '▲' : '▼',
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
                     color: palette.ink,
@@ -153,7 +150,6 @@ class _PixelBadgesGridState extends State<PixelBadgesGrid> {
                   Text(
                     '+${unlockedCount - 6} more',
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 10,
                       color: palette.inkFaint,
                     ),
@@ -225,7 +221,6 @@ class _PixelBadgesGridState extends State<PixelBadgesGrid> {
         child: Text(
           label,
           style: TextStyle(
-            fontFamily: 'Handjet',
             fontSize: 10,
             fontWeight: FontWeight.bold,
             color: active ? palette.onAccent : palette.ink,
@@ -307,7 +302,6 @@ class _BadgeRowTile extends StatelessWidget {
                           child: Text(
                             'UNLOCKED ★',
                             style: TextStyle(
-                              fontFamily: 'Handjet',
                               fontSize: 9,
                               fontWeight: FontWeight.bold,
                               color: palette.onAccent,
@@ -318,7 +312,6 @@ class _BadgeRowTile extends StatelessWidget {
                         Text(
                           '${badge.currentValue}/${badge.target} (${badge.percentage}%)',
                           style: TextStyle(
-                            fontFamily: 'Handjet',
                             fontSize: 10,
                             color: palette.inkFaint,
                           ),
@@ -329,7 +322,6 @@ class _BadgeRowTile extends StatelessWidget {
                   Text(
                     badge.description,
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 11,
                       color: palette.inkMuted,
                     ),

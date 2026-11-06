@@ -47,11 +47,8 @@ flutter:
     - assets/pronunciation/en_us_ipa.txt.gz
     - assets/pronunciation/CMUDICT-LICENSE.txt
 
-  fonts:
-    # Handjet is bundled rather than fetched at runtime (as google_fonts did)
-    # so the app renders offline and on first launch. It is one of only two
-    # pixel families on Google Fonts with complete Vietnamese diacritics.
-    # Variable axes: wght 100-900, ELGR 1-2, ELSH 0-16.
-    - family: Handjet
-      fonts:
-        - asset: assets/fonts/Handjet.ttf
+  # Pixel font disabled in favor of clean, modern system typography:
+  # fonts:
+  #   - family: Handjet
+  #     fonts:
+  #       - asset: assets/fonts/Handjet.ttf

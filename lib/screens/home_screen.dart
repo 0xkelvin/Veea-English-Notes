@@ -14,7 +14,7 @@ import '../widgets/pixel/pixel_box.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_icon.dart';
 import '../widgets/word_row.dart';
-import 'arcade_screen.dart';
+// import 'arcade_screen.dart'; // Arcade / games hidden
 import 'audio_commute_screen.dart';
 import 'pixel_lens_screen.dart';
 import 'review_screen.dart';
@@ -179,50 +179,24 @@ class _TopBar extends StatelessWidget {
         ),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Expanded(
-            child: Row(
-              children: [
-                PixelIcon(PixelGlyph.star, color: palette.accent, scale: 1.5),
-                const SizedBox(width: PixelMetrics.space2),
-                Flexible(
-                  child: Text(
-                    'VEEA // JOURNAL',
-                    style: TextStyle(
-                      fontFamily: 'Handjet',
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: palette.ink,
-                      letterSpacing: 1.0,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
+          PixelIconButton(
+            glyph: PixelGlyph.search,
+            semanticLabel: 'Search all words',
+            onPressed: () => _open(context, const SearchScreen()),
           ),
-          Row(
-            children: [
-              PixelIconButton(
-                glyph: PixelGlyph.search,
-                semanticLabel: 'Search all words',
-                onPressed: () => _open(context, const SearchScreen()),
-              ),
-              const SizedBox(width: PixelMetrics.space2),
-              PixelIconButton(
-                glyph: PixelGlyph.camera,
-                semanticLabel: 'Pixel Lens OCR Scanner',
-                onPressed: () => _open(context, const PixelLensScreen()),
-              ),
-              const SizedBox(width: PixelMetrics.space2),
-              PixelIconButton(
-                glyph: PixelGlyph.gear,
-                semanticLabel: 'Settings',
-                onPressed: () => _open(context, const SettingsScreen()),
-              ),
-            ],
+          const SizedBox(width: PixelMetrics.space2),
+          PixelIconButton(
+            glyph: PixelGlyph.camera,
+            semanticLabel: 'Pixel Lens OCR Scanner',
+            onPressed: () => _open(context, const PixelLensScreen()),
+          ),
+          const SizedBox(width: PixelMetrics.space2),
+          PixelIconButton(
+            glyph: PixelGlyph.gear,
+            semanticLabel: 'Settings',
+            onPressed: () => _open(context, const SettingsScreen()),
           ),
         ],
       ),
@@ -247,9 +221,9 @@ class _BottomDock extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: palette.border.withValues(alpha: 0.12),
-            offset: const Offset(0, -2),
-            blurRadius: 0,
+            color: Colors.black.withValues(alpha: 0.04),
+            offset: const Offset(0, -4),
+            blurRadius: 16,
           ),
         ],
       ),
@@ -257,8 +231,8 @@ class _BottomDock extends StatelessWidget {
         top: false,
         child: Padding(
           padding: const EdgeInsets.symmetric(
-            horizontal: PixelMetrics.space2,
-            vertical: PixelMetrics.space2,
+            horizontal: PixelMetrics.space3,
+            vertical: PixelMetrics.space2 + 2,
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -269,12 +243,13 @@ class _BottomDock extends StatelessWidget {
                 semanticLabel: 'Commute Audio Player',
                 onTap: () => _open(context, const AudioCommuteScreen()),
               ),
-              _DockItem(
-                glyph: PixelGlyph.gamepad,
-                label: 'ARCADE',
-                semanticLabel: 'Arcade Mini-Games and Duels',
-                onTap: () => _open(context, const ArcadeScreen()),
-              ),
+              // Arcade games hidden per user feedback:
+              // _DockItem(
+              //   glyph: PixelGlyph.gamepad,
+              //   label: 'ARCADE',
+              //   semanticLabel: 'Arcade Mini-Games and Duels',
+              //   onTap: () => _open(context, const ArcadeScreen()),
+              // ),
               _HeroAddButton(
                 onTap: () => _open(context, const WordEditorScreen()),
               ),
@@ -306,33 +281,32 @@ class _HeroAddButton extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: Container(
         padding: const EdgeInsets.symmetric(
-          horizontal: PixelMetrics.space3,
-          vertical: 6,
+          horizontal: PixelMetrics.space4,
+          vertical: 10,
         ),
         decoration: BoxDecoration(
           color: palette.accent,
-          border: Border.all(color: palette.border, width: PixelMetrics.border),
+          borderRadius: BorderRadius.circular(PixelMetrics.radiusPill),
           boxShadow: [
             BoxShadow(
-              color: palette.border.withValues(alpha: 0.5),
-              offset: const Offset(2, 2),
-              blurRadius: 0,
+              color: palette.accent.withValues(alpha: 0.28),
+              offset: const Offset(0, 4),
+              blurRadius: 12,
             ),
           ],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            PixelIcon(PixelGlyph.plus, color: palette.onAccent, scale: 1.6),
-            const SizedBox(width: 5),
+            PixelIcon(PixelGlyph.plus, color: palette.onAccent, scale: 1.8),
+            const SizedBox(width: 6),
             Text(
               'ADD',
               style: TextStyle(
-                fontFamily: 'Handjet',
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
                 color: palette.onAccent,
-                letterSpacing: 0.5,
+                letterSpacing: 0.4,
               ),
             ),
           ],
@@ -370,20 +344,19 @@ class _DockItem extends StatelessWidget {
           clipBehavior: Clip.none,
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  PixelIcon(glyph, color: palette.ink, scale: 1.8),
-                  const SizedBox(height: 3),
+                  PixelIcon(glyph, color: palette.ink, scale: 2.0),
+                  const SizedBox(height: 4),
                   Text(
                     label,
                     style: TextStyle(
-                      fontFamily: 'Handjet',
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
                       color: palette.inkMuted,
-                      letterSpacing: 0.5,
+                      letterSpacing: 0.3,
                     ),
                   ),
                 ],
@@ -391,24 +364,23 @@ class _DockItem extends StatelessWidget {
             ),
             if (badgeCount != null)
               Positioned(
-                right: 2,
+                right: 4,
                 top: -2,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 1,
+                    horizontal: 6,
+                    vertical: 2,
                   ),
                   decoration: BoxDecoration(
                     color: palette.danger,
-                    border: Border.all(color: palette.paper, width: 1),
+                    borderRadius: BorderRadius.circular(PixelMetrics.radiusPill),
                   ),
                   child: Text(
                     '$badgeCount',
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: palette.paper,
+                      fontWeight: FontWeight.w700,
+                      color: palette.onAccent,
                     ),
                   ),
                 ),
@@ -495,21 +467,19 @@ class _FirstRunStarterBannerState extends State<_FirstRunStarterBanner> {
                         Text(
                           'WELCOME TO VEEA',
                           style: TextStyle(
-                            fontFamily: 'Handjet',
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
+                            fontSize: 21,
+                            fontWeight: FontWeight.w700,
                             color: palette.ink,
-                            letterSpacing: 1.0,
+                            letterSpacing: 0.2,
                           ),
                         ),
                         Text(
-                          'RETRO VOCABULARY JOURNAL',
+                          'DAILY VOCABULARY NOTES',
                           style: TextStyle(
-                            fontFamily: 'Handjet',
                             fontSize: 13,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w500,
                             color: palette.inkMuted,
-                            letterSpacing: 0.5,
+                            letterSpacing: 0.2,
                           ),
                         ),
                       ],
@@ -518,24 +488,24 @@ class _FirstRunStarterBannerState extends State<_FirstRunStarterBanner> {
                 ],
               ),
               const SizedBox(height: PixelMetrics.space4),
-              Container(height: 2, color: palette.border),
+              Container(height: 1, color: palette.border),
               const SizedBox(height: PixelMetrics.space4),
               Text(
                 'Notes for the English words you meet each day. Your notebook is empty right now. Load 5 curated starter words to immediately activate:',
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  height: 1.3,
+                  height: 1.4,
                   color: palette.ink,
                 ),
               ),
               const SizedBox(height: PixelMetrics.space3),
-              const _FeatureBullet(
-                glyph: PixelGlyph.gamepad,
-                label: '4 Arcade Games (Snake, Invaders, Rush, Typer)',
-              ),
-              const SizedBox(height: PixelMetrics.space2),
+              // const _FeatureBullet(
+              //   glyph: PixelGlyph.gamepad,
+              //   label: '4 Arcade Games (Snake, Invaders, Rush, Typer)',
+              // ),
+              // const SizedBox(height: PixelMetrics.space2),
               const _FeatureBullet(
                 glyph: PixelGlyph.headphones,
-                label: 'Commute Audio Cassette Player',
+                label: 'Commute Audio Player',
               ),
               const SizedBox(height: PixelMetrics.space2),
               const _FeatureBullet(
@@ -546,20 +516,20 @@ class _FirstRunStarterBannerState extends State<_FirstRunStarterBanner> {
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: PixelMetrics.space3,
-                  vertical: PixelMetrics.space2,
+                  vertical: PixelMetrics.space2 + 2,
                 ),
                 decoration: BoxDecoration(
-                  color: palette.border.withValues(alpha: 0.08),
+                  color: palette.accent.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(PixelMetrics.radiusSm),
                   border: Border.all(
-                    color: palette.border.withValues(alpha: 0.3),
+                    color: palette.accent.withValues(alpha: 0.18),
                     width: 1,
                   ),
                 ),
                 child: Text(
                   'Starter Pack: resilient • bottleneck • trade-off • serendipity • pragmatic',
                   style: TextStyle(
-                    fontFamily: 'Handjet',
-                    fontSize: 14,
+                    fontSize: 13.5,
                     color: palette.inkMuted,
                     fontWeight: FontWeight.w600,
                   ),
@@ -617,7 +587,6 @@ class _FeatureBullet extends StatelessWidget {
           child: Text(
             label,
             style: TextStyle(
-              fontFamily: 'Handjet',
               fontSize: 14,
               fontWeight: FontWeight.w600,
               color: palette.ink,

@@ -110,7 +110,6 @@ class _PixelHeatmapState extends State<PixelHeatmap> {
                     Text(
                       '$totalWordsInPeriod words captured across $activeDaysInPeriod active days',
                       style: TextStyle(
-                        fontFamily: 'Handjet',
                         fontSize: 12,
                         color: palette.inkMuted,
                       ),
@@ -146,7 +145,6 @@ class _PixelHeatmapState extends State<PixelHeatmap> {
                         child: Text(
                           '${w}W',
                           style: TextStyle(
-                            fontFamily: 'Handjet',
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
                             color: active ? palette.onAccent : palette.ink,
@@ -213,7 +211,6 @@ class _PixelHeatmapState extends State<PixelHeatmap> {
                   child: Text(
                     '${DateFormat('EEEE, d MMM yyyy').format(selected).toUpperCase()} : $selectedCount WORD${selectedCount == 1 ? '' : 'S'}',
                     style: TextStyle(
-                      fontFamily: 'Handjet',
                       fontSize: 12,
                       color: selectedCount > 0
                           ? palette.accent
@@ -264,7 +261,6 @@ class _PixelHeatmapState extends State<PixelHeatmap> {
               ? Text(
                   DateFormat('MMM').format(firstDayOfWeek).toUpperCase(),
                   style: TextStyle(
-                    fontFamily: 'Handjet',
                     fontSize: 9,
                     color: palette.inkFaint,
                     fontWeight: FontWeight.bold,
