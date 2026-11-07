@@ -110,8 +110,13 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
     );
     if (mounted) {
       setState(() {
-        _isWordSaved = true;
+        _isWordSaved = vocab.lastError == null;
       });
+      if (vocab.lastError != null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(vocab.lastError!)));
+      }
     }
   }
 
@@ -191,10 +196,7 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
           ),
           Text(
             widget.challenge.senderName.toUpperCase(),
-            style: TextStyle(
-              fontSize: 12,
-              color: palette.accent,
-            ),
+            style: TextStyle(fontSize: 12, color: palette.accent),
           ),
         ],
       ),
@@ -439,10 +441,7 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
                 isCorrect
                     ? '+${res.xpEarned} XP • ⚡ ${res.timeTakenSeconds.toStringAsFixed(1)}s'
                     : 'TIME OUT OR WRONG ANSWER',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: palette.inkFaint,
-                ),
+                style: TextStyle(fontSize: 12, color: palette.inkFaint),
               ),
             ],
           ),
@@ -482,10 +481,7 @@ class _WordDropOverlayState extends State<WordDropOverlay> {
               ),
               Text(
                 widget.challenge.targetMeaning,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: palette.ink,
-                ),
+                style: TextStyle(fontSize: 14, color: palette.ink),
               ),
             ],
           ),

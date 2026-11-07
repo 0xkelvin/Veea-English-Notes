@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../data/vocabulary_repository.dart';
 import '../models/part_of_speech.dart';
 import '../models/vocabulary_word.dart';
+import '../models/word_identity.dart';
 
 class BackupImportResult {
   const BackupImportResult({
@@ -187,9 +188,10 @@ class BackupService {
     }
 
     final existingWords = await repository.exportAll();
-    final existingByWord = <String, VocabularyWord>{};
-    for (final w in existingWords) {
-      existingByWord[w.word.trim().toLowerCase()] = w;
+    final existingByWord = <String, List<VocabularyWord>>{};
+    final existingById = <String, VocabularyWord>{};
+    for (final word in existingWords) {
+      _indexWord(existingByWord, existingById, word);
     }
 
     int wouldInsert = 0;
@@ -202,11 +204,31 @@ class BackupService {
         wouldSkip++;
         continue;
       }
-      final normKey = rawWord.toLowerCase();
-      if (existingByWord.containsKey(normKey)) {
+      final existing = _matchingEntry(entry, existingByWord, existingById);
+      if (existing != null) {
         wouldMerge++;
+        _indexWord(
+          existingByWord,
+          existingById,
+          _mergeEntry(existing, entry, DateTime.fromMillisecondsSinceEpoch(0)),
+        );
       } else {
         wouldInsert++;
+        final id = entry.id?.trim();
+        _indexWord(
+          existingByWord,
+          existingById,
+          VocabularyWord.create(
+            id: id != null && id.isNotEmpty && !existingById.containsKey(id)
+                ? id
+                : 'preview-${wouldInsert + wouldMerge}',
+            word: rawWord,
+            meaning: entry.meaning,
+            partOfSpeech: entry.partOfSpeech,
+            date: '2000-01-01',
+            now: DateTime.fromMillisecondsSinceEpoch(0),
+          ),
+        );
       }
     }
 
@@ -271,11 +293,10 @@ class BackupService {
 
     // Retrieve all existing words to detect duplicates & collisions
     final existingWords = await repository.exportAll();
-    final Map<String, VocabularyWord> existingByWord = {};
+    final Map<String, List<VocabularyWord>> existingByWord = {};
     final Map<String, VocabularyWord> existingById = {};
     for (final w in existingWords) {
-      existingByWord[w.word.trim().toLowerCase()] = w;
-      existingById[w.id] = w;
+      _indexWord(existingByWord, existingById, w);
     }
 
     final Set<String> allocatedIds = {...existingById.keys};
@@ -293,38 +314,13 @@ class BackupService {
         continue;
       }
 
-      final normKey = rawWord.toLowerCase();
-      final existing = existingByWord[normKey];
+      final existing = _matchingEntry(entry, existingByWord, existingById);
 
       if (existing != null) {
-        // Duplicate detected: Merge details cleanly
-        final mergedExamples = <String>{...existing.examples};
-        for (final ex in entry.examples) {
-          final trimmed = ex.trim();
-          if (trimmed.isNotEmpty) mergedExamples.add(trimmed);
-        }
-
-        final mergedTags = <String>{...existing.tags};
-        for (final tg in entry.tags) {
-          final trimmed = tg.trim();
-          if (trimmed.isNotEmpty) mergedTags.add(trimmed);
-        }
-
-        final updatedWord = existing.edited(
-          word: existing.word,
-          meaning: existing.meaning.isNotEmpty
-              ? existing.meaning
-              : (entry.meaning.isNotEmpty ? entry.meaning : existing.meaning),
-          now: currentTime,
-          pronunciation: existing.pronunciation ?? entry.pronunciation,
-          partOfSpeech: existing.partOfSpeech ?? entry.partOfSpeech,
-          source: existing.source ?? entry.source,
-          examples: mergedExamples.toList(),
-          tags: mergedTags.toList(),
-        );
+        final updatedWord = _mergeEntry(existing, entry, currentTime);
 
         toUpdate.add(updatedWord);
-        existingByWord[normKey] = updatedWord;
+        _indexWord(existingByWord, existingById, updatedWord);
         merged++;
       } else {
         // New word: Insert with valid date
@@ -353,8 +349,7 @@ class BackupService {
         );
 
         toInsert.add(newWord);
-        existingByWord[normKey] = newWord;
-        existingById[wordId] = newWord;
+        _indexWord(existingByWord, existingById, newWord);
         inserted++;
       }
     }
@@ -588,6 +583,67 @@ class BackupService {
 
     return rows;
   }
+
+  static VocabularyWord? _matchingEntry(
+    _ParsedWordEntry entry,
+    Map<String, List<VocabularyWord>> byWord,
+    Map<String, VocabularyWord> byId,
+  ) {
+    final key = WordIdentity.key(entry.word);
+    final known = byId[entry.id?.trim()];
+    if (known != null && WordIdentity.key(known.word) == key) return known;
+    final candidates = byWord[key] ?? const <VocabularyWord>[];
+    for (final saved in candidates) {
+      if (WordIdentity.sameDefinition(entry.meaning, entry.partOfSpeech, saved)) {
+        return saved;
+      }
+    }
+    // A blank meaning may enrich a single existing definition, but never guess
+    // which definition to overwrite when the same spelling has several senses.
+    if (candidates.length == 1 &&
+        (entry.meaning.trim().isEmpty ||
+            candidates.single.meaning.trim().isEmpty)) {
+      final saved = candidates.single;
+      if (entry.partOfSpeech == null ||
+          saved.partOfSpeech == null ||
+          entry.partOfSpeech == saved.partOfSpeech) {
+        return saved;
+      }
+    }
+    return null;
+  }
+
+  static void _indexWord(
+    Map<String, List<VocabularyWord>> byWord,
+    Map<String, VocabularyWord> byId,
+    VocabularyWord word,
+  ) {
+    byId[word.id] = word;
+    final words = byWord.putIfAbsent(WordIdentity.key(word.word), () => []);
+    words.removeWhere((saved) => saved.id == word.id);
+    words.add(word);
+  }
+
+  static VocabularyWord _mergeEntry(
+    VocabularyWord existing,
+    _ParsedWordEntry entry,
+    DateTime now,
+  ) => existing.edited(
+    word: existing.word,
+    meaning: existing.meaning.isNotEmpty ? existing.meaning : entry.meaning,
+    now: now,
+    pronunciation: existing.pronunciation ?? entry.pronunciation,
+    partOfSpeech: existing.partOfSpeech ?? entry.partOfSpeech,
+    source: existing.source ?? entry.source,
+    examples: {
+      ...existing.examples,
+      ...entry.examples.map((s) => s.trim()).where((s) => s.isNotEmpty),
+    }.toList(),
+    tags: {
+      ...existing.tags,
+      ...entry.tags.map((s) => s.trim()).where((s) => s.isNotEmpty),
+    }.toList(),
+  );
 
   static PartOfSpeech? _parsePartOfSpeech(String? val) {
     if (val == null) return null;

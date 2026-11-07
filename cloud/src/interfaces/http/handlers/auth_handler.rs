@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::extract::State;
 use axum::response::IntoResponse;
-use axum::Json;
 use validator::Validate;
 
 use crate::application::identity::commands::{
@@ -12,14 +12,25 @@ use crate::application::identity::dto::auth_dto::{
 use crate::bootstrap::app_state::AppState;
 use crate::common::error::AppError;
 use crate::common::result::AppResult;
+use crate::infrastructure::security::otp_delivery::OtpDelivery;
 use crate::interfaces::http::extractors::auth_user::AuthUser;
-use crate::interfaces::http::response::{no_content, ApiResponse};
+use crate::interfaces::http::response::{ApiResponse, no_content};
+
+fn require_phone_otp(state: &AppState, identifier: &str, registering: bool) -> AppResult<()> {
+    if (registering || state.otp_delivery.available()) && !identifier.contains('@') {
+        return Err(AppError::Validation(
+            "Use phone verification to sign in with this number.".into(),
+        ));
+    }
+    Ok(())
+}
 
 /// POST /api/v1/auth/register
 pub async fn register(
     State(state): State<AppState>,
     Json(body): Json<RegisterUserRequest>,
 ) -> AppResult<axum::response::Response> {
+    require_phone_otp(&state, &body.identifier, true)?;
     body.validate()
         .map_err(|e| AppError::Validation(e.to_string()))?;
 
@@ -50,6 +61,7 @@ pub async fn login(
     State(state): State<AppState>,
     Json(body): Json<LoginRequest>,
 ) -> AppResult<axum::response::Response> {
+    require_phone_otp(&state, &body.identifier, false)?;
     body.validate()
         .map_err(|e| AppError::Validation(e.to_string()))?;
 
@@ -110,12 +122,7 @@ pub async fn logout(
         refresh_token: body.refresh_token,
     };
 
-    revoke_refresh_token::handle(
-        cmd,
-        state.refresh_token_repo.as_ref(),
-        &state.clock,
-    )
-    .await?;
+    revoke_refresh_token::handle(cmd, state.refresh_token_repo.as_ref(), &state.clock).await?;
 
     Ok(no_content().into_response())
 }

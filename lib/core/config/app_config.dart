@@ -27,6 +27,32 @@ class AppConfig {
   /// Whether a cloud server has been configured for this build.
   static bool get isCloudEnabled => apiBaseUrl.isNotEmpty;
 
+  static const bool _legacyPasswordAccounts = bool.fromEnvironment(
+    'VEEA_LEGACY_PASSWORD_ACCOUNTS',
+  );
+  static bool? _legacyOverride;
+  static bool get legacyPasswordAccounts =>
+      _legacyOverride ?? _legacyPasswordAccounts;
+  @visibleForTesting
+  static void overrideLegacyAccounts(bool? value) {
+    assert(() {
+      _legacyOverride = value;
+      return true;
+    }());
+  }
+
+  static const String zaloCommunityUrl = String.fromEnvironment(
+    'VEEA_ZALO_COMMUNITY_URL',
+  );
+  static const String appVersion = String.fromEnvironment(
+    'VEEA_APP_VERSION',
+    defaultValue: '1.0.2',
+  );
+
+  /// Temporarily paused. Restore native widget registration/embedding too
+  /// before enabling this again (see README).
+  static const bool areHomeScreenWidgetsEnabled = false;
+
   /// Feature flag for Pixel Link friend battles / duels.
   /// Set to false via --dart-define=VEEA_ENABLE_FRIEND_DUELS=false to disable.
   static const bool isFriendDuelsEnabled = bool.fromEnvironment(

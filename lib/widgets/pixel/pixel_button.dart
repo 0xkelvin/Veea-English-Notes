@@ -37,6 +37,7 @@ class PixelButton extends StatefulWidget {
 
 class _PixelButtonState extends State<PixelButton> {
   bool _pressed = false;
+  bool _focused = false;
 
   bool get _enabled => widget.onPressed != null;
 
@@ -80,8 +81,8 @@ class _PixelButtonState extends State<PixelButton> {
         ],
         Flexible(
           child: Text(
-            widget.label.toUpperCase(),
-            overflow: TextOverflow.ellipsis,
+            widget.label,
+            textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
               color: fg,
               fontWeight: FontWeight.w600,
@@ -96,50 +97,56 @@ class _PixelButtonState extends State<PixelButton> {
       button: true,
       enabled: _enabled,
       label: widget.label,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: (_) => _setPressed(true),
-        onTapUp: (_) => _setPressed(false),
-        onTapCancel: () => _setPressed(false),
-        onTap: _enabled
-            ? () {
-                HapticFeedback.selectionClick();
-                widget.onPressed!();
-              }
-            : null,
-        child: AnimatedScale(
-          scale: _pressed ? 0.97 : 1.0,
-          duration: const Duration(milliseconds: 100),
-          child: AnimatedOpacity(
-            opacity: _pressed ? 0.85 : 1.0,
+      excludeSemantics: true,
+      onTap: widget.onPressed,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(PixelMetrics.radiusSm),
+          onHighlightChanged: _setPressed,
+          onFocusChange: (value) {
+            if (mounted) setState(() => _focused = value);
+          },
+          onTap: _enabled
+              ? () {
+                  HapticFeedback.selectionClick();
+                  widget.onPressed!();
+                }
+              : null,
+          child: AnimatedScale(
+            scale: _pressed ? 0.97 : 1.0,
             duration: const Duration(milliseconds: 100),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                minHeight: PixelMetrics.tapTarget,
-              ),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: PixelMetrics.space4,
-                  vertical: PixelMetrics.space2 + 2,
+            child: AnimatedOpacity(
+              opacity: _pressed ? 0.85 : 1.0,
+              duration: const Duration(milliseconds: 100),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  minHeight: PixelMetrics.tapTarget,
                 ),
-                decoration: BoxDecoration(
-                  color: fill,
-                  borderRadius: BorderRadius.circular(PixelMetrics.radiusSm),
-                  border: Border.all(
-                    color: borderColor,
-                    width: PixelMetrics.border,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: PixelMetrics.space4,
+                    vertical: PixelMetrics.space2 + 2,
                   ),
-                  boxShadow: _enabled && (widget.filled || widget.danger)
-                      ? [
-                          BoxShadow(
-                            color: fill.withValues(alpha: 0.24),
-                            blurRadius: 10,
-                            offset: const Offset(0, 3),
-                          ),
-                        ]
-                      : null,
+                  decoration: BoxDecoration(
+                    color: fill,
+                    borderRadius: BorderRadius.circular(PixelMetrics.radiusSm),
+                    border: Border.all(
+                      color: _focused ? palette.accent : borderColor,
+                      width: PixelMetrics.border,
+                    ),
+                    boxShadow: _enabled && (widget.filled || widget.danger)
+                        ? [
+                            BoxShadow(
+                              color: fill.withValues(alpha: 0.24),
+                              blurRadius: 10,
+                              offset: const Offset(0, 3),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: content,
                 ),
-                child: content,
               ),
             ),
           ),
@@ -172,6 +179,7 @@ class PixelIconButton extends StatefulWidget {
 
 class _PixelIconButtonState extends State<PixelIconButton> {
   bool _pressed = false;
+  bool _focused = false;
 
   bool get _enabled => widget.onPressed != null;
 
@@ -186,7 +194,7 @@ class _PixelIconButtonState extends State<PixelIconButton> {
       fill = palette.paper;
       fg = palette.inkFaint;
       borderColor = palette.border.withValues(alpha: 0.5);
-    } else if (widget.active || _pressed) {
+    } else if (widget.active || _pressed || _focused) {
       fill = palette.accent.withValues(alpha: 0.12);
       fg = palette.accent;
       borderColor = palette.accent.withValues(alpha: 0.35);
@@ -200,37 +208,45 @@ class _PixelIconButtonState extends State<PixelIconButton> {
       button: true,
       enabled: _enabled,
       label: widget.semanticLabel,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: _enabled ? (_) => setState(() => _pressed = true) : null,
-        onTapUp: _enabled ? (_) => setState(() => _pressed = false) : null,
-        onTapCancel: _enabled ? () => setState(() => _pressed = false) : null,
-        onTap: _enabled
-            ? () {
-                HapticFeedback.selectionClick();
-                widget.onPressed!();
-              }
-            : null,
-        child: SizedBox(
-          width: PixelMetrics.tapTarget,
-          height: PixelMetrics.tapTarget,
-          child: Center(
-            child: AnimatedScale(
-              scale: _pressed ? 0.92 : 1.0,
-              duration: const Duration(milliseconds: 90),
-              child: Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: fill,
-                  borderRadius: BorderRadius.circular(PixelMetrics.radiusSm),
-                  border: Border.all(
-                    color: borderColor,
-                    width: PixelMetrics.border,
+      excludeSemantics: true,
+      onTap: widget.onPressed,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(PixelMetrics.radiusSm),
+          onHighlightChanged: (value) {
+            if (mounted) setState(() => _pressed = value);
+          },
+          onFocusChange: (value) {
+            if (mounted) setState(() => _focused = value);
+          },
+          onTap: _enabled
+              ? () {
+                  HapticFeedback.selectionClick();
+                  widget.onPressed!();
+                }
+              : null,
+          child: SizedBox(
+            width: PixelMetrics.tapTarget,
+            height: PixelMetrics.tapTarget,
+            child: Center(
+              child: AnimatedScale(
+                scale: _pressed ? 0.92 : 1.0,
+                duration: const Duration(milliseconds: 90),
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: fill,
+                    borderRadius: BorderRadius.circular(PixelMetrics.radiusSm),
+                    border: Border.all(
+                      color: _focused ? palette.accent : borderColor,
+                      width: PixelMetrics.border,
+                    ),
                   ),
+                  alignment: Alignment.center,
+                  child: PixelIcon(widget.glyph, color: fg),
                 ),
-                alignment: Alignment.center,
-                child: PixelIcon(widget.glyph, color: fg),
               ),
             ),
           ),

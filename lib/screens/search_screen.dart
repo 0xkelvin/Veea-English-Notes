@@ -33,6 +33,8 @@ class _SearchScreenState extends State<SearchScreen> {
   String _query = '';
   bool _searching = false;
   int _searchToken = 0;
+  String? _error;
+  bool _includeNotes = false;
 
   @override
   void dispose() {
@@ -41,32 +43,48 @@ class _SearchScreenState extends State<SearchScreen> {
     super.dispose();
   }
 
-  void _onChanged(String value) {
+  void _onChanged(String value, {bool? includeNotes}) {
     _debounce?.cancel();
-    // Waiting a beat keeps the query off the main thread on every keystroke.
-    _debounce = Timer(const Duration(milliseconds: 180), () => _run(value));
+    ++_searchToken;
+    setState(() {
+      _includeNotes = includeNotes ?? _includeNotes;
+      _query = value.trim();
+      _results = const [];
+      _error = null;
+      _searching = _query.isNotEmpty;
+    });
+    if (_query.isNotEmpty) {
+      _debounce = Timer(const Duration(milliseconds: 180), () => _run(value));
+    }
   }
 
   Future<void> _run(String value) async {
+    if (!mounted) return;
     final token = ++_searchToken;
     final trimmed = value.trim();
-    if (trimmed.isEmpty) {
-      setState(() {
-        _query = '';
-        _results = const [];
-        _searching = false;
-      });
-      return;
-    }
-
-    setState(() => _searching = true);
-    final results = await context.read<VocabularyProvider>().search(trimmed);
-    if (!mounted || token != _searchToken) return;
+    if (trimmed.isEmpty) return;
     setState(() {
       _query = trimmed;
-      _results = results;
-      _searching = false;
+      _searching = true;
+      _error = null;
     });
+    try {
+      final results = await context.read<VocabularyProvider>().search(
+        trimmed,
+        includeNotes: _includeNotes,
+      );
+      if (!mounted || token != _searchToken) return;
+      setState(() {
+        _results = results;
+        _searching = false;
+      });
+    } catch (_) {
+      if (!mounted || token != _searchToken) return;
+      setState(() {
+        _error = 'Could not search your words. Please try again.';
+        _searching = false;
+      });
+    }
   }
 
   @override
@@ -87,19 +105,37 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                 ),
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  PixelIconButton(
-                    glyph: PixelGlyph.arrowLeft,
-                    semanticLabel: 'Back',
-                    onPressed: () => Navigator.of(context).pop(),
+                  Row(
+                    children: [
+                      PixelIconButton(
+                        glyph: PixelGlyph.arrowLeft,
+                        semanticLabel: 'Back',
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                      const SizedBox(width: PixelMetrics.space2),
+                      Expanded(
+                        child: PixelSearchField(
+                          controller: _controller,
+                          onChanged: _onChanged,
+                          hint: _includeNotes
+                              ? 'Search words, meanings or notes'
+                              : 'Search English words',
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: PixelMetrics.space2),
-                  Expanded(
-                    child: PixelSearchField(
-                      controller: _controller,
-                      onChanged: _onChanged,
-                    ),
+                  const SizedBox(height: PixelMetrics.space2),
+                  FilterChip(
+                    key: const Key('search_include_notes'),
+                    label: const Text('Meanings & notes'),
+                    tooltip:
+                        'Also search translations, examples, sources and tags',
+                    selected: _includeNotes,
+                    onSelected: (value) =>
+                        _onChanged(_controller.text, includeNotes: value),
                   ),
                 ],
               ),
@@ -117,20 +153,62 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildResults() {
-    if (_query.isEmpty) {
-      return const _SearchHint();
-    }
-    if (_results.isEmpty && !_searching) {
+    if (_error != null) {
       return Center(
-        child: Text(
-          'NOTHING MATCHES “${_query.toUpperCase()}”',
-          style: Theme.of(context).textTheme.labelSmall,
-          textAlign: TextAlign.center,
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(PixelMetrics.space6),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(_error!, textAlign: TextAlign.center),
+                const SizedBox(height: PixelMetrics.space3),
+                PixelButton(label: 'Try again', onPressed: () => _run(_query)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    if (_query.isEmpty) return _SearchHint(includeNotes: _includeNotes);
+    if (_searching) return const Center(child: CircularProgressIndicator());
+    if (_results.isEmpty) {
+      return Center(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(PixelMetrics.space6),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'No words match “$_query”',
+                  style: Theme.of(context).textTheme.titleMedium,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: PixelMetrics.space2),
+                Text(
+                  _includeNotes
+                      ? 'Try part of a word, its meaning, or a tag.'
+                      : 'Try another spelling, or search meanings and notes too.',
+                  textAlign: TextAlign.center,
+                ),
+                if (!_includeNotes) ...[
+                  const SizedBox(height: PixelMetrics.space3),
+                  PixelButton(
+                    label: 'Search meanings & notes',
+                    onPressed: () =>
+                        _onChanged(_controller.text, includeNotes: true),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
       );
     }
 
     return ListView.builder(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.only(bottom: PixelMetrics.space12),
       itemCount: _results.length,
       itemBuilder: (context, index) {
@@ -146,11 +224,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Future<void> _openEditor(VocabularyWord word) async {
     await Navigator.of(context).push(
-      PageRouteBuilder<void>(
-        pageBuilder: (_, _, _) => WordEditorScreen(existing: word),
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
-      ),
+      MaterialPageRoute<void>(builder: (_) => WordEditorScreen(existing: word)),
     );
     // The word may have been edited or deleted while the editor was open.
     if (mounted && _query.isNotEmpty) await _run(_query);
@@ -191,7 +265,9 @@ class _ResultCount extends StatelessWidget {
         ),
       ),
       child: Text(
-        searching ? 'SEARCHING…' : '$count MATCH${count == 1 ? '' : 'ES'}',
+        searching
+            ? 'Searching…'
+            : '$count ${count == 1 ? 'word found' : 'words found'}',
         style: Theme.of(context).textTheme.labelSmall,
       ),
     );
@@ -199,36 +275,44 @@ class _ResultCount extends StatelessWidget {
 }
 
 class _SearchHint extends StatelessWidget {
-  const _SearchHint();
+  const _SearchHint({required this.includeNotes});
+
+  final bool includeNotes;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(PixelMetrics.space6),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'SEARCH THE WORD, THE MEANING,',
-              style: theme.textTheme.labelSmall,
-              textAlign: TextAlign.center,
-            ),
-            Text(
-              'A SENTENCE, OR WHERE YOU MET IT',
-              style: theme.textTheme.labelSmall,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: PixelMetrics.space4),
-            // Accents are optional, which matters when typing on a keyboard
-            // without Vietnamese input enabled.
-            Text(
-              'kien cuong  finds  kiên cường',
-              style: theme.textTheme.bodyMedium,
-              textAlign: TextAlign.center,
-            ),
-          ],
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(PixelMetrics.space6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Find a saved word',
+                style: theme.textTheme.labelSmall,
+                textAlign: TextAlign.center,
+              ),
+              Text(
+                includeNotes
+                    ? 'Search words, meanings, examples, sources or tags.'
+                    : 'Type an English word or part of one.',
+                style: theme.textTheme.labelSmall,
+                textAlign: TextAlign.center,
+              ),
+              if (includeNotes) ...[
+                const SizedBox(height: PixelMetrics.space4),
+                // Accents are optional, which matters when typing on a keyboard
+                // without Vietnamese input enabled.
+                Text(
+                  'kien cuong  finds  kiên cường',
+                  style: theme.textTheme.bodyMedium,
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );

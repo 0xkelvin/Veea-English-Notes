@@ -41,7 +41,10 @@ abstract interface class VocabularyRepository {
   /// 2. Recent captures in the last 72 hours with `srs_stage < 3`.
   /// 3. Spaced repetition due (`next_review_at <= now`).
   /// 4. Fallback: least-recently reviewed active word.
-  Future<VocabularyWord?> selectGateWord({DateTime? now});
+  Future<VocabularyWord?> selectGateWord({
+    DateTime? now,
+    Set<String> excludeIds = const {},
+  });
 
   /// Updates `srs_stage`, `next_review_at`, `last_reviewed_at`, and
   /// `last_gate_failed` on the solved word and records a `gate_logs` entry.
@@ -54,7 +57,21 @@ abstract interface class VocabularyRepository {
     required String targetApp,
     required int attempts,
     DateTime? now,
+    bool completesRound = true,
   });
+
+  /// Solved words in unfinished rounds, isolated by normalized target app.
+  Future<Map<String, Set<String>>> gateRoundProgress();
+  Future<void> clearGateRoundProgress(String targetApp);
+  Future<void> pruneGateRoundProgress(Set<String> allowedWordIds);
+
+  /// Durable global completion order for practice-word rotation.
+  Future<Map<String, int>> gateWordTurns();
+  Future<Map<String, GatePendingAnswer>> pendingGateAnswers();
+  Future<void> savePendingGateAnswer(
+    String targetApp,
+    GatePendingAnswer answer,
+  );
 
   /// Reads the singleton App Gate configuration row (`id = 1`).
   Future<GateConfig> getGateConfig();
@@ -68,9 +85,13 @@ abstract interface class VocabularyRepository {
   /// Aggregate statistics for the activity heatmap and retro milestone badges.
   Future<GamificationStats> gamificationStats({int days = 112});
 
-  /// Full-text search across word, meaning, pronunciation, source, examples
-  /// and tags. Matching is case- and diacritic-insensitive.
-  Future<List<VocabularyWord>> search(String query, {int limit = 200});
+  /// Searches English words. [includeNotes] also searches meanings,
+  /// pronunciation, source, examples and tags. Accents and case are optional.
+  Future<List<VocabularyWord>> search(
+    String query, {
+    int limit = 200,
+    bool includeNotes = false,
+  });
 
   /// Aggregate counters, computed in SQL.
   Future<VocabularyStats> stats();
@@ -81,6 +102,22 @@ abstract interface class VocabularyRepository {
   Future<VocabularyWord?> findById(String id);
 
   Future<void> insert(VocabularyWord word);
+
+  /// Exact active spelling matches throughout the current notebook.
+  Future<List<VocabularyWord>> matchingWords(
+    String spelling, {
+    String? excludeId,
+  });
+
+  /// Check and write in one transaction; deliberate different senses are opt-in.
+  Future<void> insertChecked(
+    VocabularyWord word, {
+    bool allowDifferentMeaning = false,
+  });
+  Future<void> updateChecked(
+    VocabularyWord word, {
+    bool allowDifferentMeaning = false,
+  });
 
   Future<void> update(VocabularyWord word);
 
@@ -100,7 +137,15 @@ abstract interface class VocabularyRepository {
   Future<List<VocabularyWord>> pendingChanges({int limit = 200});
 
   /// Marks [ids] as synced as of [syncedAt].
-  Future<void> markSynced(List<String> ids, DateTime syncedAt);
+  Future<void> markSynced(
+    List<String> ids,
+    DateTime syncedAt, {
+    Map<String, DateTime>? expectedVersions,
+  });
+
+  /// Archives the current notebook before restoring another account's local data.
+  /// Only the first verified account may adopt an unclaimed guest notebook.
+  Future<String?> activateNotebook(String? accountId);
 
   /// Applies rows received from the server, resolving conflicts by
   /// last-write-wins on `updatedAt`. Local dirty rows always win so unsent

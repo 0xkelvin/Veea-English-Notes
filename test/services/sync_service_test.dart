@@ -19,6 +19,7 @@ class FakeVocabularyApi implements VocabularyApi {
   Future<SyncResult> sync({
     required List<VocabularyWord> changes,
     DateTime? since,
+    String? cursor,
   }) async {
     pushes.add(changes);
     cursors.add(since);

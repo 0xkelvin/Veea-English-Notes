@@ -170,7 +170,7 @@ void main() {
 
       // search_text has to be recomputed, or the row would still be indexed
       // under its old, transcription-free text.
-      expect(await repo.search('zɪljənt'), hasLength(1));
+      expect(await repo.search('zɪljənt', includeNotes: true), hasLength(1));
     });
   });
 }

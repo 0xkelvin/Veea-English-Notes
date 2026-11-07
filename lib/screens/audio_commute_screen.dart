@@ -43,20 +43,36 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final vocab = context.read<VocabularyProvider>();
-      _allWords = await vocab.allWords();
-      final todayWords = vocab.words;
-      if (todayWords.isNotEmpty) {
-        _commuteService.startPlayback(
-          todayWords,
-          playlistTitle: 'TODAY (${todayWords.length} WORDS)',
-        );
-      } else if (_allWords.isNotEmpty) {
-        _commuteService.startPlayback(
-          _allWords,
-          playlistTitle: 'ALL WORDS (${_allWords.length} WORDS)',
-        );
+      try {
+        final allWords = await vocab.allWords();
+        if (!mounted) return;
+        _allWords = allWords;
+        final todayKey = VocabularyProvider.dateKey(vocab.today);
+        final todayWords = allWords
+            .where((word) => word.date == todayKey)
+            .toList();
+        final playlist = todayWords.isNotEmpty ? todayWords : allWords;
+        if (playlist.isNotEmpty) {
+          _commuteService.startPlayback(
+            playlist,
+            playlistTitle: todayWords.isNotEmpty
+                ? 'Today · ${playlist.length} words'
+                : 'All saved words · ${playlist.length}',
+            autoplay: false,
+          );
+        }
+        setState(() {});
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Could not load your words. Please reopen Listen to try again.',
+              ),
+            ),
+          );
+        }
       }
-      if (mounted) setState(() {});
     });
   }
 
@@ -65,6 +81,63 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
       context,
       allWords: _allWords,
       commuteService: _commuteService,
+    );
+  }
+
+  void _openPlaybackSettings() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      backgroundColor: context.palette.surface,
+      builder: (sheetContext) => ConstrainedBox(
+        key: const Key('listen_settings_sheet'),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.85,
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Semantics(
+                        header: true,
+                        child: Text(
+                          'Listening settings',
+                          style: Theme.of(sheetContext).textTheme.titleMedium,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: PixelMetrics.space2),
+                    TextButton(
+                      onPressed: () => Navigator.of(sheetContext).pop(),
+                      child: const Text('Done'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: PixelMetrics.space2),
+                Flexible(
+                  child: SingleChildScrollView(
+                    key: const Key('listen_settings_scroll'),
+                    child: AnimatedBuilder(
+                      animation: _commuteService,
+                      builder: (_, _) => _PlaybackSettingsSection(
+                        commuteService: _commuteService,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -122,33 +195,18 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
                   ),
                   Expanded(
                     child: Text(
-                      'COMMUTE PLAYER',
+                      'Listen',
                       style: theme.textTheme.titleMedium,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   const SizedBox(width: PixelMetrics.space2),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: palette.accent,
-                      border: Border.all(
-                        color: palette.border,
-                        width: PixelMetrics.border,
-                      ),
-                    ),
-                    child: Text(
-                      '8-BIT WALKMAN',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: palette.onAccent,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 10,
-                      ),
-                    ),
+                  PixelIconButton(
+                    key: const Key('listen_settings_button'),
+                    glyph: PixelGlyph.gear,
+                    semanticLabel: 'Listening settings',
+                    onPressed: _openPlaybackSettings,
                   ),
                 ],
               ),
@@ -202,18 +260,13 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
                       padding: EdgeInsets.all(PixelMetrics.space6),
                       child: Center(
                         child: Text(
-                          'NO VOCABULARY LOADED TODAY\nADD WORDS TO START COMMUTE PLAYLIST',
+                          'No words to play yet.\nSave a word in your notebook, then come back to listen.',
                           textAlign: TextAlign.center,
                           style: TextStyle(fontSize: 16),
                         ),
                       ),
                     ),
                   ],
-
-                  const SizedBox(height: PixelMetrics.space4),
-
-                  // Commute Playback Settings Section
-                  _PlaybackSettingsSection(commuteService: _commuteService),
                 ],
               ),
             ),
@@ -261,35 +314,31 @@ class _TapeSelectorStrip extends StatelessWidget {
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          PixelIcon(PixelGlyph.headphones, color: palette.accent, scale: 1.8),
-          const SizedBox(width: PixelMetrics.space2),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'CURRENT TAPE: $playlistTitle',
+          Row(
+            children: [
+              PixelIcon(
+                PixelGlyph.headphones,
+                color: palette.accent,
+                scale: 1.8,
+              ),
+              const SizedBox(width: PixelMetrics.space2),
+              Expanded(
+                child: Text(
+                  playlistTitle,
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
                     color: palette.ink,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
-                Text(
-                  'Select 1 or more days • Custom Playlist',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: palette.inkMuted,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-          PixelButton(label: 'CHANGE TAPE ⏏️', onPressed: onOpenSelector),
+          const SizedBox(height: PixelMetrics.space2),
+          PixelButton(label: 'Choose words', onPressed: onOpenSelector),
         ],
       ),
     );
@@ -336,11 +385,13 @@ class _RetroCassetteWidget extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                'TRACK: $trackInfo',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFFE0DFD5),
+              Flexible(
+                child: Text(
+                  'TRACK: $trackInfo',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFFE0DFD5),
+                  ),
                 ),
               ),
             ],
@@ -495,31 +546,34 @@ class _WordDisplayCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Phase Status Indicator
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: palette.paper,
-              border: Border.all(color: palette.border, width: 1),
-            ),
-            child: Text(
-              phaseText.toUpperCase(),
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: palette.accent,
+          // Show status only once there is something to report.
+          if (phaseText.isNotEmpty) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: palette.paper,
+                border: Border.all(color: palette.border, width: 1),
               ),
-              textAlign: TextAlign.center,
+              child: Text(
+                phaseText.toUpperCase(),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: palette.accent,
+                ),
+                textAlign: TextAlign.center,
+              ),
             ),
-          ),
 
-          const SizedBox(height: PixelMetrics.space3),
+            const SizedBox(height: PixelMetrics.space3),
+          ],
 
           // Word & IPA
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
+          Wrap(
+            spacing: PixelMetrics.space2,
+            runSpacing: PixelMetrics.space1,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text(
                 word,
@@ -530,7 +584,6 @@ class _WordDisplayCard extends StatelessWidget {
                 ),
               ),
               if (partOfSpeech.isNotEmpty) ...[
-                const SizedBox(width: 8),
                 Text(
                   partOfSpeech,
                   style: theme.textTheme.labelSmall?.copyWith(
@@ -539,7 +592,6 @@ class _WordDisplayCard extends StatelessWidget {
                 ),
               ],
               if (ipa.isNotEmpty) ...[
-                const SizedBox(width: 8),
                 Text(
                   ipa,
                   style: theme.textTheme.labelSmall?.copyWith(
@@ -583,168 +635,107 @@ class _PlaybackSettingsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
-    final theme = Theme.of(context);
-
-    return PixelBox(
-      raised: true,
-      padding: const EdgeInsets.all(PixelMetrics.space4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'COMMUTE PACING & AUDIO MODES',
-            style: theme.textTheme.titleSmall,
-          ),
-          const SizedBox(height: PixelMetrics.space3),
-
-          // Recall Pause Slider
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'RECALL PAUSE: ${commuteService.recallPauseSeconds}s',
-                style: theme.textTheme.labelSmall,
-              ),
-              Row(
-                children: [1, 2, 3, 5].map((sec) {
-                  final active = commuteService.recallPauseSeconds == sec;
-                  return Padding(
-                    padding: const EdgeInsets.only(left: 4),
-                    child: GestureDetector(
-                      onTap: () => commuteService.setRecallPauseSeconds(sec),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: active ? palette.accent : palette.surface,
-                          border: Border.all(color: palette.border, width: 1),
-                        ),
-                        child: Text(
-                          '${sec}s',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: active ? palette.onAccent : palette.ink,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: PixelMetrics.space3),
-
-          // Repeat count
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'REPEAT PER WORD: ${commuteService.repeatCountPerWord}x',
-                style: theme.textTheme.labelSmall,
-              ),
-              Row(
-                children: [1, 2, 3].map((count) {
-                  final active = commuteService.repeatCountPerWord == count;
-                  return Padding(
-                    padding: const EdgeInsets.only(left: 4),
-                    child: GestureDetector(
-                      onTap: () => commuteService.setRepeatCount(count),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: active ? palette.accent : palette.surface,
-                          border: Border.all(color: palette.border, width: 1),
-                        ),
-                        child: Text(
-                          '${count}x',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: active ? palette.onAccent : palette.ink,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: PixelMetrics.space3),
-
-          // English Audio Voice Mode
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('VOICE (ENGLISH ONLY):', style: theme.textTheme.labelSmall),
-              Row(
-                children: [
-                  _AudioModePill(
-                    label: 'WORD ONLY',
-                    active: commuteService.mode == CommutePlaybackMode.wordOnly,
-                    onTap: () => commuteService.setPlaybackMode(
-                      CommutePlaybackMode.wordOnly,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  _AudioModePill(
-                    label: 'WORD + EXAMPLE',
-                    active:
-                        commuteService.mode ==
-                        CommutePlaybackMode.wordAndExample,
-                    onTap: () => commuteService.setPlaybackMode(
-                      CommutePlaybackMode.wordAndExample,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _ListeningSettingMenu<int>(
+          key: const Key('listen_pause_menu'),
+          label: 'Pause between words',
+          value: commuteService.recallPauseSeconds,
+          options: const {1: '1 sec', 2: '2 sec', 3: '3 sec', 5: '5 sec'},
+          onSelected: commuteService.setRecallPauseSeconds,
+        ),
+        const Divider(height: 1),
+        _ListeningSettingMenu<int>(
+          key: const Key('listen_repeats_menu'),
+          label: 'Repeat each word',
+          value: commuteService.repeatCountPerWord,
+          options: const {1: '1 time', 2: '2 times', 3: '3 times'},
+          onSelected: commuteService.setRepeatCount,
+        ),
+        const Divider(height: 1),
+        _ListeningSettingMenu<CommutePlaybackMode>(
+          key: const Key('listen_content_menu'),
+          label: 'Read aloud',
+          value: commuteService.mode,
+          options: const {
+            CommutePlaybackMode.wordOnly: 'Word only',
+            CommutePlaybackMode.wordAndExample: 'Word and example',
+          },
+          onSelected: commuteService.setPlaybackMode,
+        ),
+      ],
     );
   }
 }
 
-class _AudioModePill extends StatelessWidget {
-  const _AudioModePill({
+class _ListeningSettingMenu<T> extends StatelessWidget {
+  const _ListeningSettingMenu({
+    super.key,
     required this.label,
-    required this.active,
-    required this.onTap,
+    required this.value,
+    required this.options,
+    required this.onSelected,
   });
 
   final String label;
-  final bool active;
-  final VoidCallback onTap;
+  final T value;
+  final Map<T, String> options;
+  final ValueChanged<T> onSelected;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final palette = context.palette;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: active ? palette.accent : palette.surface,
-          border: Border.all(color: palette.border, width: 1),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
-            color: active ? palette.onAccent : palette.ink,
+    return PopupMenuButton<T>(
+      tooltip: 'Change ${label.toLowerCase()}',
+      initialValue: value,
+      position: PopupMenuPosition.under,
+      onSelected: onSelected,
+      itemBuilder: (_) => [
+        for (final option in options.entries)
+          CheckedPopupMenuItem<T>(
+            value: option.key,
+            checked: option.key == value,
+            child: Text(option.value),
+          ),
+      ],
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 48),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: PixelMetrics.space3),
+          child: Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: Text(label, style: theme.textTheme.bodyMedium),
+              ),
+              const SizedBox(width: PixelMetrics.space3),
+              Flexible(
+                flex: 2,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        options[value] ?? '',
+                        textAlign: TextAlign.end,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: palette.accent,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: PixelMetrics.space1),
+                    Icon(
+                      Icons.keyboard_arrow_down,
+                      size: 20,
+                      color: palette.inkMuted,
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -802,31 +793,21 @@ class _TransportControlsBar extends StatelessWidget {
           ),
 
           // Play / Pause Main Action
-          GestureDetector(
-            onTap: () {
-              if (commuteService.isPlaying) {
-                commuteService.pause();
-              } else {
-                commuteService.resume();
-              }
-            },
-            child: PixelBox(
-              raised: true,
-              color: palette.accent,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    commuteService.isPlaying ? '❚❚ PAUSE' : '▶ PLAY',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: palette.onAccent,
-                    ),
-                  ),
-                ],
-              ),
+          IconButton.filled(
+            tooltip: commuteService.isPlaying ? 'Pause' : 'Play',
+            onPressed: commuteService.totalWords == 0
+                ? null
+                : () {
+                    if (commuteService.isPlaying) {
+                      commuteService.pause();
+                    } else {
+                      commuteService.resume();
+                    }
+                  },
+            icon: Icon(
+              commuteService.isPlaying
+                  ? Icons.pause_rounded
+                  : Icons.play_arrow_rounded,
             ),
           ),
 

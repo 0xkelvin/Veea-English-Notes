@@ -38,6 +38,27 @@ class SyncService extends ChangeNotifier {
   String? _lastError;
   DateTime? _lastSyncedAt;
   int _pendingCount = 0;
+  String? _accountId;
+  bool _suspended = false;
+  Future<bool>? _activeRun;
+
+  Future<void> suspend() async {
+    _suspended = true;
+    await _activeRun;
+  }
+
+  void resumeForAccount(String accountId) {
+    _accountId = accountId;
+    _suspended = false;
+    _lastSyncedAt = null;
+    _lastError = null;
+    _pendingCount = 0;
+    _state = SyncState.idle;
+    notifyListeners();
+  }
+
+  String get _scopedCursorKey =>
+      _accountId == null ? _cursorKey : '$_cursorKey.$_accountId';
   bool _isDisposed = false;
 
   @override
@@ -75,9 +96,12 @@ class SyncService extends ChangeNotifier {
   ///
   /// Returns true when everything reconciled. Concurrent calls are ignored
   /// rather than queued — the next scheduled run will catch up.
-  Future<bool> synchronise() async {
-    if (_state == SyncState.syncing) return false;
+  Future<bool> synchronise() {
+    if (_suspended || _activeRun != null) return Future.value(false);
+    return _activeRun = _synchronise().whenComplete(() => _activeRun = null);
+  }
 
+  Future<bool> _synchronise() async {
     _state = SyncState.syncing;
     _lastError = null;
     notifyListeners();
@@ -85,6 +109,7 @@ class SyncService extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       var cursor = _readCursor(prefs);
+      var revision = prefs.getString("$_scopedCursorKey.revision");
 
       // Phase 1: Push all pending changes in batches until none remain
       var pushBatches = 0;
@@ -95,23 +120,57 @@ class SyncService extends ChangeNotifier {
         final outgoing = await _repository.pendingChanges(limit: 200);
         if (outgoing.isEmpty) {
           if (pushBatches == 0) {
-            final result = await _api.sync(changes: const [], since: cursor);
-            await _repository.mergeFromServer(result.changes);
+            final result = await _api.sync(
+              changes: const [],
+              since: cursor,
+              cursor: revision,
+            );
+            await _repository.mergeFromServer([
+              ...result.canonical,
+              ...result.changes,
+            ]);
+            revision = result.cursor ?? revision;
+            if (revision != null) {
+              await prefs.setString("$_scopedCursorKey.revision", revision);
+            }
             cursor = result.serverTime;
-            await prefs.setString(_cursorKey, cursor.toUtc().toIso8601String());
+            await prefs.setString(
+              _scopedCursorKey,
+              cursor.toUtc().toIso8601String(),
+            );
             hasMoreRemote = result.hasMore;
           }
           break;
         }
 
         pushBatches++;
-        final result = await _api.sync(changes: outgoing, since: cursor);
-        await _repository.mergeFromServer(result.changes);
-        await _repository.markSynced(result.acceptedIds, _now());
+        final result = await _api.sync(
+          changes: outgoing,
+          since: cursor,
+          cursor: revision,
+        );
+        await _repository.markSynced(
+          result.acceptedIds,
+          _now(),
+          expectedVersions: {
+            for (final word in outgoing) word.id: word.updatedAt,
+          },
+        );
+        await _repository.mergeFromServer([
+          ...result.canonical,
+          ...result.changes,
+        ]);
+        revision = result.cursor ?? revision;
+        if (revision != null) {
+          await prefs.setString("$_scopedCursorKey.revision", revision);
+        }
         _warnAboutRejections(outgoing.map((w) => w.id), result.acceptedIds);
 
         cursor = result.serverTime;
-        await prefs.setString(_cursorKey, cursor.toUtc().toIso8601String());
+        await prefs.setString(
+          _scopedCursorKey,
+          cursor.toUtc().toIso8601String(),
+        );
         hasMoreRemote = result.hasMore;
 
         // If this batch had fewer than 200 items, all pending changes were sent.
@@ -123,16 +182,37 @@ class SyncService extends ChangeNotifier {
       var pullPages = 0;
       while (hasMoreRemote && pullPages < _maxPagesPerRun) {
         pullPages++;
-        final result = await _api.sync(changes: const [], since: cursor);
-        await _repository.mergeFromServer(result.changes);
+        final result = await _api.sync(
+          changes: const [],
+          since: cursor,
+          cursor: revision,
+        );
+        await _repository.mergeFromServer([
+          ...result.canonical,
+          ...result.changes,
+        ]);
+        revision = result.cursor ?? revision;
+        if (revision != null) {
+          await prefs.setString("$_scopedCursorKey.revision", revision);
+        }
         cursor = result.serverTime;
-        await prefs.setString(_cursorKey, cursor.toUtc().toIso8601String());
-        if (!result.hasMore) break;
+        await prefs.setString(
+          _scopedCursorKey,
+          cursor.toUtc().toIso8601String(),
+        );
+        hasMoreRemote = result.hasMore;
+        if (!hasMoreRemote) break;
       }
 
       // Tombstones the server has acknowledged are no longer needed locally.
       await _repository.purgeSyncedTombstones();
 
+      if (hasMoreRemote || await _repository.countPendingChanges() > 0) {
+        _lastError = 'More changes are waiting. Sync again to continue.';
+        _state = SyncState.failed;
+        await refreshPendingCount();
+        return false;
+      }
       _lastSyncedAt = _now();
       _state = SyncState.idle;
       await refreshPendingCount();
@@ -159,13 +239,14 @@ class SyncService extends ChangeNotifier {
   /// has never seen.
   Future<void> resetCursor() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_cursorKey);
+    await prefs.remove(_scopedCursorKey);
+    await prefs.remove("$_scopedCursorKey.revision");
     _lastSyncedAt = null;
     notifyListeners();
   }
 
   DateTime? _readCursor(SharedPreferences prefs) {
-    final raw = prefs.getString(_cursorKey);
+    final raw = prefs.getString(_scopedCursorKey);
     return raw == null ? null : DateTime.tryParse(raw);
   }
 

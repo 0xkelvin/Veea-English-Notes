@@ -102,6 +102,9 @@ pub struct SyncRequest {
     /// full download.
     #[serde(default)]
     pub since: Option<DateTime<Utc>>,
+    /// Decimal revision string; clients start with "0" and persist after applying.
+    #[serde(default)]
+    pub cursor: Option<String>,
 }
 
 /// Response body for `POST /api/v1/vocabulary/sync`.
@@ -111,6 +114,9 @@ pub struct SyncResponse {
     /// Ids from `changes` that were stored. Anything missing was rejected as
     /// stale or not owned, and the client should re-pull rather than retry.
     pub accepted: Vec<Uuid>,
+    /// Canonical winners for uploaded IDs, even if outside the pull page.
+    pub canonical: Vec<WordPayload>,
+    pub cursor: String,
 
     /// Rows changed since the requested cursor, including tombstones.
     pub changes: Vec<WordPayload>,

@@ -24,38 +24,45 @@ void main() {
   );
 
   Widget wrap(Widget child) => ChangeNotifierProvider(
-        create: (_) => TtsService(),
-        child: MaterialApp(
-          theme: PixelTheme.light(),
-          home: Scaffold(body: child),
-        ),
-      );
+    create: (_) => TtsService(),
+    child: MaterialApp(
+      theme: PixelTheme.light(),
+      home: Scaffold(body: child),
+    ),
+  );
 
-  testWidgets('WordRow displays card with word, meaning, POS badge, and highlighted example', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      wrap(
-        WordRow(
-          word: testWord,
-          onTap: () {},
-        ),
-      ),
-    );
+  testWidgets(
+    'WordRow displays card with word, meaning, POS badge, and highlighted example',
+    (tester) async {
+      await tester.pumpWidget(wrap(WordRow(word: testWord, onTap: () {})));
 
-    // Verify word and meaning
-    expect(find.text('resilient'), findsOneWidget);
-    expect(find.text('Có khả năng phục hồi nhanh chóng'), findsOneWidget);
+      // Verify word and meaning
+      expect(find.text('resilient'), findsOneWidget);
+      expect(find.text('Có khả năng phục hồi nhanh chóng'), findsOneWidget);
 
-    // Verify Part of Speech micro-badge
-    expect(find.text('ADJ'), findsOneWidget);
+      // Verify Part of Speech micro-badge
+      expect(find.text('ADJ'), findsOneWidget);
 
-    // Verify HighlightedText exists for the example sentence
-    expect(find.byType(HighlightedText), findsOneWidget);
+      // Verify HighlightedText exists for the example sentence
+      expect(find.byType(HighlightedText), findsOneWidget);
 
-    // Verify tags and source
-    expect(find.text('#mindset'), findsOneWidget);
-    expect(find.text('#ielts'), findsOneWidget);
-    expect(find.text('FROM SAFARI'), findsOneWidget);
-  });
+      // Verify tags and source
+      expect(find.text('#mindset'), findsOneWidget);
+      expect(find.text('#ielts'), findsOneWidget);
+      expect(find.text('FROM SAFARI'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Old automatic OCR placeholder is hidden without changing stored metadata',
+    (tester) async {
+      final word = testWord.copyWith(source: 'Pixel Lens OCR');
+      await tester.pumpWidget(wrap(WordRow(word: word, onTap: () {})));
+      expect(find.text('FROM PIXEL LENS OCR'), findsNothing);
+      expect(find.text('#mindset'), findsOneWidget);
+      expect(word.source, 'Pixel Lens OCR');
+      expect(word.displaySource, isNull);
+      expect(testWord.displaySource, 'Safari');
+    },
+  );
 }

@@ -49,12 +49,12 @@ void main() {
       await tester.pumpAndSettle();
 
       // Verify Welcome Banner is shown for fresh install
-      expect(find.text('WELCOME TO VEEA'), findsOneWidget);
-      expect(find.text('LOAD 5 STARTER WORDS'), findsOneWidget);
+      expect(find.text('Welcome to Veea'), findsOneWidget);
+      expect(find.text('Try 5 starter words'), findsOneWidget);
       expect(find.byType(WordRow), findsNothing);
 
       // Tap LOAD 5 STARTER WORDS
-      final button = find.text('LOAD 5 STARTER WORDS');
+      final button = find.text('Try 5 starter words');
       await tester.ensureVisible(button);
       await tester.tap(button);
       await tester.runAsync(
@@ -63,7 +63,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Starter pack loaded: banner is gone, 5 words appear
-      expect(find.text('WELCOME TO VEEA'), findsNothing);
+      expect(find.text('Welcome to Veea'), findsNothing);
       expect(find.byType(WordRow), findsNWidgets(5));
       expect(find.text('resilient'), findsOneWidget);
       expect(find.text('bottleneck'), findsOneWidget);

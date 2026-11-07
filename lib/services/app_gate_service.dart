@@ -3,11 +3,13 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// Platform channel bridge for the App Gate ("Word Toll") feature.
+import '../models/native_gate_status.dart';
+
+/// Platform channel bridge for the App Gate ("Earn Screen Time" / "Word Toll") feature.
 ///
 /// Communicates over `MethodChannel('app.veea.english/app_gate')` with iOS
-/// (`FamilyControls` / `ManagedSettings` / `DeviceActivity`) and Android
-/// (`VeeaGateAccessibilityService` / `UsageStatsManager` / overlay).
+/// (`FamilyControls` / `ManagedSettings` / URL schemes) and Android
+/// (`VeeaGateAccessibilityService` / `PackageManager`).
 class AppGateService {
   AppGateService({MethodChannel? channel})
     : _channel = channel ?? const MethodChannel(channelName) {
@@ -20,9 +22,19 @@ class AppGateService {
   final StreamController<String> _gateTriggeredController =
       StreamController<String>.broadcast();
 
+  String? _pendingTargetApp;
+
   /// Emits the target app name / identifier whenever the native OS intercepts
   /// a locked app launch (`onGateTriggered`).
   Stream<String> get onGateTriggered => _gateTriggeredController.stream;
+
+  /// Returns and clears any buffered gate target received before a listener
+  /// attached (e.g. during cold start).
+  String? consumePendingTargetApp() {
+    final pending = _pendingTargetApp;
+    _pendingTargetApp = null;
+    return pending;
+  }
 
   Future<dynamic> _handleMethodCall(MethodCall call) async {
     if (call.method == 'onGateTriggered') {
@@ -34,7 +46,12 @@ class AppGateService {
         targetApp = args;
       }
       if (targetApp != null && targetApp.trim().isNotEmpty) {
-        _gateTriggeredController.add(targetApp.trim());
+        final cleaned = targetApp.trim();
+        if (_gateTriggeredController.hasListener) {
+          _gateTriggeredController.add(cleaned);
+        } else {
+          _pendingTargetApp = cleaned;
+        }
       }
       return true;
     }
@@ -43,9 +60,33 @@ class AppGateService {
 
   /// Simulates or triggers a gate interception in Dart (also used by tests).
   void triggerGate(String targetApp) {
-    if (!_gateTriggeredController.isClosed) {
+    if (_gateTriggeredController.isClosed) return;
+    if (_gateTriggeredController.hasListener) {
       _gateTriggeredController.add(targetApp);
+    } else {
+      _pendingTargetApp = targetApp;
     }
+  }
+
+  /// Polls the native host for any pending cold-start gate target that was
+  /// received before the Flutter engine finished initializing.
+  Future<String?> consumeNativePendingGate() async {
+    final buffered = consumePendingTargetApp();
+    if (buffered != null && buffered.isNotEmpty) return buffered;
+    try {
+      final nativePending = await _channel.invokeMethod<String>(
+        'consumePendingGate',
+        <String, dynamic>{},
+      );
+      if (nativePending != null && nativePending.trim().isNotEmpty) {
+        return nativePending.trim();
+      }
+    } on MissingPluginException {
+      // No native host in unit tests.
+    } on PlatformException catch (error) {
+      debugPrint('AppGate consumePendingGate failed: $error');
+    }
+    return null;
   }
 
   /// Requests OS-level permissions (`FamilyControls` on iOS, Accessibility /
@@ -58,8 +99,6 @@ class AppGateService {
       );
       return granted ?? true;
     } on MissingPluginException {
-      // Graceful fallback in desktop/test environments where no native host is
-      // attached.
       return true;
     } on PlatformException catch (error) {
       debugPrint('AppGate requestPermissions failed: $error');
@@ -67,8 +106,8 @@ class AppGateService {
     }
   }
 
-  /// Opens the native app selector (`FamilyActivityPicker` on iOS or installed
-  /// apps sheet on Android) and returns the selected app identifiers/names.
+  /// Opens the native app selector (`FamilyActivityPicker` on iOS) and returns
+  /// the selected app identifiers/names, or `null` if unavailable/cancelled.
   Future<List<String>?> pickAppsToGate() async {
     try {
       final result = await _channel.invokeMethod<List<dynamic>>(
@@ -85,8 +124,7 @@ class AppGateService {
     }
   }
 
-  /// Queries launchable user apps from the native OS (`getInstalledApps`),
-  /// returning an empty list when running on platforms without package queries.
+  /// Queries launchable user apps installed on the device (`getInstalledApps`).
   Future<List<String>> getInstalledApps() async {
     try {
       final result = await _channel.invokeMethod<List<dynamic>>(
@@ -125,21 +163,86 @@ class AppGateService {
     }
   }
 
+  Future<NativeGateStatus> getScreenTimeStatus() async {
+    try {
+      final raw = await _channel.invokeMapMethod<dynamic, dynamic>(
+        'getScreenTimeStatus',
+      );
+      return NativeGateStatus.fromMap(raw);
+    } on MissingPluginException {
+      return const NativeGateStatus();
+    }
+  }
+
+  Future<NativeGateStatus> requestScreenTimeAuthorization() async {
+    final raw = await _channel.invokeMapMethod<dynamic, dynamic>(
+      'requestScreenTimeAuthorization',
+    );
+    return NativeGateStatus.fromMap(raw);
+  }
+
+  Future<bool> chooseScreenTimeApplications() async =>
+      await _channel.invokeMethod<bool>('chooseScreenTimeApplications') ??
+      false;
+
+  Future<NativeGateStatus> setScreenTimeEnabled(
+    bool enabled, {
+    required int minutes,
+  }) async {
+    final raw = await _channel.invokeMapMethod<dynamic, dynamic>(
+      'setScreenTimeEnabled',
+      {'enabled': enabled, 'passMinutes': minutes},
+    );
+    return NativeGateStatus.fromMap(raw);
+  }
+
+  Future<NativeGateStatus> setScreenTimeDuration(int minutes) async {
+    final raw = await _channel.invokeMapMethod<dynamic, dynamic>(
+      'setScreenTimeDuration',
+      {'passMinutes': minutes},
+    );
+    return NativeGateStatus.fromMap(raw);
+  }
+
+  Future<String?> manageScreenTimeApplications() =>
+      _channel.invokeMethod<String>('manageScreenTimeApplications');
+
   /// Lifts the shield/overlay for [targetApp] for [durationMinutes] and
   /// schedules automatic re-lock.
-  Future<void> grantPass({
+  Future<NativeGateStatus?> grantPass({
     required String targetApp,
     required int durationMinutes,
   }) async {
     try {
-      await _channel.invokeMethod<void>('grantPass', <String, dynamic>{
+      final result = await _channel.invokeMethod<dynamic>(
+        'grantPass',
+        <String, dynamic>{
+          'targetApp': targetApp,
+          'durationMinutes': durationMinutes,
+        },
+      );
+      return result is Map ? NativeGateStatus.fromMap(result) : null;
+    } on MissingPluginException {
+      if (targetApp.startsWith('native:')) {
+        throw PlatformException(
+          code: 'SCREEN_TIME_UNAVAILABLE',
+          message: 'Screen Time protection is not available in this build.',
+        );
+      }
+      // No-op when running without native host.
+      return null;
+    }
+  }
+
+  /// Immediately revokes an active unlock pass for [targetApp] and re-applies
+  /// the lock.
+  Future<void> revokePass(String targetApp) async {
+    try {
+      await _channel.invokeMethod<void>('revokePass', <String, dynamic>{
         'targetApp': targetApp,
-        'durationMinutes': durationMinutes,
       });
     } on MissingPluginException {
       // No-op when running without native host.
-    } on PlatformException catch (error) {
-      debugPrint('AppGate grantPass failed: $error');
     }
   }
 

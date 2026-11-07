@@ -30,6 +30,7 @@ class WordRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final theme = Theme.of(context);
+    final source = word.displaySource;
 
     return Semantics(
       button: true,
@@ -101,10 +102,7 @@ class WordRow extends StatelessWidget {
                         bottomRight: Radius.circular(8),
                       ),
                       border: Border(
-                        left: BorderSide(
-                          color: palette.accent,
-                          width: 3,
-                        ),
+                        left: BorderSide(color: palette.accent, width: 3),
                       ),
                     ),
                     child: HighlightedText(
@@ -124,14 +122,14 @@ class WordRow extends StatelessWidget {
               ],
 
               // Footer: Source and Tag micro-chips
-              if (word.source != null || word.hasTags) ...[
+              if (source != null || word.hasTags) ...[
                 const SizedBox(height: PixelMetrics.space2),
                 Wrap(
                   spacing: PixelMetrics.space2,
                   runSpacing: 4,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    if (word.source != null && word.source!.isNotEmpty)
+                    if (source != null)
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
@@ -140,13 +138,10 @@ class WordRow extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: palette.paper,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: palette.border,
-                            width: 1,
-                          ),
+                          border: Border.all(color: palette.border, width: 1),
                         ),
                         child: Text(
-                          'FROM ${word.source!.toUpperCase()}',
+                          'FROM ${source.toUpperCase()}',
                           style: theme.textTheme.labelSmall?.copyWith(
                             fontSize: 10.5,
                             letterSpacing: 0.3,
@@ -203,10 +198,7 @@ class _WordHeadline extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (dateLabel != null) ...[
-          Text(
-            dateLabel!.toUpperCase(),
-            style: theme.textTheme.labelSmall,
-          ),
+          Text(dateLabel!.toUpperCase(), style: theme.textTheme.labelSmall),
           const SizedBox(height: PixelMetrics.space1),
         ],
         Wrap(
@@ -229,10 +221,7 @@ class _WordHeadline extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: palette.paper,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: palette.border,
-                    width: 1,
-                  ),
+                  border: Border.all(color: palette.border, width: 1),
                 ),
                 child: Text(
                   PronunciationService.format(pronunciation),

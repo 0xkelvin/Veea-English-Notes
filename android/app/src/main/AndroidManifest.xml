@@ -40,6 +40,7 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- Home/lock screen widgets temporarily disabled. Keep source for restoration.
         <receiver
             android:name=".WordOfDayWidgetProvider"
             android:exported="true"
@@ -51,6 +52,7 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/word_of_day_widget_info" />
         </receiver>
+        -->
 
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">

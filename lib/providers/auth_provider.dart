@@ -48,6 +48,12 @@ class AuthProvider extends ChangeNotifier {
   String? _lastMessage;
   bool _busy = false;
   bool _isDisposed = false;
+  String? _accountId;
+  bool _phoneAccount = false;
+  String? get accountId => _accountId;
+  bool get isPhoneAccount =>
+      _phoneAccount || _profile?.authMethod == 'phone_otp';
+  AuthApi get api => _authApi;
 
   @override
   void dispose() {
@@ -78,33 +84,28 @@ class AuthProvider extends ChangeNotifier {
 
   /// Restores any session left on the device.
   Future<void> restore() async {
+    await _sync.suspend();
     _identifier = await _tokens.readIdentifier();
+    _accountId = await _tokens.readAccountId();
+    _phoneAccount = await _tokens.readAuthMethod() == 'phone_otp';
     _state = await _tokens.hasSession
         ? AuthState.signedIn
         : AuthState.signedOut;
+    if (isSignedIn) {
+      final owner = _accountId ?? _identifier?.trim().toLowerCase();
+      if (owner != null) {
+        _accountId = owner;
+        await _repository.activateNotebook(owner);
+        _sync.resumeForAccount(owner);
+      }
+    }
     notifyListeners();
   }
 
-  Future<void> _handleAccountIsolation(String newIdentifier) async {
-    final lastAccount = await _tokens.readLastAccount();
-    if (lastAccount != null && lastAccount != newIdentifier) {
-      // Different account: isolate notebooks by clearing the previous account's local data
-      await _repository.deleteAll();
-      await _sync.resetCursor();
-    }
-    await _tokens.saveLastAccount(newIdentifier);
-  }
-
   Future<bool> signIn({required String identifier, required String password}) {
-    return _run(
-      () => _authApi.login(identifier: identifier, password: password),
-      onSuccess: () async {
-        _identifier = identifier;
-        await _handleAccountIsolation(identifier);
-      },
-      // There is no session yet, so a 401 here means the credentials were
-      // wrong — not that anything expired.
-      unauthorizedMessage: 'That email, phone or password is not right',
+    return _authenticate(
+      () =>
+          _authApi.passwordSession(identifier: identifier, password: password),
     );
   }
 
@@ -112,28 +113,105 @@ class AuthProvider extends ChangeNotifier {
     required String identifier,
     required String password,
   }) {
-    return _run(
-      () => _authApi.register(identifier: identifier, password: password),
-      onSuccess: () async {
-        _identifier = identifier;
-        await _handleAccountIsolation(identifier);
-      },
-      unauthorizedMessage: 'That email, phone or password is not right',
+    return _authenticate(
+      () => _authApi.passwordSession(
+        identifier: identifier,
+        password: password,
+        register: true,
+      ),
     );
   }
 
+  Future<bool> verifyPhone(OtpChallenge challenge, String code) =>
+      _authenticate(() => _authApi.verifyOtp(challenge, code));
+
+  Future<bool> _authenticate(Future<AuthSession> Function() request) async {
+    if (_busy) return false;
+    _busy = true;
+    _lastError = null;
+    notifyListeners();
+    final previousOwner = _accountId;
+    final previousIdentifier = _identifier;
+    final previousState = _state;
+    String? switchedFrom;
+    var switched = false;
+    try {
+      await _sync.suspend();
+      final session = await request();
+      switchedFrom = await _repository.activateNotebook(session.accountId);
+      switched = true;
+      await _tokens.saveLastAccount(session.accountId);
+      await _authApi.commitSession(session);
+      _accountId = session.accountId;
+      _identifier = session.identifier;
+      _profile = null;
+      _phoneAccount = session.method == 'phone_otp';
+      _state = AuthState.signedIn;
+      _sync.resumeForAccount(session.accountId);
+      return true;
+    } catch (error) {
+      if (switched) {
+        try {
+          await _repository.activateNotebook(switchedFrom);
+        } catch (_) {
+          // Leave sync suspended if ownership rollback fails: never upload a
+          // notebook under the previous account’s credentials.
+          _clearSession();
+          _lastError =
+              'Could not reopen your notebook. Please restart Veea; your saved notebooks remain on this device.';
+          return false;
+        }
+      }
+      _state = previousState;
+      _identifier = previousIdentifier;
+      _accountId = previousOwner;
+      final previousScope =
+          previousOwner ?? previousIdentifier?.trim().toLowerCase();
+      if (_state == AuthState.signedIn && previousScope != null) {
+        _sync.resumeForAccount(previousScope);
+      }
+      _lastError = error is ApiException
+          ? (error.statusCode == 401
+                ? 'That email, phone or password is not right'
+                : error.message)
+          : 'Could not open your account. Your notebooks are kept on this device.';
+      return false;
+    } finally {
+      _busy = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> signOut() async {
+    await _sync.suspend();
     await _authApi.logout();
     _clearSession();
     notifyListeners();
   }
+
+  Future<bool> deletePhoneAccount(OtpChallenge challenge, String code) => _run(
+    () async {
+      await _sync.suspend();
+      await _authApi.deleteWithOtp(challenge, code);
+    },
+    onSuccess: () async {
+      await _repository.deleteAll();
+      await _sync.resetCursor();
+      await _tokens.clearLastAccount();
+      _clearSession();
+    },
+    signOutOnSuccess: true,
+  );
 
   /// Fetches both identifiers. Failure is not surfaced — the account screen
   /// still works from the locally cached identifier.
   Future<void> loadProfile() async {
     if (!isSignedIn || !AppConfig.isCloudEnabled) return;
     try {
-      _profile = await _authApi.profile();
+      final owner = _accountId;
+      final profile = await _authApi.profile();
+      if (!isSignedIn || owner != _accountId) return;
+      _profile = profile;
       _identifier = _profile!.primary;
       notifyListeners();
     } on ApiException catch (error) {
@@ -234,6 +312,7 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      await _sync.suspend();
       await action();
       await onSuccess?.call();
       _state = signOutOnSuccess ? AuthState.signedOut : AuthState.signedIn;
@@ -254,12 +333,17 @@ class AuthProvider extends ChangeNotifier {
       _lastError = 'Something went wrong';
       return false;
     } finally {
+      if (isSignedIn && (_accountId ?? _identifier) != null) {
+        _sync.resumeForAccount(_accountId ?? _identifier!);
+      }
       _busy = false;
       notifyListeners();
     }
   }
 
   void _clearSession() {
+    _accountId = null;
+    _phoneAccount = false;
     _identifier = null;
     _profile = null;
     _state = AuthState.signedOut;
@@ -269,6 +353,7 @@ class AuthProvider extends ChangeNotifier {
   /// recovered without the user signing in again.
   void _handleSessionExpired() {
     if (_state != AuthState.signedIn) return;
+    unawaited(_sync.suspend());
     _clearSession();
     _lastError = 'Your session expired — sign in again to keep syncing';
     notifyListeners();

@@ -90,7 +90,9 @@ pub struct OutboxEventRow {
     pub retry_count: i32,
 }
 
-impl From<OutboxEventRow> for crate::domain::identity::repositories::outbox_repository::OutboxEvent {
+impl From<OutboxEventRow>
+    for crate::domain::identity::repositories::outbox_repository::OutboxEvent
+{
     fn from(row: OutboxEventRow) -> Self {
         use crate::domain::identity::repositories::outbox_repository::OutboxStatus;
         Self {
@@ -169,6 +171,7 @@ pub struct WordChangeRow {
     #[sqlx(flatten)]
     pub word: WordRow,
     pub server_updated_at: DateTime<Utc>,
+    pub sync_revision: i64,
 }
 
 impl WordChangeRow {
@@ -176,6 +179,7 @@ impl WordChangeRow {
         Ok(WordChange {
             word: self.word.into_domain()?,
             server_updated_at: self.server_updated_at,
+            sync_revision: self.sync_revision,
         })
     }
 }

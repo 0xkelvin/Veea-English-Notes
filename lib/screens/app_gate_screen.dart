@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../core/theme/pixel_metrics.dart';
 import '../core/theme/pixel_palette.dart';
 import '../models/gate_config.dart';
+import '../models/gate_word_queue.dart';
 import '../models/vocabulary_word.dart';
 import '../providers/app_gate_provider.dart';
 import '../providers/vocabulary_provider.dart';
@@ -12,6 +16,7 @@ import '../services/tts_service.dart';
 import '../widgets/pixel/pixel_box.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_icon.dart';
+import '../widgets/practice_word_picker.dart';
 import 'word_editor_screen.dart';
 
 /// Full-screen "Word Toll" App Gate challenge screen.
@@ -42,20 +47,32 @@ class AppGateScreen extends StatefulWidget {
   State<AppGateScreen> createState() => _AppGateScreenState();
 }
 
-class _AppGateScreenState extends State<AppGateScreen> {
+class _AppGateScreenState extends State<AppGateScreen>
+    with WidgetsBindingObserver {
   final TextEditingController _inputController = TextEditingController();
   final FocusNode _inputFocusNode = FocusNode();
 
   late String _currentApp;
+  bool get _isNativeTarget => _currentApp.startsWith('native:');
+  String get _displayApp =>
+      _maybeReadGateProvider(context)?.displayNameForApp(_currentApp) ??
+      (_isNativeTarget ? 'Protected app' : _currentApp);
   VocabularyWord? _currentWord;
   bool _loading = true;
   int _attempts = 0;
+  int _solvedInRound = 0;
+  final Set<String> _solvedWordIds = {};
   bool _unlocked = false;
   bool _flashVisible = false;
+  bool _submitting = false;
+  bool _keyboardRequestScheduled = false;
+  String? _challengeError;
+  Timer? _accessTicker;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _currentApp = widget.targetApp;
     _inputFocusNode.addListener(() {
       if (mounted) setState(() {});
@@ -63,10 +80,16 @@ class _AppGateScreenState extends State<AppGateScreen> {
     if (widget.initialWord != null) {
       _currentWord = widget.initialWord;
       _loading = false;
+      _scheduleAnswerKeyboard();
     } else {
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _loadNextWord(force: false),
-      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final gateProvider = _maybeReadGateProvider(context);
+        if (gateProvider != null && !widget.previewMode) {
+          _solvedInRound = gateProvider.progressForApp(_currentApp);
+          _solvedWordIds.addAll(gateProvider.solvedWordIdsForApp(_currentApp));
+        }
+        _loadNextWord(force: false);
+      });
     }
   }
 
@@ -74,16 +97,146 @@ class _AppGateScreenState extends State<AppGateScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_currentWord == null && widget.initialWord == null) {
+      final gateProvider = _maybeReadGateProvider(context);
+      if (gateProvider != null && !widget.previewMode) {
+        _solvedInRound = gateProvider.progressForApp(_currentApp);
+        _solvedWordIds.addAll(gateProvider.solvedWordIdsForApp(_currentApp));
+      }
       final vocab = _maybeReadVocabProvider(context);
-      if (vocab != null && vocab.words.isNotEmpty) {
-        _currentWord = vocab.words.first;
+      _currentWord = gateProvider?.cachedGateWord(
+        _currentApp,
+        preview: widget.previewMode,
+      );
+      if (gateProvider == null && vocab != null) {
+        _currentWord = GateWordQueue.select(
+          vocab.words,
+          now: vocab.today,
+          excludeIds: _solvedWordIds,
+        );
+      }
+      if (_currentWord != null) {
         _loading = false;
+        _unlocked =
+            !widget.previewMode &&
+            gateProvider?.unlockedUntilFor(_currentApp) != null;
+        _watchAccessExpiry();
+        _scheduleAnswerKeyboard();
       }
     }
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshAccessOnResume();
+    } else {
+      // UIKit can resign its responder during a Shortcut handoff. Clear the
+      // Flutter focus too so resuming attaches a fresh text-input connection.
+      _inputFocusNode.unfocus();
+    }
+  }
+
+  Future<void> _refreshAccessOnResume() async {
+    final wasUnlocked = _unlocked;
+    final gate = _maybeReadGateProvider(context);
+    if (_isNativeTarget && !widget.previewMode) {
+      await gate?.refreshNativeScreenTime();
+      if (!mounted) return;
+      setState(() {
+        _unlocked = gate?.unlockedUntilFor(_currentApp) != null;
+      });
+    } else if (_unlocked &&
+        !widget.previewMode &&
+        gate != null &&
+        gate.config.passDurationMinutes > 0) {
+      setState(() {
+        _unlocked = gate.unlockedUntilFor(_currentApp) != null;
+      });
+    }
+    if (wasUnlocked && !_unlocked) {
+      _solvedWordIds.clear();
+      _solvedInRound = 0;
+      await _loadNextWord();
+      return;
+    }
+    _watchAccessExpiry();
+    _scheduleAnswerKeyboard();
+  }
+
+  void _watchAccessExpiry() {
+    _accessTicker?.cancel();
+    if (!_unlocked || widget.previewMode) return;
+    final gate = _maybeReadGateProvider(context);
+    if (gate?.unlockedUntilFor(_currentApp) == null) return;
+    // This timer updates the visible countdown only. iOS owns enforcement.
+    _accessTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (gate?.unlockedUntilFor(_currentApp) == null) {
+        _accessTicker?.cancel();
+        _solvedWordIds.clear();
+        _solvedInRound = 0;
+        _loadNextWord();
+      } else {
+        setState(() {});
+      }
+    });
+  }
+
+  String _passBadgeLabel(GateConfig config) {
+    if (!_unlocked || widget.previewMode) return config.passBadgeLabel;
+    final gate = _maybeReadGateProvider(context);
+    final expiry = gate?.unlockedUntilFor(_currentApp);
+    if (expiry == null) return config.passBadgeLabel;
+    final seconds =
+        ((expiry.difference(gate!.now).inMilliseconds + 999) ~/ 1000).clamp(
+          0,
+          86400,
+        );
+    return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')} PASS';
+  }
+
+  bool get _canShowAnswerKeyboard {
+    if (!mounted || _loading || _currentWord == null || _unlocked) return false;
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    if (lifecycle != null && lifecycle != AppLifecycleState.resumed) {
+      return false;
+    }
+    if (ModalRoute.of(context)?.isCurrent != true) return false;
+    final gate = _maybeReadGateProvider(context);
+    if (!widget.previewMode &&
+        gate != null &&
+        _solvedInRound >= gate.requiredWords) {
+      return false;
+    }
+    return true;
+  }
+
+  void _scheduleAnswerKeyboard() {
+    if (_keyboardRequestScheduled || !mounted) return;
+    _keyboardRequestScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _keyboardRequestScheduled = false;
+      if (!_canShowAnswerKeyboard) return;
+      _inputFocusNode.requestFocus();
+      // Focus attaches the input client asynchronously. Request the software
+      // keyboard on the next frame, after the client and active route exist.
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!_canShowAnswerKeyboard || !_inputFocusNode.hasFocus) return;
+        try {
+          await SystemChannels.textInput.invokeMethod<void>('TextInput.show');
+        } on PlatformException catch (error) {
+          debugPrint('App Gate keyboard request failed: $error');
+        }
+      });
+      WidgetsBinding.instance.ensureVisualUpdate();
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  @override
   void dispose() {
+    _accessTicker?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _inputController.dispose();
     _inputFocusNode.dispose();
     super.dispose();
@@ -94,24 +247,74 @@ class _AppGateScreenState extends State<AppGateScreen> {
     if (!force && _currentWord != null) return;
     setState(() => _loading = true);
 
-    VocabularyWord? word;
-    final gateProvider = _maybeReadGateProvider(context);
-    if (gateProvider != null) {
-      word = await gateProvider.selectGateWord();
-    } else {
+    try {
+      VocabularyWord? word;
+      final gateProvider = _maybeReadGateProvider(context);
       final vocabProvider = _maybeReadVocabProvider(context);
-      word = await vocabProvider?.selectGateWord();
-    }
+      if (gateProvider != null) {
+        word = await gateProvider.selectGateWord(
+          targetApp: widget.previewMode ? null : _currentApp,
+          excludeIds: _solvedWordIds,
+        );
+        if (word == null &&
+            !widget.previewMode &&
+            _solvedInRound >= gateProvider.requiredWords) {
+          word = gateProvider.cachedGateWord(_currentApp, preview: true);
+        }
+      } else {
+        word = await vocabProvider?.selectGateWord();
+      }
 
-    if (!mounted) return;
-    setState(() {
-      _currentWord = word;
-      _loading = false;
-      _attempts = 0;
-      _unlocked = false;
-      _flashVisible = false;
-      _inputController.clear();
-    });
+      // If multi-word round and the selected word was just solved, pick another
+      // word from the user's notebook if available.
+      if (word != null &&
+          _solvedWordIds.contains(word.id) &&
+          vocabProvider != null &&
+          vocabProvider.words.length > 1) {
+        final candidates = vocabProvider.words
+            .where((w) => !_solvedWordIds.contains(w.id))
+            .toList();
+        if (candidates.isNotEmpty) {
+          word = candidates.first;
+        }
+      }
+
+      if (word == null &&
+          gateProvider == null &&
+          vocabProvider != null &&
+          vocabProvider.words.isNotEmpty) {
+        word = vocabProvider.words.first;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _currentWord = word;
+        _loading = false;
+        _attempts =
+            !widget.previewMode &&
+                gateProvider?.pendingAnswerForApp(_currentApp)?.wordId ==
+                    word?.id
+            ? gateProvider!.pendingAnswerForApp(_currentApp)!.attempts
+            : 0;
+        _unlocked =
+            !widget.previewMode &&
+            gateProvider?.unlockedUntilFor(_currentApp) != null;
+        _flashVisible = false;
+        _inputController.clear();
+        _challengeError = null;
+      });
+      _scheduleAnswerKeyboard();
+      _watchAccessExpiry();
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _currentWord = null;
+          _challengeError =
+              'Could not load your notebook. Your completed words are kept. Please try again.';
+        });
+      }
+    }
   }
 
   void _handleInputChanged(String val) {
@@ -136,7 +339,14 @@ class _AppGateScreenState extends State<AppGateScreen> {
     }
   }
 
+  void _autoSpeak(String word) {
+    if (_maybeReadGateProvider(context)?.config.autoPronounce == true) {
+      _speak(word);
+    }
+  }
+
   Future<void> _handleSubmit() async {
+    if (_submitting) return;
     final word = _currentWord;
     if (word == null) return;
 
@@ -145,34 +355,132 @@ class _AppGateScreenState extends State<AppGateScreen> {
 
     final target = word.word.trim().toLowerCase();
     if (cleaned == target) {
-      final solvedAttempts = _attempts;
-      setState(() {
-        _unlocked = true;
-        _flashVisible = false;
-      });
-      _speak(word.word);
+      setState(() => _submitting = true);
+      final solvedAttempts = widget.previewMode
+          ? _attempts
+          : _maybeReadGateProvider(
+                  context,
+                )?.pendingAnswerForApp(_currentApp)?.attempts ??
+                _attempts;
+      _autoSpeak(word.word);
 
       final gateProvider = _maybeReadGateProvider(context);
       final vocabProvider = _maybeReadVocabProvider(context);
-      if (gateProvider != null) {
-        final updated = await gateProvider.completeGateChallenge(
-          wordId: word.id,
-          targetApp: _currentApp,
-          attempts: solvedAttempts,
-        );
-        if (updated != null && mounted) {
-          setState(() => _currentWord = updated);
+      final requiredWords = gateProvider?.requiredWords ?? 1;
+      final nextSolvedCount = _solvedInRound + 1;
+      try {
+        if (widget.previewMode) {
+          _solvedWordIds.add(word.id);
+          if (nextSolvedCount < requiredWords) {
+            setState(() => _solvedInRound = nextSolvedCount);
+            await _loadNextWord();
+          } else {
+            setState(() {
+              _unlocked = true;
+              _flashVisible = false;
+            });
+            _inputFocusNode.unfocus();
+          }
+          return;
         }
-        await vocabProvider?.init();
-      } else if (vocabProvider != null) {
-        final updated = await vocabProvider.recordGateCompletion(
-          wordId: word.id,
-          targetApp: _currentApp,
-          attempts: solvedAttempts,
-        );
-        if (updated != null && mounted) {
-          setState(() => _currentWord = updated);
+        if (nextSolvedCount < requiredWords && gateProvider != null) {
+          await gateProvider.recordStepCompletion(
+            wordId: word.id,
+            targetApp: _currentApp,
+            attempts: solvedAttempts,
+          );
+          _solvedWordIds.add(word.id);
+          try {
+            await vocabProvider?.init();
+          } catch (error) {
+            debugPrint('Could not refresh learning history: $error');
+          }
+          if (!mounted) return;
+          setState(() {
+            _solvedInRound = nextSolvedCount;
+          });
+          await _loadNextWord(force: true);
+          return;
         }
+
+        VocabularyWord? updated;
+        if (gateProvider != null) {
+          updated = await gateProvider.completeGateChallenge(
+            wordId: word.id,
+            targetApp: _currentApp,
+            attempts: solvedAttempts,
+          );
+          try {
+            await vocabProvider?.init();
+          } catch (error) {
+            debugPrint('Could not refresh learning history: $error');
+          }
+        } else if (vocabProvider != null) {
+          updated = await vocabProvider.recordGateCompletion(
+            wordId: word.id,
+            targetApp: _currentApp,
+            attempts: solvedAttempts,
+          );
+        }
+
+        if (!mounted) return;
+        setState(() {
+          if (updated != null) _currentWord = updated;
+          _attempts = solvedAttempts;
+          _solvedInRound = 0;
+          _unlocked = true;
+          _flashVisible = false;
+        });
+        _inputFocusNode.unfocus();
+        _watchAccessExpiry();
+        if (gateProvider?.lastError != null && mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(gateProvider!.lastError!)));
+          gateProvider.consumeError();
+        }
+
+        // Automatically open the target app (e.g. Facebook, Instagram) right
+        // after completing the challenge when not in Settings preview mode.
+        if (!widget.previewMode && !_isNativeTarget && gateProvider != null) {
+          final launched = await gateProvider.launchTargetApp(_currentApp);
+          if (launched && mounted) {
+            Navigator.of(context).maybePop(true);
+          }
+        }
+      } on PlatformException catch (error) {
+        if (mounted) {
+          setState(
+            () => _solvedInRound =
+                gateProvider?.progressForApp(_currentApp) ?? _solvedInRound,
+          );
+          if (gateProvider?.pendingAnswerForApp(_currentApp) != null) {
+            _inputFocusNode.unfocus();
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                error.message ?? 'Could not unlock this app. Please try again.',
+              ),
+            ),
+          );
+          if (error.code == 'WORD_REMOVED' ||
+              error.code == 'WORD_ALREADY_SOLVED' ||
+              error.code == 'WORD_OUTSIDE_POOL') {
+            await gateProvider?.prepareChallenge();
+            _solvedInRound = gateProvider?.progressForApp(_currentApp) ?? 0;
+            await _loadNextWord();
+          }
+        }
+      } catch (error) {
+        if (mounted) {
+          setState(
+            () => _challengeError =
+                'Your answer could not be saved. Please try again.',
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _submitting = false);
       }
       return;
     }
@@ -185,7 +493,7 @@ class _AppGateScreenState extends State<AppGateScreen> {
         _flashVisible = true;
       }
     });
-    _speak(word.word);
+    _autoSpeak(word.word);
   }
 
   void _peekAgain() {
@@ -196,6 +504,9 @@ class _AppGateScreenState extends State<AppGateScreen> {
   }
 
   Future<void> _openAddWordEditor() async {
+    final vocabProvider = _maybeReadVocabProvider(context);
+    await vocabProvider?.goToToday();
+    if (!mounted) return;
     await Navigator.of(context).push(
       PageRouteBuilder<void>(
         pageBuilder: (_, _, _) => const WordEditorScreen(),
@@ -204,11 +515,14 @@ class _AppGateScreenState extends State<AppGateScreen> {
       ),
     );
     if (!mounted) return;
+    await _maybeReadGateProvider(context)?.prepareChallenge();
+    if (!mounted) return;
     if (_currentWord == null) {
       await _loadNextWord();
     } else {
       setState(() {});
     }
+    _scheduleAnswerKeyboard();
   }
 
   static AppGateProvider? _maybeReadGateProvider(BuildContext context) {
@@ -237,18 +551,13 @@ class _AppGateScreenState extends State<AppGateScreen> {
       gateProvider = null;
     }
 
-    VocabularyProvider? vocabProvider;
-    try {
-      vocabProvider = context.watch<VocabularyProvider>();
-    } catch (_) {
-      vocabProvider = null;
-    }
-
-    final config = gateProvider?.config ?? const GateConfig();
-    final needsDailyCapture =
-        config.requireDailyCapture &&
-        vocabProvider != null &&
-        vocabProvider.todayWordCount == 0;
+    final baseConfig = gateProvider?.config ?? const GateConfig();
+    final config = _isNativeTarget
+        ? baseConfig.copyWith(
+            passDurationMinutes: gateProvider?.nativeStatus.passMinutes ?? 15,
+          )
+        : baseConfig;
+    final requiredWords = gateProvider?.requiredWords ?? config.wordsPerUnlock;
 
     return Scaffold(
       backgroundColor: palette.paper,
@@ -256,9 +565,13 @@ class _AppGateScreenState extends State<AppGateScreen> {
         child: Column(
           children: [
             _GateStatusBar(
-              targetApp: _currentApp,
+              targetApp: _displayApp,
               unlocked: _unlocked,
-              passBadgeLabel: config.passBadgeLabel,
+              preview: widget.previewMode,
+              passBadgeLabel: _passBadgeLabel(config),
+              stepBadgeLabel: requiredWords > 1 && !_unlocked
+                  ? 'WORD ${(_solvedInRound + 1).clamp(1, requiredWords)}/$requiredWords'
+                  : null,
               onClose: () => Navigator.of(context).maybePop(),
             ),
             Expanded(
@@ -277,20 +590,89 @@ class _AppGateScreenState extends State<AppGateScreen> {
                           setState(() {
                             _currentApp = app;
                             _unlocked = false;
+                            _solvedInRound = 0;
+                            _solvedWordIds.clear();
                           });
+                          _loadNextWord();
                         },
                       ),
                       const SizedBox(height: PixelMetrics.space4),
                     ],
+                    if (widget.previewMode) ...[
+                      const Text(
+                        'Practice only. No app access or learning history will change.',
+                      ),
+                      const SizedBox(height: PixelMetrics.space3),
+                    ],
+                    if (_challengeError != null && _currentWord != null)
+                      Text(
+                        _challengeError!,
+                        style: TextStyle(color: palette.danger),
+                      ),
                     if (_loading)
                       const _GateMessageCard(
                         title: 'LOADING GATE QUEUE…',
                         body: 'Selecting 1 word from your notebook.',
                       )
-                    else if (needsDailyCapture)
-                      _DailyCaptureGuardrailCard(
-                        targetApp: _currentApp,
-                        onAddWord: _openAddWordEditor,
+                    else if (_challengeError != null && _currentWord == null)
+                      _GateMessageCard(
+                        title: 'NOTEBOOK UNAVAILABLE',
+                        body: _challengeError!,
+                        actionLabel: 'Try again',
+                        onAction: () => _loadNextWord(),
+                      )
+                    else if (_isNativeTarget &&
+                        !widget.previewMode &&
+                        gateProvider?.nativeStatus.enabled != true)
+                      _GateMessageCard(
+                        title: 'PROTECTION NEEDS ATTENTION',
+                        body:
+                            'Screen Time protection is off or access was removed. Return to Veea Settings to restore protection.',
+                        actionLabel: 'Back to Veea',
+                        onAction: () => Navigator.of(context).maybePop(),
+                      )
+                    else if (_unlocked && _currentWord == null)
+                      _GateMessageCard(
+                        title: 'ACCESS IS ACTIVE',
+                        body:
+                            'Your earned access is still active. Return to your app using the app switcher.',
+                        actionLabel: 'Done',
+                        onAction: () => Navigator.of(context).maybePop(),
+                      )
+                    else if (_currentWord == null &&
+                        gateProvider != null &&
+                        gateProvider.config.practiceWordIds != null)
+                      _GateMessageCard(
+                        title: 'CHOOSE YOUR PRACTICE WORDS',
+                        body:
+                            'Your selected practice words are no longer available. Choose words from your notebook to continue.',
+                        actionLabel: 'Choose words',
+                        onAction: () async {
+                          try {
+                            if (await choosePracticeWords(
+                              context,
+                              gateProvider!,
+                            )) {
+                              if (!mounted) return;
+                              _solvedInRound = gateProvider.progressForApp(
+                                _currentApp,
+                              );
+                              _solvedWordIds
+                                ..clear()
+                                ..addAll(
+                                  gateProvider.solvedWordIdsForApp(_currentApp),
+                                );
+                              await _loadNextWord();
+                            }
+                          } catch (_) {
+                            if (mounted) {
+                              setState(
+                                () => _challengeError =
+                                    'Could not update your practice words. Please try again.',
+                              );
+                            }
+                          }
+                        },
                       )
                     else if (_currentWord == null)
                       _GateMessageCard(
@@ -299,6 +681,19 @@ class _AppGateScreenState extends State<AppGateScreen> {
                             'Add at least ${GateConfig.minRequiredWords} words to your Veea notebook to activate App Gate.',
                         actionLabel: 'Add a word',
                         onAction: _openAddWordEditor,
+                      )
+                    else if (!_unlocked &&
+                        !widget.previewMode &&
+                        _solvedInRound >= requiredWords)
+                      _GateMessageCard(
+                        title: 'YOUR PROGRESS IS SAVED',
+                        body:
+                            'You have completed this round. Claim access without repeating the words.',
+                        actionLabel: 'Claim earned access',
+                        onAction: () {
+                          _inputController.text = _currentWord!.word;
+                          _handleSubmit();
+                        },
                       )
                     else if (!_unlocked)
                       _buildChallengeBody(context, _currentWord!)
@@ -402,25 +797,29 @@ class _AppGateScreenState extends State<AppGateScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                Text(
+                  mask,
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.5,
+                    color: palette.ink,
+                  ),
+                ),
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Expanded(
                       child: Text(
-                        mask,
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.5,
-                          color: palette.ink,
-                        ),
+                        '${word.word.length} letters',
+                        style: theme.textTheme.labelSmall,
                       ),
                     ),
-                    const SizedBox(width: PixelMetrics.space2),
-                    Text(
-                      '${word.word.length} letters',
-                      style: theme.textTheme.labelSmall,
-                    ),
+                    if (_attempts == 0)
+                      IconButton(
+                        tooltip: 'Hear it',
+                        onPressed: () => _speak(word.word),
+                        icon: const Icon(Icons.volume_up_outlined),
+                      ),
                   ],
                 ),
 
@@ -550,6 +949,8 @@ class _AppGateScreenState extends State<AppGateScreen> {
               key: const Key('app_gate_input'),
               controller: _inputController,
               focusNode: _inputFocusNode,
+              onTap: _scheduleAnswerKeyboard,
+              onTapAlwaysCalled: true,
               autocorrect: false,
               enableSuggestions: false,
               textCapitalization: TextCapitalization.none,
@@ -578,18 +979,18 @@ class _AppGateScreenState extends State<AppGateScreen> {
           const SizedBox(height: PixelMetrics.space3),
 
           PixelButton(
-            label: 'Unlock $_currentApp',
+            label: _submitting ? 'Saving…' : 'Unlock $_displayApp',
             glyph: PixelGlyph.shield,
             filled: true,
             expand: true,
-            onPressed: _handleSubmit,
+            onPressed: _submitting ? null : _handleSubmit,
           ),
           const SizedBox(height: PixelMetrics.space3),
 
           // Stage status footer
           Text(
             _attempts == 0
-                ? 'Attempt 1 of 2 · Type a wrong word to test progressive hints'
+                ? 'Type the English word. Hints appear if you need them.'
                 : _attempts == 1
                 ? 'Missed once · IPA + audio + 2nd letter unlocked'
                 : 'Teach & retype mode · Must type from memory to pass',
@@ -624,7 +1025,14 @@ class _AppGateScreenState extends State<AppGateScreen> {
             children: [
               Expanded(
                 child: Text(
-                  config.passActiveLabel.toUpperCase(),
+                  widget.previewMode
+                      ? 'PRACTICE COMPLETE'
+                      : _maybeReadGateProvider(
+                              context,
+                            )?.unlockedUntilFor(_currentApp) !=
+                            null
+                      ? 'ACCESS ACTIVE · ${_passBadgeLabel(config).replaceFirst(' PASS', '')} LEFT'
+                      : config.passActiveLabel.toUpperCase(),
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: palette.accent,
                   ),
@@ -682,14 +1090,28 @@ class _AppGateScreenState extends State<AppGateScreen> {
           ],
           const SizedBox(height: PixelMetrics.space5),
 
+          if (widget.previewMode)
+            const Text(
+              'Practice finished. Your apps and learning history have not changed.',
+            ),
+          if (_isNativeTarget && !widget.previewMode) ...[
+            const Text(
+              'Return to your app using the app switcher. The countdown shows your remaining access time.',
+            ),
+            const SizedBox(height: PixelMetrics.space3),
+          ],
           PixelButton(
-            label: 'Continue to $_currentApp',
+            label: _isNativeTarget || widget.previewMode
+                ? 'Done'
+                : 'Continue to $_displayApp',
             glyph: PixelGlyph.check,
             filled: true,
             expand: true,
             onPressed: () async {
               final gateProvider = _maybeReadGateProvider(context);
-              await gateProvider?.launchTargetApp(_currentApp);
+              if (!_isNativeTarget && !widget.previewMode) {
+                await gateProvider?.launchTargetApp(_currentApp);
+              }
               if (context.mounted) {
                 Navigator.of(context).maybePop(true);
               }
@@ -698,10 +1120,33 @@ class _AppGateScreenState extends State<AppGateScreen> {
           const SizedBox(height: PixelMetrics.space2),
 
           PixelButton(
-            label: 'Lock again · Next word',
+            label: widget.previewMode
+                ? 'Practice again'
+                : 'Lock again · Next word',
             glyph: PixelGlyph.repeat,
             expand: true,
-            onPressed: () => _loadNextWord(force: true),
+            onPressed: () async {
+              final gateProvider = _maybeReadGateProvider(context);
+              try {
+                if (!widget.previewMode) {
+                  await gateProvider?.revokePass(_currentApp);
+                }
+                _solvedWordIds.clear();
+                _solvedInRound = 0;
+                await _loadNextWord(force: true);
+              } on PlatformException catch (error) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        error.message ??
+                            'Could not lock this app. Please try again.',
+                      ),
+                    ),
+                  );
+                }
+              }
+            },
           ),
           const SizedBox(height: PixelMetrics.space2),
 
@@ -722,8 +1167,8 @@ class _AppGateScreenState extends State<AppGateScreen> {
     if (parsed != null) {
       dayText = DateFormat('d MMM').format(parsed);
     }
-    if (word.source != null && word.source!.trim().isNotEmpty) {
-      return 'Captured $dayText · ${word.source!.trim()}';
+    if (word.displaySource != null) {
+      return 'Captured $dayText · ${word.displaySource}';
     }
     return 'Captured $dayText';
   }
@@ -735,12 +1180,16 @@ class _GateStatusBar extends StatelessWidget {
     required this.unlocked,
     required this.passBadgeLabel,
     required this.onClose,
+    this.stepBadgeLabel,
+    this.preview = false,
   });
 
   final String targetApp;
   final bool unlocked;
   final String passBadgeLabel;
   final VoidCallback onClose;
+  final String? stepBadgeLabel;
+  final bool preview;
 
   @override
   Widget build(BuildContext context) {
@@ -762,30 +1211,39 @@ class _GateStatusBar extends StatelessWidget {
         children: [
           PixelIcon(PixelGlyph.shield, color: palette.accent, scale: 1.6),
           const SizedBox(width: PixelMetrics.space2),
-          Text('VEEA GATE', style: theme.textTheme.titleMedium),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: PixelMetrics.space2,
-              vertical: 2,
-            ),
-            decoration: BoxDecoration(
-              color: unlocked ? palette.accent : palette.paper,
-              border: Border.all(
-                color: palette.border,
-                width: PixelMetrics.border,
-              ),
-            ),
-            child: Text(
-              unlocked
-                  ? 'UNLOCKED · $passBadgeLabel'
-                  : 'LOCKED · $targetApp'.toUpperCase(),
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: unlocked ? palette.onAccent : palette.ink,
-              ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Learn to unlock',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium,
+                ),
+                Wrap(
+                  spacing: PixelMetrics.space2,
+                  children: [
+                    Text(
+                      preview
+                          ? 'Practice · $targetApp'
+                          : unlocked
+                          ? 'Unlocked · $passBadgeLabel'
+                          : 'Locked · $targetApp',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    if (stepBadgeLabel != null)
+                      Text(
+                        stepBadgeLabel!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: palette.accent,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: PixelMetrics.space2),
           PixelIconButton(
             glyph: PixelGlyph.close,
             semanticLabel: 'Close gate',
@@ -853,51 +1311,6 @@ class _AppSwitcherBar extends StatelessWidget {
           ],
         ),
       ],
-    );
-  }
-}
-
-class _DailyCaptureGuardrailCard extends StatelessWidget {
-  const _DailyCaptureGuardrailCard({
-    required this.targetApp,
-    required this.onAddWord,
-  });
-
-  final String targetApp;
-  final VoidCallback onAddWord;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final theme = Theme.of(context);
-
-    return PixelBox(
-      raised: true,
-      color: palette.surface,
-      padding: const EdgeInsets.all(PixelMetrics.space4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'DAILY CAPTURE REQUIRED',
-            style: theme.textTheme.titleMedium?.copyWith(color: palette.accent),
-          ),
-          const SizedBox(height: PixelMetrics.space2),
-          Text(
-            'You enabled "Require 1 new word captured today before unlocking". '
-            'Add 1 word to today\'s journal first to unlock $targetApp.',
-            style: theme.textTheme.bodyMedium?.copyWith(color: palette.ink),
-          ),
-          const SizedBox(height: PixelMetrics.space4),
-          PixelButton(
-            label: 'Capture 1 word today',
-            glyph: PixelGlyph.plus,
-            filled: true,
-            expand: true,
-            onPressed: onAddWord,
-          ),
-        ],
-      ),
     );
   }
 }

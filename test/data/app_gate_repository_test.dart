@@ -26,7 +26,7 @@ void main() {
       final config = await repo.getGateConfig();
       expect(config.enabled, isFalse);
       expect(config.passDurationMinutes, 15);
-      expect(config.requireDailyCapture, isFalse);
+      expect(config.dailyWordGoal, isFalse);
       expect(config.gatedApps, isEmpty);
     });
 
@@ -34,7 +34,7 @@ void main() {
       const updated = GateConfig(
         enabled: true,
         passDurationMinutes: 30,
-        requireDailyCapture: true,
+        dailyWordGoal: true,
         gatedApps: ['Instagram', 'X'],
       );
       await repo.saveGateConfig(updated);
@@ -42,7 +42,7 @@ void main() {
       final loaded = await repo.getGateConfig();
       expect(loaded.enabled, isTrue);
       expect(loaded.passDurationMinutes, 30);
-      expect(loaded.requireDailyCapture, isTrue);
+      expect(loaded.dailyWordGoal, isTrue);
       expect(loaded.gatedApps, ['Instagram', 'X']);
     });
   });

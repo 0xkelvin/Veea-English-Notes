@@ -9,6 +9,7 @@ import '../models/part_of_speech.dart';
 import '../models/srs_review.dart';
 import '../models/vocabulary_stats.dart';
 import '../models/vocabulary_word.dart';
+import '../models/word_identity.dart';
 import '../services/backup_service.dart';
 import '../services/widget_service.dart';
 
@@ -42,6 +43,12 @@ class VocabularyProvider extends ChangeNotifier {
   int _todayWordCount = 0;
   late DateTime _selectedDate;
   String? _lastError;
+  List<VocabularyWord> _duplicateWords = const [];
+  List<VocabularyWord> get duplicateWords => _duplicateWords;
+  Future<List<VocabularyWord>> matchingWords(
+    String spelling, {
+    String? excludeId,
+  }) => _repository.matchingWords(spelling, excludeId: excludeId);
   String? _undoableDeletionId;
   bool _isDisposed = false;
 
@@ -129,9 +136,14 @@ class VocabularyProvider extends ChangeNotifier {
       rating: rating,
       now: _now(),
     );
-    _dueReviewCount = await _repository.dueReviewCount(
-      asOfDate: dateKey(_now()),
-    );
+    try {
+      _dueReviewCount = await _repository.dueReviewCount(
+        asOfDate: dateKey(_now()),
+      );
+    } catch (error) {
+      // The rating is already saved; a counter refresh must not invite a duplicate rating.
+      debugPrint('Review saved; could not refresh the due count: $error');
+    }
     notifyListeners();
     return result;
   }
@@ -196,9 +208,10 @@ class VocabularyProvider extends ChangeNotifier {
     String? source,
     List<String> examples = const [],
     List<String> tags = const [],
+    bool allowDifferentMeaning = false,
   }) {
     return _mutate('Could not save the word', () async {
-      await _repository.insert(
+      await _repository.insertChecked(
         VocabularyWord.create(
           id: _uuid.v4(),
           word: word,
@@ -211,13 +224,14 @@ class VocabularyProvider extends ChangeNotifier {
           examples: examples,
           tags: tags,
         ),
+        allowDifferentMeaning: allowDifferentMeaning,
       );
     });
   }
 
   Future<void> insertWord(VocabularyWord word) {
     return _mutate('Could not save the word', () async {
-      await _repository.insert(word);
+      await _repository.insertChecked(word);
     });
   }
 
@@ -228,12 +242,18 @@ class VocabularyProvider extends ChangeNotifier {
       now: _now(),
       uuid: _uuid,
     );
+    var added = 0;
     await _mutate('Could not load starter pack', () async {
       for (final word in starterWords) {
-        await _repository.insert(word);
+        try {
+          await _repository.insertChecked(word);
+          added++;
+        } on DuplicateWordException {
+          /* Keep the existing word and its progress. */
+        }
       }
     });
-    return starterWords.length;
+    return added;
   }
 
   Future<void> updateWord(
@@ -245,20 +265,27 @@ class VocabularyProvider extends ChangeNotifier {
     String? source,
     List<String> examples = const [],
     List<String> tags = const [],
+    bool allowDifferentMeaning = false,
   }) {
+    final edited = original.edited(
+      word: word,
+      meaning: meaning,
+      now: _now(),
+      pronunciation: pronunciation,
+      partOfSpeech: partOfSpeech,
+      source: source,
+      examples: examples,
+      tags: tags,
+    );
     return _mutate('Could not update the word', () async {
-      await _repository.update(
-        original.edited(
-          word: word,
-          meaning: meaning,
-          now: _now(),
-          pronunciation: pronunciation,
-          partOfSpeech: partOfSpeech,
-          source: source,
-          examples: examples,
-          tags: tags,
-        ),
-      );
+      if (WordIdentity.key(original.word) == WordIdentity.key(word)) {
+        await _repository.update(edited);
+      } else {
+        await _repository.updateChecked(
+          edited,
+          allowDifferentMeaning: allowDifferentMeaning,
+        );
+      }
     });
   }
 
@@ -318,18 +345,22 @@ class VocabularyProvider extends ChangeNotifier {
     return result;
   }
 
-  Future<List<VocabularyWord>> search(String query) async {
+  Future<List<VocabularyWord>> search(
+    String query, {
+    bool includeNotes = false,
+  }) async {
     try {
-      return await _repository.search(query);
+      return await _repository.search(query, includeNotes: includeNotes);
     } catch (error, stack) {
       debugPrint('Search failed: $error\n$stack');
-      return const [];
+      rethrow;
     }
   }
 
   void consumeError() {
     if (_lastError == null) return;
     _lastError = null;
+    _duplicateWords = const [];
     notifyListeners();
   }
 
@@ -339,10 +370,16 @@ class VocabularyProvider extends ChangeNotifier {
     String failureMessage,
     Future<void> Function() action,
   ) async {
+    _duplicateWords = const [];
     try {
       await action();
       _lastError = null;
       await _refresh();
+    } on DuplicateWordException catch (error) {
+      _duplicateWords = error.matches;
+      _lastError =
+          'This word is already in your notebook. Open it or save a different meaning.';
+      notifyListeners();
     } catch (error, stack) {
       debugPrint('$failureMessage: $error\n$stack');
       _lastError = failureMessage;

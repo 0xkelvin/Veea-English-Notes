@@ -109,6 +109,12 @@ class MainActivity : FlutterActivity() {
         channel.setMethodCallHandler { call, result ->
             val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             when (call.method) {
+                "consumePendingGate" -> {
+                    val target = pendingGateTarget
+                    pendingGateTarget = null
+                    result.success(target)
+                }
+
                 "requestPermissions" -> {
                     if (!isAccessibilityServiceEnabled()) {
                         try {
@@ -150,6 +156,14 @@ class MainActivity : FlutterActivity() {
                     val unlockUntil = System.currentTimeMillis() + durationMs
                     prefs.edit()
                         .putLong("unlocked_until_${targetApp.lowercase()}", unlockUntil)
+                        .apply()
+                    result.success(null)
+                }
+
+                "revokePass" -> {
+                    val targetApp = call.argument<String>("targetApp") ?: ""
+                    prefs.edit()
+                        .remove("unlocked_until_${targetApp.lowercase()}")
                         .apply()
                     result.success(null)
                 }

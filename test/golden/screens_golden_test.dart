@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:veea_english_app/core/config/app_config.dart';
 import 'package:veea_english_app/core/theme/pixel_theme.dart';
@@ -40,6 +41,7 @@ void main() {
   late PronunciationService pronunciation;
 
   setUp(() async {
+    SharedPreferences.setMockInitialValues({});
     repo = await SqliteVocabularyRepository.open(
       path: inMemoryDatabasePath,
       now: () => today,
@@ -138,7 +140,9 @@ void main() {
         ChangeNotifierProvider(create: (_) => WidgetProvider()),
         ChangeNotifierProvider(create: (_) => PetProvider()),
         ChangeNotifierProvider(create: (_) => CartridgeProvider()),
-        ChangeNotifierProvider(create: (_) => AppGateProvider(repository: repo)),
+        ChangeNotifierProvider(
+          create: (_) => AppGateProvider(repository: repo),
+        ),
         Provider<PronunciationService>.value(value: pronunciation),
         ChangeNotifierProvider(create: (_) => syncService),
         ChangeNotifierProvider(
@@ -229,7 +233,7 @@ void main() {
   group('account screen', () {
     // The account UI only appears when a server is configured; the default
     // build is local-only.
-    setUp(() => AppConfig.overrideBaseUrl('https://example.test'));
+    setUp(() => AppConfig.overrideBaseUrl(''));
     tearDown(() => AppConfig.overrideBaseUrl(null));
 
     testWidgets('signed out, offering sign in', (tester) async {
@@ -237,46 +241,26 @@ void main() {
       await tester.pumpWidget(wrap(const AccountScreen(), Brightness.light));
       await tester.pumpAndSettle();
 
-      expect(find.text('SIGN IN TO SYNC'), findsOneWidget);
+      expect(find.text('Your notebook, backed up'), findsOneWidget);
       await expectLater(
         find.byType(AccountScreen),
         matchesGoldenFile('account_signed_out.png'),
       );
     });
 
-    testWidgets('the field labels itself as the input is read', (tester) async {
-      await sizeToPhone(tester);
-      await tester.pumpWidget(wrap(const AccountScreen(), Brightness.light));
-      await tester.pumpAndSettle();
-
-      // Starts ambiguous...
-      expect(find.text('EMAIL OR PHONE'), findsOneWidget);
-
-      await tester.enterText(
-        find.byType(TextField).first,
-        'kelvin@example.com',
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('EMAIL'), findsOneWidget);
-
-      await tester.enterText(find.byType(TextField).first, '+84901234567');
-      await tester.pumpAndSettle();
-      expect(find.text('PHONE'), findsOneWidget);
-    });
-
-    testWidgets('a national number is refused with a clear reason', (
+    testWidgets('unconfigured phone service keeps learning available', (
       tester,
     ) async {
       await sizeToPhone(tester);
       await tester.pumpWidget(wrap(const AccountScreen(), Brightness.light));
       await tester.pumpAndSettle();
-
-      await tester.enterText(find.byType(TextField).first, '0901234567');
-      await tester.pumpAndSettle();
-
-      // The message names the actual problem rather than "invalid email".
       expect(
-        find.textContaining('COUNTRY CODE', findRichText: true),
+        find.textContaining('Phone sign-in is coming soon'),
+        findsOneWidget,
+      );
+      expect(find.byType(TextField), findsNothing);
+      expect(
+        find.textContaining('4 words saved on this device'),
         findsOneWidget,
       );
     });
@@ -287,6 +271,9 @@ void main() {
   ) async {
     await sizeToPhone(tester);
     await tester.pumpWidget(wrap(const SearchScreen(), Brightness.light));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('search_include_notes')));
     await tester.pumpAndSettle();
 
     // Typed without diacritics, as it would be on a plain keyboard.

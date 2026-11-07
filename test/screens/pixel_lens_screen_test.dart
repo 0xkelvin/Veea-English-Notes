@@ -59,14 +59,14 @@ void main() {
       await tester.pumpWidget(buildApp());
       await settle(tester);
 
-      expect(find.text('PIXEL LENS OCR'), findsOneWidget);
-      expect(find.text('SNAP CAMERA • SNIFF VOCABULARY'), findsOneWidget);
-      expect(find.text('SNAP CAMERA'), findsOneWidget);
-      expect(find.text('PHOTO ALBUM'), findsOneWidget);
+      expect(find.text('Scan words'), findsOneWidget);
+      expect(find.text('Use a photo or paste text'), findsOneWidget);
+      expect(find.text('Take photo'), findsOneWidget);
+      expect(find.text('Choose photo'), findsOneWidget);
       expect(find.text('PR REVIEW'), findsOneWidget);
       expect(find.text('TECH NEWS'), findsOneWidget);
       expect(find.text('ESSAY'), findsOneWidget);
-      expect(find.textContaining('TOKENS'), findsOneWidget);
+      expect(find.textContaining('words ·'), findsOneWidget);
     },
   );
 
@@ -74,7 +74,7 @@ void main() {
     await tester.pumpWidget(buildApp());
     await settle(tester);
 
-    expect(find.textContaining('CAPTURE "'), findsOneWidget);
+    expect(find.text('Add to notebook'), findsOneWidget);
 
     final wordWidget = find.text('resilient');
     if (wordWidget.evaluate().isNotEmpty) {
@@ -115,7 +115,7 @@ void main() {
         find.byType(TextField),
         'Học tiếng Anh với Flutter và #402 resilient code.',
       );
-      await tester.tap(find.text('SCAN WORDS'));
+      await tester.tap(find.text('Scan Words'));
       await settle(tester);
 
       // The English word 'Flutter' or 'resilient' should be found
@@ -140,7 +140,7 @@ void main() {
 
       // Verify it shows normal capture button
       expect(find.text('NOT ENGLISH WORD'), findsNothing);
-      expect(find.textContaining('CAPTURE "RESILIENT"'), findsOneWidget);
+      expect(find.text('Add to notebook'), findsOneWidget);
     },
   );
 
@@ -158,6 +158,6 @@ void main() {
     await settle(tester);
 
     expect(tester.takeException(), isNull);
-    expect(find.text('PIXEL LENS OCR'), findsOneWidget);
+    expect(find.text('Scan words'), findsOneWidget);
   });
 }

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../providers/app_gate_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../core/theme/pixel_metrics.dart';
@@ -141,21 +142,70 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: Column(
           children: [
             const _TopBar(),
-            const DateBar(),
-            const StatusLine(),
-            if (_detectedWord != null)
-              ClipboardDetectorToast(
-                word: _detectedWord!,
-                isAdding: _isAdding,
-                onAdd: () => _addDetectedWord(_detectedWord!),
-                onDismiss: () => _dismissDetectedWord(_detectedWord!),
+            Expanded(
+              child: _Body(
+                provider: provider,
+                header: Column(
+                  children: [
+                    const DateBar(),
+                    const StatusLine(),
+                    const _DailyWordGoal(),
+                    if (_detectedWord != null)
+                      ClipboardDetectorToast(
+                        word: _detectedWord!,
+                        isAdding: _isAdding,
+                        onAdd: () => _addDetectedWord(_detectedWord!),
+                        onDismiss: () => _dismissDetectedWord(_detectedWord!),
+                      ),
+                  ],
+                ),
               ),
-            Expanded(child: _Body(provider: provider)),
+            ),
             const _UndoBar(),
           ],
         ),
       ),
       bottomNavigationBar: const _BottomDock(),
+    );
+  }
+}
+
+class _DailyWordGoal extends StatelessWidget {
+  const _DailyWordGoal();
+  @override
+  Widget build(BuildContext context) {
+    AppGateProvider? gate;
+    try {
+      gate = context.watch<AppGateProvider>();
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
+    if (!gate.config.dailyWordGoal) return const SizedBox.shrink();
+    final vocabulary = context.watch<VocabularyProvider>();
+    final done = vocabulary.todayWordCount > 0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Icon(done ? Icons.check_circle_outline : Icons.flag_outlined),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              done
+                  ? "Today's word goal is complete"
+                  : 'Optional goal: add one new word today',
+            ),
+          ),
+          if (!done)
+            TextButton(
+              onPressed: () async {
+                await vocabulary.goToToday();
+                if (context.mounted) _open(context, const WordEditorScreen());
+              },
+              child: const Text('Add word'),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -181,6 +231,20 @@ class _TopBar extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
+          Expanded(
+            child: Text(
+              'Notebook',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          PixelIconButton(
+            glyph: PixelGlyph.shield,
+            semanticLabel: 'App protection',
+            onPressed: () => _open(context, const AppProtectionScreen()),
+          ),
+          const SizedBox(width: PixelMetrics.space1),
           PixelIconButton(
             glyph: PixelGlyph.search,
             semanticLabel: 'Search all words',
@@ -189,7 +253,7 @@ class _TopBar extends StatelessWidget {
           const SizedBox(width: PixelMetrics.space2),
           PixelIconButton(
             glyph: PixelGlyph.camera,
-            semanticLabel: 'Pixel Lens OCR Scanner',
+            semanticLabel: 'Scan words with camera',
             onPressed: () => _open(context, const PixelLensScreen()),
           ),
           const SizedBox(width: PixelMetrics.space2),
@@ -237,11 +301,13 @@ class _BottomDock extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _DockItem(
-                glyph: PixelGlyph.headphones,
-                label: 'AUDIO',
-                semanticLabel: 'Commute Audio Player',
-                onTap: () => _open(context, const AudioCommuteScreen()),
+              Expanded(
+                child: _DockItem(
+                  glyph: PixelGlyph.headphones,
+                  label: 'Listen',
+                  semanticLabel: 'Commute Audio Player',
+                  onTap: () => _open(context, const AudioCommuteScreen()),
+                ),
               ),
               // Arcade games hidden per user feedback:
               // _DockItem(
@@ -250,15 +316,19 @@ class _BottomDock extends StatelessWidget {
               //   semanticLabel: 'Arcade Mini-Games and Duels',
               //   onTap: () => _open(context, const ArcadeScreen()),
               // ),
-              _HeroAddButton(
-                onTap: () => _open(context, const WordEditorScreen()),
+              Expanded(
+                child: _HeroAddButton(
+                  onTap: () => _open(context, const WordEditorScreen()),
+                ),
               ),
-              _DockItem(
-                glyph: PixelGlyph.cards,
-                label: 'REVIEW',
-                semanticLabel: 'Spaced repetition review',
-                badgeCount: dueCount > 0 ? dueCount : null,
-                onTap: () => _open(context, const ReviewScreen()),
+              Expanded(
+                child: _DockItem(
+                  glyph: PixelGlyph.cards,
+                  label: 'Review',
+                  semanticLabel: 'Spaced repetition review',
+                  badgeCount: dueCount > 0 ? dueCount : null,
+                  onTap: () => _open(context, const ReviewScreen()),
+                ),
               ),
             ],
           ),
@@ -281,8 +351,8 @@ class _HeroAddButton extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: Container(
         padding: const EdgeInsets.symmetric(
-          horizontal: PixelMetrics.space4,
-          vertical: 10,
+          horizontal: PixelMetrics.space2,
+          vertical: PixelMetrics.space2,
         ),
         decoration: BoxDecoration(
           color: palette.accent,
@@ -295,13 +365,14 @@ class _HeroAddButton extends StatelessWidget {
             ),
           ],
         ),
-        child: Row(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             PixelIcon(PixelGlyph.plus, color: palette.onAccent, scale: 1.8),
-            const SizedBox(width: 6),
+            const SizedBox(height: PixelMetrics.space1),
             Text(
-              'ADD',
+              'Add word',
+              textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
@@ -336,56 +407,41 @@ class _DockItem extends StatelessWidget {
     final palette = context.palette;
     return Semantics(
       label: semanticLabel,
+      value: badgeCount == null ? null : '$badgeCount words due',
       button: true,
+      excludeSemantics: true,
       child: GestureDetector(
         onTap: onTap,
         behavior: HitTestBehavior.opaque,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  PixelIcon(glyph, color: palette.ink, scale: 2.0),
-                  const SizedBox(height: 4),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
-                      color: palette.inkMuted,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-                ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Badge(
+                isLabelVisible: badgeCount != null,
+                backgroundColor: palette.danger,
+                textColor: palette.onAccent,
+                label: Text(
+                  badgeCount != null && badgeCount! > 99
+                      ? '99+'
+                      : '$badgeCount',
+                ),
+                child: PixelIcon(glyph, color: palette.ink, scale: 2.0),
               ),
-            ),
-            if (badgeCount != null)
-              Positioned(
-                right: 4,
-                top: -2,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: palette.danger,
-                    borderRadius: BorderRadius.circular(PixelMetrics.radiusPill),
-                  ),
-                  child: Text(
-                    '$badgeCount',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: palette.onAccent,
-                    ),
-                  ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: palette.inkMuted,
+                  letterSpacing: 0.3,
                 ),
               ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -393,37 +449,58 @@ class _DockItem extends StatelessWidget {
 }
 
 class _Body extends StatelessWidget {
-  const _Body({required this.provider});
-
+  const _Body({required this.provider, required this.header});
   final VocabularyProvider provider;
+  final Widget header;
 
   @override
   Widget build(BuildContext context) {
+    Widget? empty;
     if (provider.isLoading) {
-      return const _Notice(lines: ['LOADING…']);
-    }
-    if (provider.status == LoadStatus.failed) {
-      return const _Notice(
-        lines: ['COULD NOT OPEN YOUR NOTES', 'RESTART THE APP TO RETRY'],
+      empty = const _Notice(lines: ['Loading your words…']);
+    } else if (provider.status == LoadStatus.failed) {
+      empty = Center(
+        child: Padding(
+          padding: const EdgeInsets.all(PixelMetrics.space6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Could not load your words. Please try again.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: PixelMetrics.space3),
+              PixelButton(label: 'Try again', onPressed: provider.init),
+            ],
+          ),
+        ),
       );
+    } else if (provider.words.isEmpty) {
+      empty = provider.stats.totalWords == 0
+          ? const _FirstRunStarterBanner()
+          : _EmptyDay(isToday: provider.isToday);
     }
-    if (provider.words.isEmpty) {
-      if (provider.stats.totalWords == 0) {
-        return const _FirstRunStarterBanner();
-      }
-      return _EmptyDay(isToday: provider.isToday);
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.only(bottom: PixelMetrics.space12),
-      itemCount: provider.words.length,
-      itemBuilder: (context, index) {
-        final word = provider.words[index];
-        return WordRow(
-          word: word,
-          onTap: () => _open(context, WordEditorScreen(existing: word)),
-        );
-      },
+    return CustomScrollView(
+      key: const Key('notebook_scroll'),
+      slivers: [
+        SliverToBoxAdapter(child: header),
+        if (empty != null)
+          SliverFillRemaining(hasScrollBody: false, child: empty)
+        else
+          SliverPadding(
+            padding: const EdgeInsets.only(bottom: PixelMetrics.space6),
+            sliver: SliverList.builder(
+              itemCount: provider.words.length,
+              itemBuilder: (context, index) => WordRow(
+                word: provider.words[index],
+                onTap: () => _open(
+                  context,
+                  WordEditorScreen(existing: provider.words[index]),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -465,7 +542,7 @@ class _FirstRunStarterBannerState extends State<_FirstRunStarterBanner> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'WELCOME TO VEEA',
+                          'Welcome to Veea',
                           style: TextStyle(
                             fontSize: 21,
                             fontWeight: FontWeight.w700,
@@ -474,7 +551,7 @@ class _FirstRunStarterBannerState extends State<_FirstRunStarterBanner> {
                           ),
                         ),
                         Text(
-                          'DAILY VOCABULARY NOTES',
+                          'Your English notebook',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
@@ -491,7 +568,7 @@ class _FirstRunStarterBannerState extends State<_FirstRunStarterBanner> {
               Container(height: 1, color: palette.border),
               const SizedBox(height: PixelMetrics.space4),
               Text(
-                'Notes for the English words you meet each day. Your notebook is empty right now. Load 5 curated starter words to immediately activate:',
+                'Save words you want to remember. Review them at your own pace, or practice to earn time in your favorite apps.',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   height: 1.4,
                   color: palette.ink,
@@ -505,12 +582,12 @@ class _FirstRunStarterBannerState extends State<_FirstRunStarterBanner> {
               // const SizedBox(height: PixelMetrics.space2),
               const _FeatureBullet(
                 glyph: PixelGlyph.headphones,
-                label: 'Commute Audio Player',
+                label: 'Listen and practice on the go',
               ),
               const SizedBox(height: PixelMetrics.space2),
               const _FeatureBullet(
                 glyph: PixelGlyph.cards,
-                label: 'Spaced Repetition (SM-2) Review Queue',
+                label: 'Quick reviews that help words stick',
               ),
               const SizedBox(height: PixelMetrics.space4),
               Container(
@@ -538,7 +615,7 @@ class _FirstRunStarterBannerState extends State<_FirstRunStarterBanner> {
               ),
               const SizedBox(height: PixelMetrics.space5),
               PixelButton(
-                label: _loading ? 'LOADING WORDS…' : 'LOAD 5 STARTER WORDS',
+                label: _loading ? 'Adding words…' : 'Try 5 starter words',
                 glyph: PixelGlyph.star,
                 filled: true,
                 expand: true,
@@ -557,7 +634,7 @@ class _FirstRunStarterBannerState extends State<_FirstRunStarterBanner> {
               ),
               const SizedBox(height: PixelMetrics.space3),
               PixelButton(
-                label: 'Add custom word instead',
+                label: 'Add my own word',
                 glyph: PixelGlyph.plus,
                 expand: true,
                 onPressed: () => _open(context, const WordEditorScreen()),
@@ -612,7 +689,7 @@ class _EmptyDay extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              isToday ? 'NO WORDS YET TODAY' : 'NOTHING ON THIS DAY',
+              isToday ? 'No words saved today' : 'No words saved on this day',
               style: Theme.of(context).textTheme.labelSmall,
             ),
             const SizedBox(height: PixelMetrics.space4),

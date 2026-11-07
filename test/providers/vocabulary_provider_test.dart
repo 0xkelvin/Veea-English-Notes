@@ -23,6 +23,35 @@ class FlakyRepository implements VocabularyRepository {
   }
 
   @override
+  Future<List<VocabularyWord>> matchingWords(
+    String spelling, {
+    String? excludeId,
+  }) => _inner.matchingWords(spelling, excludeId: excludeId);
+  @override
+  Future<void> insertChecked(
+    VocabularyWord word, {
+    bool allowDifferentMeaning = false,
+  }) async {
+    _guard();
+    await _inner.insertChecked(
+      word,
+      allowDifferentMeaning: allowDifferentMeaning,
+    );
+  }
+
+  @override
+  Future<void> updateChecked(
+    VocabularyWord word, {
+    bool allowDifferentMeaning = false,
+  }) async {
+    _guard();
+    await _inner.updateChecked(
+      word,
+      allowDifferentMeaning: allowDifferentMeaning,
+    );
+  }
+
+  @override
   Future<void> insert(VocabularyWord word) async {
     _guard();
     return _inner.insert(word);
@@ -69,20 +98,43 @@ class FlakyRepository implements VocabularyRepository {
     DateTime? now,
   }) => _inner.recordSrsReview(wordId: wordId, rating: rating, now: now);
   @override
-  Future<VocabularyWord?> selectGateWord({DateTime? now}) =>
-      _inner.selectGateWord(now: now);
+  Future<VocabularyWord?> selectGateWord({
+    DateTime? now,
+    Set<String> excludeIds = const {},
+  }) => _inner.selectGateWord(now: now, excludeIds: excludeIds);
   @override
   Future<VocabularyWord?> recordGateCompletion({
     required String wordId,
     required String targetApp,
     required int attempts,
     DateTime? now,
+    bool completesRound = true,
   }) => _inner.recordGateCompletion(
     wordId: wordId,
     targetApp: targetApp,
     attempts: attempts,
     now: now,
+    completesRound: completesRound,
   );
+  @override
+  Future<Map<String, Set<String>>> gateRoundProgress() =>
+      _inner.gateRoundProgress();
+  @override
+  Future<void> clearGateRoundProgress(String targetApp) =>
+      _inner.clearGateRoundProgress(targetApp);
+  @override
+  Future<void> pruneGateRoundProgress(Set<String> allowedWordIds) =>
+      _inner.pruneGateRoundProgress(allowedWordIds);
+  @override
+  Future<Map<String, int>> gateWordTurns() => _inner.gateWordTurns();
+  @override
+  Future<Map<String, GatePendingAnswer>> pendingGateAnswers() =>
+      _inner.pendingGateAnswers();
+  @override
+  Future<void> savePendingGateAnswer(
+    String targetApp,
+    GatePendingAnswer answer,
+  ) => _inner.savePendingGateAnswer(targetApp, answer);
   @override
   Future<GateConfig> getGateConfig() => _inner.getGateConfig();
   @override
@@ -98,8 +150,11 @@ class FlakyRepository implements VocabularyRepository {
   Future<GamificationStats> gamificationStats({int days = 112}) =>
       _inner.gamificationStats(days: days);
   @override
-  Future<List<VocabularyWord>> search(String query, {int limit = 200}) =>
-      _inner.search(query, limit: limit);
+  Future<List<VocabularyWord>> search(
+    String query, {
+    int limit = 200,
+    bool includeNotes = false,
+  }) => _inner.search(query, limit: limit, includeNotes: includeNotes);
   @override
   Future<VocabularyStats> stats() => _inner.stats();
   @override
@@ -112,8 +167,15 @@ class FlakyRepository implements VocabularyRepository {
   Future<List<VocabularyWord>> pendingChanges({int limit = 200}) =>
       _inner.pendingChanges(limit: limit);
   @override
-  Future<void> markSynced(List<String> ids, DateTime syncedAt) =>
-      _inner.markSynced(ids, syncedAt);
+  Future<void> markSynced(
+    List<String> ids,
+    DateTime syncedAt, {
+    Map<String, DateTime>? expectedVersions,
+  }) => _inner.markSynced(ids, syncedAt, expectedVersions: expectedVersions);
+
+  @override
+  Future<String?> activateNotebook(String? accountId) =>
+      _inner.activateNotebook(accountId);
   @override
   Future<void> mergeFromServer(List<VocabularyWord> remote) =>
       _inner.mergeFromServer(remote);
@@ -289,7 +351,7 @@ void main() {
     await provider.goToToday();
 
     // The whole reason search exists: this word is 17 days back.
-    final results = await provider.search('tien dung');
+    final results = await provider.search('tien dung', includeNotes: true);
     expect(results.single.word, 'ergonomic');
   });
 }

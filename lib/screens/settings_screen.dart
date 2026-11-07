@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +11,7 @@ import '../models/account_identifier.dart';
 import '../models/gate_config.dart';
 import '../providers/app_gate_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/feedback_provider.dart';
 import '../providers/cartridge_provider.dart';
 import '../providers/vocabulary_provider.dart';
 import '../providers/widget_provider.dart';
@@ -17,20 +19,23 @@ import '../services/backup_service.dart';
 import '../services/feedback_service.dart';
 import '../services/reminder_notification_service.dart';
 import '../services/sync_service.dart';
+import '../widgets/native_gate_settings.dart';
 import '../widgets/pixel/pixel_badges_grid.dart';
 import '../widgets/pixel/pixel_box.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_field.dart';
 import '../widgets/pixel/pixel_heatmap.dart';
 import '../widgets/pixel/pixel_icon.dart';
-import 'app_gate_screen.dart';
 import 'cartridge_library_screen.dart';
+import 'word_editor_screen.dart';
+import 'learning_rules_screen.dart';
+import 'phone_account_screen.dart';
+import 'feedback_screen.dart';
 
 /// Unified Settings, Appearance, Stats, and Cloud Sync screen.
 ///
 /// Designed to work 100% offline without requiring internet or a backend
-/// connection. Local themes, widget preferences, and gamification stats are
-/// fully functional immediately.
+/// connection. Local themes and gamification stats are available immediately.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -110,14 +115,107 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(PixelMetrics.space4),
                 children: [
+                  Builder(
+                    builder: (context) {
+                      AppGateProvider? gate;
+                      try {
+                        gate = context.watch<AppGateProvider>();
+                      } catch (_) {
+                        return const SizedBox.shrink();
+                      }
+                      final activeGate = gate;
+                      return Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: PixelMetrics.space4,
+                        ),
+                        child: PixelBox(
+                          padding: EdgeInsets.zero,
+                          child: Material(
+                            type: MaterialType.transparency,
+                            child: ListTile(
+                              key: const Key('settings_learning_rules'),
+                              leading: const Icon(Icons.school_outlined),
+                              title: const Text('Learning rules'),
+                              subtitle: const Text(
+                                'Practice words and words per unlock',
+                              ),
+                              trailing: const Icon(Icons.chevron_right),
+                              onTap: () async {
+                                try {
+                                  await activeGate.prepareChallenge();
+                                  if (!context.mounted) return;
+                                  await Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) =>
+                                          LearningRulesScreen(gate: activeGate),
+                                    ),
+                                  );
+                                } catch (_) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Could not load your learning rules. Please try again.',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  PixelBox(
+                    padding: EdgeInsets.zero,
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: ListTile(
+                        key: const Key('settings_app_protection'),
+                        leading: const Icon(Icons.shield_outlined),
+                        title: const Text('App protection'),
+                        subtitle: const Text(
+                          'Choose apps and earn time to use them',
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const AppProtectionScreen(),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: PixelMetrics.space4),
+                  PixelBox(
+                    padding: EdgeInsets.zero,
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: ListTile(
+                        key: const Key('settings_account'),
+                        leading: const Icon(Icons.account_circle_outlined),
+                        title: const Text('Account and backup'),
+                        subtitle: const Text('Phone sign-in and your notebook'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const AccountScreen(),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: PixelMetrics.space4),
                   if (!AppConfig.isCloudEnabled)
                     const _Notice(
                       lines: [
-                        'THIS BUILD RUNS IN FULLY LOCAL STORAGE MODE.',
-                        'EVERYTHING IS STORED SAFELY ON THIS DEVICE.',
+                        'Your words are stored on this device.',
+                        'Export a backup to keep a separate copy.',
                       ],
                     )
-                  else ...[
+                  else if (AppConfig.legacyPasswordAccounts) ...[
                     const _SyncStatus(),
                     const SizedBox(height: PixelMetrics.space5),
                     Consumer<AuthProvider>(
@@ -152,28 +250,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                   const SizedBox(height: PixelMetrics.space5),
 
-                  // Activity Consistency Heatmap
-                  PixelHeatmap(
-                    dailyCounts: gamification.dailyCounts,
-                    weeks: 16,
+                  ExpansionTile(
+                    key: const Key('settings_progress_extras'),
+                    tilePadding: EdgeInsets.zero,
+                    title: const Text('Progress and extras'),
+                    subtitle: const Text(
+                      'Activity, milestones, and word collections',
+                    ),
+                    children: [
+                      // Activity Consistency Heatmap
+                      PixelHeatmap(
+                        dailyCounts: gamification.dailyCounts,
+                        weeks: 16,
+                        now: provider.today,
+                      ),
+                      const SizedBox(height: PixelMetrics.space5),
+
+                      // Retro Milestones & Badges
+                      PixelBadgesGrid(badges: gamification.badges),
+                      const SizedBox(height: PixelMetrics.space5),
+
+                      // Career DLC Cartridges Library
+                      const _CartridgeLibrarySection(),
+                      const SizedBox(height: PixelMetrics.space5),
+                    ],
                   ),
-                  const SizedBox(height: PixelMetrics.space5),
-
-                  // Retro Milestones & Badges
-                  PixelBadgesGrid(badges: gamification.badges),
-                  const SizedBox(height: PixelMetrics.space5),
-
-                  // Career DLC Cartridges Library
-                  const _CartridgeLibrarySection(),
-                  const SizedBox(height: PixelMetrics.space5),
-
-                  // Widget & Lock Screen Settings
-                  const _WidgetSettingsSection(),
-                  const SizedBox(height: PixelMetrics.space5),
-
-                  // App Gate ("Word Toll") Settings
-                  const _AppGateSettingsSection(),
-                  const SizedBox(height: PixelMetrics.space5),
+                  const SizedBox(height: PixelMetrics.space4),
+                  // Temporarily hidden with the native widget feature.
+                  if (AppConfig.areHomeScreenWidgetsEnabled) ...[
+                    const _WidgetSettingsSection(),
+                    const SizedBox(height: PixelMetrics.space5),
+                  ],
 
                   // Daily Practice Reminder (Local Notifications)
                   const _DailyReminderSection(),
@@ -273,7 +380,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 }
 
 /// Backward compatibility alias.
-typedef AccountScreen = SettingsScreen;
 
 class _TopBar extends StatelessWidget {
   const _TopBar({required this.onClose});
@@ -299,8 +405,12 @@ class _TopBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Text('SETTINGS', style: Theme.of(context).textTheme.titleMedium),
-          const Spacer(),
+          Expanded(
+            child: Text(
+              'Settings',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
           PixelIconButton(
             glyph: PixelGlyph.close,
             semanticLabel: 'Close settings',
@@ -683,89 +793,96 @@ class _LocalExportDialogState extends State<_LocalExportDialog> {
 
     return Dialog(
       backgroundColor: palette.paper,
-      shape: const RoundedRectangleBorder(),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(PixelMetrics.radiusLg),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(PixelMetrics.space4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('EXPORT VOCABULARY', style: theme.textTheme.titleSmall),
-            const SizedBox(height: PixelMetrics.space2),
-            Text(
-              'Export $count notes directly from local SQLite storage without requiring internet.',
-              style: theme.textTheme.bodyMedium,
-            ),
-            const SizedBox(height: PixelMetrics.space3),
-            Row(
-              children: [
-                Expanded(
-                  child: PixelButton(
-                    label: 'JSON FORMAT',
-                    filled: _isJson,
-                    expand: true,
-                    onPressed: () {
-                      setState(() {
-                        _isJson = true;
-                        _exportedContent = null;
-                        _copied = false;
-                      });
-                    },
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('EXPORT VOCABULARY', style: theme.textTheme.titleSmall),
+              const SizedBox(height: PixelMetrics.space2),
+              Text(
+                'Save a backup of your $count words. You can copy it or share it to Files.',
+                style: theme.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: PixelMetrics.space3),
+              Row(
+                children: [
+                  Expanded(
+                    child: PixelButton(
+                      label: 'JSON FORMAT',
+                      filled: _isJson,
+                      expand: true,
+                      onPressed: () {
+                        setState(() {
+                          _isJson = true;
+                          _exportedContent = null;
+                          _copied = false;
+                        });
+                      },
+                    ),
                   ),
+                  const SizedBox(width: PixelMetrics.space2),
+                  Expanded(
+                    child: PixelButton(
+                      label: 'CSV FORMAT',
+                      filled: !_isJson,
+                      expand: true,
+                      onPressed: () {
+                        setState(() {
+                          _isJson = false;
+                          _exportedContent = null;
+                          _copied = false;
+                        });
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: PixelMetrics.space4),
+              if (_exportedContent != null) ...[
+                Text(
+                  'READY TO COPY / SHARE',
+                  style: theme.textTheme.labelSmall,
                 ),
-                const SizedBox(width: PixelMetrics.space2),
-                Expanded(
-                  child: PixelButton(
-                    label: 'CSV FORMAT',
-                    filled: !_isJson,
-                    expand: true,
-                    onPressed: () {
-                      setState(() {
-                        _isJson = false;
-                        _exportedContent = null;
-                        _copied = false;
-                      });
-                    },
-                  ),
+                const SizedBox(height: PixelMetrics.space2),
+                PixelButton(
+                  label: _copied ? 'Copied to clipboard!' : 'Copy to clipboard',
+                  glyph: PixelGlyph.cards,
+                  filled: true,
+                  expand: true,
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: _exportedContent!));
+                    setState(() => _copied = true);
+                  },
+                ),
+                const SizedBox(height: PixelMetrics.space2),
+                PixelButton(
+                  label: 'Share via system sheet',
+                  glyph: PixelGlyph.cloud,
+                  expand: true,
+                  onPressed: _share,
+                ),
+              ] else ...[
+                PixelButton(
+                  label: _busy ? 'Generating…' : 'Generate Export',
+                  filled: true,
+                  expand: true,
+                  onPressed: _busy ? null : _generate,
                 ),
               ],
-            ),
-            const SizedBox(height: PixelMetrics.space4),
-            if (_exportedContent != null) ...[
-              Text('READY TO COPY / SHARE', style: theme.textTheme.labelSmall),
               const SizedBox(height: PixelMetrics.space2),
               PixelButton(
-                label: _copied ? 'Copied to clipboard!' : 'Copy to clipboard',
-                glyph: PixelGlyph.cards,
-                filled: true,
+                label: 'Close',
                 expand: true,
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: _exportedContent!));
-                  setState(() => _copied = true);
-                },
-              ),
-              const SizedBox(height: PixelMetrics.space2),
-              PixelButton(
-                label: 'Share via system sheet',
-                glyph: PixelGlyph.cloud,
-                expand: true,
-                onPressed: _share,
-              ),
-            ] else ...[
-              PixelButton(
-                label: _busy ? 'Generating…' : 'Generate Export',
-                filled: true,
-                expand: true,
-                onPressed: _busy ? null : _generate,
+                onPressed: () => Navigator.of(context).pop(),
               ),
             ],
-            const SizedBox(height: PixelMetrics.space2),
-            PixelButton(
-              label: 'Close',
-              expand: true,
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -838,7 +955,9 @@ class _LocalImportDialogState extends State<_LocalImportDialog> {
 
     return Dialog(
       backgroundColor: palette.paper,
-      shape: const RoundedRectangleBorder(),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(PixelMetrics.radiusLg),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(PixelMetrics.space4),
         child: SingleChildScrollView(
@@ -970,10 +1089,7 @@ class _LocalImportDialogState extends State<_LocalImportDialog> {
                       const SizedBox(height: PixelMetrics.space2),
                       Text(
                         _result!.summary,
-                        style: TextStyle(
-                          fontSize: 15,
-                          color: palette.ink,
-                        ),
+                        style: TextStyle(fontSize: 15, color: palette.ink),
                       ),
                     ],
                   ),
@@ -1019,7 +1135,9 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
 
     return Dialog(
       backgroundColor: palette.paper,
-      shape: const RoundedRectangleBorder(),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(PixelMetrics.radiusLg),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(PixelMetrics.space4),
         child: Column(
@@ -1092,7 +1210,9 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
 
     return Dialog(
       backgroundColor: palette.paper,
-      shape: const RoundedRectangleBorder(),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(PixelMetrics.radiusLg),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(PixelMetrics.space4),
         child: Column(
@@ -1178,10 +1298,7 @@ class _CartridgeLibrarySection extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       'Curated vocabulary for PR reviews & FAANG standups',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: palette.inkMuted,
-                      ),
+                      style: TextStyle(fontSize: 11, color: palette.inkMuted),
                     ),
                   ],
                 ),
@@ -1329,13 +1446,10 @@ class _DailyReminderSectionState extends State<_DailyReminderSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'DAILY RETRO PRACTICE REMINDER',
-          style: theme.textTheme.titleSmall,
-        ),
+        Text('Daily reminder', style: theme.textTheme.titleSmall),
         const SizedBox(height: PixelMetrics.space2),
         Text(
-          'Offline local daily reminder to review words and keep your streak alive.',
+          'Choose a time for a gentle reminder to review your words.',
           style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: PixelMetrics.space3),
@@ -1351,7 +1465,7 @@ class _DailyReminderSectionState extends State<_DailyReminderSection> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'DAILY PRACTICE ALARM',
+                          'Remind me to practice',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -1435,10 +1549,10 @@ class _DataBackupSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('DATA BACKUP & RESTORE', style: theme.textTheme.titleSmall),
+        Text('Backup and restore', style: theme.textTheme.titleSmall),
         const SizedBox(height: PixelMetrics.space2),
         Text(
-          '100% offline data sovereignty. Export your vocabulary notebook to JSON or CSV, or restore notes with automatic duplicate merge.',
+          'Keep a copy of your words or bring back a previous backup. Existing words are checked for duplicates.',
           style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: PixelMetrics.space3),
@@ -1481,10 +1595,10 @@ class _FeedbackSupportSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('FEEDBACK & SUPPORT', style: theme.textTheme.titleSmall),
+        Text('Help and feedback', style: theme.textTheme.titleSmall),
         const SizedBox(height: PixelMetrics.space2),
         Text(
-          'Have a suggestion, spotted a typo, or encountered a bug? Send us a quick note with system diagnostics.',
+          'Tell us what could work better, or get help with a problem.',
           style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: PixelMetrics.space3),
@@ -1494,6 +1608,16 @@ class _FeedbackSupportSection extends StatelessWidget {
           filled: true,
           expand: true,
           onPressed: () async {
+            FeedbackProvider? feedback;
+            try {
+              feedback = context.read<FeedbackProvider>();
+            } catch (_) {}
+            if (feedback != null) {
+              await Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const FeedbackScreen()),
+              );
+              return;
+            }
             final launched = await FeedbackService.openFeedbackMail(
               totalWords: provider.stats.totalWords,
               streakDays: provider.stats.streakDays,
@@ -1535,14 +1659,16 @@ class _FeedbackDialogState extends State<_FeedbackDialog> {
 
     return Dialog(
       backgroundColor: palette.paper,
-      shape: const RoundedRectangleBorder(),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(PixelMetrics.radiusLg),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(PixelMetrics.space4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('FEEDBACK & SUPPORT', style: theme.textTheme.titleSmall),
+            Text('Help and feedback', style: theme.textTheme.titleSmall),
             const SizedBox(height: PixelMetrics.space2),
             Text(
               'No default email app detected. You can copy the diagnostics template below and email us directly at support@veea.app:',
@@ -1554,10 +1680,7 @@ class _FeedbackDialogState extends State<_FeedbackDialog> {
               color: palette.surface,
               child: Text(
                 widget.report,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: palette.inkMuted,
-                ),
+                style: TextStyle(fontSize: 12, color: palette.inkMuted),
               ),
             ),
             const SizedBox(height: PixelMetrics.space4),
@@ -1584,6 +1707,21 @@ class _FeedbackDialogState extends State<_FeedbackDialog> {
   }
 }
 
+class AppProtectionScreen extends StatelessWidget {
+  const AppProtectionScreen({super.key});
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('App protection')),
+    body: const SafeArea(
+      top: false,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.all(PixelMetrics.space4),
+        child: _AppGateSettingsSection(),
+      ),
+    ),
+  );
+}
+
 class _AppGateSettingsSection extends StatefulWidget {
   const _AppGateSettingsSection();
 
@@ -1601,6 +1739,7 @@ class _AppGateSettingsSectionState extends State<_AppGateSettingsSection> {
   ];
 
   AppGateProvider? _localFallbackProvider;
+  bool _didInitialScan = false;
 
   @override
   void didChangeDependencies() {
@@ -1616,7 +1755,17 @@ class _AppGateSettingsSectionState extends State<_AppGateSettingsSection> {
       _localFallbackProvider = AppGateProvider(repository: vocab.repository)
         ..addListener(() {
           if (mounted) setState(() {});
-        });
+        })
+        ..init();
+    }
+    final activeProvider = treeProvider ?? _localFallbackProvider;
+    if (!_didInitialScan && activeProvider != null) {
+      _didInitialScan = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          activeProvider.scanInstalledApps();
+        }
+      });
     }
   }
 
@@ -1647,245 +1796,223 @@ class _AppGateSettingsSectionState extends State<_AppGateSettingsSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('APP GATE ("WORD TOLL")', style: theme.textTheme.titleSmall),
-        const SizedBox(height: PixelMetrics.space2),
-        Text(
-          'Intercept distracting apps (Instagram, X, TikTok, YouTube) and require 1 English word from your notebook before unlocking.',
-          style: theme.textTheme.bodyMedium,
-        ),
-        const SizedBox(height: PixelMetrics.space3),
-        if (!canEnable) ...[
-          _Notice(
-            lines: [
-              'GUARDRAIL: ADD AT LEAST ${GateConfig.minRequiredWords} WORDS TO ENABLE APP GATE ($totalWords/${GateConfig.minRequiredWords} SAVED).',
-            ],
-            tone: palette.accent,
+        if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) ...[
+          NativeGateSettings(
+            gate: gateProvider,
+            totalWords: totalWords,
+            onAddWord: () async {
+              await vocabProvider.goToToday();
+              if (!context.mounted) return;
+              await Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const WordEditorScreen(),
+                ),
+              );
+              await gateProvider.prepareChallenge();
+            },
           ),
-          const SizedBox(height: PixelMetrics.space3),
+          const SizedBox(height: PixelMetrics.space4),
         ],
-        if (gateProvider.lastError != null) ...[
-          _Notice(
-            lines: [gateProvider.lastError!.toUpperCase()],
-            tone: palette.danger,
-          ),
-          const SizedBox(height: PixelMetrics.space3),
-        ],
-        _ToggleTile(
-          title: 'ENABLE APP GATE SHIELD',
-          subtitle: canEnable
-              ? 'Requires 1 saved word before opening selected apps'
-              : 'Locked until ${GateConfig.minRequiredWords} words are saved in your notebook',
-          enabled: config.enabled,
-          onChanged: (value) async {
-            await gateProvider.setEnabled(value, totalWords: totalWords);
+        PixelButton(
+          label: 'Learning rules',
+          expand: true,
+          glyph: PixelGlyph.cards,
+          onPressed: () async {
+            await gateProvider.prepareChallenge();
+            if (!context.mounted) return;
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => LearningRulesScreen(gate: gateProvider),
+              ),
+            );
           },
         ),
-        const SizedBox(height: PixelMetrics.space3),
-        _ToggleTile(
-          title: 'REQUIRE 1 NEW WORD CAPTURED TODAY',
-          subtitle:
-              'Redirect to Add Word editor first if today\'s capture count is 0',
-          enabled: config.requireDailyCapture,
-          onChanged: (value) => gateProvider.setRequireDailyCapture(value),
-        ),
-        const SizedBox(height: PixelMetrics.space3),
-        Text('UNLOCK PASS DURATION', style: theme.textTheme.labelSmall),
-        const SizedBox(height: PixelMetrics.space2),
-        Wrap(
-          spacing: PixelMetrics.space2,
-          runSpacing: PixelMetrics.space2,
+        const SizedBox(height: PixelMetrics.space4),
+        ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          title: Text('Shortcut protection', style: theme.textTheme.titleSmall),
+          subtitle: Text(
+            config.enabled
+                ? 'On · ${config.gatedApps.length} apps chosen'
+                : 'Set up protection with Apple Shortcuts',
+          ),
+          initiallyExpanded:
+              !gateProvider.nativeStatus.available || config.enabled,
           children: [
-            for (final opt in _passOptions)
-              GestureDetector(
-                onTap: () => gateProvider.setPassDurationMinutes(opt.minutes),
-                behavior: HitTestBehavior.opaque,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: PixelMetrics.space3,
-                    vertical: PixelMetrics.space2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: config.passDurationMinutes == opt.minutes
-                        ? palette.accent
-                        : palette.surface,
-                    border: Border.all(
-                      color: palette.border,
-                      width: PixelMetrics.border,
-                    ),
-                  ),
-                  child: Text(
-                    opt.label,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: config.passDurationMinutes == opt.minutes
-                          ? palette.onAccent
-                          : palette.ink,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: PixelMetrics.space3),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
+            const SizedBox(height: PixelMetrics.space2),
             Text(
-              gateProvider.installedApps.isNotEmpty
-                  ? 'INSTALLED APPS ON THIS PHONE (${gateProvider.installedApps.length})'
-                  : 'GATED APPS',
-              style: theme.textTheme.labelSmall,
+              gateProvider.nativeStatus.enabled
+                  ? 'Shortcut checks are paused while Screen Time protection is on. Your Shortcut settings are kept for later.'
+                  : 'Use configured Shortcuts to review words before opening selected apps.',
+              style: theme.textTheme.bodyMedium,
             ),
-            Text(
-              '${config.gatedApps.length} SELECTED',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: config.gatedApps.isNotEmpty
-                    ? palette.accent
-                    : palette.inkMuted,
+            const SizedBox(height: PixelMetrics.space3),
+            if (!canEnable) ...[
+              _Notice(
+                lines: [
+                  'Save at least ${GateConfig.minRequiredWords} words to set up protection. You have $totalWords saved.',
+                ],
+                tone: palette.accent,
               ),
+              const SizedBox(height: PixelMetrics.space3),
+            ],
+            if (gateProvider.lastError != null) ...[
+              _Notice(
+                lines: [gateProvider.lastError!.toUpperCase()],
+                tone: palette.danger,
+              ),
+              const SizedBox(height: PixelMetrics.space3),
+            ],
+            _ToggleTile(
+              title: 'Use Shortcut protection',
+              subtitle: canEnable
+                  ? 'Challenge selected apps using their configured Shortcuts'
+                  : 'Locked until ${GateConfig.minRequiredWords} words are saved in your notebook',
+              enabled: config.enabled,
+              onChanged: (value) async {
+                await gateProvider.setEnabled(value, totalWords: totalWords);
+              },
             ),
-          ],
-        ),
-        const SizedBox(height: PixelMetrics.space2),
-        Wrap(
-          spacing: PixelMetrics.space2,
-          runSpacing: PixelMetrics.space2,
-          children: [
-            for (final app in <String>{
-              ...(gateProvider.installedApps.isNotEmpty
-                  ? gateProvider.installedApps
-                  : GateConfig.defaultPresetApps),
-              ...config.gatedApps,
-            })
-              GestureDetector(
-                onTap: () => gateProvider.toggleGatedApp(app),
-                behavior: HitTestBehavior.opaque,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: PixelMetrics.space3,
-                    vertical: PixelMetrics.space2,
+            const SizedBox(height: PixelMetrics.space3),
+            Text('UNLOCK PASS DURATION', style: theme.textTheme.labelSmall),
+            const SizedBox(height: PixelMetrics.space2),
+            Wrap(
+              spacing: PixelMetrics.space2,
+              runSpacing: PixelMetrics.space2,
+              children: [
+                for (final opt in _passOptions)
+                  ChoiceChip(
+                    label: Text(opt.label),
+                    selected: config.passDurationMinutes == opt.minutes,
+                    onSelected: (_) =>
+                        gateProvider.setPassDurationMinutes(opt.minutes),
                   ),
-                  decoration: BoxDecoration(
-                    color: config.gatedApps.contains(app)
-                        ? palette.accent
-                        : palette.surface,
-                    border: Border.all(
-                      color: palette.border,
-                      width: PixelMetrics.border,
-                    ),
-                  ),
-                  child: Text(
-                    app.toUpperCase(),
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: config.gatedApps.contains(app)
-                          ? palette.onAccent
-                          : palette.ink,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-        if (config.gatedApps.isNotEmpty) ...[
-          const SizedBox(height: PixelMetrics.space3),
-          Container(
-            padding: const EdgeInsets.all(PixelMetrics.space3),
-            decoration: BoxDecoration(
-              color: palette.surface,
-              border: Border.all(
-                color: palette.border,
-                width: PixelMetrics.border,
-              ),
+              ],
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            const SizedBox(height: PixelMetrics.space3),
+            Wrap(
+              spacing: PixelMetrics.space2,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Text(
-                  'OS INTERCEPTION & IPHONE SHORTCUT LINK',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: palette.accent,
-                  ),
+                  'Apps · ${config.gatedApps.length} chosen',
+                  style: theme.textTheme.titleSmall,
                 ),
-                const SizedBox(height: PixelMetrics.space1),
-                Text(
-                  'On iPhone (without a paid Apple FamilyControls developer profile), '
-                  'open the iOS Shortcuts app → Automation → "+" → App → select your app '
-                  '("Is Opened", Run Immediately) → add action "Open URLs" with its link below:',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: palette.ink,
+                TextButton.icon(
+                  onPressed: gateProvider.isScanningApps
+                      ? null
+                      : () => gateProvider.scanInstalledApps(),
+                  icon: const Icon(Icons.refresh),
+                  label: Text(
+                    gateProvider.isScanningApps ? 'Searching…' : 'Refresh apps',
                   ),
-                ),
-                const SizedBox(height: PixelMetrics.space2),
-                Wrap(
-                  spacing: PixelMetrics.space2,
-                  runSpacing: PixelMetrics.space2,
-                  children: [
-                    for (final app in config.gatedApps)
-                      PixelButton(
-                        label:
-                            'Copy veea://gate?app=${Uri.encodeComponent(app)}',
-                        glyph: PixelGlyph.link,
-                        onPressed: () {
-                          final url =
-                              'veea://gate?app=${Uri.encodeComponent(app)}';
-                          Clipboard.setData(ClipboardData(text: url));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('COPIED $url'),
-                              duration: const Duration(seconds: 2),
-                            ),
-                          );
-                        },
-                      ),
-                  ],
                 ),
               ],
             ),
-          ),
-        ],
-        const SizedBox(height: PixelMetrics.space3),
-        Row(
-          children: [
-            Expanded(
-              child: PixelButton(
-                label: 'Pick Apps to Gate',
-                glyph: PixelGlyph.shield,
-                expand: true,
-                onPressed: () async {
-                  await gateProvider.pickAppsFromSystem();
-                  if (!context.mounted) return;
-                  _openDialog(
-                    context,
-                    _AppGatePickerDialog(gateProvider: gateProvider),
-                  );
-                },
-              ),
+            const SizedBox(height: PixelMetrics.space2),
+            Wrap(
+              spacing: PixelMetrics.space2,
+              runSpacing: PixelMetrics.space2,
+              children: [
+                for (final app in <String>{
+                  ...(gateProvider.installedApps.isNotEmpty
+                      ? gateProvider.installedApps
+                      : GateConfig.defaultPresetApps),
+                  ...config.gatedApps,
+                })
+                  FilterChip(
+                    label: Text(app),
+                    selected: config.gatedApps.contains(app),
+                    onSelected: (_) => gateProvider.toggleGatedApp(app),
+                  ),
+              ],
             ),
-            const SizedBox(width: PixelMetrics.space2),
-            Expanded(
-              child: PixelButton(
-                label: 'Preview Gate',
-                glyph: PixelGlyph.bolt,
-                filled: true,
-                expand: true,
-                onPressed: () {
-                  final target = config.gatedApps.isNotEmpty
-                      ? config.gatedApps.first
-                      : 'Instagram';
-                  Navigator.of(context).push(
-                    PageRouteBuilder<void>(
-                      pageBuilder: (_, _, _) => ChangeNotifierProvider.value(
-                        value: gateProvider,
-                        child: AppGateScreen(
-                          targetApp: target,
-                          previewMode: true,
-                        ),
+            if (config.gatedApps.isNotEmpty) ...[
+              const SizedBox(height: PixelMetrics.space3),
+              Container(
+                padding: const EdgeInsets.all(PixelMetrics.space3),
+                decoration: BoxDecoration(
+                  color: palette.surface,
+                  border: Border.all(
+                    color: palette.border,
+                    width: PixelMetrics.border,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Set up Apple Shortcuts',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: palette.accent,
                       ),
-                      transitionDuration: Duration.zero,
-                      reverseTransitionDuration: Duration.zero,
                     ),
-                  );
-                },
+                    const SizedBox(height: PixelMetrics.space1),
+                    Text(
+                      'On iPhone, create a shortcut and add an App automation for '
+                      'when your chosen app is opened. Add "Check Veea Gate" from '
+                      'Veea English and set the same app name. Add If with that '
+                      'result, then put "Open URLs" with the matching link below '
+                      'inside the true branch. Leave Otherwise empty. '
+                      'Remove any Open URLs action outside If: it causes a return loop. '
+                      'In shortcut Details → Privacy, enable Allow Running When Locked. '
+                      'Run it once to allow opening Veea English.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: palette.ink,
+                      ),
+                    ),
+                    const SizedBox(height: PixelMetrics.space2),
+                    Wrap(
+                      spacing: PixelMetrics.space2,
+                      runSpacing: PixelMetrics.space2,
+                      children: [
+                        for (final app in config.gatedApps)
+                          PixelButton(
+                            label:
+                                'Copy veea://gate?app=${Uri.encodeComponent(app)}',
+                            glyph: PixelGlyph.link,
+                            onPressed: () {
+                              final url =
+                                  'veea://gate?app=${Uri.encodeComponent(app)}';
+                              Clipboard.setData(ClipboardData(text: url));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('COPIED $url'),
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            },
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
+            ],
+            const SizedBox(height: PixelMetrics.space3),
+            Row(
+              children: [
+                Expanded(
+                  child: PixelButton(
+                    label: 'Pick Apps to Gate',
+                    glyph: PixelGlyph.shield,
+                    expand: true,
+                    onPressed: () async {
+                      final picked = await gateProvider.pickAppsFromSystem();
+                      if (!context.mounted) return;
+                      final isSystemScreenTimeToken =
+                          picked != null &&
+                          picked.any((e) => e.startsWith('Screen Time ('));
+                      if (!isSystemScreenTimeToken) {
+                        _openDialog(
+                          context,
+                          _AppGatePickerDialog(gateProvider: gateProvider),
+                        );
+                      }
+                    },
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -1975,7 +2102,9 @@ class _AppGatePickerDialogState extends State<_AppGatePickerDialog> {
 
     return Dialog(
       backgroundColor: palette.paper,
-      shape: const RoundedRectangleBorder(),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(PixelMetrics.radiusLg),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(PixelMetrics.space4),
         child: SingleChildScrollView(
@@ -1986,7 +2115,10 @@ class _AppGatePickerDialogState extends State<_AppGatePickerDialog> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('SELECT APPS TO GATE', style: theme.textTheme.titleSmall),
+                  Text(
+                    'SELECT APPS TO GATE',
+                    style: theme.textTheme.titleSmall,
+                  ),
                   Text(
                     '${_selected.length} SELECTED',
                     style: theme.textTheme.labelSmall?.copyWith(
@@ -2025,25 +2157,31 @@ class _AppGatePickerDialogState extends State<_AppGatePickerDialog> {
                   itemBuilder: (context, index) {
                     final app = filtered[index];
                     final isChecked = _selected.contains(app);
+                    final isInstalled = widget.gateProvider.installedApps.any(
+                      (a) => a.toLowerCase() == app.toLowerCase(),
+                    );
                     return GestureDetector(
                       onTap: () => _toggleApp(app),
                       behavior: HitTestBehavior.opaque,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: PixelMetrics.space3,
-                          vertical: PixelMetrics.space2,
+                          vertical: PixelMetrics.space2 + 2,
                         ),
                         child: Row(
                           children: [
                             Container(
-                              width: 20,
-                              height: 20,
+                              width: 22,
+                              height: 22,
                               decoration: BoxDecoration(
                                 color: isChecked
                                     ? palette.accent
                                     : palette.paper,
+                                borderRadius: BorderRadius.circular(6),
                                 border: Border.all(
-                                  color: palette.border,
+                                  color: isChecked
+                                      ? palette.accent
+                                      : palette.border,
                                   width: PixelMetrics.border,
                                 ),
                               ),
@@ -2064,11 +2202,29 @@ class _AppGatePickerDialogState extends State<_AppGatePickerDialog> {
                                 style: theme.textTheme.bodyMedium?.copyWith(
                                   color: palette.ink,
                                   fontWeight: isChecked
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
                                 ),
                               ),
                             ),
+                            if (isInstalled)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: palette.accent.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  'ON PHONE',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    fontSize: 10,
+                                    color: palette.accent,
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                       ),

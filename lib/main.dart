@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 
 import 'core/config/app_config.dart';
 import 'data/local/legacy_import.dart';
+import 'data/feedback_repository.dart';
+import 'providers/feedback_provider.dart';
 import 'data/local/sqlite_vocabulary_repository.dart';
 import 'data/remote/api_client.dart';
 import 'data/remote/auth_api.dart';
@@ -57,8 +59,16 @@ Future<void> main() async {
       sync: sync,
     );
 
-    // The app is usable immediately; the session and any sync catch up behind
-    // the first frame rather than blocking it.
+    // Restore local ownership before showing the notebook. Network sync and
+    // dictionary import stay in the background; a sign-in cannot race a late
+    // startup restore and replace the account the user just opened.
+    try {
+      await auth.restore();
+      await vocabulary.init();
+    } catch (error) {
+      debugPrint('Could not restore the local account: $error');
+    }
+
     unawaited(
       _startBackgroundWork(
         auth: auth,
@@ -87,6 +97,9 @@ Future<void> main() async {
         themeProvider: themeProvider,
         widgetProvider: widgetProvider,
         appGateProvider: appGateProvider,
+        feedback: FeedbackProvider(
+          FeedbackRepository(repository.database, apiClient),
+        ),
       ),
     );
   } catch (error, stack) {
@@ -114,7 +127,6 @@ Future<void> _startBackgroundWork({
 
     await ReminderNotificationService.instance.initialize();
 
-    await auth.restore();
     if (!AppConfig.isCloudEnabled || !auth.isSignedIn) return;
 
     await sync.refreshPendingCount();
@@ -137,6 +149,7 @@ class VeeaEnglishApp extends StatefulWidget {
     this.themeProvider,
     this.widgetProvider,
     this.appGateProvider,
+    this.feedback,
   });
 
   final VocabularyProvider vocabulary;
@@ -146,6 +159,7 @@ class VeeaEnglishApp extends StatefulWidget {
   final ThemeProvider? themeProvider;
   final WidgetProvider? widgetProvider;
   final AppGateProvider? appGateProvider;
+  final FeedbackProvider? feedback;
 
   @override
   State<VeeaEnglishApp> createState() => _VeeaEnglishAppState();
@@ -160,6 +174,99 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
       FriendChallengeService();
   StreamSubscription<WordChallenge>? _challengeSubscription;
   StreamSubscription<String>? _gateSubscription;
+  ValueNotifier<String>? _activeGateTarget;
+  int _gateRequestVersion = 0;
+  String? _lastAccount;
+  int _accountViewVersion = 0;
+  Timer? _syncDebounce;
+
+  void _authChanged() {
+    final owner = widget.auth.accountId;
+    if (owner == _lastAccount) return;
+    _lastAccount = owner;
+    unawaited(_refreshNotebook(owner, ++_accountViewVersion));
+  }
+
+  Future<void> _refreshNotebook(String? owner, int version) async {
+    await widget.vocabulary.init();
+    if (!mounted || version != _accountViewVersion) return;
+    await _appGateProvider.init();
+    if (!mounted || version != _accountViewVersion) return;
+    await widget.feedback?.activate(owner);
+    if (widget.auth.isSignedIn) await _syncNotebook();
+  }
+
+  void _wordsChanged() {
+    if (!widget.auth.isSignedIn || !AppConfig.isCloudEnabled) return;
+    _syncDebounce?.cancel();
+    _syncDebounce = Timer(const Duration(seconds: 2), () async {
+      await widget.sync.refreshPendingCount();
+      if (widget.sync.pendingCount > 0) await _syncNotebook();
+    });
+  }
+
+  Future<void> _syncNotebook() async {
+    if (!widget.auth.isSignedIn || !AppConfig.isCloudEnabled) return;
+    if (await widget.sync.synchronise() && mounted) {
+      await widget.vocabulary.init();
+    }
+  }
+
+  Future<void> _openGateScreen(String targetApp) async {
+    final target = targetApp.trim();
+    if (!mounted || target.isEmpty || _activeGateTarget?.value == target) {
+      return;
+    }
+    final request = ++_gateRequestVersion;
+    try {
+      await _appGateProvider.prepareChallenge();
+    } catch (error) {
+      debugPrint('Could not refresh the gate notebook: $error');
+    }
+    if (!mounted || request != _gateRequestVersion) return;
+    if (_activeGateTarget != null) {
+      // Switch the existing gate to the latest intercepted app. The previous
+      // app's completed words remain saved; duplicate events do not stack pages.
+      _activeGateTarget!.value = target;
+      return;
+    }
+    final navState = _navigatorKey.currentState;
+    if (navState != null && navState.mounted) {
+      final activeTarget = ValueNotifier(target);
+      _activeGateTarget = activeTarget;
+      navState
+          .push(
+            PageRouteBuilder<void>(
+              pageBuilder: (_, _, _) => ValueListenableBuilder<String>(
+                valueListenable: activeTarget,
+                builder: (_, currentTarget, _) => AppGateScreen(
+                  key: ValueKey(currentTarget),
+                  targetApp: currentTarget,
+                ),
+              ),
+              transitionDuration: Duration.zero,
+              reverseTransitionDuration: Duration.zero,
+            ),
+          )
+          .whenComplete(() {
+            if (identical(_activeGateTarget, activeTarget)) {
+              _activeGateTarget = null;
+              activeTarget.dispose();
+            }
+          });
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _openGateScreen(target),
+      );
+    }
+  }
+
+  Future<void> _drainPendingGate() async {
+    final pending = await _appGateProvider.service.consumeNativePendingGate();
+    if (pending != null && pending.isNotEmpty && mounted) {
+      _openGateScreen(pending);
+    }
+  }
 
   @override
   void initState() {
@@ -167,21 +274,16 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
     _appGateProvider =
         widget.appGateProvider ??
         (AppGateProvider(repository: widget.vocabulary.repository)..init());
+    _lastAccount = widget.auth.accountId;
+    widget.auth.addListener(_authChanged);
+    widget.vocabulary.addListener(_wordsChanged);
+    unawaited(widget.feedback?.activate(_lastAccount) ?? Future.value());
     _gateSubscription = _appGateProvider.service.onGateTriggered.listen((
       targetApp,
     ) {
-      if (!mounted) return;
-      final navState = _navigatorKey.currentState;
-      if (navState != null && navState.mounted) {
-        navState.push(
-          PageRouteBuilder<void>(
-            pageBuilder: (_, _, _) => AppGateScreen(targetApp: targetApp),
-            transitionDuration: Duration.zero,
-            reverseTransitionDuration: Duration.zero,
-          ),
-        );
-      }
+      _openGateScreen(targetApp);
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _drainPendingGate());
 
     _friendChallengeService.init();
     _challengeSubscription = _friendChallengeService.incomingChallenges.listen((
@@ -211,12 +313,28 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
     }
   }
 
-  void _handleAppResume() {
+  Future<void> _handleAppResume() async {
     widget.vocabulary.refreshWidgetData();
+    await _appGateProvider.refreshNativeScreenTime();
+    try {
+      await _appGateProvider.prepareChallenge();
+    } catch (error) {
+      debugPrint('Could not refresh challenge progress: $error');
+    }
+    if (!mounted) return;
+    _drainPendingGate();
+    unawaited(_syncNotebook());
+    unawaited(widget.feedback?.refresh() ?? Future.value());
   }
 
   @override
   void dispose() {
+    _syncDebounce?.cancel();
+    widget.auth.removeListener(_authChanged);
+    widget.vocabulary.removeListener(_wordsChanged);
+    _gateRequestVersion++;
+    _activeGateTarget?.dispose();
+    _activeGateTarget = null;
     _gateSubscription?.cancel();
     if (widget.appGateProvider == null) {
       _appGateProvider.dispose();
@@ -234,6 +352,8 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
       providers: [
         ChangeNotifierProvider.value(value: widget.vocabulary),
         ChangeNotifierProvider.value(value: widget.auth),
+        if (widget.feedback != null)
+          ChangeNotifierProvider.value(value: widget.feedback!),
         ChangeNotifierProvider.value(value: widget.sync),
         ChangeNotifierProvider.value(value: _ttsService),
         ChangeNotifierProvider.value(value: _friendChallengeService),

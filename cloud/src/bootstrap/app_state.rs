@@ -22,6 +22,7 @@ use crate::infrastructure::security::{Argon2PasswordHasher, JwtServiceImpl};
 /// (via ports/traits), not the entire AppState.
 #[derive(Clone)]
 pub struct AppState {
+    pub otp_delivery: Arc<crate::infrastructure::security::otp_delivery::TwilioVerify>,
     pub config: Arc<AppConfig>,
     pub db: PgPool,
     pub redis: ConnectionManager,
@@ -58,6 +59,9 @@ impl AppState {
         let cache_service = Arc::new(RedisCacheService::new(redis.clone()));
 
         Self {
+            otp_delivery: Arc::new(
+                crate::infrastructure::security::otp_delivery::TwilioVerify::from_env(),
+            ),
             config,
             db,
             redis,

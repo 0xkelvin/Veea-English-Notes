@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/config/app_config.dart';
 import '../services/widget_service.dart';
 
 /// Manages native Home Screen Widget and Daily Notification settings.
@@ -16,10 +17,11 @@ class WidgetProvider extends ChangeNotifier {
   bool _rotateOnTap = true;
   bool _isDisposed = false;
 
-  bool get isWidgetEnabled => _isWidgetEnabled;
+  bool get isWidgetEnabled =>
+      AppConfig.areHomeScreenWidgetsEnabled && _isWidgetEnabled;
   bool get isDailyReminderEnabled => _isDailyReminderEnabled;
   int get rotationIntervalMinutes => _rotationIntervalMinutes;
-  bool get rotateOnTap => _rotateOnTap;
+  bool get rotateOnTap => AppConfig.areHomeScreenWidgetsEnabled && _rotateOnTap;
 
   Future<void> init() async {
     try {
@@ -38,6 +40,7 @@ class WidgetProvider extends ChangeNotifier {
   }
 
   Future<void> setWidgetEnabled(bool value) async {
+    if (!AppConfig.areHomeScreenWidgetsEnabled) return;
     if (_isWidgetEnabled == value) return;
     _isWidgetEnabled = value;
     notifyListeners();
@@ -67,6 +70,7 @@ class WidgetProvider extends ChangeNotifier {
   }
 
   Future<void> setRotationIntervalMinutes(int value) async {
+    if (!AppConfig.areHomeScreenWidgetsEnabled) return;
     if (_rotationIntervalMinutes == value) return;
     _rotationIntervalMinutes = value;
     notifyListeners();
@@ -81,6 +85,7 @@ class WidgetProvider extends ChangeNotifier {
   }
 
   Future<void> setRotateOnTap(bool value) async {
+    if (!AppConfig.areHomeScreenWidgetsEnabled) return;
     if (_rotateOnTap == value) return;
     _rotateOnTap = value;
     notifyListeners();

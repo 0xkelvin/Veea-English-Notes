@@ -1,9 +1,12 @@
+import 'dart:convert';
 import 'api_client.dart';
 import 'token_store.dart';
 
 /// The signed-in account as the server sees it.
 class AccountProfile {
-  const AccountProfile({this.email, this.phone});
+  const AccountProfile({this.id, this.email, this.phone, this.authMethod});
+  final String? id;
+  final String? authMethod;
 
   /// Null on an account identified only by a phone number.
   final String? email;
@@ -16,6 +19,8 @@ class AccountProfile {
 
   factory AccountProfile.fromJson(Map<String, Object?> json) {
     return AccountProfile(
+      id: json['id'] as String?,
+      authMethod: json['auth_method'] as String?,
       email: json['email'] as String?,
       phone: json['phone'] as String?,
     );
@@ -31,6 +36,63 @@ class AuthApi {
 
   final ApiClient _client;
   final TokenStore _tokens;
+
+  Future<Map<String, Object?>> clientConfig() =>
+      _client.get('/client/config', authenticated: false);
+
+  Future<OtpChallenge> requestOtp(
+    String phone, {
+    bool forDeletion = false,
+  }) async {
+    final data = await _client.post(
+      forDeletion ? '/users/me/delete-otp' : '/auth/otp/request',
+      body: forDeletion ? null : {'phone': phone},
+      authenticated: forDeletion,
+    );
+    return OtpChallenge.fromJson(data);
+  }
+
+  Future<AuthSession> verifyOtp(OtpChallenge challenge, String code) async {
+    final data = await _client.post(
+      '/auth/otp/verify',
+      body: {'challenge_id': challenge.id, 'code': code},
+      authenticated: false,
+    );
+    return AuthSession.fromJson(
+      data,
+      fallbackIdentifier: challenge.phone ?? '',
+      method: 'phone_otp',
+    );
+  }
+
+  Future<void> deleteWithOtp(OtpChallenge challenge, String code) async {
+    await _client.delete(
+      '/users/me/delete-otp',
+      body: {'challenge_id': challenge.id, 'code': code},
+    );
+    await _tokens.clear();
+  }
+
+  Future<AuthSession> passwordSession({
+    required String identifier,
+    required String password,
+    bool register = false,
+  }) async {
+    final data = await _client.post(
+      register ? '/auth/register' : '/auth/login',
+      body: {'identifier': identifier, 'password': password},
+      authenticated: false,
+    );
+    return AuthSession.fromJson(data, fallbackIdentifier: identifier);
+  }
+
+  Future<void> commitSession(AuthSession session) => _tokens.save(
+    accessToken: session.accessToken,
+    refreshToken: session.refreshToken,
+    identifier: session.identifier,
+    accountId: session.accountId,
+    authMethod: session.method,
+  );
 
   /// Creates an account and stores the session it returns.
   ///
@@ -147,6 +209,87 @@ class AuthApi {
       accessToken: accessToken,
       refreshToken: refreshToken,
       identifier: identifier,
+    );
+  }
+}
+
+class OtpChallenge {
+  const OtpChallenge({
+    required this.id,
+    required this.expiresIn,
+    required this.retryAfter,
+    this.phone,
+  });
+  final String id;
+  final int expiresIn;
+  final int retryAfter;
+  final String? phone;
+  OtpChallenge withPhone(String phone) => OtpChallenge(
+    id: id,
+    expiresIn: expiresIn,
+    retryAfter: retryAfter,
+    phone: phone,
+  );
+  factory OtpChallenge.fromJson(Map<String, Object?> data) {
+    final id = data['challenge_id'] as String?;
+    if (id == null || id.isEmpty) {
+      throw const ApiException('Could not request a verification code');
+    }
+    return OtpChallenge(
+      id: id,
+      expiresIn: (data['expires_in'] as num?)?.toInt() ?? 600,
+      retryAfter: (data['retry_after'] as num?)?.toInt() ?? 60,
+    );
+  }
+}
+
+class AuthSession {
+  const AuthSession({
+    required this.accessToken,
+    required this.refreshToken,
+    required this.identifier,
+    required this.accountId,
+    this.method = 'password',
+  });
+  final String accessToken, refreshToken, identifier, accountId, method;
+  factory AuthSession.fromJson(
+    Map<String, Object?> data, {
+    required String fallbackIdentifier,
+    String method = 'password',
+  }) {
+    final tokens = (data['tokens'] as Map<String, Object?>?) ?? data;
+    final access = tokens['access_token'] as String?;
+    final refresh = tokens['refresh_token'] as String?;
+    if (access == null ||
+        access.isEmpty ||
+        refresh == null ||
+        refresh.isEmpty) {
+      throw const ApiException('Malformed authentication response');
+    }
+    String? subject = data['user_id'] as String?;
+    if (subject == null) {
+      try {
+        subject =
+            (jsonDecode(
+                      utf8.decode(
+                        base64Url.decode(
+                          base64Url.normalize(access.split('.')[1]),
+                        ),
+                      ),
+                    )
+                    as Map)['sub']
+                as String?;
+      } catch (_) {
+        /* Legacy test servers return opaque tokens. */
+      }
+    }
+    final identifier = data['identifier'] as String? ?? fallbackIdentifier;
+    return AuthSession(
+      accessToken: access,
+      refreshToken: refresh,
+      identifier: identifier,
+      accountId: subject ?? identifier.trim().toLowerCase(),
+      method: method,
     );
   }
 }

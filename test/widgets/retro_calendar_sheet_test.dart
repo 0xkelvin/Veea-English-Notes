@@ -303,7 +303,7 @@ void main() {
       await settle(tester);
 
       // Tap date label in DateBar
-      final dateLabel = find.text('TODAY · 18 Aug');
+      final dateLabel = find.text('Today · 18 Aug');
       expect(dateLabel, findsOneWidget);
       await tester.tap(dateLabel);
       await settle(tester);

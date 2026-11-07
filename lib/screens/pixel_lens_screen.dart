@@ -97,7 +97,8 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = 'Could not access camera: $e';
+        _errorMessage =
+            'Could not open the camera. Check camera permission or choose a photo.';
         _isScanning = false;
       });
     }
@@ -116,7 +117,7 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = 'Could not pick image: $e';
+        _errorMessage = 'Could not open your photos. Try again or paste text.';
         _isScanning = false;
       });
     }
@@ -157,7 +158,8 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
       if (!mounted) return;
       setState(() {
         _isScanning = false;
-        _errorMessage = 'OCR scanning failed: $e';
+        _errorMessage =
+            'Could not read this image. Try a clearer photo or paste the text.';
       });
     }
   }
@@ -167,6 +169,7 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
     showDialog<void>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
+        scrollable: true,
         backgroundColor: palette.paper,
         shape: const RoundedRectangleBorder(),
         title: const Text(
@@ -214,7 +217,7 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
         builder: (_) => WordEditorScreen.draft(
           draft: WordDraft(
             word: word.normalized,
-            source: _currentResult.sourceTitle ?? 'Pixel Lens OCR',
+            source: _currentResult.sourceTitle,
             examples: [word.sentence],
           ),
         ),
@@ -231,593 +234,625 @@ class _PixelLensScreenState extends State<PixelLensScreen> {
     return Scaffold(
       backgroundColor: palette.paper,
       body: SafeArea(
-        child: Column(
-          children: [
-            // Top Bar
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: PixelMetrics.space4,
-                vertical: PixelMetrics.space2,
-              ),
-              decoration: BoxDecoration(
-                color: palette.surface,
-                border: Border(
-                  bottom: BorderSide(
-                    color: palette.border,
-                    width: PixelMetrics.border,
-                  ),
-                ),
-              ),
-              child: Row(
-                children: [
-                  PixelIcon(PixelGlyph.camera, color: palette.accent, scale: 2),
-                  const SizedBox(width: PixelMetrics.space2),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'PIXEL LENS OCR',
-                          style: theme.textTheme.titleMedium,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          'SNAP CAMERA • SNIFF VOCABULARY',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: palette.inkMuted,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: PixelMetrics.space2),
-                  PixelIconButton(
-                    glyph: PixelGlyph.close,
-                    semanticLabel: 'Close Lens',
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
-              ),
-            ),
-
-            // Camera & Input Action Bar
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: PixelMetrics.space4,
-                vertical: PixelMetrics.space2,
-              ),
-              decoration: BoxDecoration(
-                color: palette.surface,
-                border: Border(
-                  bottom: BorderSide(color: palette.border, width: 1),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: PixelButton(
-                      label: 'SNAP CAMERA',
-                      glyph: PixelGlyph.camera,
-                      filled: true,
-                      onPressed: _isScanning ? null : _captureFromCamera,
-                    ),
-                  ),
-                  const SizedBox(width: PixelMetrics.space2),
-                  Expanded(
-                    child: PixelButton(
-                      label: 'PHOTO ALBUM',
-                      glyph: PixelGlyph.cards,
-                      onPressed: _isScanning ? null : _pickFromGallery,
-                    ),
-                  ),
-                  const SizedBox(width: PixelMetrics.space2),
-                  PixelIconButton(
-                    glyph: PixelGlyph.pencil,
-                    semanticLabel: 'Paste text snippet',
-                    onPressed: _isScanning ? null : _showPasteDialog,
-                  ),
-                ],
-              ),
-            ),
-
-            // Demo Presets Ribbon
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: PixelMetrics.space4,
-                vertical: 4,
-              ),
-              decoration: BoxDecoration(
-                color: palette.paper,
-                border: Border(
-                  bottom: BorderSide(color: palette.border, width: 1),
-                ),
-              ),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    Text(
-                      'SAMPLES:',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: palette.inkMuted,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    _sourceTab(0, 'PR REVIEW', palette),
-                    const SizedBox(width: 4),
-                    _sourceTab(1, 'TECH NEWS', palette),
-                    const SizedBox(width: 4),
-                    _sourceTab(2, 'ESSAY', palette),
-                  ],
-                ),
-              ),
-            ),
-
-            // Viewfinder HUD Container
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(PixelMetrics.space4),
-                child: PixelBox(
-                  raised: true,
-                  color: palette.surface,
-                  padding: const EdgeInsets.all(PixelMetrics.space3),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // HUD Header
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: palette.accent,
-                                  border: Border.all(
-                                    color: palette.border,
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Text(
-                                  _isScanning
-                                      ? 'SCANNING IN PROGRESS...'
-                                      : 'HUD: ${_currentResult.words.length} TOKENS • ${_currentResult.sourceTitle ?? "OCR"}',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: palette.onAccent,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '┏ ━ ┓',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: palette.accent,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: PixelMetrics.space2),
-
-                      // If scanning:
-                      if (_isScanning)
-                        Expanded(
-                          child: Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                SizedBox(
-                                  width: 32,
-                                  height: 32,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 3,
-                                    color: palette.accent,
-                                  ),
-                                ),
-                                const SizedBox(height: PixelMetrics.space3),
-                                Text(
-                                  'ANALYZING PHOTO WITH ON-DEVICE OCR...',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: palette.accent,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'HOLD STEADY • EXTRACTING WORDS & EXAMPLES',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: palette.inkMuted,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      // If error:
-                      else if (_errorMessage != null)
-                        Expanded(
-                          child: Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(
-                                PixelMetrics.space3,
-                              ),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  PixelIcon(
-                                    PixelGlyph.bolt,
-                                    color: palette.danger,
-                                    scale: 3,
-                                  ),
-                                  const SizedBox(height: PixelMetrics.space2),
-                                  Text(
-                                    'SCAN WARNING',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: palette.danger,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    _errorMessage!,
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: palette.ink,
-                                    ),
-                                  ),
-                                  const SizedBox(height: PixelMetrics.space3),
-                                  PixelButton(
-                                    label: 'Snap Camera Again',
-                                    glyph: PixelGlyph.camera,
-                                    filled: true,
-                                    onPressed: _captureFromCamera,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        )
-                      // Otherwise, show content:
-                      else ...[
-                        // Optional image thumbnail banner if scanned from photo
-                        if (_scannedImagePath != null &&
-                            File(_scannedImagePath!).existsSync())
-                          Container(
-                            height: 52,
-                            margin: const EdgeInsets.only(
-                              bottom: PixelMetrics.space2,
-                            ),
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: palette.border,
-                                width: 1,
-                              ),
-                              color: palette.paper,
-                            ),
-                            child: Row(
-                              children: [
-                                Image.file(
-                                  File(_scannedImagePath!),
-                                  width: 52,
-                                  height: 52,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) =>
-                                      const SizedBox(width: 52),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        _currentResult.sourceTitle ??
-                                            'Camera Scan',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                          color: palette.ink,
-                                        ),
-                                      ),
-                                      Text(
-                                        _currentResult.words.any(
-                                              (w) => !w.isEnglish,
-                                            )
-                                            ? '${_currentResult.words.where((w) => w.isEnglish).length} English words (${_currentResult.words.where((w) => !w.isEnglish).length} dimmed)'
-                                            : '${_currentResult.words.length} vocabulary words extracted',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: palette.inkMuted,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                PixelIconButton(
-                                  glyph: PixelGlyph.camera,
-                                  semanticLabel: 'Retake',
-                                  onPressed: _captureFromCamera,
-                                ),
-                                const SizedBox(width: 4),
-                              ],
-                            ),
-                          ),
-
-                        // Interactive Token Cloud
-                        Expanded(
-                          child: SingleChildScrollView(
-                            child: Wrap(
-                              spacing: 4,
-                              runSpacing: 6,
-                              children: _currentResult.words.map((dw) {
-                                final isSelected = _selectedWord == dw;
-                                final isEnglish = dw.isEnglish;
-
-                                final Color bgColor;
-                                final Color borderColor;
-                                final Color textColor;
-                                final FontWeight fontWeight;
-
-                                if (isSelected) {
-                                  if (isEnglish) {
-                                    bgColor = palette.accent;
-                                    borderColor = palette.border;
-                                    textColor = palette.onAccent;
-                                    fontWeight = FontWeight.bold;
-                                  } else {
-                                    bgColor = palette.paper;
-                                    borderColor = palette.inkFaint;
-                                    textColor = palette.inkMuted;
-                                    fontWeight = FontWeight.bold;
-                                  }
-                                } else {
-                                  if (isEnglish) {
-                                    bgColor = palette.paper;
-                                    borderColor = palette.border.withValues(
-                                      alpha: 0.4,
-                                    );
-                                    textColor = palette.ink;
-                                    fontWeight = FontWeight.normal;
-                                  } else {
-                                    // Gray down if it is not an English word (Vietnamese, special symbols, etc.)
-                                    bgColor = palette.surface.withValues(
-                                      alpha: 0.35,
-                                    );
-                                    borderColor = palette.border.withValues(
-                                      alpha: 0.15,
-                                    );
-                                    textColor = palette.inkFaint.withValues(
-                                      alpha: 0.45,
-                                    );
-                                    fontWeight = FontWeight.normal;
-                                  }
-                                }
-
-                                return GestureDetector(
-                                  onTap: () {
-                                    setState(() {
-                                      _selectedWord = dw;
-                                    });
-                                  },
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 5,
-                                      vertical: 3,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: bgColor,
-                                      border: Border.all(
-                                        color: borderColor,
-                                        width: isSelected ? 1.5 : 1.0,
-                                      ),
-                                    ),
-                                    child: Text(
-                                      dw.word,
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: fontWeight,
-                                        color: textColor,
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                        ),
-                      ],
-
-                      // HUD Bottom bracket
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          Text(
-                            '┗ ━ ┛',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: palette.accent,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-            // Quick-Capture Inspection Dock
-            if (_selectedWord != null && !_isScanning)
+        child: LayoutBuilder(
+          builder: (context, constraints) => Column(
+            children: [
+              // Top Bar
               Container(
-                padding: const EdgeInsets.all(PixelMetrics.space4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: PixelMetrics.space4,
+                  vertical: PixelMetrics.space2,
+                ),
                 decoration: BoxDecoration(
                   color: palette.surface,
                   border: Border(
-                    top: BorderSide(
+                    bottom: BorderSide(
                       color: palette.border,
                       width: PixelMetrics.border,
                     ),
                   ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            _selectedWord!.normalized.toUpperCase(),
+                    PixelIcon(
+                      PixelGlyph.camera,
+                      color: palette.accent,
+                      scale: 2,
+                    ),
+                    const SizedBox(width: PixelMetrics.space2),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Scan words',
+                            style: theme.textTheme.titleMedium,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            'Use a photo or paste text',
                             style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: _selectedWord!.isEnglish
-                                  ? palette.accent
-                                  : palette.inkMuted,
+                              fontSize: 10,
+                              color: palette.inkMuted,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                        if (!_selectedWord!.isEnglish) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: palette.paper,
-                              border: Border.all(
-                                color: palette.border.withValues(alpha: 0.3),
-                                width: 1,
-                              ),
-                            ),
-                            child: Text(
-                              'NOT ENGLISH WORD',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: palette.inkFaint,
-                              ),
-                            ),
-                          ),
                         ],
-                        const Spacer(),
-                        if (_selectedWord!.isEnglish)
-                          FutureBuilder<String?>(
-                            future: pronunciation.lookup(
-                              _selectedWord!.normalized,
-                            ),
-                            builder: (context, snapshot) {
-                              if (snapshot.hasData && snapshot.data != null) {
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: palette.paper,
-                                    border: Border.all(
-                                      color: palette.border,
-                                      width: 1,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    snapshot.data!,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: palette.ink,
-                                    ),
-                                  ),
-                                );
-                              }
-                              return const SizedBox.shrink();
-                            },
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '“${_selectedWord!.sentence}”',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontStyle: FontStyle.italic,
-                        color: _selectedWord!.isEnglish
-                            ? null
-                            : palette.inkMuted,
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: PixelMetrics.space3),
-                    if (_selectedWord!.isEnglish)
-                      PixelButton(
-                        label:
-                            'Capture "${_selectedWord!.normalized}" to Notebook',
-                        glyph: PixelGlyph.plus,
-                        filled: true,
-                        expand: true,
-                        onPressed: _captureSelectedWord,
-                      )
-                    else
+                    const SizedBox(width: PixelMetrics.space2),
+                    PixelIconButton(
+                      glyph: PixelGlyph.close,
+                      semanticLabel: 'Close Lens',
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      // Camera & Input Action Bar
                       Container(
-                        width: double.infinity,
                         padding: const EdgeInsets.symmetric(
+                          horizontal: PixelMetrics.space4,
                           vertical: PixelMetrics.space2,
-                          horizontal: PixelMetrics.space3,
                         ),
                         decoration: BoxDecoration(
-                          color: palette.paper.withValues(alpha: 0.6),
-                          border: Border.all(
-                            color: palette.border.withValues(alpha: 0.2),
-                            width: 1,
+                          color: palette.surface,
+                          border: Border(
+                            bottom: BorderSide(color: palette.border, width: 1),
                           ),
                         ),
                         child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Flexible(
-                              child: Text(
-                                'NON-ENGLISH TOKEN • CAPTURE DISABLED',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: palette.inkFaint,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                            Expanded(
+                              child: PixelButton(
+                                label: 'Take photo',
+                                glyph: PixelGlyph.camera,
+                                filled: true,
+                                onPressed: _isScanning
+                                    ? null
+                                    : _captureFromCamera,
                               ),
+                            ),
+                            const SizedBox(width: PixelMetrics.space2),
+                            Expanded(
+                              child: PixelButton(
+                                label: 'Choose photo',
+                                glyph: PixelGlyph.cards,
+                                onPressed: _isScanning
+                                    ? null
+                                    : _pickFromGallery,
+                              ),
+                            ),
+                            const SizedBox(width: PixelMetrics.space2),
+                            PixelIconButton(
+                              glyph: PixelGlyph.pencil,
+                              semanticLabel: 'Paste text snippet',
+                              onPressed: _isScanning ? null : _showPasteDialog,
                             ),
                           ],
                         ),
                       ),
-                  ],
+
+                      // Demo Presets Ribbon
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: PixelMetrics.space4,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: palette.paper,
+                          border: Border(
+                            bottom: BorderSide(color: palette.border, width: 1),
+                          ),
+                        ),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              Text(
+                                'Examples:',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: palette.inkMuted,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              _sourceTab(0, 'PR REVIEW', palette),
+                              const SizedBox(width: 4),
+                              _sourceTab(1, 'TECH NEWS', palette),
+                              const SizedBox(width: 4),
+                              _sourceTab(2, 'ESSAY', palette),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // Viewfinder: a bounded reading region within the scrollable flow.
+                      SizedBox(
+                        height: (constraints.maxHeight * 0.55).clamp(
+                          280.0,
+                          440.0,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(PixelMetrics.space4),
+                          child: PixelBox(
+                            raised: true,
+                            color: palette.surface,
+                            padding: const EdgeInsets.all(PixelMetrics.space3),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // HUD Header
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: palette.accent,
+                                            border: Border.all(
+                                              color: palette.border,
+                                              width: 1,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            _isScanning
+                                                ? 'Reading photo…'
+                                                : '${_currentResult.words.length} words · ${_currentResult.sourceTitle ?? "Photo"}',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                              color: palette.onAccent,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      '┏ ━ ┓',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: palette.accent,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                const SizedBox(height: PixelMetrics.space2),
+
+                                // If scanning:
+                                if (_isScanning)
+                                  Expanded(
+                                    child: Center(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          SizedBox(
+                                            width: 32,
+                                            height: 32,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 3,
+                                              color: palette.accent,
+                                            ),
+                                          ),
+                                          const SizedBox(
+                                            height: PixelMetrics.space3,
+                                          ),
+                                          Text(
+                                            'ANALYZING PHOTO WITH ON-DEVICE OCR...',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                              color: palette.accent,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'HOLD STEADY • EXTRACTING WORDS & EXAMPLES',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: palette.inkMuted,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                // If error:
+                                else if (_errorMessage != null)
+                                  Expanded(
+                                    child: Center(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(
+                                          PixelMetrics.space3,
+                                        ),
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            PixelIcon(
+                                              PixelGlyph.bolt,
+                                              color: palette.danger,
+                                              scale: 3,
+                                            ),
+                                            const SizedBox(
+                                              height: PixelMetrics.space2,
+                                            ),
+                                            Text(
+                                              'SCAN WARNING',
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: palette.danger,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              _errorMessage!,
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                color: palette.ink,
+                                              ),
+                                            ),
+                                            const SizedBox(
+                                              height: PixelMetrics.space3,
+                                            ),
+                                            PixelButton(
+                                              label: 'Snap Camera Again',
+                                              glyph: PixelGlyph.camera,
+                                              filled: true,
+                                              onPressed: _captureFromCamera,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                // Otherwise, show content:
+                                else ...[
+                                  // Optional image thumbnail banner if scanned from photo
+                                  if (_scannedImagePath != null &&
+                                      File(_scannedImagePath!).existsSync())
+                                    Container(
+                                      height: 52,
+                                      margin: const EdgeInsets.only(
+                                        bottom: PixelMetrics.space2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        border: Border.all(
+                                          color: palette.border,
+                                          width: 1,
+                                        ),
+                                        color: palette.paper,
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Image.file(
+                                            File(_scannedImagePath!),
+                                            width: 52,
+                                            height: 52,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, _, _) =>
+                                                const SizedBox(width: 52),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                Text(
+                                                  _currentResult.sourceTitle ??
+                                                      'Camera Scan',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: palette.ink,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  _currentResult.words.any(
+                                                        (w) => !w.isEnglish,
+                                                      )
+                                                      ? '${_currentResult.words.where((w) => w.isEnglish).length} English words (${_currentResult.words.where((w) => !w.isEnglish).length} dimmed)'
+                                                      : '${_currentResult.words.length} vocabulary words extracted',
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    color: palette.inkMuted,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          PixelIconButton(
+                                            glyph: PixelGlyph.camera,
+                                            semanticLabel: 'Retake',
+                                            onPressed: _captureFromCamera,
+                                          ),
+                                          const SizedBox(width: 4),
+                                        ],
+                                      ),
+                                    ),
+
+                                  // Interactive Token Cloud
+                                  Expanded(
+                                    child: SingleChildScrollView(
+                                      child: Wrap(
+                                        spacing: 4,
+                                        runSpacing: 6,
+                                        children: _currentResult.words.map((
+                                          dw,
+                                        ) {
+                                          final isSelected =
+                                              _selectedWord == dw;
+                                          final isEnglish = dw.isEnglish;
+
+                                          final Color bgColor;
+                                          final Color borderColor;
+                                          final Color textColor;
+                                          final FontWeight fontWeight;
+
+                                          if (isSelected) {
+                                            if (isEnglish) {
+                                              bgColor = palette.accent;
+                                              borderColor = palette.border;
+                                              textColor = palette.onAccent;
+                                              fontWeight = FontWeight.bold;
+                                            } else {
+                                              bgColor = palette.paper;
+                                              borderColor = palette.inkFaint;
+                                              textColor = palette.inkMuted;
+                                              fontWeight = FontWeight.bold;
+                                            }
+                                          } else {
+                                            if (isEnglish) {
+                                              bgColor = palette.paper;
+                                              borderColor = palette.border
+                                                  .withValues(alpha: 0.4);
+                                              textColor = palette.ink;
+                                              fontWeight = FontWeight.normal;
+                                            } else {
+                                              // Gray down if it is not an English word (Vietnamese, special symbols, etc.)
+                                              bgColor = palette.surface
+                                                  .withValues(alpha: 0.35);
+                                              borderColor = palette.border
+                                                  .withValues(alpha: 0.15);
+                                              textColor = palette.inkFaint
+                                                  .withValues(alpha: 0.45);
+                                              fontWeight = FontWeight.normal;
+                                            }
+                                          }
+
+                                          return GestureDetector(
+                                            onTap: () {
+                                              setState(() {
+                                                _selectedWord = dw;
+                                              });
+                                            },
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 5,
+                                                    vertical: 3,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: bgColor,
+                                                border: Border.all(
+                                                  color: borderColor,
+                                                  width: isSelected ? 1.5 : 1.0,
+                                                ),
+                                              ),
+                                              child: Text(
+                                                dw.word,
+                                                style: TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: fontWeight,
+                                                  color: textColor,
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        }).toList(),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+
+                                // HUD Bottom bracket
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      '┗ ━ ┛',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: palette.accent,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // Quick-Capture Inspection Dock
+                      if (_selectedWord != null && !_isScanning)
+                        Container(
+                          padding: const EdgeInsets.all(PixelMetrics.space4),
+                          decoration: BoxDecoration(
+                            color: palette.surface,
+                            border: Border(
+                              top: BorderSide(
+                                color: palette.border,
+                                width: PixelMetrics.border,
+                              ),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      _selectedWord!.normalized.toUpperCase(),
+                                      style: TextStyle(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.bold,
+                                        color: _selectedWord!.isEnglish
+                                            ? palette.accent
+                                            : palette.inkMuted,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  if (!_selectedWord!.isEnglish) ...[
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: palette.paper,
+                                        border: Border.all(
+                                          color: palette.border.withValues(
+                                            alpha: 0.3,
+                                          ),
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        'NOT ENGLISH WORD',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: palette.inkFaint,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  const Spacer(),
+                                  if (_selectedWord!.isEnglish)
+                                    FutureBuilder<String?>(
+                                      future: pronunciation.lookup(
+                                        _selectedWord!.normalized,
+                                      ),
+                                      builder: (context, snapshot) {
+                                        if (snapshot.hasData &&
+                                            snapshot.data != null) {
+                                          return Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: palette.paper,
+                                              border: Border.all(
+                                                color: palette.border,
+                                                width: 1,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              snapshot.data!,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: palette.ink,
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                        return const SizedBox.shrink();
+                                      },
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '“${_selectedWord!.sentence}”',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontStyle: FontStyle.italic,
+                                  color: _selectedWord!.isEnglish
+                                      ? null
+                                      : palette.inkMuted,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: PixelMetrics.space3),
+                              if (_selectedWord!.isEnglish)
+                                PixelButton(
+                                  label: 'Add to notebook',
+                                  glyph: PixelGlyph.plus,
+                                  filled: true,
+                                  expand: true,
+                                  onPressed: _captureSelectedWord,
+                                )
+                              else
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: PixelMetrics.space2,
+                                    horizontal: PixelMetrics.space3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: palette.paper.withValues(alpha: 0.6),
+                                    border: Border.all(
+                                      color: palette.border.withValues(
+                                        alpha: 0.2,
+                                      ),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          'NON-ENGLISH TOKEN • CAPTURE DISABLED',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: palette.inkFaint,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
-          ],
+            ],
+          ),
         ),
       ),
     );

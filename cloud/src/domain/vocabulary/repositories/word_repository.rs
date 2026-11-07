@@ -12,6 +12,7 @@ pub struct WordChange {
     /// Server clock. The client uses the highest value it has seen as the
     /// cursor for its next pull.
     pub server_updated_at: DateTime<Utc>,
+    pub sync_revision: i64,
 }
 
 /// Port for vocabulary persistence.
@@ -37,6 +38,7 @@ pub trait WordRepository: Send + Sync {
         &self,
         user_id: Uuid,
         since: Option<DateTime<Utc>>,
+        revision: Option<i64>,
         limit: i64,
     ) -> impl Future<Output = Result<Vec<WordChange>, anyhow::Error>> + Send;
 

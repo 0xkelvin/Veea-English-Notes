@@ -11,41 +11,51 @@ import DeviceActivity
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var appGateChannel: FlutterMethodChannel?
-  private static let appGroupSuite = "group.app.veea.english"
-  private var relockTimer: Timer?
+  private var pendingColdStartTarget: String?
 
   /// Known iOS app URL schemes used to scan which apps are installed on the
   /// user's iPhone and to launch the target app after unlocking the gate.
   private static let knownAppSchemes: [(name: String, schemes: [String])] = [
-    ("Instagram", ["instagram://"]),
-    ("X", ["twitter://"]),
-    ("YouTube", ["youtube://"]),
-    ("TikTok", ["snssdk1233://", "snssdk1180://", "tiktok://", "musically://"]),
-    ("Threads", ["barcelona://"]),
-    ("Reddit", ["reddit://"]),
     ("Facebook", ["fb://"]),
+    ("Instagram", ["instagram://"]),
+    ("TikTok", ["snssdk1233://", "snssdk1180://", "tiktok://", "musically://"]),
+    ("YouTube", ["youtube://"]),
+    ("Threads", ["barcelona://"]),
+    ("X", ["twitter://"]),
+    ("Reddit", ["reddit://"]),
     ("Messenger", ["fb-messenger://"]),
     ("WhatsApp", ["whatsapp://"]),
     ("Telegram", ["tg://"]),
+    ("Zalo", ["zalo://"]),
     ("Discord", ["discord://"]),
     ("Snapchat", ["snapchat://"]),
     ("Netflix", ["nflx://"]),
-    ("Twitch", ["twitch://"]),
     ("Spotify", ["spotify://"]),
+    ("Twitch", ["twitch://"]),
     ("Pinterest", ["pinterest://"]),
     ("LinkedIn", ["linkedin://"]),
-    ("Zalo", ["zalo://"]),
     ("Shopee", ["shopeevn://"]),
     ("Lazada", ["lazada://"]),
+    ("Tiki", ["tiki://"]),
     ("Grab", ["grab://"]),
+    ("Be", ["be://"]),
+    ("MoMo", ["momo://"]),
     ("Chrome", ["googlechrome://"]),
     ("Gmail", ["googlegmail://"]),
     ("Google Maps", ["comgooglemaps://"]),
-    ("Duolingo", ["duolingo://"]),
+    ("ChatGPT", ["chatgpt://"]),
+    ("CapCut", ["capcut://"]),
+    ("Canva", ["canva://"]),
     ("Notion", ["notion://"]),
     ("Slack", ["slack://"]),
-    ("ChatGPT", ["chatgpt://"]),
-    ("CapCut", ["capcut://"])
+    ("Zoom", ["zoomus://"]),
+    ("Teams", ["msteams://"]),
+    ("Duolingo", ["duolingo://"]),
+    ("Roblox", ["robloxmobile://"]),
+    ("LINE", ["line://"]),
+    ("Viber", ["viber://"]),
+    ("KakaoTalk", ["kakaotalk://"]),
+    ("WeChat", ["wechat://"])
   ]
 
   private var ocrChannelRegistered = false
@@ -57,6 +67,10 @@ import DeviceActivity
     if let controller = window?.rootViewController as? FlutterViewController {
       registerOcrChannel(messenger: controller.binaryMessenger)
       registerAppGateChannel(messenger: controller.binaryMessenger)
+    }
+
+    if let url = launchOptions?[.url] as? URL {
+      _ = handleIncomingUrl(url)
     }
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
@@ -83,17 +97,26 @@ import DeviceActivity
       let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
       let targetApp = components?.queryItems?.first(where: { $0.name == "app" })?.value
         ?? sharedDefaults()?.string(forKey: "pending_gate_target_app")
-        ?? "Instagram"
+        ?? "Facebook"
       sharedDefaults()?.removeObject(forKey: "pending_gate_target_app")
 
-      // If the user already has an active pass for this app, open it directly.
-      let unlockKey = "unlocked_until_\(targetApp.lowercased())"
-      let unlockedUntil = sharedDefaults()?.double(forKey: unlockKey) ?? 0
-      if unlockedUntil > Date().timeIntervalSince1970 {
-        _ = launchTargetApp(named: targetApp)
+      let defaults = sharedDefaults()
+      let normalizedTarget = targetApp.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      let now = Date().timeIntervalSince1970
+
+      // A URL already foregrounds Veea. Never launch the target from here:
+      // an unconditional App Open shortcut would just open this URL again.
+      // Check Veea Gate must evaluate access in the background before Open URLs.
+      let gateEnabled = defaults?.bool(forKey: "gate_enabled") ?? false
+      if !gateEnabled { return true }
+      let selected = defaults?.stringArray(forKey: "gated_apps") ?? []
+      if !selected.contains(where: { GateAccessState.normalized($0) == normalizedTarget }) {
         return true
       }
+      let unlockedUntil = defaults?.double(forKey: "unlocked_until_\(normalizedTarget)") ?? 0
+      if unlockedUntil > now { return true }
 
+      pendingColdStartTarget = targetApp
       appGateChannel?.invokeMethod("onGateTriggered", arguments: ["targetApp": targetApp])
       return true
     }
@@ -101,16 +124,25 @@ import DeviceActivity
   }
 
   private func sharedDefaults() -> UserDefaults? {
-    return UserDefaults(suiteName: Self.appGroupSuite) ?? UserDefaults.standard
+    return GateAccessState.shared.defaults
   }
 
   func checkPendingGateTargetFromAppGroup() {
+    if #available(iOS 16.0, *) {
+      NativeScreenTimeManager.shared.reconcile()
+      if let target = NativeScreenTimeManager.shared.consumePendingChallenge() {
+        pendingColdStartTarget = target
+        appGateChannel?.invokeMethod("onGateTriggered", arguments: ["targetApp": target])
+        return
+      }
+    }
     guard let defaults = sharedDefaults(),
           let pendingTarget = defaults.string(forKey: "pending_gate_target_app"),
           !pendingTarget.isEmpty else {
       return
     }
     defaults.removeObject(forKey: "pending_gate_target_app")
+    pendingColdStartTarget = pendingTarget
     appGateChannel?.invokeMethod("onGateTriggered", arguments: ["targetApp": pendingTarget])
   }
 
@@ -132,6 +164,7 @@ import DeviceActivity
   /// Opens the target app via its registered URL scheme if installed.
   private func launchTargetApp(named appName: String) -> Bool {
     let normalized = appName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
     for entry in Self.knownAppSchemes where entry.name.lowercased() == normalized {
       for scheme in entry.schemes {
         if let url = URL(string: scheme), UIApplication.shared.canOpenURL(url) {
@@ -162,8 +195,18 @@ import DeviceActivity
       }
 
       switch call.method {
+      case "consumePendingGate":
+        var target = self.pendingColdStartTarget
+        self.pendingColdStartTarget = nil
+        if target == nil, #available(iOS 16.0, *) {
+          target = NativeScreenTimeManager.shared.consumePendingChallenge()
+        }
+        result(target)
+
       case "requestPermissions":
-        self.handleRequestGatePermissions(result: result)
+        // Shortcut mode needs no Screen Time authorization. Native setup uses
+        // its own explicit authorization request and propagates any failure.
+        result(true)
 
       case "getInstalledApps":
         DispatchQueue.main.async {
@@ -172,7 +215,7 @@ import DeviceActivity
         }
 
       case "pickAppsToGate":
-        self.handlePickAppsToGate(result: result)
+        result(nil)
 
       case "setGateEnabled":
         let args = call.arguments as? [String: Any] ?? [:]
@@ -182,21 +225,91 @@ import DeviceActivity
         let defaults = self.sharedDefaults()
         defaults?.set(enabled, forKey: "gate_enabled")
         defaults?.set(passMinutes, forKey: "pass_minutes")
-        if !gatedApps.isEmpty {
-          defaults?.set(gatedApps, forKey: "gated_apps")
-        }
-        self.applyManagedSettingsShield(enabled: enabled)
+        defaults?.set(gatedApps, forKey: "gated_apps")
         result(nil)
 
       case "grantPass":
         let args = call.arguments as? [String: Any] ?? [:]
-        let targetApp = args["targetApp"] as? String ?? ""
+        let targetApp = (args["targetApp"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let durationMinutes = args["durationMinutes"] as? Int ?? 15
-        let effectiveMinutes = max(durationMinutes, 1)
-        let unlockUntil = Date().timeIntervalSince1970 + Double(effectiveMinutes * 60)
-        self.sharedDefaults()?.set(unlockUntil, forKey: "unlocked_until_\(targetApp.lowercased())")
-        self.temporarilyLiftShield(durationMinutes: effectiveMinutes)
+        var nativeStatus: [String: Any]?
+        if targetApp.hasPrefix("native:") {
+          do {
+            guard #available(iOS 16.0, *) else { throw NativeGateError.unavailable }
+            try NativeScreenTimeManager.shared.grantPass(target: targetApp)
+            nativeStatus = NativeScreenTimeManager.shared.status()
+          } catch { result(self.screenTimeError(error)); return }
+        } else {
+          GateAccessState.shared.grantPass(for: targetApp, minutes: durationMinutes)
+        }
+        // A successfully completed gate must not be replayed on the next resume.
+        self.pendingColdStartTarget = nil
+        self.sharedDefaults()?.removeObject(forKey: "pending_gate_target_app")
+        result(nativeStatus)
+
+      case "revokePass":
+        let args = call.arguments as? [String: Any] ?? [:]
+        let targetApp = (args["targetApp"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if targetApp.hasPrefix("native:") {
+          do {
+            guard #available(iOS 16.0, *) else { throw NativeGateError.unavailable }
+            try NativeScreenTimeManager.shared.revokePass(target: targetApp)
+          } catch { result(self.screenTimeError(error)); return }
+        } else {
+          GateAccessState.shared.revokePass(for: targetApp)
+        }
         result(nil)
+
+      case "getScreenTimeStatus":
+        if #available(iOS 16.0, *) { result(NativeScreenTimeManager.shared.status()) }
+        else { result(["supported": false, "available": false]) }
+
+      case "requestScreenTimeAuthorization":
+        guard #available(iOS 16.0, *) else { result(self.screenTimeError(NativeGateError.unavailable)); return }
+        Task { @MainActor in
+          do {
+            try await NativeScreenTimeManager.shared.requestAuthorization()
+            result(NativeScreenTimeManager.shared.status())
+          } catch { result(self.screenTimeError(error)) }
+        }
+
+      case "chooseScreenTimeApplications":
+        guard #available(iOS 16.0, *), let root = self.activeRootViewController() else {
+          result(self.screenTimeError(NativeGateError.unavailable)); return
+        }
+        do {
+          try NativeScreenTimeManager.shared.chooseApplications(from: root) { selection in
+            switch selection {
+            case .success(let saved): result(saved)
+            case .failure(let error): result(self.screenTimeError(error))
+            }
+          }
+        } catch { result(self.screenTimeError(error)) }
+
+      case "setScreenTimeEnabled":
+        let args = call.arguments as? [String: Any] ?? [:]
+        do {
+          guard #available(iOS 16.0, *) else { throw NativeGateError.unavailable }
+          try NativeScreenTimeManager.shared.setEnabled(args["enabled"] as? Bool ?? false,
+                                                       minutes: args["passMinutes"] as? Int ?? 15)
+          result(NativeScreenTimeManager.shared.status())
+        } catch { result(self.screenTimeError(error)) }
+
+      case "setScreenTimeDuration":
+        let args = call.arguments as? [String: Any] ?? [:]
+        do {
+          guard #available(iOS 16.0, *) else { throw NativeGateError.unavailable }
+          try NativeScreenTimeManager.shared.setDuration(args["passMinutes"] as? Int ?? 15)
+          result(NativeScreenTimeManager.shared.status())
+        } catch { result(self.screenTimeError(error)) }
+
+      case "manageScreenTimeApplications":
+        guard #available(iOS 16.0, *), let root = self.activeRootViewController() else {
+          result(self.screenTimeError(NativeGateError.unavailable)); return
+        }
+        do {
+          try NativeScreenTimeManager.shared.manageApplications(from: root) { result($0) }
+        } catch { result(self.screenTimeError(error)) }
 
       case "launchApp":
         let args = call.arguments as? [String: Any] ?? [:]
@@ -212,29 +325,8 @@ import DeviceActivity
     }
   }
 
-  private func handleRequestGatePermissions(result: @escaping FlutterResult) {
-    #if canImport(FamilyControls) && !targetEnvironment(simulator)
-    if #available(iOS 16.0, *) {
-      Task {
-        do {
-          try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
-          DispatchQueue.main.async {
-            self.sharedDefaults()?.set(true, forKey: "family_controls_authorized")
-            result(true)
-          }
-        } catch {
-          DispatchQueue.main.async {
-            self.sharedDefaults()?.set(false, forKey: "family_controls_authorized")
-            // Still allow enabling the gate via URL-scheme / Shortcut mode when
-            // signed with a Personal Team profile that lacks FamilyControls.
-            result(true)
-          }
-        }
-      }
-      return
-    }
-    #endif
-    result(true)
+  private func screenTimeError(_ error: Error) -> FlutterError {
+    FlutterError(code: "SCREEN_TIME_ERROR", message: error.localizedDescription, details: nil)
   }
 
   private func activeRootViewController() -> UIViewController? {
@@ -245,74 +337,6 @@ import DeviceActivity
       .compactMap { $0 as? UIWindowScene }
       .flatMap { $0.windows }
       .first(where: { $0.isKeyWindow })?.rootViewController
-  }
-
-  private func handlePickAppsToGate(result: @escaping FlutterResult) {
-    #if canImport(FamilyControls) && !targetEnvironment(simulator)
-    if #available(iOS 16.0, *),
-       AuthorizationCenter.shared.authorizationStatus == .approved,
-       let rootVC = self.activeRootViewController() {
-      DispatchQueue.main.async {
-        let pickerView = FamilyActivityPickerWrapperView { selection in
-          ScreenTimeSelectionStore.shared.selection = selection
-          let enabled = self.sharedDefaults()?.bool(forKey: "gate_enabled") ?? false
-          self.applyManagedSettingsShield(enabled: enabled)
-          let count = selection.applicationTokens.count + selection.categoryTokens.count
-          if count > 0 {
-            result(["Screen Time (\(count) selected)"])
-          } else {
-            result(nil)
-          }
-        }
-        let hostingVC = UIHostingController(rootView: pickerView)
-        rootVC.present(hostingVC, animated: true)
-      }
-      return
-    }
-    #endif
-    // When FamilyControls system picker is not active, return nil so Flutter
-    // displays the installed-apps checklist scanned from this device.
-    result(nil)
-  }
-
-  private func applyManagedSettingsShield(enabled: Bool) {
-    #if canImport(FamilyControls) && canImport(ManagedSettings) && !targetEnvironment(simulator)
-    if #available(iOS 16.0, *),
-       AuthorizationCenter.shared.authorizationStatus == .approved {
-      let store = ManagedSettingsStore()
-      if enabled {
-        let selection = ScreenTimeSelectionStore.shared.selection
-        store.shield.applications = selection.applicationTokens.isEmpty ? nil : selection.applicationTokens
-        store.shield.applicationCategories = selection.categoryTokens.isEmpty
-          ? nil
-          : .specific(selection.categoryTokens)
-      } else {
-        store.shield.applications = nil
-        store.shield.applicationCategories = nil
-      }
-    }
-    #endif
-  }
-
-  private func temporarilyLiftShield(durationMinutes: Int) {
-    #if canImport(FamilyControls) && canImport(ManagedSettings) && !targetEnvironment(simulator)
-    if #available(iOS 16.0, *),
-       AuthorizationCenter.shared.authorizationStatus == .approved {
-      let store = ManagedSettingsStore()
-      store.shield.applications = nil
-      store.shield.applicationCategories = nil
-
-      relockTimer?.invalidate()
-      relockTimer = Timer.scheduledTimer(
-        withTimeInterval: TimeInterval(durationMinutes * 60),
-        repeats: false
-      ) { [weak self] _ in
-        guard let self = self else { return }
-        let stillEnabled = self.sharedDefaults()?.bool(forKey: "gate_enabled") ?? false
-        self.applyManagedSettingsShield(enabled: stillEnabled)
-      }
-    }
-    #endif
   }
 
   private func registerOcrChannel(messenger: FlutterBinaryMessenger) {
@@ -409,54 +433,3 @@ class SceneDelegate: FlutterSceneDelegate {
     (UIApplication.shared.delegate as? AppDelegate)?.checkPendingGateTargetFromAppGroup()
   }
 }
-
-#if canImport(FamilyControls) && !targetEnvironment(simulator)
-@available(iOS 16.0, *)
-final class ScreenTimeSelectionStore {
-  static let shared = ScreenTimeSelectionStore()
-  private let key = "veea_family_activity_selection"
-
-  var selection: FamilyActivitySelection {
-    get {
-      guard let data = UserDefaults.standard.data(forKey: key),
-            let decoded = try? JSONDecoder().decode(FamilyActivitySelection.self, from: data) else {
-        return FamilyActivitySelection()
-      }
-      return decoded
-    }
-    set {
-      if let encoded = try? JSONEncoder().encode(newValue) {
-        UserDefaults.standard.set(encoded, forKey: key)
-      }
-    }
-  }
-}
-
-@available(iOS 16.0, *)
-struct FamilyActivityPickerWrapperView: View {
-  @Environment(\.dismiss) private var dismiss
-  @State private var selection: FamilyActivitySelection = ScreenTimeSelectionStore.shared.selection
-  let onSave: (FamilyActivitySelection) -> Void
-
-  var body: some View {
-    NavigationView {
-      FamilyActivityPicker(selection: $selection)
-        .navigationTitle("Select Apps to Gate")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-          ToolbarItem(placement: .cancellationAction) {
-            Button("Cancel") {
-              dismiss()
-            }
-          }
-          ToolbarItem(placement: .confirmationAction) {
-            Button("Done") {
-              onSave(selection)
-              dismiss()
-            }
-          }
-        }
-    }
-  }
-}
-#endif

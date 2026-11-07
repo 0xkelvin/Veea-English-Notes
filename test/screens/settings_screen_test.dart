@@ -20,6 +20,8 @@ import 'package:veea_english_app/screens/settings_screen.dart';
 import 'package:veea_english_app/services/sync_service.dart';
 
 void main() {
+  setUp(() => AppConfig.overrideLegacyAccounts(true));
+  tearDown(() => AppConfig.overrideLegacyAccounts(null));
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
 
@@ -93,17 +95,22 @@ void main() {
       await tester.pumpWidget(buildApp(const SettingsScreen()));
       await tester.pumpAndSettle();
 
-      expect(find.text('SETTINGS'), findsOneWidget);
+      expect(find.text('Settings'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('settings_progress_extras')));
+      await tester.pumpAndSettle();
       expect(find.text('ACTIVITY HEATMAP'), findsOneWidget);
       expect(find.textContaining('RETRO MILESTONES'), findsOneWidget);
-      expect(find.text('HOME SCREEN & LOCK SCREEN WIDGET'), findsOneWidget);
+      expect(find.text('HOME SCREEN & LOCK SCREEN WIDGET'), findsNothing);
+      expect(find.text('WORD OF THE DAY WIDGET'), findsNothing);
+      expect(find.text('WORD ROTATION INTERVAL'), findsNothing);
+      expect(find.text('ROTATE ON WIDGET TAP'), findsNothing);
       expect(
-        find.text('THIS BUILD RUNS IN FULLY LOCAL STORAGE MODE.'),
+        find.text('Your words are stored on this device.'),
         findsOneWidget,
       );
-      expect(find.text('DAILY RETRO PRACTICE REMINDER'), findsOneWidget);
-      expect(find.text('DATA BACKUP & RESTORE'), findsOneWidget);
-      expect(find.text('FEEDBACK & SUPPORT'), findsOneWidget);
+      expect(find.text('Daily reminder'), findsOneWidget);
+      expect(find.text('Backup and restore'), findsOneWidget);
+      expect(find.text('Help and feedback'), findsOneWidget);
     },
   );
 
@@ -117,7 +124,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Tap Export Backup
-    final exportBtn = find.text('EXPORT BACKUP');
+    final exportBtn = find.text('Export Backup');
     expect(exportBtn, findsOneWidget);
     await tester.tap(exportBtn);
     await tester.pumpAndSettle();
@@ -127,11 +134,11 @@ void main() {
     expect(find.text('CSV FORMAT'), findsOneWidget);
 
     // Close export dialog
-    await tester.tap(find.text('CLOSE'));
+    await tester.tap(find.text('Close'));
     await tester.pumpAndSettle();
 
     // Tap Import Backup
-    final importBtn = find.text('IMPORT BACKUP');
+    final importBtn = find.text('Import Backup');
     expect(importBtn, findsOneWidget);
     await tester.tap(importBtn);
     await tester.pumpAndSettle();
@@ -140,7 +147,7 @@ void main() {
     expect(find.text('BACKUP DATA'), findsOneWidget);
 
     // Close import dialog
-    await tester.tap(find.text('CLOSE'));
+    await tester.tap(find.text('Close'));
     await tester.pumpAndSettle();
   });
 
@@ -156,9 +163,11 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(buildApp(const SettingsScreen()));
-    await tester.pump();
+    // Finish the real SQLite work started by the cloud settings' frame callback.
+    await tester.runAsync(() => syncService.refreshPendingCount());
+    await tester.pumpAndSettle();
 
-    expect(find.text('SETTINGS'), findsOneWidget);
+    expect(find.text('Settings'), findsOneWidget);
     expect(find.text('SIGN IN TO SYNC'), findsOneWidget);
     expect(find.text('EMAIL OR PHONE'), findsOneWidget);
   });

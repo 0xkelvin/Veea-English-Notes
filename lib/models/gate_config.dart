@@ -1,13 +1,23 @@
 import 'dart:convert';
 
-/// Configuration for the App Gate ("Word Toll") feature.
+/// A correctly answered final word waiting for the OS to grant access.
+class GatePendingAnswer {
+  const GatePendingAnswer({required this.wordId, required this.attempts});
+  final String wordId;
+  final int attempts;
+}
+
+/// Configuration for the App Gate ("Earn Screen Time" / "Word Toll") feature.
 ///
 /// Persisted in SQLite's singleton `gate_config` row (`id = 1`).
 class GateConfig {
   const GateConfig({
     this.enabled = false,
     this.passDurationMinutes = 15,
-    this.requireDailyCapture = false,
+    this.wordsPerUnlock = 1,
+    this.autoPronounce = false,
+    this.dailyWordGoal = false,
+    this.practiceWordIds,
     this.gatedApps = const [],
   });
 
@@ -20,27 +30,29 @@ class GateConfig {
 
   /// Default popular distracting apps shown as quick-toggle presets.
   static const List<String> defaultPresetApps = [
+    'Facebook',
     'Instagram',
-    'X',
-    'YouTube',
     'TikTok',
-    'Reddit',
+    'YouTube',
+    'X',
     'Threads',
+    'Reddit',
   ];
 
   /// Extended catalog of popular social, video, messaging, and entertainment
   /// apps shown in the App Picker checklist alongside device-installed apps.
   static const List<String> selectableAppsCatalog = [
-    'Instagram',
-    'X',
-    'YouTube',
-    'TikTok',
-    'Reddit',
-    'Threads',
     'Facebook',
+    'Instagram',
+    'TikTok',
+    'YouTube',
+    'X',
+    'Threads',
+    'Reddit',
     'Messenger',
     'WhatsApp',
     'Telegram',
+    'Zalo',
     'Discord',
     'Snapchat',
     'Netflix',
@@ -48,6 +60,13 @@ class GateConfig {
     'Spotify',
     'Pinterest',
     'LinkedIn',
+    'Shopee',
+    'Lazada',
+    'Grab',
+    'Chrome',
+    'Gmail',
+    'ChatGPT',
+    'CapCut',
   ];
 
   final bool enabled;
@@ -55,8 +74,16 @@ class GateConfig {
   /// Pass window in minutes (`5`, `15`, `30`, or `0` for every open).
   final int passDurationMinutes;
 
-  /// When true, requires at least 1 word captured today before unlocking.
-  final bool requireDailyCapture;
+  /// Any positive count, capped at the current practice pool size by the provider.
+  final int wordsPerUnlock;
+
+  final bool autoPronounce;
+
+  /// An optional notebook goal; never a condition for unlocking apps.
+  final bool dailyWordGoal;
+
+  /// Null uses the whole notebook. An empty custom pool requires new selection.
+  final List<String>? practiceWordIds;
 
   /// Selected app names, bundle IDs, or package identifiers to gate.
   final List<String> gatedApps;
@@ -76,13 +103,22 @@ class GateConfig {
   GateConfig copyWith({
     bool? enabled,
     int? passDurationMinutes,
-    bool? requireDailyCapture,
+    int? wordsPerUnlock,
+    bool? autoPronounce,
+    bool? dailyWordGoal,
+    List<String>? practiceWordIds,
+    bool useAllWords = false,
     List<String>? gatedApps,
   }) {
     return GateConfig(
       enabled: enabled ?? this.enabled,
       passDurationMinutes: passDurationMinutes ?? this.passDurationMinutes,
-      requireDailyCapture: requireDailyCapture ?? this.requireDailyCapture,
+      wordsPerUnlock: wordsPerUnlock ?? this.wordsPerUnlock,
+      autoPronounce: autoPronounce ?? this.autoPronounce,
+      dailyWordGoal: dailyWordGoal ?? this.dailyWordGoal,
+      practiceWordIds: useAllWords
+          ? null
+          : practiceWordIds ?? this.practiceWordIds,
       gatedApps: gatedApps ?? this.gatedApps,
     );
   }
@@ -91,7 +127,13 @@ class GateConfig {
     'id': 1,
     'enabled': enabled ? 1 : 0,
     'pass_duration_minutes': passDurationMinutes,
-    'require_daily_capture': requireDailyCapture ? 1 : 0,
+    'words_per_unlock': wordsPerUnlock,
+    'require_daily_capture': 0,
+    'auto_pronounce': autoPronounce ? 1 : 0,
+    'daily_word_goal': dailyWordGoal ? 1 : 0,
+    'practice_word_ids_json': practiceWordIds == null
+        ? null
+        : jsonEncode(practiceWordIds),
     'gated_apps_json': jsonEncode(gatedApps),
   };
 
@@ -106,10 +148,27 @@ class GateConfig {
         }
       } catch (_) {}
     }
+    List<String>? practiceWordIds;
+    if (map['practice_word_ids_json'] case final String rawPool) {
+      try {
+        final decoded = jsonDecode(rawPool);
+        practiceWordIds = decoded is List
+            ? decoded.whereType<String>().toSet().toList()
+            : [];
+      } catch (_) {
+        practiceWordIds = [];
+      }
+    }
     return GateConfig(
       enabled: (map['enabled'] as int? ?? 0) == 1,
       passDurationMinutes: (map['pass_duration_minutes'] as int?) ?? 15,
-      requireDailyCapture: (map['require_daily_capture'] as int? ?? 0) == 1,
+      wordsPerUnlock: ((map['words_per_unlock'] as int?) ?? 1).clamp(
+        1,
+        2147483647,
+      ),
+      autoPronounce: map['auto_pronounce'] == 1,
+      dailyWordGoal: map['daily_word_goal'] == 1,
+      practiceWordIds: practiceWordIds,
       gatedApps: apps,
     );
   }
