@@ -20,7 +20,7 @@ final class GateShieldAction: ShieldActionDelegate {
       if #available(iOS 26.5, *) { completionHandler(.openParentalControlsApp) }
       else { completionHandler(.close) }
     } catch {
-      Logger(subsystem: "com.veea.veeaRewind", category: "ScreenTime").error("Challenge handoff failed: \(error.localizedDescription, privacy: .public)")
+      Logger(subsystem: "com.nintran.veeaEnglishApp", category: "ScreenTime").error("Challenge handoff failed: \(error.localizedDescription, privacy: .public)")
       completionHandler(.close)
     }
   }

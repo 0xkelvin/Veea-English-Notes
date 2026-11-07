@@ -6,7 +6,7 @@ final class GateMonitor: DeviceActivityMonitor {
   private func reconcile() {
     if #available(iOS 16.0, *) {
       do { try NativeGateShielding.reconcile() }
-      catch { Logger(subsystem: "com.veea.veeaRewind", category: "ScreenTime").error("Relock failed: \(error.localizedDescription, privacy: .public)") }
+      catch { Logger(subsystem: "com.nintran.veeaEnglishApp", category: "ScreenTime").error("Relock failed: \(error.localizedDescription, privacy: .public)") }
     }
   }
 

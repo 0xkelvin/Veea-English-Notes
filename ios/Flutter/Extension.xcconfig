@@ -1,0 +1,2 @@
+// Keep Screen Time extension versions aligned with the Flutter app.
+#include "Generated.xcconfig"

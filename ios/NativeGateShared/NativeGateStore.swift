@@ -19,7 +19,7 @@ enum NativeGateError: LocalizedError {
 /// All main-app and extension reads/writes and shield updates use one file lock.
 /// Atomic replacement protects against a process being killed during a write.
 final class NativeGateStore {
-  static let appGroup = "group.com.veea.veeaRewind.screentime"
+  static let appGroup = "group.com.nintran.veeaEnglishApp"
   private let directory: URL
 
   init(directory: URL) throws {

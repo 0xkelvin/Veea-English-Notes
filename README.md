@@ -77,7 +77,7 @@ flutter run
 ### Run Tests
 
 ```bash
-# Run unit, widget, and arcade SDK test suite (173 tests)
+# Run unit, widget, and arcade SDK test suite (481 tests)
 flutter test
 ```
 
@@ -133,9 +133,6 @@ across app switches and restarts. Learning priority breaks ties among words that
 have not been practiced. Failed unlock grants and preview challenges do not
 advance rotation. Schema version 9 stores completion order separately and seeds
 it from existing review dates without changing vocabulary or learning history.
-The count accepts any positive number up to the current pool size. Removing
-selected words reduces the count when needed and never silently switches a
-custom pool to the whole notebook.
 
 Automatic pronunciation defaults to off; manual **Hear it** remains available.
 The optional daily notebook goal never blocks app access. Schema version 8
@@ -170,12 +167,12 @@ successful unlock. Completed monitors are cleaned up when Veea resumes.
 
 A paid Apple Developer Program team is required to sign the native build.
 The main app and all three Screen Time extensions need Family Controls and the
-App Group `group.com.veea.veeaRewind.screentime`:
+App Group `group.com.nintran.veeaEnglishApp`:
 
-- `com.veea.veeaRewind` — Runner
-- `com.veea.veeaRewind.GateMonitor` — background relocking
-- `com.veea.veeaRewind.GateShieldAction` — challenge handoff
-- `com.veea.veeaRewind.GateShieldConfiguration` — blocked-app screen
+- `com.nintran.veeaEnglishApp` — Runner
+- `com.nintran.veeaEnglishApp.GateMonitor` — background relocking
+- `com.nintran.veeaEnglishApp.GateShieldAction` — challenge handoff
+- `com.nintran.veeaEnglishApp.GateShieldConfiguration` — blocked-app screen
 
 Enable these capabilities for the four App IDs, select the paid team on the four
 targets, and regenerate their development profiles. TestFlight/App Store builds
@@ -202,15 +199,14 @@ and unsigned builds do not establish real Screen Time enforcement.
 Widget controls, interval selection, tap rotation, and native bridge calls are
 paused via `AppConfig.areHomeScreenWidgetsEnabled = false`. Stored widget
 preferences are retained. Daily reminders and app-unlock practice remain
-independent. The Word of Day widget source and target are kept for later, but
-the widget extension embedding/dependency entries in the Runner target and the
-Android widget receiver registration are commented out, so updated builds do
-not offer the widget in the OS widget gallery.
+independent. The Word of Day widget source is kept for later. Nin’s upstream
+update removes its iOS target, and the Android widget receiver registration is
+commented out, so updated builds do not offer the widget in the OS widget gallery.
 
-To restore, uncomment both marked entries in `ios/Runner.xcodeproj/project.pbxproj`
-and the receiver block in `android/app/src/main/AndroidManifest.xml`, then enable
-the Dart flag and rebuild. Native widget capabilities/signing must be configured
-for the chosen Apple Developer team.
+To restore, recreate and embed the iOS widget target, restore the receiver block
+in `android/app/src/main/AndroidManifest.xml`, enable the Dart flag and rebuild.
+Native widget capabilities/signing must be configured for the chosen Apple
+Developer team.
 
 ### Accounts and feedback (prepared; service connection pending)
 
@@ -220,3 +216,8 @@ until Nin's existing API and OTP service are connected. The optional Zalo button
 is hidden until a Veea group link is configured. See
 [account and feedback rollout](docs/account-feedback-rollout.md) for the user flow,
 server setup, desktop data contract and remaining integration checks.
+
+## Team handoff
+
+See [Nin’s implementation handoff](docs/nin-handoff.md) for the combined branch,
+Apple signing configuration, completed changes and remaining service setup.
