@@ -27,9 +27,10 @@ class AppDatabase {
 
   /// Completion history table for App Gate challenges.
   static const String gateLogsTable = 'gate_logs';
+  static const String gateProgressTable = 'gate_round_progress';
 
   /// Bump this and add a branch to [_upgrade] whenever the schema changes.
-  static const int version = 5;
+  static const int version = 11;
 
   /// Opens the database, creating or migrating the schema as needed.
   ///
@@ -59,6 +60,11 @@ class AppDatabase {
     await _createPronunciationsTable(db);
     await _createSrsReviewsTable(db);
     await _migrateToV5(db);
+    await _createGateProgress(db);
+    await _migrateLearningRules(db);
+    await _createGateRotation(db);
+    await _migrateWordSearch(db);
+    await _createAccountWorkspaces(db);
   }
 
   static Future<void> _upgrade(Database db, int from, int to) async {
@@ -71,9 +77,106 @@ class AppDatabase {
     if (from < 4) {
       await _createSrsReviewsTable(db);
     }
-    if (from < 5) {
+    if (from < 6) {
       await _migrateToV5(db);
     }
+    if (from < 7) await _createGateProgress(db);
+    if (from < 8) await _migrateLearningRules(db);
+    if (from < 9) await _createGateRotation(db);
+    if (from < 10) await _migrateWordSearch(db);
+    if (from < 11) await _createAccountWorkspaces(db);
+  }
+
+  static Future<void> _createAccountWorkspaces(DatabaseExecutor db) async {
+    await db.execute(
+      'CREATE TABLE account_workspaces (account_id TEXT PRIMARY KEY, payload TEXT NOT NULL)',
+    );
+    await db.execute(
+      'CREATE TABLE app_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
+    );
+    await db.execute('''CREATE TABLE feedback_outbox (
+      id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, kind TEXT NOT NULL,
+      message TEXT NOT NULL, contact TEXT, diagnostics TEXT NOT NULL DEFAULT '{}',
+      screenshot_base64 TEXT, status TEXT NOT NULL DEFAULT 'queued',
+      team_reply TEXT, last_error TEXT, created_at TEXT NOT NULL
+    )''');
+  }
+
+  /// Keep word-only search independent of translations and example sentences.
+  /// Only derived search data changes; user content and learning state stay intact.
+  static Future<void> _migrateWordSearch(DatabaseExecutor db) async {
+    await db.execute(
+      "ALTER TABLE $wordsTable ADD COLUMN word_search_text TEXT NOT NULL DEFAULT ''",
+    );
+    final rows = await db.query(wordsTable, columns: ['id', 'word']);
+    final batch = db.batch();
+    for (final row in rows) {
+      batch.update(
+        wordsTable,
+        {'word_search_text': TextNormalizer.query(row['word']! as String)},
+        where: 'id = ?',
+        whereArgs: [row['id']],
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  static Future<void> _createGateRotation(DatabaseExecutor db) async {
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS gate_word_rotation (word_id TEXT PRIMARY KEY REFERENCES $wordsTable(id) ON DELETE CASCADE, last_turn INTEGER NOT NULL)',
+    );
+    final reviewed = await db.query(
+      wordsTable,
+      columns: ['id'],
+      where: 'last_reviewed_at IS NOT NULL AND is_deleted = 0',
+      orderBy: 'last_reviewed_at ASC, id ASC',
+    );
+    final batch = db.batch();
+    for (var index = 0; index < reviewed.length; index++) {
+      batch.insert('gate_word_rotation', {
+        'word_id': reviewed[index]['id'],
+        'last_turn': index + 1,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  static Future<void> _migrateLearningRules(DatabaseExecutor db) async {
+    final columns = (await db.rawQuery(
+      'PRAGMA table_info($gateConfigTable)',
+    )).map((row) => row['name']).toSet();
+    for (final entry in {
+      'auto_pronounce': 'INTEGER NOT NULL DEFAULT 0',
+      'daily_word_goal': 'INTEGER NOT NULL DEFAULT 0',
+      'practice_word_ids_json': 'TEXT',
+    }.entries) {
+      if (!columns.contains(entry.key)) {
+        await db.execute(
+          'ALTER TABLE $gateConfigTable ADD COLUMN ${entry.key} ${entry.value}',
+        );
+      }
+    }
+    await db.execute(
+      'UPDATE $gateConfigTable SET daily_word_goal = 1 WHERE require_daily_capture = 1',
+    );
+    await db.execute('UPDATE $gateConfigTable SET require_daily_capture = 0');
+  }
+
+  static Future<void> _createGateProgress(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS $gateProgressTable (
+        target_app TEXT NOT NULL,
+        word_id TEXT NOT NULL REFERENCES $wordsTable(id) ON DELETE CASCADE,
+        PRIMARY KEY (target_app, word_id)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS gate_pending_answers (
+        target_app TEXT PRIMARY KEY,
+        word_id TEXT NOT NULL REFERENCES $wordsTable(id) ON DELETE CASCADE,
+        attempts INTEGER NOT NULL
+      )
+    ''');
   }
 
   /// v5 migration for App Gate ("Word Toll"):
@@ -113,15 +216,28 @@ class AppDatabase {
         id INTEGER PRIMARY KEY CHECK (id = 1),
         enabled INTEGER NOT NULL DEFAULT 0,
         pass_duration_minutes INTEGER NOT NULL DEFAULT 15,
+        words_per_unlock INTEGER NOT NULL DEFAULT 1,
         require_daily_capture INTEGER NOT NULL DEFAULT 0,
         gated_apps_json TEXT NOT NULL DEFAULT '[]'
       )
     ''');
 
+    final gateConfigInfo = await db.rawQuery(
+      'PRAGMA table_info($gateConfigTable)',
+    );
+    final gateConfigCols = {
+      for (final row in gateConfigInfo) row['name'] as String?,
+    };
+    if (!gateConfigCols.contains('words_per_unlock')) {
+      await db.execute(
+        'ALTER TABLE $gateConfigTable ADD COLUMN words_per_unlock INTEGER NOT NULL DEFAULT 1',
+      );
+    }
+
     await db.execute('''
       INSERT OR IGNORE INTO $gateConfigTable (
-        id, enabled, pass_duration_minutes, require_daily_capture, gated_apps_json
-      ) VALUES (1, 0, 15, 0, '[]')
+        id, enabled, pass_duration_minutes, words_per_unlock, require_daily_capture, gated_apps_json
+      ) VALUES (1, 0, 15, 1, 0, '[]')
     ''');
 
     await db.execute('''

@@ -145,10 +145,11 @@ void main() {
     });
 
     test(
-      'signing in with a different account clears previous local data and resets cursor',
+      'signing in with a different account archives and restores the previous notebook',
       () async {
         // Previous session account was alice@example.com
         tokens.lastAccount = 'alice@example.com';
+        await repo.activateNotebook('alice@example.com');
         await repo.insert(
           VocabularyWord.create(
             id: 'alice-w1',
@@ -178,9 +179,11 @@ void main() {
         );
         expect(okLogin, isTrue);
 
-        // Previous user's records must have been wiped
+        // The other account sees its own notebook; Alice’s words remain archived.
         expect(await repo.recentWords(), isEmpty);
         expect(await tokens.readLastAccount(), 'bob@example.com');
+        await repo.activateNotebook('alice@example.com');
+        expect((await repo.recentWords()).single.id, 'alice-w1');
       },
     );
   });

@@ -8,6 +8,8 @@ use serde::Serialize;
 /// internal details out of client-facing messages.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
+    #[error("Service temporarily unavailable: {0}")]
+    Unavailable(String),
     #[error("Validation error: {0}")]
     Validation(String),
 
@@ -63,6 +65,11 @@ pub struct ErrorBody {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, code, message) = match &self {
+            AppError::Unavailable(msg) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "SERVICE_UNAVAILABLE",
+                msg.clone(),
+            ),
             AppError::Validation(msg) => (StatusCode::BAD_REQUEST, "VALIDATION_ERROR", msg.clone()),
             AppError::Unauthorized => (
                 StatusCode::UNAUTHORIZED,

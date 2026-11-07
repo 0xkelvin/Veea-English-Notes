@@ -181,6 +181,7 @@ void main() {
 
     test('a refresh that fails offline keeps the session', () async {
       var attempt = 0;
+      var expirations = 0;
       final client = clientWith(
         MockClient((request) async {
           if (request.url.path.endsWith('/auth/refresh')) {
@@ -191,7 +192,9 @@ void main() {
         }),
       );
 
-      await expectLater(client.get('/x'), throwsA(isA<ApiException>()));
+      client.onSessionExpired = () => expirations++;
+      await expectLater(client.get('/x'), throwsA(isA<OfflineException>()));
+      expect(expirations, 0);
 
       // The credentials survive so a later attempt can succeed.
       expect(tokens.refreshToken, 'good-refresh');

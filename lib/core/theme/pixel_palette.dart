@@ -51,15 +51,15 @@ class PixelPalette extends ThemeExtension<PixelPalette> {
       PartOfSpeech.noun =>
         isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
       PartOfSpeech.verb =>
-        isDark ? const Color(0xFF34D399) : const Color(0xFF059669),
+        isDark ? const Color(0xFF34D399) : const Color(0xFF047857),
       PartOfSpeech.adjective =>
-        isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706),
+        isDark ? const Color(0xFFFBBF24) : const Color(0xFF92400E),
       PartOfSpeech.adverb =>
         isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C3AED),
       PartOfSpeech.phrase =>
-        isDark ? const Color(0xFFF472B6) : const Color(0xFFDB2777),
+        isDark ? const Color(0xFFF472B6) : const Color(0xFFBE185D),
       PartOfSpeech.idiom =>
-        isDark ? const Color(0xFFFB923C) : const Color(0xFFEA580C),
+        isDark ? const Color(0xFFFB923C) : const Color(0xFFC2410C),
       PartOfSpeech.other => accent,
     };
   }
@@ -71,7 +71,7 @@ class PixelPalette extends ThemeExtension<PixelPalette> {
     surface: Color(0xFFFFFFFF),
     ink: Color(0xFF0F172A),
     inkMuted: Color(0xFF475569),
-    inkFaint: Color(0xFF94A3B8),
+    inkFaint: Color(0xFF64748B),
     border: Color(0xFFE2E8F0),
     accent: Color(0xFF2563EB),
     onAccent: Color(0xFFFFFFFF),
@@ -85,10 +85,10 @@ class PixelPalette extends ThemeExtension<PixelPalette> {
     surface: Color(0xFF151C2C),
     ink: Color(0xFFF8FAFC),
     inkMuted: Color(0xFF94A3B8),
-    inkFaint: Color(0xFF64748B),
+    inkFaint: Color(0xFF94A3B8),
     border: Color(0xFF1E293B),
     accent: Color(0xFF3B82F6),
-    onAccent: Color(0xFFFFFFFF),
+    onAccent: Color(0xFF0B0F19),
     danger: Color(0xFFF43F5E),
   );
 

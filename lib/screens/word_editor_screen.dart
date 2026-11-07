@@ -1,10 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/config/app_config.dart';
 import '../core/theme/pixel_metrics.dart';
 import '../core/theme/pixel_palette.dart';
 import '../models/part_of_speech.dart';
 import '../models/vocabulary_word.dart';
+import '../models/word_identity.dart';
+import '../widgets/duplicate_word_sheet.dart';
 import '../models/word_challenge.dart';
 import '../providers/vocabulary_provider.dart';
 import '../services/friend_challenge_service.dart';
@@ -64,6 +68,60 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
 
   PartOfSpeech? _partOfSpeech;
   bool _saving = false;
+  Timer? _duplicateTimer;
+  int _duplicateToken = 0;
+  List<VocabularyWord> _duplicateMatches = const [];
+
+  void _scheduleDuplicateCheck(String value, {bool immediate = false}) {
+    _duplicateTimer?.cancel();
+    final token = ++_duplicateToken;
+    setState(() => _duplicateMatches = const []);
+    if (value.trim().isEmpty ||
+        (widget.isEditing &&
+            WordIdentity.key(value) ==
+                WordIdentity.key(widget.existing!.word))) {
+      return;
+    }
+    Future<void> check() async {
+      try {
+        final matches = await context.read<VocabularyProvider>().matchingWords(
+          value,
+          excludeId: widget.existing?.id,
+        );
+        if (!mounted || token != _duplicateToken) return;
+        setState(() => _duplicateMatches = matches);
+      } catch (_) {
+        // Save performs the same check transactionally and surfaces failures.
+      }
+    }
+
+    if (immediate) {
+      unawaited(check());
+    } else {
+      _duplicateTimer = Timer(const Duration(milliseconds: 250), check);
+    }
+  }
+
+  Future<void> _openSavedWord(VocabularyWord word) async {
+    final saved = await context.read<VocabularyProvider>().repository.findById(
+      word.id,
+    );
+    if (!mounted) return;
+    if (saved != null && !saved.isDeleted) {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(builder: (_) => WordEditorScreen(existing: saved)),
+      );
+    }
+    if (mounted) _scheduleDuplicateCheck(_word.text, immediate: true);
+  }
+
+  Future<void> _viewSavedWords() async {
+    final choice = await showDuplicateWords(
+      context,
+      matches: _duplicateMatches,
+    );
+    if (mounted && choice?.word != null) await _openSavedWord(choice!.word!);
+  }
 
   /// Looked up from the bundled dictionary as the word is typed.
   String? _pronunciation;
@@ -84,7 +142,7 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
 
   String get _meaningHint {
     if (_suggestedMeaning != null && _suggestedMeaning!.isNotEmpty) {
-      return _suggestedMeaning!;
+      return 'Type your own meaning';
     }
     if (_word.text.trim().isNotEmpty) {
       return 'Gợi ý nghĩa tiếng Việt...';
@@ -99,7 +157,7 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
     final draft = widget.draft;
     final initialWord = existing?.word ?? draft?.word ?? '';
     final initialMeaning = existing?.meaning ?? draft?.meaning ?? '';
-    final initialSource = existing?.source ?? draft?.source ?? '';
+    final initialSource = existing?.displaySource ?? draft?.source ?? '';
     final initialTags =
         existing?.tags.join(', ') ?? draft?.tags.join(', ') ?? '';
 
@@ -128,12 +186,15 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _refreshPronunciation(_word.text);
         _refreshSuggestions(_word.text);
+        _scheduleDuplicateCheck(_word.text, immediate: true);
       });
     }
   }
 
   @override
   void dispose() {
+    _duplicateTimer?.cancel();
+    _duplicateToken++;
     for (final controller in [_word, _meaning, _source, _tags, ..._examples]) {
       controller.dispose();
     }
@@ -246,8 +307,9 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
     setState(() => _examples.removeAt(index).dispose());
   }
 
-  Future<void> _save() async {
+  Future<void> _save({bool allowDifferentMeaning = false}) async {
     if (!_canSave || _saving) return;
+    FocusScope.of(context).unfocus();
     setState(() => _saving = true);
 
     final provider = context.read<VocabularyProvider>();
@@ -259,11 +321,10 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
         meaning: _meaning.text,
         pronunciation: _pronunciation,
         partOfSpeech: _partOfSpeech,
-        source: _source.text.isNotEmpty
-            ? _source.text
-            : (widget.draft?.source ?? 'Pixel Lens OCR'),
+        source: _source.text,
         examples: _exampleValues,
         tags: _tagValues,
+        allowDifferentMeaning: allowDifferentMeaning,
       );
     } else {
       await provider.updateWord(
@@ -275,10 +336,34 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
         source: _source.text,
         examples: _exampleValues,
         tags: _tagValues,
+        allowDifferentMeaning: allowDifferentMeaning,
       );
     }
 
     if (!mounted) return;
+    if (provider.duplicateWords.isNotEmpty) {
+      final matches = List<VocabularyWord>.of(provider.duplicateWords);
+      setState(() => _duplicateMatches = matches);
+      provider.consumeError();
+      final allowSeparate = !matches.any(
+        (saved) =>
+            WordIdentity.sameDefinition(_meaning.text, _partOfSpeech, saved),
+      );
+      final choice = await showDuplicateWords(
+        context,
+        matches: matches,
+        saving: true,
+        allowDifferentMeaning: allowSeparate,
+      );
+      if (!mounted) return;
+      setState(() => _saving = false);
+      if (choice?.word != null) {
+        await _openSavedWord(choice!.word!);
+      } else if (choice?.saveDifferentMeaning == true) {
+        await _save(allowDifferentMeaning: true);
+      }
+      return;
+    }
     if (provider.lastError != null) {
       // Stay on the form so nothing typed is lost.
       setState(() => _saving = false);
@@ -446,7 +531,12 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
             _EditorTopBar(
               title: widget.isEditing ? 'EDIT WORD' : 'NEW WORD',
               onClose: () => Navigator.of(context).pop(),
-              onDrop: widget.isEditing ? _dropWordToFriend : null,
+              onDrop:
+                  widget.isEditing &&
+                      AppConfig.isCloudEnabled &&
+                      AppConfig.isFriendDuelsEnabled
+                  ? _dropWordToFriend
+                  : null,
             ),
             if (provider.lastError != null)
               _ErrorBanner(
@@ -455,11 +545,14 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
               ),
             Expanded(
               child: ListView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
                 padding: const EdgeInsets.all(PixelMetrics.space4),
                 children: [
                   PixelField(
                     controller: _word,
                     label: 'English word',
+                    key: const Key('word_editor_word'),
                     hint: 'resilient',
                     autofocus: !widget.isEditing,
                     textInputAction: TextInputAction.next,
@@ -467,8 +560,46 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                       setState(() {});
                       _refreshPronunciation(value);
                       _refreshSuggestions(value);
+                      _scheduleDuplicateCheck(value);
                     },
                   ),
+                  if (_duplicateMatches.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Container(
+                        key: const Key('word_duplicate_notice'),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: palette.accent.withValues(alpha: .06),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: palette.border),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              'Already in your notebook',
+                              style: Theme.of(context).textTheme.titleSmall,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _duplicateMatches.first.meaning,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            TextButton(
+                              key: const Key('view_duplicate_words'),
+                              onPressed: _saving ? null : _viewSavedWords,
+                              child: Text(
+                                _duplicateMatches.length == 1
+                                    ? 'View saved word'
+                                    : 'View ${_duplicateMatches.length} saved entries',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   const SizedBox(height: PixelMetrics.space2),
                   _PronunciationLine(
                     ipa: _pronunciation,
@@ -490,6 +621,7 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                   PixelField(
                     controller: _meaning,
                     label: 'What it means',
+                    key: const Key('word_editor_meaning'),
                     hint: _meaningHint,
                     textCapitalization: TextCapitalization.sentences,
                     onChanged: (_) => setState(() {}),
@@ -497,88 +629,90 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                   if (_meaning.text.trim().isEmpty &&
                       _suggestedMeaning != null) ...[
                     const SizedBox(height: PixelMetrics.space1),
-                    GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _meaning.text = _suggestedMeaning!;
-                        });
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: PixelMetrics.space2,
-                          vertical: 4,
+                    Container(
+                      padding: const EdgeInsets.all(PixelMetrics.space3),
+                      decoration: BoxDecoration(
+                        color: palette.accent.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(
+                          PixelMetrics.radiusSm,
                         ),
-                        decoration: BoxDecoration(
-                          color: palette.surface,
-                          border: Border.all(
-                            color: palette.border.withValues(alpha: 0.4),
-                            width: 1,
+                        border: Border.all(
+                          color: palette.accent.withValues(alpha: 0.18),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'Suggested meaning',
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(color: palette.inkMuted),
                           ),
-                        ),
-                        child: Row(
-                          children: [
-                            Text(
-                              'GỢI Ý: ',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: palette.inkFaint,
-                              ),
-                            ),
-                            Expanded(
-                              child: Text(
-                                _suggestedMeaning!,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: palette.inkMuted,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '[ÁP DỤNG]',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: palette.accent,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
+                          const SizedBox(height: PixelMetrics.space1),
+                          Text(
+                            _suggestedMeaning!,
+                            key: const Key('suggested_meaning_text'),
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          const SizedBox(height: PixelMetrics.space3),
+                          PixelButton(
+                            key: const Key('use_meaning_suggestion'),
+                            label: 'Use this meaning',
+                            glyph: PixelGlyph.check,
+                            expand: true,
+                            onPressed: () {
+                              FocusScope.of(context).unfocus();
+                              setState(
+                                () => _meaning.text = _suggestedMeaning!,
+                              );
+                            },
+                          ),
+                        ],
                       ),
                     ),
                   ],
                   const SizedBox(height: PixelMetrics.space4),
-                  _PartOfSpeechPicker(
-                    selected: _partOfSpeech,
-                    suggested: _suggestedPartOfSpeech,
-                    onSelected: (value) => setState(() {
-                      _partOfSpeech = value;
-                      _partOfSpeechIsManual = true;
-                    }),
-                  ),
-                  const SizedBox(height: PixelMetrics.space4),
-                  PixelField(
-                    controller: _source,
-                    label: 'Where you met it',
-                    hint: 'a PR review, a podcast, a colleague',
-                    optional: true,
-                    textCapitalization: TextCapitalization.sentences,
-                  ),
-                  const SizedBox(height: PixelMetrics.space4),
-                  _ExamplesSection(
-                    controllers: _examples,
-                    onAdd: _addExample,
-                    onRemove: _removeExample,
-                    onOpenWizard: _openContextWizard,
-                  ),
-                  const SizedBox(height: PixelMetrics.space4),
-                  PixelField(
-                    controller: _tags,
-                    label: 'Tags',
-                    hint: 'work, tech',
-                    optional: true,
+                  ExpansionTile(
+                    key: const Key('word_editor_more_details'),
+                    tilePadding: EdgeInsets.zero,
+                    initiallyExpanded: widget.isEditing || widget.draft != null,
+                    title: const Text('More details'),
+                    subtitle: const Text(
+                      'Part of speech, source, examples and tags',
+                    ),
+                    children: [
+                      _PartOfSpeechPicker(
+                        selected: _partOfSpeech,
+                        suggested: _suggestedPartOfSpeech,
+                        onSelected: (value) => setState(() {
+                          _partOfSpeech = value;
+                          _partOfSpeechIsManual = true;
+                        }),
+                      ),
+                      const SizedBox(height: PixelMetrics.space4),
+                      PixelField(
+                        key: const Key('word_editor_source'),
+                        controller: _source,
+                        label: 'Where you met it',
+                        hint: 'a PR review, a podcast, a colleague',
+                        optional: true,
+                        textCapitalization: TextCapitalization.sentences,
+                      ),
+                      const SizedBox(height: PixelMetrics.space4),
+                      _ExamplesSection(
+                        controllers: _examples,
+                        onAdd: _addExample,
+                        onRemove: _removeExample,
+                        onOpenWizard: _openContextWizard,
+                      ),
+                      const SizedBox(height: PixelMetrics.space4),
+                      PixelField(
+                        controller: _tags,
+                        label: 'Tags',
+                        hint: 'work, tech',
+                        optional: true,
+                      ),
+                    ],
                   ),
                   const SizedBox(height: PixelMetrics.space6),
                   if (widget.isEditing) ...[
@@ -605,14 +739,33 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                   ),
                 ),
               ),
-              child: PixelButton(
-                label: _saving
-                    ? 'Saving…'
-                    : (widget.isEditing ? 'Save changes' : 'Save word'),
-                glyph: PixelGlyph.check,
-                filled: true,
-                expand: true,
-                onPressed: _canSave && !_saving ? _save : null,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (!_canSave)
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        bottom: PixelMetrics.space2,
+                      ),
+                      child: Text(
+                        _word.text.trim().isEmpty
+                            ? 'Add an English word and its meaning to save.'
+                            : 'Add a meaning to save your word.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  PixelButton(
+                    label: _saving
+                        ? 'Saving…'
+                        : (widget.isEditing ? 'Save changes' : 'Save word'),
+                    glyph: PixelGlyph.check,
+                    filled: true,
+                    expand: true,
+                    onPressed: _canSave && !_saving ? _save : null,
+                  ),
+                ],
               ),
             ),
           ],
@@ -669,7 +822,9 @@ class _PronunciationLine extends StatelessWidget {
                 )
               else
                 Text(
-                  hasWord ? 'Not in the dictionary' : '—',
+                  hasWord
+                      ? 'You can add pronunciation manually'
+                      : 'Filled in when available',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: palette.inkFaint,
                   ),
@@ -723,8 +878,9 @@ class _EditorTopBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
-          const Spacer(),
+          Expanded(
+            child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+          ),
           if (onDrop != null) ...[
             PixelIconButton(
               glyph: PixelGlyph.bolt,

@@ -88,6 +88,9 @@ pub async fn change_my_identifier(
     body.validate()
         .map_err(|e| AppError::Validation(e.to_string()))?;
 
+    if !body.identifier.contains('@') {
+        return Err(AppError::Validation("Verify your phone through the phone sign-in flow. Changing a phone number is not available yet.".into()));
+    }
     let profile = change_identifier::handle(
         change_identifier::ChangeIdentifierCommand {
             user_id: ctx.user_id,

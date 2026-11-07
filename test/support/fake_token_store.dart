@@ -9,6 +9,12 @@ class FakeTokenStore implements TokenStore {
   String? refreshToken;
   String? identifier;
   String? lastAccount;
+  String? accountId;
+  String? authMethod;
+  @override
+  Future<String?> readAccountId() async => accountId;
+  @override
+  Future<String?> readAuthMethod() async => authMethod;
 
   /// How many times the session was cleared, so tests can assert that a failed
   /// operation did *not* sign the user out.
@@ -31,10 +37,14 @@ class FakeTokenStore implements TokenStore {
     required String accessToken,
     required String refreshToken,
     String? identifier,
+    String? accountId,
+    String? authMethod,
   }) async {
     this.accessToken = accessToken;
     this.refreshToken = refreshToken;
     if (identifier != null) this.identifier = identifier;
+    if (accountId != null) this.accountId = accountId;
+    if (authMethod != null) this.authMethod = authMethod;
   }
 
   @override
@@ -65,6 +75,8 @@ class FakeTokenStore implements TokenStore {
     accessToken = null;
     refreshToken = null;
     identifier = null;
+    accountId = null;
+    authMethod = null;
     clearCount++;
   }
 }

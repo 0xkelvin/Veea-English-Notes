@@ -8,6 +8,8 @@ class SyncResult {
     required this.changes,
     required this.serverTime,
     required this.hasMore,
+    this.cursor,
+    this.canonical = const [],
   });
 
   /// Ids the server stored. Anything pushed but missing here belongs to
@@ -16,6 +18,8 @@ class SyncResult {
 
   /// Rows changed since the cursor, tombstones included.
   final List<VocabularyWord> changes;
+  final String? cursor;
+  final List<VocabularyWord> canonical;
 
   /// Cursor for the next pull. Persist only after [changes] is applied.
   final DateTime serverTime;
@@ -37,12 +41,14 @@ class VocabularyApi {
   Future<SyncResult> sync({
     required List<VocabularyWord> changes,
     DateTime? since,
+    String? cursor,
   }) async {
     final data = await _client.post(
       '/vocabulary/sync',
       body: {
         'changes': changes.map((w) => w.toApiJson()).toList(),
         if (since != null) 'since': since.toUtc().toIso8601String(),
+        'cursor': cursor ?? '0',
       },
     );
 
@@ -65,6 +71,11 @@ class VocabularyApi {
       changes: remote,
       serverTime: serverTime,
       hasMore: data['hasMore'] as bool? ?? false,
+      cursor: data['cursor'] as String?,
+      canonical: (data['canonical'] as List<Object?>? ?? const [])
+          .whereType<Map<String, Object?>>()
+          .map(VocabularyWord.fromApiJson)
+          .toList(),
     );
   }
 }

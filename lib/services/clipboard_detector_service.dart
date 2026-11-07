@@ -24,7 +24,9 @@ class ClipboardDetectorService {
 
     // Strip leading and trailing quotes, punctuation, brackets, ellipses
     trimmed = trimmed.replaceAll(
-      RegExp(r'''^["'“‘\s\.,;:!?\(\)\[\]\{\}<>…]+|["'”’\s\.,;:!?\(\)\[\]\{\}<>…]+$'''),
+      RegExp(
+        r'''^["'“‘\s\.,;:!?\(\)\[\]\{\}<>…]+|["'”’\s\.,;:!?\(\)\[\]\{\}<>…]+$''',
+      ),
       '',
     );
 
@@ -142,14 +144,16 @@ class ClipboardDetectorService {
     }
 
     // 3. Meaning resolution
-    final meaning = customMeaning ??
+    final meaning =
+        customMeaning ??
         ((suggestion?.meaning != null && suggestion!.meaning!.isNotEmpty)
             ? suggestion.meaning!
             : (suggestion?.partOfSpeech != null
-                ? '[${suggestion!.partOfSpeech!.label}] Nghĩa mới'
-                : 'Nghĩa mới'));
+                  ? '[${suggestion!.partOfSpeech!.label}] Nghĩa mới'
+                  : 'Nghĩa mới'));
 
-    final pos = suggestion?.partOfSpeech ??
+    final pos =
+        suggestion?.partOfSpeech ??
         WordSuggestionService.detectPartOfSpeech(cleanWord);
 
     // 4. Ensure current view is on today
@@ -166,6 +170,6 @@ class ClipboardDetectorService {
       source: 'Clipboard',
     );
 
-    return true;
+    return provider.lastError == null;
   }
 }

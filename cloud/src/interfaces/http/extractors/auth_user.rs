@@ -31,10 +31,22 @@ impl FromRequestParts<AppState> for AuthUser {
             .validate_access_token(token)
             .map_err(|_| AppError::Unauthorized)?;
 
+        // A valid signature must not keep a deleted or suspended account alive.
+        let active: Option<(String, String)> =
+            sqlx::query_as("SELECT status, role FROM users WHERE id = $1")
+                .bind(claims.sub)
+                .fetch_optional(&state.db)
+                .await?;
+        let Some((status, role)) = active else {
+            return Err(AppError::Unauthorized);
+        };
+        if status != "active" {
+            return Err(AppError::Unauthorized);
+        }
         Ok(AuthUser(AuthContext {
             user_id: claims.sub,
             email: claims.email,
-            role: claims.role,
+            role,
             token_id: claims.jti,
         }))
     }

@@ -1,12 +1,13 @@
 use axum::routing::{get, post, put};
-use axum::{middleware, Router};
+use axum::{Router, middleware};
 use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::bootstrap::app_state::AppState;
 
+use super::handlers::feedback_handler;
+use super::handlers::phone_auth_handler;
 use super::handlers::{
-    account_handler, admin_handler, auth_handler, health_handler, user_handler,
-    vocabulary_handler,
+    account_handler, admin_handler, auth_handler, health_handler, user_handler, vocabulary_handler,
 };
 use super::middleware as mw;
 use super::openapi;
@@ -14,9 +15,17 @@ use super::openapi;
 /// Build the complete Axum router with all routes and middleware.
 pub fn build_router(state: AppState) -> Router {
     let api_v1 = Router::new()
+        .route("/client/config", get(feedback_handler::config))
+        .route("/feedback", post(feedback_handler::submit).get(feedback_handler::mine))
+        .route("/admin/feedback", get(feedback_handler::admin_list))
+        .route("/admin/feedback/{id}", put(feedback_handler::admin_update))
+        .route("/admin/feedback/{id}/screenshot", get(feedback_handler::screenshot))
         // ── Public auth routes ──────────────────────────────
         .route("/auth/register", post(auth_handler::register))
         .route("/auth/login", post(auth_handler::login))
+        .route("/auth/otp/request", post(phone_auth_handler::request))
+        .route("/auth/otp/verify", post(phone_auth_handler::verify))
+        .route("/users/me/delete-otp", post(phone_auth_handler::request_delete).delete(phone_auth_handler::delete_verified))
         .route("/auth/refresh", post(auth_handler::refresh))
         // ── Protected auth routes ───────────────────────────
         .route("/auth/logout", post(auth_handler::logout))

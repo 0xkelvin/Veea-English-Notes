@@ -59,6 +59,17 @@ void main() {
       expect(service.mode, CommutePlaybackMode.wordOnly);
     });
 
+    test('a prepared playlist stays quiet until the user presses Play', () {
+      service.startPlayback(sampleWords, autoplay: false);
+      expect(service.currentPhaseText, isEmpty);
+      expect(service.currentWord?.word, 'resilient');
+      expect(service.isPaused, isTrue);
+      expect(tts.spokenTexts, isEmpty);
+      service.resume();
+      expect(service.isPlaying, isTrue);
+      expect(tts.spokenTexts, ['resilient']);
+    });
+
     test('startPlayback sets playlist and starts playing', () {
       service.startPlayback(sampleWords);
       expect(service.state, AudioCommuteState.playing);

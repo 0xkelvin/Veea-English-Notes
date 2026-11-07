@@ -68,10 +68,12 @@ void main() {
       expect(find.textContaining('giải pháp'), findsWidgets);
 
       // Part of speech header should display suggested NOUN
+      await tester.tap(find.byKey(const Key('word_editor_more_details')));
+      await tester.pumpAndSettle();
       expect(find.text('GỢI Ý: NOUN'), findsOneWidget);
 
       // Tapping the suggestion pill fills the meaning field
-      await tester.tap(find.text('[ÁP DỤNG]'));
+      await tester.tap(find.byKey(const Key('use_meaning_suggestion')));
       await settle(tester);
 
       final meaningField = tester.widget<TextField>(
@@ -92,14 +94,16 @@ void main() {
       await settle(tester);
 
       // Should display suggested meaning pill
-      expect(find.textContaining('GỢI Ý: '), findsWidgets);
+      expect(find.byKey(const Key('use_meaning_suggestion')), findsWidgets);
       expect(find.textContaining('kiên cường'), findsWidgets);
 
       // Part of speech header should display suggested ADJECTIVE
+      await tester.tap(find.byKey(const Key('word_editor_more_details')));
+      await tester.pumpAndSettle();
       expect(find.text('GỢI Ý: ADJECTIVE'), findsOneWidget);
 
       // Tapping the suggestion pill fills the meaning field
-      await tester.tap(find.text('[ÁP DỤNG]'));
+      await tester.tap(find.byKey(const Key('use_meaning_suggestion')));
       await settle(tester);
 
       // Meaning field (second TextField) should now have the text
@@ -120,17 +124,21 @@ void main() {
     await tester.enterText(find.byType(TextField).first, 'resilient');
     await settle(tester);
 
+    // Fill the required fields before scrolling into optional details.
+    await tester.enterText(find.byType(TextField).at(1), 'nghĩa riêng');
+    await settle(tester);
+
+    await tester.tap(find.byKey(const Key('word_editor_more_details')));
+    await tester.pumpAndSettle();
     expect(find.text('GỢI Ý: ADJECTIVE'), findsOneWidget);
 
     // User explicitly taps "NOUN"
+    await tester.ensureVisible(find.text('NOUN'));
     await tester.tap(find.text('NOUN'));
     await settle(tester);
 
     // Save should work with PartOfSpeech.noun
-    await tester.enterText(find.byType(TextField).at(1), 'nghĩa riêng');
-    await settle(tester);
-
-    await tester.tap(find.text('SAVE WORD'));
+    await tester.tap(find.text('Save word'));
     await settle(tester);
 
     expect(provider.words.single.word, 'resilient');
@@ -147,9 +155,11 @@ void main() {
       await settle(tester);
 
       expect(find.textContaining('lựa chọn'), findsWidgets);
+      await tester.tap(find.byKey(const Key('word_editor_more_details')));
+      await tester.pumpAndSettle();
       expect(find.text('GỢI Ý: NOUN'), findsOneWidget);
 
-      await tester.tap(find.text('[ÁP DỤNG]'));
+      await tester.tap(find.byKey(const Key('use_meaning_suggestion')));
       await settle(tester);
 
       final meaningField = tester.widget<TextField>(

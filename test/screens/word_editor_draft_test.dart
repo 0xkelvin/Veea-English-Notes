@@ -58,6 +58,7 @@ void main() {
         meaning: 'kiên cường',
         pronunciation: '/rɪˈzɪljənt/',
         partOfSpeech: PartOfSpeech.adjective,
+        source: 'A podcast',
         examples: const ['Stay resilient.'],
         tags: const ['ocr', 'mindset'],
       );
@@ -74,10 +75,10 @@ void main() {
       expect(meaningField.controller?.text, 'kiên cường');
 
       // Verify save button is "SAVE WORD" (not "SAVE CHANGES")
-      expect(find.text('SAVE WORD'), findsOneWidget);
+      expect(find.text('Save word'), findsOneWidget);
 
       // Tap Save word
-      await tester.tap(find.text('SAVE WORD'));
+      await tester.tap(find.text('Save word'));
       await settle(tester);
 
       // Verify word was added to repository with a valid non-empty id
@@ -87,6 +88,62 @@ void main() {
       expect(saved.meaning, 'kiên cường');
       expect(saved.id.isNotEmpty, isTrue);
       expect(saved.tags, contains('ocr'));
+      expect(saved.source, 'A podcast');
     },
   );
+
+  testWidgets('Manually added word has no automatic source', (tester) async {
+    await tester.pumpWidget(wrap(const WordEditorScreen()));
+    await settle(tester);
+    await tester.enterText(
+      find.descendant(
+        of: find.byKey(const Key('word_editor_word')),
+        matching: find.byType(TextField),
+      ),
+      'resilient',
+    );
+    await tester.enterText(
+      find.descendant(
+        of: find.byKey(const Key('word_editor_meaning')),
+        matching: find.byType(TextField),
+      ),
+      'kiên cường',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save word'));
+    await settle(tester);
+    expect(provider.words.single.source, isNull);
+  });
+
+  testWidgets('Clearing a draft source keeps it cleared when saving', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      wrap(
+        const WordEditorScreen.draft(
+          draft: WordDraft(
+            word: 'resilient',
+            meaning: 'kiên cường',
+            source: 'Camera Scan',
+          ),
+        ),
+      ),
+    );
+    await settle(tester);
+    final source = find.descendant(
+      of: find.byKey(const Key('word_editor_source')),
+      matching: find.byType(TextField),
+    );
+    await tester.scrollUntilVisible(
+      source,
+      150,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(tester.widget<TextField>(source).controller!.text, 'Camera Scan');
+    await tester.enterText(source, '   ');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save word'));
+    await settle(tester);
+    expect(provider.words.single.source, isNull);
+  });
 }

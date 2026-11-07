@@ -64,10 +64,12 @@ class ApiClient {
   Future<Map<String, Object?>> get(
     String path, {
     Map<String, String>? query,
+    Map<String, String>? extraHeaders,
     bool authenticated = true,
   }) {
     return _send(
-      (headers) => _http.get(_uri(path, query), headers: headers),
+      (headers) =>
+          _http.get(_uri(path, query), headers: {...headers, ...?extraHeaders}),
       authenticated: authenticated,
     );
   }
@@ -75,12 +77,13 @@ class ApiClient {
   Future<Map<String, Object?>> post(
     String path, {
     Object? body,
+    Map<String, String>? extraHeaders,
     bool authenticated = true,
   }) {
     return _send(
       (headers) => _http.post(
         _uri(path),
-        headers: headers,
+        headers: {...headers, ...?extraHeaders},
         body: body == null ? null : jsonEncode(body),
       ),
       authenticated: authenticated,
@@ -90,12 +93,13 @@ class ApiClient {
   Future<Map<String, Object?>> put(
     String path, {
     Object? body,
+    Map<String, String>? extraHeaders,
     bool authenticated = true,
   }) {
     return _send(
       (headers) => _http.put(
         _uri(path),
-        headers: headers,
+        headers: {...headers, ...?extraHeaders},
         body: body == null ? null : jsonEncode(body),
       ),
       authenticated: authenticated,
@@ -107,12 +111,13 @@ class ApiClient {
   Future<Map<String, Object?>> delete(
     String path, {
     Object? body,
+    Map<String, String>? extraHeaders,
     bool authenticated = true,
   }) {
     return _send(
       (headers) => _http.delete(
         _uri(path),
-        headers: headers,
+        headers: {...headers, ...?extraHeaders},
         body: body == null ? null : jsonEncode(body),
       ),
       authenticated: authenticated,
@@ -183,14 +188,24 @@ class ApiClient {
 
       if (response.statusCode != 200) {
         // The refresh token itself is rejected — the session is over.
-        if (response.statusCode == 401) await _tokens.clear();
-        return false;
+        if (response.statusCode == 401) {
+          await _tokens.clear();
+          return false;
+        }
+        throw ApiException(
+          'Could not refresh your session. Please try again.',
+          statusCode: response.statusCode,
+        );
       }
 
       final data = _decode(response);
       final accessToken = data['access_token'] as String?;
       final newRefresh = data['refresh_token'] as String?;
-      if (accessToken == null) return false;
+      if (accessToken == null || accessToken.isEmpty) {
+        throw const ApiException(
+          'Could not refresh your session. Please try again.',
+        );
+      }
 
       if (newRefresh != null) {
         await _tokens.save(accessToken: accessToken, refreshToken: newRefresh);
@@ -198,10 +213,11 @@ class ApiClient {
         await _tokens.saveAccessToken(accessToken);
       }
       return true;
-    } on Exception catch (error) {
-      // Offline: keep the session, the next attempt may succeed.
-      debugPrint('Token refresh failed: $error');
-      return false;
+    } on ApiException {
+      rethrow;
+    } on Exception catch (_) {
+      // A connection failure is not evidence that a saved session expired.
+      throw const OfflineException();
     }
   }
 

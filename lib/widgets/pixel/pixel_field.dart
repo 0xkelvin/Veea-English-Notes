@@ -82,31 +82,34 @@ class _PixelFieldState extends State<PixelField> {
               ]
             : null,
       ),
-      child: TextField(
-        controller: widget.controller,
-        focusNode: _focusNode,
-        autofocus: widget.autofocus,
-        maxLines: widget.obscure ? 1 : widget.maxLines,
-        obscureText: widget.obscure,
-        textInputAction: widget.textInputAction,
-        onSubmitted: widget.onSubmitted,
-        onChanged: widget.onChanged,
-        textCapitalization: widget.textCapitalization,
-        cursorWidth: 2.0,
-        cursorRadius: const Radius.circular(2),
-        style: theme.textTheme.bodyLarge,
-        decoration: InputDecoration(
-          isDense: true,
-          hintText: widget.hint,
-          hintStyle: theme.textTheme.bodyLarge?.copyWith(
-            color: palette.inkFaint,
-          ),
-          border: InputBorder.none,
-          enabledBorder: InputBorder.none,
-          focusedBorder: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: PixelMetrics.space3,
-            vertical: PixelMetrics.space3,
+      child: Semantics(
+        label: widget.label,
+        child: TextField(
+          controller: widget.controller,
+          focusNode: _focusNode,
+          autofocus: widget.autofocus,
+          maxLines: widget.obscure ? 1 : widget.maxLines,
+          obscureText: widget.obscure,
+          textInputAction: widget.textInputAction,
+          onSubmitted: widget.onSubmitted,
+          onChanged: widget.onChanged,
+          textCapitalization: widget.textCapitalization,
+          cursorWidth: 2.0,
+          cursorRadius: const Radius.circular(2),
+          style: theme.textTheme.bodyLarge,
+          decoration: InputDecoration(
+            isDense: true,
+            hintText: widget.hint,
+            hintStyle: theme.textTheme.bodyLarge?.copyWith(
+              color: palette.inkFaint,
+            ),
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: PixelMetrics.space3,
+              vertical: PixelMetrics.space3,
+            ),
           ),
         ),
       ),
@@ -115,10 +118,12 @@ class _PixelFieldState extends State<PixelField> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
+        Wrap(
+          spacing: PixelMetrics.space1,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             Text(
-              widget.label.toUpperCase(),
+              widget.label,
               style: theme.textTheme.labelSmall?.copyWith(
                 color: focused ? palette.accent : palette.inkMuted,
               ),
@@ -126,7 +131,7 @@ class _PixelFieldState extends State<PixelField> {
             if (widget.optional) ...[
               const SizedBox(width: PixelMetrics.space1),
               Text(
-                '(OPTIONAL)',
+                'Optional',
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: palette.inkFaint,
                 ),
@@ -169,32 +174,44 @@ class PixelSearchField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return Container(
-      decoration: BoxDecoration(
-        color: palette.surface,
-        borderRadius: BorderRadius.circular(PixelMetrics.radiusSm),
-        border: Border.all(color: palette.border, width: PixelMetrics.border),
-      ),
-      child: TextField(
-        controller: controller,
-        onChanged: onChanged,
-        autofocus: autofocus,
-        textInputAction: TextInputAction.search,
-        cursorWidth: 2.0,
-        cursorRadius: const Radius.circular(2),
-        style: Theme.of(context).textTheme.bodyLarge,
-        decoration: InputDecoration(
-          isDense: true,
-          hintText: hint,
-          hintStyle: Theme.of(
-            context,
-          ).textTheme.bodyLarge?.copyWith(color: palette.inkFaint),
-          border: InputBorder.none,
-          enabledBorder: InputBorder.none,
-          focusedBorder: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: PixelMetrics.space3,
-            vertical: PixelMetrics.space3,
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (context, value, _) => Container(
+        decoration: BoxDecoration(
+          color: palette.surface,
+          borderRadius: BorderRadius.circular(PixelMetrics.radiusSm),
+          border: Border.all(color: palette.border, width: PixelMetrics.border),
+        ),
+        child: TextField(
+          controller: controller,
+          onChanged: onChanged,
+          autofocus: autofocus,
+          textInputAction: TextInputAction.search,
+          style: Theme.of(context).textTheme.bodyLarge,
+          decoration: InputDecoration(
+            isDense: true,
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: value.text.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Clear search',
+                    onPressed: () {
+                      controller.clear();
+                      onChanged('');
+                    },
+                    icon: const Icon(Icons.close),
+                  ),
+            hintText: hint,
+            hintStyle: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(color: palette.inkFaint),
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: PixelMetrics.space3,
+              vertical: PixelMetrics.space3,
+            ),
           ),
         ),
       ),

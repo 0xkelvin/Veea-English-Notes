@@ -71,6 +71,7 @@ class AudioCommuteService extends ChangeNotifier {
     List<VocabularyWord> words, {
     int startIndex = 0,
     String? playlistTitle,
+    bool autoplay = true,
   }) {
     if (words.isEmpty) return;
     _generationToken++;
@@ -81,9 +82,10 @@ class AudioCommuteService extends ChangeNotifier {
     _generateOrder();
     _currentIndex = startIndex.clamp(0, _order.length - 1);
     _currentRepeat = 0;
-    _state = AudioCommuteState.playing;
+    _state = autoplay ? AudioCommuteState.playing : AudioCommuteState.paused;
+    _currentPhaseText = '';
     _notify();
-    _runCurrentWordCycle();
+    if (autoplay) _runCurrentWordCycle();
   }
 
   void resume() {

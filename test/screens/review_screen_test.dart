@@ -54,7 +54,7 @@ void main() {
       await tester.pumpWidget(wrap(const ReviewScreen(practiceAll: true)));
       await tester.pumpAndSettle();
 
-      expect(find.text('SPACED REVIEW'), findsOneWidget);
+      expect(find.text('Review'), findsOneWidget);
       expect(find.bySemanticsLabel('Exit review'), findsOneWidget);
       expect(find.bySemanticsLabel('Hands-Free Audio Review'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -72,7 +72,7 @@ void main() {
       await tester.pumpWidget(wrap(const ReviewScreen(practiceAll: true)));
       await tester.pumpAndSettle();
 
-      expect(find.text('SPACED REVIEW'), findsOneWidget);
+      expect(find.text('Review'), findsOneWidget);
       expect(find.bySemanticsLabel('Exit review'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },

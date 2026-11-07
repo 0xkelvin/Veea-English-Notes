@@ -78,6 +78,13 @@ class VocabularyWord {
   /// Where the word was encountered — a podcast, a PR review, a colleague.
   final String? source;
 
+  /// Hides the old editor fallback, which was also stamped on manual entries.
+  /// Keep the stored value intact because genuine scans used the same label.
+  String? get displaySource {
+    final value = _nullIfBlank(source);
+    return value?.toLowerCase() == 'pixel lens ocr' ? null : value;
+  }
+
   final List<String> examples;
 
   final List<String> tags;
@@ -210,6 +217,7 @@ class VocabularyWord {
     'examples': jsonEncode(examples),
     'tags': jsonEncode(tags),
     'search_text': searchText,
+    'word_search_text': TextNormalizer.query(word),
     'date': date,
     'created_at': createdAt.toUtc().toIso8601String(),
     'updated_at': updatedAt.toUtc().toIso8601String(),

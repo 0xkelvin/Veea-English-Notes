@@ -104,24 +104,102 @@ void main() {
       expect((await repo.search('resil')).single.id, 'a');
     });
 
+    test(
+      'co matches words by default and meanings only when requested',
+      () async {
+        await repo.insert(
+          makeWord(id: 'consent', word: 'consent', meaning: 'bằng lòng'),
+        );
+        await repo.insert(
+          makeWord(id: 'confront', word: 'confront', meaning: 'đối đầu'),
+        );
+        await repo.insert(
+          makeWord(
+            id: 'recipe',
+            word: 'recipe',
+            meaning: 'công thức, cách nấu ăn',
+          ),
+        );
+        await repo.update(
+          makeWord(id: 'a', word: 'resilient', meaning: 'có khả năng phục hồi'),
+        );
+        expect((await repo.search('co')).map((w) => w.word), [
+          'confront',
+          'consent',
+        ]);
+        expect(
+          (await repo.search('co', includeNotes: true)).map((w) => w.word),
+          ['confront', 'consent', 'resilient', 'recipe'],
+        );
+      },
+    );
+
+    test(
+      'ranks exact, prefix, contained word and notes before applying limit',
+      () async {
+        for (final word in ['co', 'consent', 'decode', 'example']) {
+          await repo.insert(
+            makeWord(
+              id: word,
+              word: word,
+              meaning: 'co',
+              date: word == 'co' ? '2026-08-01' : '2026-08-18',
+            ),
+          );
+        }
+        expect(
+          (await repo.search('co', includeNotes: true)).map((w) => w.word),
+          ['co', 'consent', 'decode', 'example'],
+        );
+        expect(
+          (await repo.search('co', includeNotes: true, limit: 1)).single.word,
+          'co',
+        );
+      },
+    );
+
+    test(
+      'word-only search folds accents and refreshes after an edit',
+      () async {
+        final word = makeWord(id: 'cafe', word: 'CAFÉ');
+        await repo.insert(word);
+        expect((await repo.search('cafe')).single.id, 'cafe');
+        await repo.update(word.copyWith(word: 'bistro'));
+        expect(await repo.search('cafe'), isEmpty);
+        expect((await repo.search('BISTRO')).single.id, 'cafe');
+      },
+    );
+
     test('matches Vietnamese with diacritics', () async {
-      expect((await repo.search('kiên')).single.id, 'a');
+      expect((await repo.search('kiên', includeNotes: true)).single.id, 'a');
     });
 
     test('matches Vietnamese typed without diacritics', () async {
       // The whole point of the folded search column.
-      expect((await repo.search('kien cuong')).single.id, 'a');
-      expect((await repo.search('dieu tiet')).single.id, 'b');
+      expect(
+        (await repo.search('kien cuong', includeNotes: true)).single.id,
+        'a',
+      );
+      expect(
+        (await repo.search('dieu tiet', includeNotes: true)).single.id,
+        'b',
+      );
     });
 
     test('is case-insensitive across scripts', () async {
       expect((await repo.search('RESILIENT')).single.id, 'a');
-      expect((await repo.search('KIÊN')).single.id, 'a');
+      expect((await repo.search('KIÊN', includeNotes: true)).single.id, 'a');
     });
 
     test('matches example sentences and source', () async {
-      expect((await repo.search('distributed')).single.id, 'a');
-      expect((await repo.search('PR review')).single.id, 'a');
+      expect(
+        (await repo.search('distributed', includeNotes: true)).single.id,
+        'a',
+      );
+      expect(
+        (await repo.search('PR review', includeNotes: true)).single.id,
+        'a',
+      );
     });
 
     test('ranks a word-prefix match above an incidental one', () async {
@@ -134,7 +212,7 @@ void main() {
         ),
       );
 
-      final results = await repo.search('resilient');
+      final results = await repo.search('resilient', includeNotes: true);
       expect(results.first.id, 'a');
       expect(results.map((w) => w.id), containsAll(['a', 'c']));
     });

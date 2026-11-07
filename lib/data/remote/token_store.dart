@@ -1,60 +1,86 @@
+import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// Holds the signed-in session.
-///
-/// Tokens live in the platform keychain/keystore rather than
-/// SharedPreferences: a refresh token is a long-lived credential, and
-/// SharedPreferences is world-readable on a rooted or jailbroken device.
+/// A session is one atomic keychain entry, so tokens and notebook ownership
+/// cannot be left belonging to different accounts after an interrupted write.
 class TokenStore {
   const TokenStore([this._storage = const FlutterSecureStorage()]);
-
-  static const _accessKey = 'auth.access_token';
-  static const _refreshKey = 'auth.refresh_token';
-
-  /// The email address or phone number the account signs in with, kept only
-  /// so the account screen can show who is signed in while offline.
-  static const _identifierKey = 'auth.identifier';
+  static const _sessionKey = 'auth.session.v2';
   static const _lastAccountKey = 'auth.last_account_identifier';
-
   final FlutterSecureStorage _storage;
 
-  Future<String?> readAccessToken() => _storage.read(key: _accessKey);
+  Future<Map<String, dynamic>?> _session() async {
+    final raw = await _storage.read(key: _sessionKey);
+    return raw == null ? null : jsonDecode(raw) as Map<String, dynamic>;
+  }
 
-  Future<String?> readRefreshToken() => _storage.read(key: _refreshKey);
-
-  Future<String?> readIdentifier() => _storage.read(key: _identifierKey);
-
+  Future<String?> _read(String field, String legacy) async =>
+      (await _session())?[field] as String? ?? await _storage.read(key: legacy);
+  Future<String?> readAccessToken() =>
+      _read('access_token', 'auth.access_token');
+  Future<String?> readRefreshToken() =>
+      _read('refresh_token', 'auth.refresh_token');
+  Future<String?> readIdentifier() => _read('identifier', 'auth.identifier');
+  Future<String?> readAccountId() async =>
+      (await _session())?['account_id'] as String?;
+  Future<String?> readAuthMethod() async =>
+      (await _session())?['auth_method'] as String?;
   Future<String?> readLastAccount() => _storage.read(key: _lastAccountKey);
-
   Future<void> saveLastAccount(String account) =>
       _storage.write(key: _lastAccountKey, value: account);
-
   Future<void> clearLastAccount() => _storage.delete(key: _lastAccountKey);
-
   Future<bool> get hasSession async => await readRefreshToken() != null;
 
   Future<void> save({
     required String accessToken,
     required String refreshToken,
     String? identifier,
+    String? accountId,
+    String? authMethod,
   }) async {
-    await _storage.write(key: _accessKey, value: accessToken);
-    await _storage.write(key: _refreshKey, value: refreshToken);
-    if (identifier != null) {
-      await _storage.write(key: _identifierKey, value: identifier);
-    }
+    final previous = await _session() ?? <String, dynamic>{};
+    await _storage.write(
+      key: _sessionKey,
+      value: jsonEncode({
+        ...previous,
+        'access_token': accessToken,
+        'refresh_token': refreshToken,
+        'identifier': ?identifier,
+        'account_id': ?accountId,
+        'auth_method': ?authMethod,
+      }),
+    );
   }
 
-  /// Replaces only the access token, after a silent refresh.
-  Future<void> saveAccessToken(String accessToken) =>
-      _storage.write(key: _accessKey, value: accessToken);
+  Future<void> saveAccessToken(String accessToken) async {
+    final refresh = await readRefreshToken();
+    if (refresh == null) return;
+    await save(
+      accessToken: accessToken,
+      refreshToken: refresh,
+      identifier: await readIdentifier(),
+    );
+  }
 
-  Future<void> saveIdentifier(String identifier) =>
-      _storage.write(key: _identifierKey, value: identifier);
+  Future<void> saveIdentifier(String identifier) async {
+    final access = await readAccessToken();
+    final refresh = await readRefreshToken();
+    if (access == null || refresh == null) return;
+    await save(
+      accessToken: access,
+      refreshToken: refresh,
+      identifier: identifier,
+    );
+  }
 
   Future<void> clear() async {
-    await _storage.delete(key: _accessKey);
-    await _storage.delete(key: _refreshKey);
-    await _storage.delete(key: _identifierKey);
+    await _storage.delete(key: _sessionKey);
+    for (final key in [
+      'auth.access_token',
+      'auth.refresh_token',
+      'auth.identifier',
+    ]) {
+      await _storage.delete(key: key);
+    }
   }
 }

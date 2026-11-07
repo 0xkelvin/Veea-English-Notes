@@ -101,7 +101,7 @@ void main() {
     await settle(tester);
 
     // Better than a blank line, which reads as "still loading".
-    expect(find.text('Not in the dictionary'), findsOneWidget);
+    expect(find.text('You can add pronunciation manually'), findsOneWidget);
   });
 
   testWidgets('saves the transcription without the user touching it', (
@@ -115,7 +115,7 @@ void main() {
     await tester.enterText(find.byType(TextField).at(1), 'kiên cường');
     await settle(tester);
 
-    await tester.tap(find.text('SAVE WORD'));
+    await tester.tap(find.text('Save word'));
     await settle(tester);
 
     expect(provider.words.single.pronunciation, 'rɪˈzɪljənt');
@@ -135,7 +135,7 @@ void main() {
 
     // Typed with slashes, as a user copying from a dictionary would.
     await tester.enterText(find.byType(TextField).last, '/mine/');
-    await tester.tap(find.text('USE THIS'));
+    await tester.tap(find.text('Use this'));
     await settle(tester);
 
     expect(find.text('/mine/'), findsOneWidget);
@@ -152,7 +152,7 @@ void main() {
     await tester.tap(iconButton('Set the pronunciation by hand'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, 'mine');
-    await tester.tap(find.text('USE THIS'));
+    await tester.tap(find.text('Use this'));
     await settle(tester);
 
     // Retyping the word must not silently undo the user's correction.
@@ -175,7 +175,7 @@ void main() {
     await tester.tap(iconButton('Set the pronunciation by hand'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, 'mine');
-    await tester.tap(find.text('USE THIS'));
+    await tester.tap(find.text('Use this'));
     await settle(tester);
 
     await tester.tap(iconButton('Use the automatic pronunciation'));

@@ -84,13 +84,11 @@ class CartridgeProvider extends ChangeNotifier {
       );
 
       // Check if word is already present before inserting
-      final exists = vocabProvider.words.any(
-        (w) => w.word.toLowerCase() == cw.word.toLowerCase(),
-      );
+      final exists = (await vocabProvider.matchingWords(cw.word)).isNotEmpty;
 
       if (!exists) {
         await vocabProvider.insertWord(vocabWord);
-        installedCount++;
+        if (vocabProvider.lastError == null) installedCount++;
       }
     }
 

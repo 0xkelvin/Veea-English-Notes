@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/config/app_config.dart';
 import '../models/vocabulary_word.dart';
 import '../providers/widget_provider.dart';
 import 'tts_service.dart';
@@ -17,6 +18,7 @@ class WidgetService {
 
   /// Checks whether widgets are enabled by the user before writing data.
   static Future<bool> isWidgetEnabled() async {
+    if (!AppConfig.areHomeScreenWidgetsEnabled) return false;
     try {
       final prefs = await SharedPreferences.getInstance();
       return prefs.getBool('widget_enabled') ?? true;
@@ -33,7 +35,7 @@ class WidgetService {
 
   /// Sets widget rotation interval preference in native shared storage.
   static Future<void> setRotationInterval(int intervalMinutes) async {
-    if (kIsWeb) return;
+    if (!AppConfig.areHomeScreenWidgetsEnabled || kIsWeb) return;
     try {
       await HomeWidget.setAppGroupId(appGroupId);
       await HomeWidget.saveWidgetData<int>(
@@ -53,7 +55,7 @@ class WidgetService {
 
   /// Rotates to the next word in the list and updates the native widget.
   static Future<void> rotateToNextWord() async {
-    if (kIsWeb) return;
+    if (!AppConfig.areHomeScreenWidgetsEnabled || kIsWeb) return;
     try {
       await HomeWidget.setAppGroupId(appGroupId);
       final jsonString = await HomeWidget.getWidgetData<String>(
@@ -109,7 +111,9 @@ class WidgetService {
     required List<VocabularyWord> words,
     required int streakDays,
   }) async {
-    if (kIsWeb || words.isEmpty) return;
+    if (!AppConfig.areHomeScreenWidgetsEnabled || kIsWeb || words.isEmpty) {
+      return;
+    }
     if (!await isWidgetEnabled()) return;
 
     try {
@@ -178,7 +182,7 @@ class WidgetService {
 
   /// Clears native widget data.
   static Future<void> clearWidgetData() async {
-    if (kIsWeb) return;
+    if (!AppConfig.areHomeScreenWidgetsEnabled || kIsWeb) return;
     if (!await isWidgetEnabled()) return;
 
     try {
@@ -207,7 +211,7 @@ class WidgetService {
 
   /// Returns the word currently displayed on the widget.
   static Future<String?> getCurrentWidgetWord() async {
-    if (kIsWeb) return null;
+    if (!AppConfig.areHomeScreenWidgetsEnabled || kIsWeb) return null;
     try {
       await HomeWidget.setAppGroupId(appGroupId);
       final word = await HomeWidget.getWidgetData<String>('widget_word');
@@ -239,7 +243,7 @@ class WidgetService {
     required WidgetProvider widgetProvider,
     required TtsService ttsService,
   }) async {
-    if (kIsWeb) return;
+    if (!AppConfig.areHomeScreenWidgetsEnabled || kIsWeb) return;
     try {
       await HomeWidget.setAppGroupId(appGroupId);
 
@@ -269,6 +273,7 @@ class WidgetService {
     required WidgetProvider widgetProvider,
     TtsService? ttsService,
   }) async {
+    if (!AppConfig.areHomeScreenWidgetsEnabled) return;
     try {
       if (widgetProvider.rotateOnTap) {
         await rotateToNextWord();

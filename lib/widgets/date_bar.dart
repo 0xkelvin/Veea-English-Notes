@@ -39,40 +39,37 @@ class DateBar extends StatelessWidget {
             onPressed: provider.goToPreviousDay,
           ),
           Expanded(
-            child: GestureDetector(
+            child: Semantics(
+              button: true,
+              label: 'Open calendar',
+              excludeSemantics: true,
               onTap: () => _openCalendar(context, provider),
-              behavior: HitTestBehavior.opaque,
-              child: Column(
-                children: [
-                  Text(
-                    _label(selected, provider.isToday),
-                    style: theme.textTheme.titleMedium,
-                    textAlign: TextAlign.center,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(PixelMetrics.radiusSm),
+                onTap: () => _openCalendar(context, provider),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: PixelMetrics.space2,
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    provider.markedDates.contains(provider.selectedDateKey)
-                        ? '· · ·'
-                        : 'EMPTY',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color:
-                          provider.markedDates.contains(
-                            provider.selectedDateKey,
-                          )
-                          ? palette.accent
-                          : palette.inkFaint,
-                    ),
+                  child: Column(
+                    children: [
+                      Text(
+                        _label(selected, provider.isToday),
+                        style: theme.textTheme.titleMedium,
+                        textAlign: TextAlign.center,
+                      ),
+                      Text(
+                        'View calendar',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: palette.inkMuted,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
-          PixelIconButton(
-            glyph: PixelGlyph.calendar,
-            semanticLabel: 'Open calendar',
-            onPressed: () => _openCalendar(context, provider),
-          ),
-          const SizedBox(width: PixelMetrics.space1),
           PixelIconButton(
             glyph: PixelGlyph.arrowRight,
             semanticLabel: 'Next day',
@@ -84,8 +81,8 @@ class DateBar extends StatelessWidget {
   }
 
   static String _label(DateTime date, bool isToday) {
-    if (isToday) return 'TODAY · ${DateFormat('d MMM').format(date)}';
-    return DateFormat('EEE d MMM').format(date).toUpperCase();
+    if (isToday) return 'Today · ${DateFormat('d MMM').format(date)}';
+    return DateFormat('EEE d MMM').format(date);
   }
 
   Future<void> _openCalendar(
@@ -119,12 +116,25 @@ class StatusLine extends StatelessWidget {
           bottom: BorderSide(color: palette.border, width: PixelMetrics.border),
         ),
       ),
-      child: Text(
-        '${provider.words.length} HERE   '
-        'STREAK ${stats.streakDays}   '
-        'DUE ${provider.dueReviewCount}   '
-        'ALL ${stats.totalWords}',
-        style: theme.textTheme.labelSmall?.copyWith(color: palette.inkMuted),
+      child: Wrap(
+        spacing: PixelMetrics.space3,
+        runSpacing: PixelMetrics.space1,
+        children:
+            [
+                  '${provider.words.length} ${provider.words.length == 1 ? 'word' : 'words'}',
+                  '${provider.dueReviewCount} due',
+                  '${stats.streakDays}-day streak',
+                  '${stats.totalWords} total',
+                ]
+                .map(
+                  (label) => Text(
+                    label,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: palette.inkMuted,
+                    ),
+                  ),
+                )
+                .toList(),
       ),
     );
   }

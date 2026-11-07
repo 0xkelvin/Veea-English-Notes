@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../core/theme/pixel_metrics.dart';
@@ -12,7 +13,9 @@ import '../widgets/highlighted_text.dart';
 import '../widgets/pixel/pixel_box.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_icon.dart';
+import '../widgets/practice_word_picker.dart';
 import 'audio_commute_screen.dart';
+import 'word_editor_screen.dart';
 
 /// 8-bit Spaced Repetition (SM-2) Flashcard Review Screen.
 class ReviewScreen extends StatefulWidget {
@@ -29,9 +32,13 @@ class _ReviewScreenState extends State<ReviewScreen> {
   final FocusNode _focusNode = FocusNode();
   List<VocabularyWord> _queue = [];
   bool _isLoading = true;
+  String? _loadError;
   int _currentIndex = 0;
   bool _isFlipped = false;
   bool _isComplete = false;
+  bool _isChoosingWords = false;
+  Set<String>? _selectedReviewIds;
+  String? _selectionLabel;
 
   // Session stats
   int _againCount = 0;
@@ -55,29 +62,107 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   Future<void> _loadReviewQueue() async {
-    final provider = context.read<VocabularyProvider>();
-    List<VocabularyWord> words;
-
-    if (widget.practiceAll) {
-      words = await provider.wordsDueForReview(limit: 50);
-      if (words.isEmpty) {
-        // Fallback to recent words for free practice
-        words = provider.words;
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+    try {
+      final provider = context.read<VocabularyProvider>();
+      final words = widget.practiceAll
+          ? await provider.allWords(limit: 50)
+          : await provider.wordsDueForReview(limit: 20);
+      if (!mounted) return;
+      _startSession(words);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _loadError = 'Could not load your review. Please try again.';
+        });
       }
-    } else {
-      words = await provider.wordsDueForReview(limit: 20);
     }
+  }
 
-    if (!mounted) return;
+  void _startSession(List<VocabularyWord> words) {
     setState(() {
       _queue = words;
       _isLoading = false;
+      _loadError = null;
       _currentIndex = 0;
       _isFlipped = false;
       _isComplete = false;
+      _againCount = 0;
+      _hardCount = 0;
+      _goodCount = 0;
+      _easyCount = 0;
     });
-
     _playCurrentWordAudio();
+  }
+
+  Future<void> _chooseWords() async {
+    if (_isLoading || _isSubmitting || _isChoosingWords) return;
+    setState(() => _isChoosingWords = true);
+    final provider = context.read<VocabularyProvider>();
+    final tts = context.read<TtsService>();
+    try {
+      final words = await provider.allWords();
+      if (!mounted) return;
+      await tts.stop();
+      if (!mounted) return;
+      final result = await Navigator.of(context).push<PracticePoolSelection>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => PracticeWordPicker(
+            words: words,
+            selectedIds: (_selectedReviewIds ?? _queue.map((w) => w.id).toSet())
+                .toList(),
+            title: 'Review words',
+            confirmLabel: 'Start review',
+            allowFutureWords: false,
+            confirmAtBottom: true,
+          ),
+        ),
+      );
+      if (!mounted || result == null) return;
+      final latestWords = await provider.allWords();
+      if (!mounted) return;
+      final ids = (result.wordIds ?? words.map((w) => w.id).toList()).toSet();
+      final selected = latestWords.where((w) => ids.contains(w.id)).toList();
+      if (selected.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Those words are no longer available. Please choose again.',
+            ),
+          ),
+        );
+        return;
+      }
+      final dates = selected.map((word) => word.date).toSet();
+      final date = dates.length == 1 ? DateTime.tryParse(dates.single) : null;
+      _selectedReviewIds = selected.map((w) => w.id).toSet();
+      _selectionLabel = selected.length == latestWords.length
+          ? 'All words'
+          : date != null
+          ? DateFormat.yMMMd().format(date)
+          : '${dates.length} days';
+      _startSession(selected);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Could not load your words. Please try choosing again.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isChoosingWords = false);
+        _focusNode.requestFocus();
+      }
+    }
   }
 
   VocabularyWord? get _currentWord =>
@@ -105,7 +190,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final provider = context.read<VocabularyProvider>();
 
     try {
-      // Update session metrics
+      await provider.recordSrsReview(wordId: word.id, rating: rating);
+      if (!mounted) return;
       switch (rating) {
         case SrsRating.again:
           _againCount++;
@@ -121,11 +207,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
           break;
       }
 
-      // Persist SM-2 schedule
-      await provider.recordSrsReview(wordId: word.id, rating: rating);
-
-      if (!mounted) return;
-
       if (_currentIndex + 1 < _queue.length) {
         setState(() {
           _currentIndex++;
@@ -137,6 +218,16 @@ class _ReviewScreenState extends State<ReviewScreen> {
           _isComplete = true;
         });
       }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Your review was not saved. Please try rating this word again.',
+            ),
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() => _isSubmitting = false);
@@ -145,6 +236,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   void _handleKeyEvent(KeyEvent event) {
+    if (_isChoosingWords || _isLoading || _isSubmitting) return;
     if (event is! KeyDownEvent) return;
 
     final key = event.logicalKey;
@@ -192,6 +284,25 @@ class _ReviewScreenState extends State<ReviewScreen> {
               Expanded(
                 child: _isLoading
                     ? _buildLoading()
+                    : _loadError != null
+                    ? Center(
+                        child: SingleChildScrollView(
+                          child: Padding(
+                            padding: const EdgeInsets.all(PixelMetrics.space6),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(_loadError!, textAlign: TextAlign.center),
+                                const SizedBox(height: PixelMetrics.space3),
+                                PixelButton(
+                                  label: 'Try again',
+                                  onPressed: _loadReviewQueue,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      )
                     : _queue.isEmpty
                     ? _buildEmptyState(context)
                     : _isComplete
@@ -207,116 +318,106 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   Widget _buildTopBar(BuildContext context) {
     final palette = context.palette;
-    final streak = context.watch<VocabularyProvider>().stats.streakDays;
-
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: PixelMetrics.space3,
-        vertical: PixelMetrics.space2,
-      ),
-      decoration: BoxDecoration(
-        color: palette.surface,
-        border: Border(
-          bottom: BorderSide(color: palette.border, width: PixelMetrics.border),
-        ),
-      ),
-      child: Row(
+      padding: const EdgeInsets.all(PixelMetrics.space2),
+      color: palette.surface,
+      child: Column(
         children: [
-          PixelIconButton(
-            glyph: PixelGlyph.arrowLeft,
-            semanticLabel: 'Exit review',
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          const SizedBox(width: PixelMetrics.space2),
-          Expanded(
-            child: Text(
-              'SPACED REVIEW',
-              style: Theme.of(context).textTheme.titleMedium,
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-            ),
-          ),
-          const SizedBox(width: PixelMetrics.space2),
-          if (!_isLoading && _queue.isNotEmpty && !_isComplete) ...[
-            _buildProgressBar(context),
-            const SizedBox(width: PixelMetrics.space2),
-          ],
-          PixelIconButton(
-            glyph: PixelGlyph.headphones,
-            semanticLabel: 'Hands-Free Audio Review',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const AudioCommuteScreen(),
+          Row(
+            children: [
+              PixelIconButton(
+                glyph: PixelGlyph.arrowLeft,
+                semanticLabel: 'Exit review',
+                onPressed: () => Navigator.of(context).pop(),
               ),
-            ),
+              const SizedBox(width: PixelMetrics.space2),
+              Expanded(
+                child: Text(
+                  'Review',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              PixelIconButton(
+                glyph: PixelGlyph.headphones,
+                semanticLabel: 'Hands-Free Audio Review',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AudioCommuteScreen(),
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: PixelMetrics.space2),
-          Container(
+          Padding(
             padding: const EdgeInsets.symmetric(
               horizontal: PixelMetrics.space2,
-              vertical: 2,
             ),
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: palette.border,
-                width: PixelMetrics.border,
+            child: SizedBox(
+              width: double.infinity,
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: PixelMetrics.space2,
+                children: [
+                  Text(
+                    _selectionLabel ??
+                        (widget.practiceAll ? 'Recent words' : 'Due words'),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  TextButton.icon(
+                    key: const Key('choose_review_words'),
+                    onPressed:
+                        _isLoading ||
+                            _isSubmitting ||
+                            _isChoosingWords ||
+                            context
+                                    .watch<VocabularyProvider>()
+                                    .stats
+                                    .totalWords ==
+                                0
+                        ? null
+                        : _chooseWords,
+                    icon: const Icon(Icons.checklist, size: 20),
+                    label: Text(_isChoosingWords ? 'Loading…' : 'Choose words'),
+                  ),
+                ],
               ),
             ),
-            child: Text(
-              '🔥$streak',
-              style: Theme.of(
-                context,
-              ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.bold),
-            ),
           ),
+          if (!_isLoading && _queue.isNotEmpty && !_isComplete)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                PixelMetrics.space2,
+                0,
+                PixelMetrics.space2,
+                PixelMetrics.space2,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Word ${_currentIndex + 1} of ${_queue.length}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: PixelMetrics.space1),
+                  LinearProgressIndicator(
+                    value: _currentIndex / _queue.length,
+                    backgroundColor: palette.border,
+                    color: palette.accent,
+                    semanticsLabel: 'Review progress',
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
-    );
-  }
-
-  Widget _buildProgressBar(BuildContext context) {
-    final palette = context.palette;
-    final total = _queue.length;
-    final current = _currentIndex + 1;
-    final numPips = total.clamp(1, 5);
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          '$current/$total',
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(width: PixelMetrics.space1),
-        // Segmented 8-bit health / XP bar (max 5 blocks)
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(numPips, (i) {
-            final stepRatio = (i + 1) / numPips;
-            final progressRatio = current / total;
-            final isFilled = stepRatio <= progressRatio + 0.01;
-
-            return Container(
-              width: 5,
-              height: 9,
-              margin: const EdgeInsets.only(right: 2),
-              decoration: BoxDecoration(
-                color: isFilled ? palette.accent : palette.paper,
-                border: Border.all(color: palette.border, width: 1),
-              ),
-            );
-          }),
-        ),
-      ],
     );
   }
 
   Widget _buildLoading() {
     return Center(
       child: Text(
-        'LOADING BATTLE DECK…',
+        'Loading your words…',
         style: Theme.of(context).textTheme.labelSmall,
       ),
     );
@@ -326,60 +427,68 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final palette = context.palette;
 
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(PixelMetrics.space6),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(PixelMetrics.space4),
-              decoration: BoxDecoration(
-                color: palette.surface,
-                border: Border.all(
-                  color: palette.border,
-                  width: PixelMetrics.border,
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(PixelMetrics.space6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(PixelMetrics.space4),
+                decoration: BoxDecoration(
+                  color: palette.surface,
+                  border: Border.all(
+                    color: palette.border,
+                    width: PixelMetrics.border,
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      'All caught up',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.titleMedium?.copyWith(color: palette.accent),
+                    ),
+                    const SizedBox(height: PixelMetrics.space3),
+                    Text(
+                      context.watch<VocabularyProvider>().stats.totalWords == 0
+                          ? 'Save your first word to start reviewing.'
+                          : 'No words are due right now. Come back later or practice your recent words.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ],
                 ),
               ),
-              child: Column(
-                children: [
-                  Text(
-                    '★ ALL CAUGHT UP! ★',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.titleMedium?.copyWith(color: palette.accent),
-                  ),
-                  const SizedBox(height: PixelMetrics.space3),
-                  Text(
-                    'No words are currently due for review today.\nCapture new words or practice with your full deck!',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ],
+              const SizedBox(height: PixelMetrics.space5),
+              PixelButton(
+                label: context.watch<VocabularyProvider>().stats.totalWords == 0
+                    ? 'Add a word'
+                    : 'Practice recent words',
+                glyph: PixelGlyph.cards,
+                filled: true,
+                expand: true,
+                onPressed: () {
+                  Navigator.of(context).pushReplacement(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          context.read<VocabularyProvider>().stats.totalWords ==
+                              0
+                          ? const WordEditorScreen()
+                          : const ReviewScreen(practiceAll: true),
+                    ),
+                  );
+                },
               ),
-            ),
-            const SizedBox(height: PixelMetrics.space5),
-            PixelButton(
-              label: 'Practice full deck',
-              glyph: PixelGlyph.cards,
-              filled: true,
-              expand: true,
-              onPressed: () {
-                Navigator.of(context).pushReplacement(
-                  PageRouteBuilder<void>(
-                    pageBuilder: (_, _, _) =>
-                        const ReviewScreen(practiceAll: true),
-                    transitionDuration: Duration.zero,
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: PixelMetrics.space3),
-            PixelButton(
-              label: 'Return to journal',
-              expand: true,
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ],
+              const SizedBox(height: PixelMetrics.space3),
+              PixelButton(
+                label: 'Return to journal',
+                expand: true,
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -418,13 +527,14 @@ class _ReviewScreenState extends State<ReviewScreen> {
                   ),
                   child: Row(
                     children: [
-                      Text(
-                        'ROUND ${_currentIndex + 1} OF ${_queue.length}',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
+                      Expanded(
+                        child: Text(
+                          'ROUND ${_currentIndex + 1} OF ${_queue.length}',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
-                      const Spacer(),
                       if (word.partOfSpeech != null)
                         Container(
                           padding: const EdgeInsets.symmetric(
@@ -489,11 +599,13 @@ class _ReviewScreenState extends State<ReviewScreen> {
                                 scale: 2,
                               ),
                               const SizedBox(width: PixelMetrics.space2),
-                              Text(
-                                word.pronunciation ?? '/pronounce/',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: palette.accent,
-                                  fontWeight: FontWeight.bold,
+                              Flexible(
+                                child: Text(
+                                  word.pronunciation ?? 'Hear word',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: palette.accent,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                             ],
@@ -501,10 +613,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
                         ),
                       ),
 
-                      if (word.source != null && word.source!.isNotEmpty) ...[
+                      if (word.displaySource != null) ...[
                         const SizedBox(height: PixelMetrics.space4),
                         Text(
-                          'ENCOUNTERED: "${word.source}"',
+                          'ENCOUNTERED: "${word.displaySource}"',
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: palette.inkMuted,
                             fontStyle: FontStyle.italic,
@@ -590,12 +702,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
                                   fontStyle: FontStyle.italic,
                                   height: 1.35,
                                 ),
-                                highlightStyle:
-                                    theme.textTheme.bodyMedium?.copyWith(
-                                  color: palette.accent,
-                                  fontWeight: FontWeight.bold,
-                                  fontStyle: FontStyle.italic,
-                                ),
+                                highlightStyle: theme.textTheme.bodyMedium
+                                    ?.copyWith(
+                                      color: palette.accent,
+                                      fontWeight: FontWeight.bold,
+                                      fontStyle: FontStyle.italic,
+                                    ),
                               ),
                             ),
                         ],
@@ -612,7 +724,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
           // Action Area
           if (!_isFlipped)
             PixelButton(
-              label: 'Reveal Meaning  [ SPACE ]',
+              label: 'Show meaning',
               glyph: PixelGlyph.arrowRight,
               filled: true,
               expand: true,
@@ -643,8 +755,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
             Expanded(
               child: _RatingCardButton(
                 keyLabel: '1',
-                title: SrsRating.again.label,
-                subtitle: SrsRating.again.estimatedInterval,
+                title: 'Again',
+                subtitle: 'Forgot it',
                 borderColor: palette.danger,
                 textColor: palette.danger,
                 onPressed: _isSubmitting
@@ -656,8 +768,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
             Expanded(
               child: _RatingCardButton(
                 keyLabel: '2',
-                title: SrsRating.hard.label,
-                subtitle: SrsRating.hard.estimatedInterval,
+                title: 'Hard',
+                subtitle: 'Needed a hint',
                 borderColor: palette.inkFaint,
                 textColor: palette.inkMuted,
                 onPressed: _isSubmitting
@@ -673,8 +785,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
             Expanded(
               child: _RatingCardButton(
                 keyLabel: '3',
-                title: SrsRating.good.label,
-                subtitle: SrsRating.good.estimatedInterval,
+                title: 'Good',
+                subtitle: 'Remembered',
                 borderColor: palette.border,
                 textColor: palette.ink,
                 onPressed: _isSubmitting
@@ -686,8 +798,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
             Expanded(
               child: _RatingCardButton(
                 keyLabel: '4',
-                title: SrsRating.easy.label,
-                subtitle: SrsRating.easy.estimatedInterval,
+                title: 'Easy',
+                subtitle: 'Knew it quickly',
                 borderColor: palette.accent,
                 textColor: palette.onAccent,
                 fillColor: palette.accent,
@@ -710,62 +822,68 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final accuracy = total > 0 ? ((correct / total) * 100).round() : 100;
 
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(PixelMetrics.space5),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            PixelBox(
-              raised: true,
-              padding: const EdgeInsets.all(PixelMetrics.space5),
-              child: Column(
-                children: [
-                  Text(
-                    '★ STAGE CLEARED! ★',
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      color: palette.accent,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                  const SizedBox(height: PixelMetrics.space4),
-                  _buildStatRow(context, 'WORDS REVIEWED', '$total'),
-                  const SizedBox(height: PixelMetrics.space2),
-                  _buildStatRow(context, 'ACCURACY RATE', '$accuracy%'),
-                  const SizedBox(height: PixelMetrics.space2),
-                  _buildStatRow(context, 'PERFECT RECALL', '$correct / $total'),
-                  const SizedBox(height: PixelMetrics.space2),
-                  _buildStatRow(
-                    context,
-                    'NEEDS PRACTICE',
-                    '${_againCount + _hardCount}',
-                  ),
-                  const SizedBox(height: PixelMetrics.space4),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(PixelMetrics.space2),
-                    color: palette.paper,
-                    child: Text(
-                      'NEXT REVIEWS SCHEDULED VIA SM-2 ALGORITHM',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: palette.inkMuted,
-                        fontSize: 10,
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(PixelMetrics.space5),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PixelBox(
+                raised: true,
+                padding: const EdgeInsets.all(PixelMetrics.space5),
+                child: Column(
+                  children: [
+                    Text(
+                      'Review complete',
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        color: palette.accent,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.2,
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: PixelMetrics.space4),
+                    _buildStatRow(context, 'WORDS REVIEWED', '$total'),
+                    const SizedBox(height: PixelMetrics.space2),
+                    _buildStatRow(context, 'COMFORTABLE RECALL', '$accuracy%'),
+                    const SizedBox(height: PixelMetrics.space2),
+                    _buildStatRow(
+                      context,
+                      'PERFECT RECALL',
+                      '$correct / $total',
+                    ),
+                    const SizedBox(height: PixelMetrics.space2),
+                    _buildStatRow(
+                      context,
+                      'NEEDS PRACTICE',
+                      '${_againCount + _hardCount}',
+                    ),
+                    const SizedBox(height: PixelMetrics.space4),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(PixelMetrics.space2),
+                      color: palette.paper,
+                      child: Text(
+                        'Your next reviews are scheduled automatically.',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: palette.inkMuted,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: PixelMetrics.space5),
-            PixelButton(
-              label: 'Return to journal',
-              glyph: PixelGlyph.check,
-              filled: true,
-              expand: true,
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ],
+              const SizedBox(height: PixelMetrics.space5),
+              PixelButton(
+                label: 'Return to journal',
+                glyph: PixelGlyph.check,
+                filled: true,
+                expand: true,
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -775,8 +893,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final theme = Theme.of(context);
     return Row(
       children: [
-        Text(label, style: theme.textTheme.labelSmall),
-        const Spacer(),
+        Expanded(child: Text(label, style: theme.textTheme.labelSmall)),
+        const SizedBox(width: PixelMetrics.space2),
         Text(
           value,
           style: theme.textTheme.titleMedium?.copyWith(
@@ -812,61 +930,71 @@ class _RatingCardButton extends StatelessWidget {
     final palette = context.palette;
     final bg = fillColor ?? palette.surface;
 
-    return GestureDetector(
+    return Semantics(
+      button: true,
+      enabled: onPressed != null,
+      label: '$title, $subtitle',
+      excludeSemantics: true,
       onTap: onPressed,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: PixelMetrics.space3,
-          vertical: PixelMetrics.space2,
-        ),
-        decoration: BoxDecoration(
-          color: bg,
-          border: Border.all(color: borderColor, width: PixelMetrics.border),
-        ),
-        child: Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 1,
-                  ),
-                  decoration: BoxDecoration(
-                    color: palette.paper,
-                    border: Border.all(color: borderColor, width: 1),
-                  ),
-                  child: Text(
-                    keyLabel,
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: textColor,
+      child: GestureDetector(
+        onTap: onPressed,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: PixelMetrics.space3,
+            vertical: PixelMetrics.space2,
+          ),
+          decoration: BoxDecoration(
+            color: bg,
+            border: Border.all(color: borderColor, width: PixelMetrics.border),
+          ),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      color: palette.paper,
+                      border: Border.all(color: borderColor, width: 1),
+                    ),
+                    child: Text(
+                      keyLabel,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: textColor,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: textColor,
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: textColor,
+                      ),
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 2),
-            Text(
-              subtitle,
-              style: TextStyle(
-                fontSize: 11,
-                color: fillColor != null ? textColor : palette.inkMuted,
+                ],
               ),
-            ),
-          ],
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: fillColor != null ? textColor : palette.inkMuted,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

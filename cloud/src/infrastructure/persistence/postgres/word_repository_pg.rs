@@ -29,6 +29,12 @@ impl WordRepository for PgWordRepository {
         }
 
         let mut tx = self.pool.begin().await?;
+        // Allocate revisions in commit order for each owner. Without this lock,
+        // an earlier uncommitted revision could be skipped by a concurrent pull.
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 1))")
+            .bind(user_id.to_string())
+            .execute(&mut *tx)
+            .await?;
         let mut accepted = Vec::with_capacity(words.len());
 
         for word in words {
@@ -64,7 +70,8 @@ impl WordRepository for PgWordRepository {
                      day               = EXCLUDED.day,
                      is_deleted        = EXCLUDED.is_deleted,
                      updated_at        = EXCLUDED.updated_at,
-                     server_updated_at = now()
+                     server_updated_at = now(),
+                     sync_revision = nextval('words_sync_revision_seq')
                  WHERE words.user_id = EXCLUDED.user_id
                    AND EXCLUDED.updated_at > words.updated_at
                  RETURNING id",
@@ -125,6 +132,7 @@ impl WordRepository for PgWordRepository {
         &self,
         user_id: Uuid,
         since: Option<DateTime<Utc>>,
+        revision: Option<i64>,
         limit: i64,
     ) -> Result<Vec<WordChange>, anyhow::Error> {
         // Tombstones are included on purpose: a deletion is a change other
@@ -132,16 +140,18 @@ impl WordRepository for PgWordRepository {
         let rows = sqlx::query_as::<_, WordChangeRow>(
             "SELECT id, user_id, word, meaning, pronunciation, part_of_speech,
                     source, examples, tags, day, is_deleted,
-                    created_at, updated_at, server_updated_at
+                    created_at, updated_at, server_updated_at, sync_revision
              FROM words
              WHERE user_id = $1
-               AND ($2::timestamptz IS NULL OR server_updated_at > $2)
-             ORDER BY server_updated_at ASC
+               AND (($4::bigint IS NOT NULL AND sync_revision > $4)
+                 OR ($4::bigint IS NULL AND ($2::timestamptz IS NULL OR server_updated_at > $2)))
+             ORDER BY sync_revision ASC
              LIMIT $3",
         )
         .bind(user_id)
         .bind(since)
         .bind(limit)
+        .bind(revision)
         .fetch_all(&self.pool)
         .await?;
 
