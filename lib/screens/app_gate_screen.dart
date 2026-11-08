@@ -648,19 +648,21 @@ class _AppGateScreenState extends State<AppGateScreen>
                             'Your selected practice words are no longer available. Choose words from your notebook to continue.',
                         actionLabel: 'Choose words',
                         onAction: () async {
+                          final provider = gateProvider;
+                          if (provider == null) return;
                           try {
                             if (await choosePracticeWords(
                               context,
-                              gateProvider!,
+                              provider,
                             )) {
                               if (!mounted) return;
-                              _solvedInRound = gateProvider.progressForApp(
+                              _solvedInRound = provider.progressForApp(
                                 _currentApp,
                               );
                               _solvedWordIds
                                 ..clear()
                                 ..addAll(
-                                  gateProvider.solvedWordIdsForApp(_currentApp),
+                                  provider.solvedWordIdsForApp(_currentApp),
                                 );
                               await _loadNextWord();
                             }
