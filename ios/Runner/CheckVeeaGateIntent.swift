@@ -20,7 +20,8 @@ struct CheckVeeaGateIntent: AppIntent {
 
   @MainActor
   func perform() async throws -> some IntentResult & ReturnsValue<Bool> {
-    .result(value: GateAccessState.shared.needsChallenge(for: targetApp))
+    GateAccessState.shared.recordShortcutCheck(for: targetApp)
+    return .result(value: GateAccessState.shared.needsChallenge(for: targetApp))
   }
 }
 

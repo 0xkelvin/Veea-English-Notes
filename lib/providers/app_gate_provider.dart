@@ -659,13 +659,15 @@ class AppGateProvider extends ChangeNotifier {
   }
 
   /// Immediately re-locks [targetApp] and revokes its active pass.
-  Future<void> revokePass(String targetApp) async {
+  Future<void> revokePass(String targetApp, {bool resetProgress = true}) async {
     final key = targetApp.trim().toLowerCase();
     await _service.revokePass(targetApp);
-    await _repository.clearGateRoundProgress(targetApp);
+    if (resetProgress) await _repository.clearGateRoundProgress(targetApp);
     _unlockedUntilByApp.remove(key);
-    _progressByApp.remove(key);
-    _pendingAnswers.remove(key);
+    if (resetProgress) {
+      _progressByApp.remove(key);
+      _pendingAnswers.remove(key);
+    }
     if (targetApp.startsWith('native:')) await refreshNativeScreenTime();
     notifyListeners();
   }

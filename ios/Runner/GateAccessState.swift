@@ -63,4 +63,39 @@ final class GateAccessState {
     defaults.removeObject(forKey: "unlocked_until_\(key)")
     defaults.removeObject(forKey: "gate_handoff_until_\(key)")
   }
+
+  // A fresh setup test is confirmed only by the installed background intent.
+  // Launching Shortcuts, returning to Veea or a user tapping Next is not proof.
+  func beginSetupTest(for app: String, now: Date = Date()) {
+    let key = Self.normalized(app)
+    defaults.set(UUID().uuidString, forKey: "setup_test_nonce_\(key)")
+    defaults.set(now.timeIntervalSince1970, forKey: "setup_test_started_\(key)")
+    defaults.removeObject(forKey: "setup_checked_nonce_\(key)")
+    defaults.removeObject(forKey: "setup_checked_at_\(key)")
+  }
+
+  func recordShortcutCheck(for app: String, now: Date = Date()) {
+    let key = Self.normalized(app)
+    let started = defaults.double(forKey: "setup_test_started_\(key)")
+    guard defaults.bool(forKey: "gate_enabled"),
+          !defaults.bool(forKey: "native_gate_enabled"),
+          (defaults.stringArray(forKey: "gated_apps") ?? []).contains(where: { Self.normalized($0) == key }),
+          let nonce = defaults.string(forKey: "setup_test_nonce_\(key)"),
+          started > 0, now.timeIntervalSince1970 >= started,
+          now.timeIntervalSince1970 - started <= 300 else { return }
+    defaults.set(nonce, forKey: "setup_checked_nonce_\(key)")
+    defaults.set(now.timeIntervalSince1970, forKey: "setup_checked_at_\(key)")
+  }
+
+  func testedShortcuts() -> [String: Double] {
+    var result: [String: Double] = [:]
+    for (name, _) in defaults.dictionaryRepresentation() where name.hasPrefix("setup_test_nonce_") {
+      let key = String(name.dropFirst("setup_test_nonce_".count))
+      if let nonce = defaults.string(forKey: name),
+         defaults.string(forKey: "setup_checked_nonce_\(key)") == nonce {
+        result[key] = defaults.double(forKey: "setup_checked_at_\(key)")
+      }
+    }
+    return result
+  }
 }

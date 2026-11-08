@@ -311,6 +311,21 @@ import DeviceActivity
           try NativeScreenTimeManager.shared.manageApplications(from: root) { result($0) }
         } catch { result(self.screenTimeError(error)) }
 
+      case "getShortcutSetupStatus":
+        let supportsImport: Bool
+        if #available(iOS 27.0, *) { supportsImport = true } else { supportsImport = false }
+        result(["supportsImport": supportsImport,
+                "tested": GateAccessState.shared.testedShortcuts()])
+
+      case "beginShortcutSetupTest":
+        let args = call.arguments as? [String: Any] ?? [:]
+        let app = (args["targetApp"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !app.isEmpty else {
+          result(FlutterError(code: "INVALID_APP", message: "Choose an app to test.", details: nil)); return
+        }
+        GateAccessState.shared.beginSetupTest(for: app)
+        result(nil)
+
       case "launchApp":
         let args = call.arguments as? [String: Any] ?? [:]
         let targetApp = args["targetApp"] as? String ?? ""

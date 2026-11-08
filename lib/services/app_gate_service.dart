@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../models/native_gate_status.dart';
+import '../models/shortcut_setup.dart';
 
 /// Platform channel bridge for the App Gate ("Earn Screen Time" / "Word Toll") feature.
 ///
@@ -206,6 +207,16 @@ class AppGateService {
 
   Future<String?> manageScreenTimeApplications() =>
       _channel.invokeMethod<String>('manageScreenTimeApplications');
+
+  Future<ShortcutSetupStatus> getShortcutSetupStatus() async =>
+      ShortcutSetupStatus.fromMap(
+        await _channel.invokeMapMethod<dynamic, dynamic>(
+          'getShortcutSetupStatus',
+        ),
+      );
+
+  Future<void> beginShortcutSetupTest(String app) =>
+      _channel.invokeMethod<void>('beginShortcutSetupTest', {'targetApp': app});
 
   /// Lifts the shield/overlay for [targetApp] for [durationMinutes] and
   /// schedules automatic re-lock.
