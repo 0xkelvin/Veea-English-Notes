@@ -26,13 +26,7 @@ class ShortcutSetupScreen extends StatefulWidget {
 class _ShortcutSetupScreenState extends State<ShortcutSetupScreen>
     with WidgetsBindingObserver {
   late final ShortcutSetupController controller;
-  int step = 0;
   final _scroll = ScrollController();
-
-  void _showStep(int value) {
-    setState(() => step = value);
-    if (_scroll.hasClients) _scroll.jumpTo(0);
-  }
 
   @override
   void initState() {
@@ -86,11 +80,7 @@ class _ShortcutSetupScreenState extends State<ShortcutSetupScreen>
     final tested = controller.tested;
     final title = tested
         ? 'Your shortcut check works'
-        : [
-            'Add the ready-made shortcut',
-            'Enable it once',
-            'Test protection',
-          ][step];
+        : 'Learn before opening $app';
     return Scaffold(
       appBar: AppBar(title: Text('Protect $app')),
       body: SafeArea(
@@ -102,7 +92,7 @@ class _ShortcutSetupScreenState extends State<ShortcutSetupScreen>
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                tested ? 'Test successful' : 'Step ${step + 1} of 3',
+                tested ? 'Test successful' : 'Every open',
                 style: theme.textTheme.labelLarge?.copyWith(
                   color: theme.colorScheme.primary,
                 ),
@@ -113,11 +103,7 @@ class _ShortcutSetupScreenState extends State<ShortcutSetupScreen>
               Text(
                 tested
                     ? 'Veea received the check for $app. Your Every Open setup is ready.'
-                    : [
-                        'We’ve built the shortcut for $app. Add it in Apple Shortcuts; there is nothing to assemble.',
-                        'In Shortcuts, open Automation and turn on “When $app is opened” for ${widget.template.name}. If you kept both copies, enable the newly added one and leave the old one off. Use Back to reach the Library if needed.',
-                        'Open $app from your iPhone’s Home Screen. A vocabulary challenge should appear. Mirroring may not trigger app-open automations.',
-                      ][step],
+                    : 'Everything is prepared. In Apple Shortcuts, turn on Automation and tap Add Shortcut.',
               ),
               const SizedBox(height: 24),
               _card(context, [
@@ -129,43 +115,25 @@ class _ShortcutSetupScreenState extends State<ShortcutSetupScreen>
                   title: Text(widget.template.name),
                   subtitle: const Text('Every open · Your learning rules'),
                 ),
-                if (!tested && step == 0) ...[
-                  const Text(
-                    'When the app opens → check Veea → learn to unlock.',
-                  ),
-                  const Text(
-                    'Already have this shortcut? Use the existing copy. Keep only one app-open automation for the same app.',
-                  ),
-                ],
-                if (!tested && step == 1) ...[
-                  Text(
-                    'When $app is opened',
-                    style: theme.textTheme.titleMedium,
-                  ),
+                if (!tested) ...[
                   const ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: Icon(Icons.toggle_on_outlined),
-                    title: Text('Automation → On'),
-                    subtitle: Text('Make this change in Apple Shortcuts.'),
+                    title: Text('Turn on Automation → Add Shortcut'),
+                    subtitle: Text('Apple asks you to approve this once.'),
                   ),
-                  const Text(
-                    'Allow opening Veea if Apple asks on the first run.',
-                  ),
-                ],
-                if (!tested && step == 2) ...[
+                  const Text('No actions to build or links to copy.'),
                   if (widget.gate.nativeStatus.enabled)
                     const Text(
-                      'Testing turns off timed Screen Time protection. Only apps with enabled Shortcuts will use Every Open.',
+                      'Continuing switches timed Screen Time protection to Every Open. Other apps need their own enabled shortcut.',
                     ),
-                  if (controller.testing) ...[
-                    const Text('Waiting for the shortcut check…'),
-                    const Text(
-                      'If nothing happens, return to step 2 and check the Automation switch. Remove any older duplicate automation.',
+                  if (controller.openedInstaller)
+                    Text(
+                      'After adding it, open $app from your iPhone’s Home Screen. Your vocabulary challenge should appear.',
                     ),
-                  ] else
-                    const Text(
-                      'A successful test is recorded only after Veea’s shortcut action runs.',
-                    ),
+                  const Text(
+                    'Already set up? Test your existing shortcut below. Keep only one enabled automation for this app.',
+                  ),
                 ],
                 if (tested)
                   const Text(
@@ -189,7 +157,7 @@ class _ShortcutSetupScreenState extends State<ShortcutSetupScreen>
                 TextButton(
                   onPressed: () {
                     controller.reviewSetup();
-                    _showStep(0);
+                    if (_scroll.hasClients) _scroll.jumpTo(0);
                   },
                   child: const Text('Review or test setup again'),
                 ),
@@ -198,51 +166,36 @@ class _ShortcutSetupScreenState extends State<ShortcutSetupScreen>
                   onPressed: controller.busy
                       ? null
                       : () async {
-                          if (step == 0) {
-                            if (await controller.addShortcut() && mounted) {
-                              _showStep(1);
-                            }
-                          } else if (step == 1) {
-                            await controller.openAutomation();
-                          } else {
-                            await controller.test(
-                              totalWords: widget.totalWords,
-                            );
-                          }
+                          await controller.addShortcut(
+                            totalWords: widget.totalWords,
+                          );
                         },
                   icon: Icon(
-                    controller.busy
-                        ? Icons.hourglass_top
-                        : step == 2
-                        ? Icons.play_arrow
-                        : Icons.open_in_new,
+                    controller.busy ? Icons.hourglass_top : Icons.open_in_new,
                   ),
                   label: Text(
                     controller.busy
-                        ? 'Opening…'
-                        : [
-                            'Add shortcut',
-                            'Open Apple Shortcuts',
-                            'Test: open $app',
-                          ][step],
+                        ? 'Preparing…'
+                        : 'Set up in Apple Shortcuts',
                   ),
                 ),
-                if (step == 0)
-                  TextButton(
-                    onPressed: controller.busy ? null : () => _showStep(1),
-                    child: const Text('I already have the shortcut'),
-                  ),
-                if (step == 1)
-                  TextButton(
-                    onPressed: controller.busy ? null : () => _showStep(2),
-                    child: const Text('I’ve enabled it — test now'),
-                  ),
-                if (step > 0)
+                TextButton.icon(
+                  onPressed: controller.busy
+                      ? null
+                      : () => controller.test(totalWords: widget.totalWords),
+                  icon: const Icon(Icons.play_arrow),
+                  label: Text('Test: open $app'),
+                ),
+                if (controller.openedInstaller)
                   TextButton(
                     onPressed: controller.busy
                         ? null
-                        : () => _showStep(step - 1),
-                    child: const Text('Back a step'),
+                        : controller.openAutomation,
+                    child: const Text('Need help? Open Shortcuts'),
+                  ),
+                if (controller.testing)
+                  const Text(
+                    'Not verified yet. If you cancelled import, try setup again. A successful check appears only after the shortcut runs.',
                   ),
               ],
             ],

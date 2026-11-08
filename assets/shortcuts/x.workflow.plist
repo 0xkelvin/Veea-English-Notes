@@ -84,7 +84,7 @@
 		</dict>
 	</array>
 	<key>WFWorkflowClientVersion</key>
-	<string>5114.0.8.3</string>
+	<string>5114.0.6.204</string>
 	<key>WFWorkflowHasOutputFallback</key>
 	<false/>
 	<key>WFWorkflowHasShortcutInputVariables</key>
@@ -97,7 +97,18 @@
 		<integer>463140863</integer>
 	</dict>
 	<key>WFWorkflowImportQuestions</key>
-	<array/>
+	<array>
+		<dict>
+			<key>Category</key>
+			<string>Trigger</string>
+			<key>ParameterKey</key>
+			<string>__enabled__</string>
+			<key>Text</key>
+			<string>Turn on Automation to learn before opening X.</string>
+			<key>TriggerUUID</key>
+			<string>36F99E86-136E-4A17-B151-9BEF581CADD0</string>
+		</dict>
+	</array>
 	<key>WFWorkflowInputContentItemClasses</key>
 	<array>
 		<string>WFAppContentItem</string>

@@ -99,7 +99,7 @@ class _GuidedProtectionSettingsState extends State<GuidedProtectionSettings>
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),
                 child: Text(
-                  'Your existing shortcuts currently grant ${gate.config.passDurationMinutes} minutes of access. The Every Open setup changes this when you test it.',
+                  'Your existing shortcuts currently grant ${gate.config.passDurationMinutes} minutes of access. The Every Open setup changes this when you continue to Apple Shortcuts.',
                 ),
               ),
             if (!gate.canEnable(widget.totalWords)) ...[

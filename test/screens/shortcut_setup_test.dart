@@ -27,12 +27,14 @@ void main() {
   var verified = false;
   var openLink = true;
   var launch = true;
+  var preparedAtImport = false;
 
   setUp(() async {
     importSupported = true;
     verified = false;
     openLink = true;
     launch = true;
+    preparedAtImport = false;
     calls = [];
     urls = [];
     messenger.setMockMethodCallHandler(
@@ -77,6 +79,11 @@ void main() {
       gate: gate,
       template: ShortcutTemplate.available.first,
       openLink: (url) async {
+        preparedAtImport =
+            gate.config.enabled &&
+            gate.config.passDurationMinutes == 0 &&
+            gate.config.gatedApps.contains('X') &&
+            calls.any((call) => call.method == 'beginShortcutSetupTest');
         urls.add(url);
         return openLink;
       },
@@ -94,31 +101,41 @@ void main() {
   });
 
   test(
-    'installer and return to app do not claim activation or change protection',
+    'installer prepares chosen app before approval; cancellation never claims success',
     () async {
-      expect(await controller.addShortcut(), true);
+      expect(await controller.addShortcut(totalWords: 3), true);
       await controller.refresh();
       expect(controller.tested, false);
-      expect(gate.config.enabled, false);
-      expect(gate.config.gatedApps, isEmpty);
+      expect(preparedAtImport, true);
+      expect(gate.config.enabled, true);
+      expect(gate.config.gatedApps, ['X']);
+      expect(gate.config.passDurationMinutes, 0);
+      expect(calls.any((c) => c.method == 'launchApp'), false);
       expect(
         urls.single.toString(),
-        'https://www.icloud.com/shortcuts/f498121930cd4a5ebd6f7f516fc10aed',
+        'https://www.icloud.com/shortcuts/d46f1dd0603a4c09a05fa9a12dd43d3e',
       );
     },
   );
+
+  test('setup guards the notebook before sending users to Apple', () async {
+    expect(await controller.addShortcut(totalWords: 0), false);
+    expect(urls, isEmpty);
+    expect(gate.config.enabled, false);
+    expect(calls.where((c) => c.method == 'beginShortcutSetupTest'), isEmpty);
+  });
 
   test(
     'failed installer can retry and unsupported iOS never opens a wrong template',
     () async {
       openLink = false;
-      expect(await controller.addShortcut(), false);
+      expect(await controller.addShortcut(totalWords: 3), false);
       expect(controller.openedInstaller, false);
       openLink = true;
-      expect(await controller.addShortcut(), true);
+      expect(await controller.addShortcut(totalWords: 3), true);
       urls.clear();
       importSupported = false;
-      expect(await controller.addShortcut(), false);
+      expect(await controller.addShortcut(totalWords: 3), false);
       expect(urls, isEmpty);
       expect(ShortcutTemplate.forApp('another app'), isNull);
     },
@@ -228,7 +245,7 @@ void main() {
   });
 
   testWidgets(
-    'three steps and returning from installer never show false success',
+    'single handoff and returning from installer never show false success',
     (tester) async {
       await tester.pumpWidget(
         MaterialApp(
@@ -242,15 +259,18 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Step 1 of 3'), findsOneWidget);
-      await tester.tap(find.text('Add shortcut'));
+      expect(find.text('Learn before opening X'), findsOneWidget);
+      await tester.ensureVisible(find.text('Set up in Apple Shortcuts'));
+      await tester.runAsync(() async {
+        await tester.tap(find.text('Set up in Apple Shortcuts'));
+        for (var i = 0; controller.busy && i < 100; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      });
       await tester.pumpAndSettle();
-      expect(find.text('Step 2 of 3'), findsOneWidget);
+      expect(find.text('Turn on Automation → Add Shortcut'), findsOneWidget);
       expect(find.text('Test successful'), findsNothing);
-      await tester.ensureVisible(find.text('I’ve enabled it — test now'));
-      await tester.tap(find.text('I’ve enabled it — test now'));
-      await tester.pumpAndSettle();
-      expect(find.text('Step 3 of 3'), findsOneWidget);
+      expect(find.text('Enable it once'), findsNothing);
       await tester.ensureVisible(find.text('Test: open X'));
       await tester.runAsync(() async {
         await tester.tap(find.text('Test: open X'));
@@ -259,7 +279,7 @@ void main() {
         }
       });
       await tester.pumpAndSettle();
-      expect(find.text('Waiting for the shortcut check…'), findsOneWidget);
+      expect(find.textContaining('Not verified yet.'), findsOneWidget);
       expect(find.text('Test successful'), findsNothing);
       verified = true;
       await controller.refresh();
@@ -292,13 +312,9 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    await tester.ensureVisible(find.text('I already have the shortcut'));
-    await tester.tap(find.text('I already have the shortcut'));
-    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Set up in Apple Shortcuts'));
     expect(tester.takeException(), isNull);
-    await tester.ensureVisible(find.text('I’ve enabled it — test now'));
-    await tester.tap(find.text('I’ve enabled it — test now'));
-    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Test: open X'));
     expect(tester.takeException(), isNull);
   });
 
@@ -334,7 +350,7 @@ void main() {
     await tester.ensureVisible(find.text('X'));
     await tester.tap(find.text('X'));
     await tester.pumpAndSettle();
-    expect(find.text('Step 1 of 3'), findsOneWidget);
+    expect(find.text('Learn before opening X'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

@@ -12,7 +12,7 @@ class ShortcutTemplate {
   Uri get editorUrl => Uri.parse('shortcuts://');
 
   static const available = [
-    ShortcutTemplate(app: 'X', linkId: 'f498121930cd4a5ebd6f7f516fc10aed'),
+    ShortcutTemplate(app: 'X', linkId: 'd46f1dd0603a4c09a05fa9a12dd43d3e'),
   ];
 
   static ShortcutTemplate? forApp(String app) {

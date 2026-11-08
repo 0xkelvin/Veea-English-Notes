@@ -80,18 +80,21 @@ class ShortcutSetupController extends ChangeNotifier {
     _notify();
   }
 
-  Future<bool> addShortcut() => _operation(() async {
+  Future<bool> addShortcut({required int totalWords}) => _operation(() async {
     final status = await gate.service.getShortcutSetupStatus();
     if (!status.supportsImport) {
       error = 'Ready-made app automations need iOS 27 or later.';
       throw StateError('unsupported');
     }
+    await _prepare(totalWords);
     if (!await _openLink(template.installUrl)) {
       error =
           'Could not open Apple Shortcuts. Check your connection and try again.';
       throw StateError('installer');
     }
     openedInstaller = true;
+    tested = false;
+    testing = true;
   });
 
   Future<bool> openAutomation() => _operation(() async {
@@ -101,7 +104,7 @@ class ShortcutSetupController extends ChangeNotifier {
     }
   });
 
-  Future<bool> test({required int totalWords}) => _operation(() async {
+  Future<void> _prepare(int totalWords) async {
     if (!gate.canEnable(totalWords)) {
       error = 'Save at least 3 words and choose your practice words first.';
       throw StateError('words');
@@ -121,6 +124,12 @@ class ShortcutSetupController extends ChangeNotifier {
     // An earned return token from an earlier trial must not hide this test.
     await gate.revokePass(template.app, resetProgress: false);
     await gate.service.beginShortcutSetupTest(template.app);
+    tested = false;
+    testing = false;
+  }
+
+  Future<bool> test({required int totalWords}) => _operation(() async {
+    await _prepare(totalWords);
     tested = false;
     testing = true;
     if (!await gate.service.launchApp(template.app)) {

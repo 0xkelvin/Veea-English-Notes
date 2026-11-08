@@ -26,8 +26,14 @@ assert condition["GroupingIdentifier"] == end["GroupingIdentifier"]
 triggers = workflow["WFWorkflowTriggers"]
 assert len(triggers) == 1 and triggers[0]["WFTriggerIdentifier"] == "WFAppInFocusTrigger"
 assert triggers[0]["WFTriggerSerializedParameters"]["WFSelectedApps"]["BundleIdentifier"] == "com.atebits.Tweetie2"
+questions = workflow["WFWorkflowImportQuestions"]
+assert len(questions) == 1
+assert questions[0]["Category"] == "Trigger"
+assert questions[0]["ParameterKey"] == "__enabled__"
+assert questions[0]["TriggerUUID"] == triggers[0]["WFTriggerUUID"]
+assert "Turn on Automation" in questions[0]["Text"]
 signed = (directory / "x.shortcut").read_bytes()
 assert signed[:4] == b"AEA1", "Expected Apple's signed shortcut package"
 expected = (directory / "x.shortcut.sha256").read_text().strip()
 assert hashlib.sha256(signed).hexdigest() == expected
-print("X export: correct app/intent, guarded handoff, app trigger, signed package checksum")
+print("X export: correct app/intent, guarded handoff, app trigger, import activation question, signed package checksum")
