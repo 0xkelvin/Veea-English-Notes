@@ -4,6 +4,7 @@ import '../models/shortcut_setup.dart';
 import '../providers/app_gate_provider.dart';
 import '../screens/learning_rules_screen.dart';
 import '../screens/shortcut_setup_screen.dart';
+import '../screens/universal_shortcut_setup_screen.dart';
 import 'native_gate_settings.dart';
 
 class GuidedProtectionSettings extends StatefulWidget {
@@ -13,11 +14,15 @@ class GuidedProtectionSettings extends StatefulWidget {
     required this.totalWords,
     required this.onAddWord,
     required this.legacySettings,
+    this.enableUniversalSetup = const bool.fromEnvironment(
+      'VEEA_UNIVERSAL_GATE_PREVIEW',
+    ),
   });
   final AppGateProvider gate;
   final int totalWords;
   final VoidCallback onAddWord;
   final Widget legacySettings;
+  final bool enableUniversalSetup;
 
   @override
   State<GuidedProtectionSettings> createState() =>
@@ -38,6 +43,7 @@ class _GuidedProtectionSettingsState extends State<GuidedProtectionSettings>
 
   Future<void> _refresh() async {
     try {
+      await widget.gate.prepareChallenge();
       final value = await widget.gate.service.getShortcutSetupStatus();
       if (mounted) setState(() => status = value);
     } catch (_) {}
@@ -111,7 +117,7 @@ class _GuidedProtectionSettingsState extends State<GuidedProtectionSettings>
                 child: const Text('Add a word'),
               ),
             ],
-            for (final template in ShortcutTemplate.available)
+            if (widget.enableUniversalSetup) ...[
               Card(
                 margin: const EdgeInsets.only(bottom: 12),
                 child: ListTile(
@@ -120,25 +126,16 @@ class _GuidedProtectionSettingsState extends State<GuidedProtectionSettings>
                     vertical: 10,
                   ),
                   leading: const Icon(Icons.apps_outlined),
-                  title: Text(template.app),
-                  subtitle: Text(
-                    gate.nativeStatus.enabled
-                        ? 'Every Open setup · Timed protection is currently on'
-                        : !gate.config.enabled ||
-                              gate.config.passDurationMinutes != 0 ||
-                              !gate.config.gatedApps.contains(template.app)
-                        ? 'Set up Every Open'
-                        : status.wasTested(template.app)
-                        ? 'Every open · Test successful'
-                        : 'Every open · Test setup',
+                  title: const Text('Choose apps to protect'),
+                  subtitle: const Text(
+                    'Select several apps in Apple Shortcuts',
                   ),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () async {
                     await Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) => ShortcutSetupScreen(
+                        builder: (_) => UniversalShortcutSetupScreen(
                           gate: gate,
-                          template: template,
                           totalWords: widget.totalWords,
                         ),
                       ),
@@ -147,9 +144,50 @@ class _GuidedProtectionSettingsState extends State<GuidedProtectionSettings>
                   },
                 ),
               ),
-            const Text(
-              'Ready-made setup is available for X. Existing shortcuts for other apps can be managed below.',
-            ),
+              const Text(
+                'One ready-made automation for your selected apps. No actions to build.',
+              ),
+            ] else ...[
+              for (final template in ShortcutTemplate.available)
+                Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 10,
+                    ),
+                    leading: const Icon(Icons.apps_outlined),
+                    title: Text(template.app),
+                    subtitle: Text(
+                      gate.nativeStatus.enabled
+                          ? 'Every Open setup · Timed protection is currently on'
+                          : !gate.config.enabled ||
+                                gate.config.passDurationMinutes != 0 ||
+                                !gate.config.gatedApps.contains(template.app)
+                          ? 'Set up Every Open'
+                          : status.wasTested(template.app)
+                          ? 'Every open · Test successful'
+                          : 'Every open · Test setup',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => ShortcutSetupScreen(
+                            gate: gate,
+                            template: template,
+                            totalWords: widget.totalWords,
+                          ),
+                        ),
+                      );
+                      await _refresh();
+                    },
+                  ),
+                ),
+              const Text(
+                'Ready-made setup is available for X. Existing shortcuts for other apps can be managed below.',
+              ),
+            ],
           ],
           const SizedBox(height: 16),
           OutlinedButton.icon(

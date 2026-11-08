@@ -68,6 +68,7 @@ class _AppGateScreenState extends State<AppGateScreen>
   bool _keyboardRequestScheduled = false;
   String? _challengeError;
   Timer? _accessTicker;
+  AppGateProvider? _gateForDisposal;
 
   @override
   void initState() {
@@ -96,6 +97,7 @@ class _AppGateScreenState extends State<AppGateScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _gateForDisposal = _maybeReadGateProvider(context);
     if (_currentWord == null && widget.initialWord == null) {
       final gateProvider = _maybeReadGateProvider(context);
       if (gateProvider != null && !widget.previewMode) {
@@ -235,6 +237,12 @@ class _AppGateScreenState extends State<AppGateScreen>
 
   @override
   void dispose() {
+    if (_currentApp.startsWith('shortcut:') && !_unlocked) {
+      final provider = _gateForDisposal;
+      if (provider != null) {
+        unawaited(provider.service.cancelUniversalGate(_currentApp));
+      }
+    }
     _accessTicker?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _inputController.dispose();
@@ -651,10 +659,7 @@ class _AppGateScreenState extends State<AppGateScreen>
                           final provider = gateProvider;
                           if (provider == null) return;
                           try {
-                            if (await choosePracticeWords(
-                              context,
-                              provider,
-                            )) {
+                            if (await choosePracticeWords(context, provider)) {
                               if (!mounted) return;
                               _solvedInRound = provider.progressForApp(
                                 _currentApp,
@@ -1112,7 +1117,19 @@ class _AppGateScreenState extends State<AppGateScreen>
             onPressed: () async {
               final gateProvider = _maybeReadGateProvider(context);
               if (!_isNativeTarget && !widget.previewMode) {
-                await gateProvider?.launchTargetApp(_currentApp);
+                final launched = await gateProvider?.launchTargetApp(
+                  _currentApp,
+                );
+                if (launched != true && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Could not return to your app. Try again, or reopen it from Home.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
               }
               if (context.mounted) {
                 Navigator.of(context).maybePop(true);

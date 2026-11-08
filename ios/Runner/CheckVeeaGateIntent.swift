@@ -20,6 +20,9 @@ struct CheckVeeaGateIntent: AppIntent {
 
   @MainActor
   func perform() async throws -> some IntentResult & ReturnsValue<Bool> {
+    if targetApp.hasPrefix("veea-universal\n") {
+      return .result(value: GateAccessState.shared.prepareUniversalCheck(targetApp))
+    }
     GateAccessState.shared.recordShortcutCheck(for: targetApp)
     return .result(value: GateAccessState.shared.needsChallenge(for: targetApp))
   }

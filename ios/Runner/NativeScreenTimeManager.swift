@@ -74,6 +74,7 @@ final class NativeScreenTimeManager {
       ManagedSettingsStore().clearAllSettings()
     }
     GateAccessState.shared.defaults.set(enabled, forKey: "native_gate_enabled")
+    if enabled { GateAccessState.shared.setUniversalEnabled(false) }
   }
 
   func setDuration(_ minutes: Int) throws {

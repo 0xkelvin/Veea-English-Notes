@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../models/native_gate_status.dart';
 import '../models/shortcut_setup.dart';
+import '../models/universal_gate_status.dart';
 
 /// Platform channel bridge for the App Gate ("Earn Screen Time" / "Word Toll") feature.
 ///
@@ -24,6 +25,29 @@ class AppGateService {
       StreamController<String>.broadcast();
 
   String? _pendingTargetApp;
+  final Map<String, String> shortcutAppNames = {};
+
+  Future<UniversalGateStatus> getUniversalGateStatus() async {
+    final value = await _channel.invokeMapMethod<String, dynamic>(
+      'getUniversalGateStatus',
+    );
+    final status = UniversalGateStatus.fromMap(value);
+    final pendingTarget = value?['pendingTarget'];
+    final pendingName = value?['pendingAppName'];
+    if (pendingTarget is String && pendingName is String) {
+      shortcutAppNames[pendingTarget] = pendingName;
+    }
+    for (final app in status.apps) {
+      shortcutAppNames[app.id] = app.name;
+    }
+    return status;
+  }
+
+  Future<void> setUniversalGateEnabled(bool enabled) => _channel
+      .invokeMethod<void>('setUniversalGateEnabled', {'enabled': enabled});
+
+  Future<void> cancelUniversalGate(String app) =>
+      _channel.invokeMethod<void>('cancelUniversalGate', {'targetApp': app});
 
   /// Emits the target app name / identifier whenever the native OS intercepts
   /// a locked app launch (`onGateTriggered`).
@@ -43,6 +67,10 @@ class AppGateService {
       String? targetApp;
       if (args is Map) {
         targetApp = args['targetApp']?.toString();
+        final name = args['appName'];
+        if (targetApp != null && name is String) {
+          shortcutAppNames[targetApp] = name;
+        }
       } else if (args is String) {
         targetApp = args;
       }
@@ -80,6 +108,9 @@ class AppGateService {
         <String, dynamic>{},
       );
       if (nativePending != null && nativePending.trim().isNotEmpty) {
+        if (nativePending.startsWith('shortcut:')) {
+          await getUniversalGateStatus();
+        }
         return nativePending.trim();
       }
     } on MissingPluginException {

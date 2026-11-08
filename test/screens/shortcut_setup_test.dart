@@ -8,7 +8,9 @@ import 'package:veea_english_app/models/shortcut_setup.dart';
 import 'package:veea_english_app/models/vocabulary_word.dart';
 import 'package:veea_english_app/providers/app_gate_provider.dart';
 import 'package:veea_english_app/providers/shortcut_setup_controller.dart';
+import 'package:veea_english_app/providers/universal_shortcut_controller.dart';
 import 'package:veea_english_app/screens/shortcut_setup_screen.dart';
+import 'package:veea_english_app/screens/universal_shortcut_setup_screen.dart';
 import 'package:veea_english_app/services/app_gate_service.dart';
 import 'package:veea_english_app/widgets/guided_protection_settings.dart';
 
@@ -23,6 +25,9 @@ void main() {
   late ShortcutSetupController controller;
   late List<MethodCall> calls;
   late List<Uri> urls;
+  var universalEnabled = false;
+  var failTurnOff = false;
+  List<Map<String, Object>> observedApps = [];
   var importSupported = true;
   var verified = false;
   var openLink = true;
@@ -30,6 +35,9 @@ void main() {
   var preparedAtImport = false;
 
   setUp(() async {
+    universalEnabled = false;
+    failTurnOff = false;
+    observedApps = [];
     importSupported = true;
     verified = false;
     openLink = true;
@@ -50,6 +58,15 @@ void main() {
               'supportsImport': importSupported,
               'tested': verified ? {'x': 1794100000} : <String, double>{},
             };
+          case 'getUniversalGateStatus':
+            return {'enabled': universalEnabled, 'apps': observedApps};
+          case 'setUniversalGateEnabled':
+            final enabled = (call.arguments as Map)['enabled'] == true;
+            if (!enabled && failTurnOff) {
+              throw PlatformException(code: 'FAILED');
+            }
+            universalEnabled = enabled;
+            return null;
           case 'requestPermissions':
             return true;
           case 'getInstalledApps':
@@ -99,6 +116,119 @@ void main() {
       null,
     );
   });
+
+  UniversalShortcutController universal({Uri? link}) {
+    final value = UniversalShortcutController(
+      gate: gate,
+      installUrl: link ?? Uri.parse(UniversalShortcutSetupScreen.installLink),
+      openLink: (url) async {
+        urls.add(url);
+        expect(gate.config.enabled, true);
+        expect(gate.config.passDurationMinutes, 0);
+        expect(universalEnabled, true);
+        return openLink;
+      },
+    );
+    addTearDown(value.dispose);
+    return value;
+  }
+
+  test(
+    'universal progress survives a fresh opening without sharing apps',
+    () async {
+      await gate.setWordsPerUnlock(2);
+      await gate.recordStepCompletion(
+        wordId: 'consent',
+        targetApp: 'shortcut:name:safari:request:100-200',
+        attempts: 1,
+      );
+      expect(gate.progressForApp('shortcut:name:safari:request:101-201'), 1);
+      expect(gate.progressForApp('shortcut:name:books:request:102-202'), 0);
+      final saved = await repo.gateRoundProgress();
+      expect(saved.keys, ['shortcut:name:safari']);
+    },
+  );
+
+  test(
+    'universal setup prepares notebook without choosing default apps',
+    () async {
+      final value = universal();
+      await value.setup(3);
+      expect(value.error, isNull);
+      expect(value.openedInstaller, true);
+      expect(gate.config.gatedApps, isEmpty);
+      expect(urls.single.host, 'www.icloud.com');
+      expect(value.status.apps, isEmpty);
+      // Returning from Apple is not proof that the user enabled an automation.
+      await value.refresh();
+      expect(value.status.apps, isEmpty);
+    },
+  );
+
+  test(
+    'universal setup rejects missing link, old iOS, and insufficient words',
+    () async {
+      final invalid = universal(link: Uri());
+      await invalid.setup(3);
+      expect(invalid.error, contains('unavailable'));
+      expect(universalEnabled, false);
+      final value = universal();
+      importSupported = false;
+      await value.setup(3);
+      expect(value.error, contains('iOS 27'));
+      importSupported = true;
+      await value.setup(0);
+      expect(value.error, contains('3 words'));
+      expect(urls, isEmpty);
+      expect(universalEnabled, false);
+    },
+  );
+
+  test(
+    'universal installer failure can retry without claiming activation',
+    () async {
+      final value = universal();
+      openLink = false;
+      await value.setup(3);
+      expect(value.error, contains('Could not open'));
+      expect(value.openedInstaller, false);
+      openLink = true;
+      await value.setup(3);
+      expect(value.error, isNull);
+      expect(value.openedInstaller, true);
+      expect(value.status.apps, isEmpty);
+    },
+  );
+
+  test(
+    'observed apps keep separate verification and turn off handles failure',
+    () async {
+      final value = universal();
+      await value.setup(3);
+      observedApps = [
+        {
+          'id': 'shortcut:name:safari',
+          'name': 'Safari',
+          'verifiedAt': 1794100000,
+        },
+        {'id': 'shortcut:name:books', 'name': 'Books', 'verifiedAt': 0},
+      ];
+      await value.refresh();
+      expect(value.status.apps.map((app) => app.name), ['Safari', 'Books']);
+      expect(value.status.apps.first.verifiedAt, isNotNull);
+      expect(value.status.apps.last.verifiedAt, isNull);
+      expect(gate.service.shortcutAppNames['shortcut:name:books'], 'Books');
+      failTurnOff = true;
+      await value.turnOff();
+      expect(value.error, contains('Could not turn off'));
+      expect(value.busy, false);
+      expect(value.status.enabled, true);
+      failTurnOff = false;
+      await value.turnOff();
+      expect(value.error, isNull);
+      expect(value.status.enabled, false);
+    },
+  );
 
   test(
     'installer prepares chosen app before approval; cancellation never claims success',
@@ -318,6 +448,29 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('unverified universal setup stays out of the default flow', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: GuidedProtectionSettings(
+              gate: gate,
+              totalWords: 3,
+              onAddWord: () {},
+              legacySettings: const SizedBox(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('X'), findsOneWidget);
+    expect(find.text('Choose apps to protect'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('app selection remains usable with enlarged text', (
     tester,
   ) async {
@@ -336,6 +489,7 @@ void main() {
           body: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: GuidedProtectionSettings(
+              enableUniversalSetup: true,
               gate: gate,
               totalWords: 3,
               onAddWord: () {},
@@ -347,10 +501,10 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    await tester.ensureVisible(find.text('X'));
-    await tester.tap(find.text('X'));
+    await tester.ensureVisible(find.text('Choose apps to protect'));
+    await tester.tap(find.text('Choose apps to protect'));
     await tester.pumpAndSettle();
-    expect(find.text('Learn before opening X'), findsOneWidget);
+    expect(find.byType(UniversalShortcutSetupScreen), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
