@@ -69,6 +69,23 @@ func runTests() {
   let b = "shortcut:name:whatsapp:request:103-203"
   let callbackA = "shortcuts://callback/a?token=test-a"
   let callbackB = "shortcuts://callback/b?token=test-b"
+  // Format observed on the physical iOS 27 phone, with a synthetic invocation ID.
+  let invocation = "7A3C12C1-6403-451C-90B7-E96347B71AD0"
+  let appleCallback = "shortcuts-production://x-callback-url/ic-success/\(invocation)"
+  let appleCancel = "shortcuts-production://x-callback-url/ic-cancel/\(invocation)"
+  precondition(GateAccessState.isShortcutCallback(appleCallback))
+  precondition(GateAccessState.isShortcutCallback(appleCancel))
+  for invalid in [
+    "shortcuts-production://x-callback-url/ic-success",
+    "shortcuts-production://x-callback-url/ic-success/not-an-invocation",
+    "shortcuts-production://x-callback-url/ic-success/\(invocation)/extra",
+    "shortcuts-production://x-callback-url/run-shortcut/\(invocation)",
+    "https://x-callback-url/ic-success/\(invocation)",
+    "shortcuts-production://user@x-callback-url/ic-success/\(invocation)",
+    "shortcuts-production://x-callback-url/ic-success/\(invocation)#fragment",
+  ] {
+    precondition(!GateAccessState.isShortcutCallback(invalid))
+  }
   func check(_ id: String, _ name: String, _ when: Date = now) -> Bool {
     state.prepareUniversalCheck("veea-universal\n\(id)\n\(name)", now: when)
   }
@@ -122,6 +139,17 @@ func runTests() {
   state.setUniversalEnabled(false)
   precondition(!check("108-208", "Safari"))
   precondition(state.universalSession == nil)
+  state.setUniversalEnabled(true)
+  precondition(check("109-209", "Books"))
+  let booksTarget = state.universalSession!.target
+  precondition(state.acceptUniversalRequest(id: "109-209", callback: appleCallback, cancel: appleCancel, now: now) == booksTarget)
+  precondition(state.earnUniversalPass(for: booksTarget, now: now))
+  precondition(state.takeUniversalReturn(for: booksTarget, now: now)?.absoluteString == appleCallback)
+  precondition(!check("110-210", "Books", now.addingTimeInterval(1)))
+  precondition(check("111-211", "Books", now.addingTimeInterval(2)))
+  let booksCancelTarget = state.universalSession!.target
+  precondition(state.acceptUniversalRequest(id: "111-211", callback: appleCallback, cancel: appleCancel, now: now.addingTimeInterval(2)) == booksCancelTarget)
+  precondition(state.cancelUniversalChallenge(for: booksCancelTarget)?.absoluteString == appleCancel)
   print("Universal callback, multi-app isolation, earned return, replay, failure, cancellation and expiry checks passed")
 
 }

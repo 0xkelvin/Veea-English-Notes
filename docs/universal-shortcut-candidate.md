@@ -1,6 +1,6 @@
-# Universal Every Open candidate — device verification pending
+# Universal Every Open candidate — development phone flow verified
 
-8 November 2026. This implementation is a test candidate, not a verified replacement for the working X flow.
+8 November 2026. The development-phone challenge/return flow has passed for Books and Safari. This remains an opt-in candidate until production TestFlight and the remaining edge cases are verified.
 
 ## Availability
 
@@ -10,7 +10,7 @@ Candidate production template: <https://www.icloud.com/shortcuts/4b6b6b0d88d9402
 
 ## Observed Apple setup behavior
 
-On the user's iOS 27 phone, the imported template showed an App question and an Automation question. The import App question selected **one app**. In the imported shortcut's editor, tapping **+** beside that app allowed another app to be added to the same trigger. The editor displayed **When Calendar or Books is Opened**. This test automation was left **off**. Instructions now describe choosing the first app during import, then adding further apps through that + control. A single multi-select import picker has not been demonstrated.
+On the user's iOS 27.2 phone, the imported template showed an App question and an Automation question. The import App question selected **one app**. In the imported shortcut's editor, tapping **+** beside that app allowed another app to be added to the same trigger. The latest test imported Books, enabled Automation during import, then added Safari through **+**. The editor confirmed **When Books or Safari is Opened**, Automation on and Notify off. Instructions describe choosing the first app during import, then adding further apps through that + control. A single multi-select import picker has not been demonstrated.
 
 The signed template contains no fixed app selection. The first import draft with inaccurate multiple-selection instructions has been superseded by the candidate link above.
 
@@ -32,19 +32,22 @@ Setup validates the notebook and iOS support before opening Apple. It does not c
 - Flutter tests cover setup preparation without default app selection, notebook/iOS/link guards, installer retry, no false success, observed per-app status, turn-off failure, per-app progress across request tokens, and enlarged text.
 - Analyzer passed; all 16 focused setup tests passed. The full run completed 496 tests with 492 passing and four widget timing failures. All four failed cases passed in a serial rerun of their four files (56 tests passed). A final focused run also includes the new default-flow feature-switch regression. This is not recorded as a clean single full-suite run.
 
-## Physical verification still required
+## Development phone verification
 
-The separate **Veea Gate Test** app was installed with starter words without replacing the user's production TestFlight app or notebook. Its earlier build is not the final candidate and has not completed the new callback flow. The production X4 automation was left unchanged. The disabled phone draft Veea App Gate contains Calendar and Books; the production intent has not yet been replaced with the test app's intent. A tap while adding the test intent timed out, so inspect its current action list before further editing.
+Mirroring control recovered. The separate **Veea Gate Test** app was rebuilt from the current candidate and updated without replacing the production TestFlight app or notebook. Its five starter words were preserved. The production X4 automation was left unchanged.
 
-iPhone Mirroring control then repeatedly timed out, including after the user reopened Mirroring and separately closed Shortcuts on the physical phone. Mac Shortcuts remained controllable. No multiple-app challenge/return cycle has passed. In particular, the actual Apple callback URL shape and resumption behavior remain unverified; the narrow callback validator must be checked against the real device value before release.
+The matching signed test template is <https://www.icloud.com/shortcuts/2e5bb4945e5941e19a4bd73acd32b753>. It uses `com.veea.veeaRewind.CheckVeeaGateIntent`, `veea-test://`, nine actions, the correct Text/Bool bindings and the original Current App return object. It was imported from the new in-app setup screen and enabled for Books and Safari.
+
+The first physical Books test failed to show a challenge. Test-app preferences confirmed that the intent ran and Veea received Apple's callback, but the validator rejected its previously unobserved format: `shortcuts-production://x-callback-url/ic-success/<invocation UUID>`. The validator now accepts the UUID-scoped `ic-success`/`ic-cancel` endpoints while rejecting malformed IDs, extra path segments, foreign schemes, credentials, fragments and run-shortcut endpoints. The phone also supplied an `ic-cancel/<invocation UUID>` callback. Native regression checks, all 16 focused Flutter setup tests and the rebuilt iOS app passed. The fix was installed into the separate test app.
+
+After the fix, the user confirmed a Books challenge and return with Books staying open. An initially reported repeat failure was rechecked after explicitly leaving the shortcut editor. The user confirmed the same challenge → Shortcuts → Books flow on the recheck. Saved state recorded a verified Books return at 19:17:19 local time and a subsequent fresh Books challenge request, with no native error.
+
+The Safari physical test showed a correctly labelled Safari challenge. Completing it through Mirroring visibly returned via Shortcuts to Safari. The user then confirmed challenges and correct Safari returns on **both fresh physical openings**, including the immediate repeat. Saved state recorded a verified Safari return at 19:14:08 local time. The intermediate Shortcuts screen is visible during callback resumption. Mirroring completion left a handoff unused, whereas physical testing recorded its consumption. Do not infer a physical repeat bug solely from a Mirroring test. The existing single-use handoff logic remains unchanged.
 
 Before enabling the preview by default:
 
-1. Finish a test-bundle shortcut variant (`com.veea.veeaRewind`, `veea-test://`) and preserve all variable/If bindings. Enable only its test apps, avoiding duplicate production X automation.
-2. Build/install the latest source into the separate test app. The prior local build used a temporary CocoaPods-only staging project and a personal-profile Screen Time stub; none of that staging configuration belongs in production source.
-3. Start from Veea's new setup screen, import, choose the first app, enable Automation and add it; add a second app with +. Inspect the enabled trigger and actions afterward.
-4. From the physical phone's Home Screen, open app A, complete all words, verify return to A and no bounce. Repeat a fresh opening, then repeat both cycles for B.
-5. Cancel mid-round and reopen. Switch apps mid-round, finish the latest challenge and verify that it cannot return to the previous app. Check cold start, failure/retry and mode switching.
-6. Use Nin's production signing team for a new TestFlight build and repeat the physical test with the production template before changing the default flow.
+1. Test cancellation/reopening, switching apps mid-round, cold start, failure/retry and mode switching on the physical phone. These have automated coverage but the complete physical edge-case matrix is still pending.
+2. Use Nin's production signing team for a new TestFlight build and repeat the Books/Safari import, multiple selection through +, Every Open and correct-return tests with the production template. The currently installed TestFlight app does not contain this implementation.
+3. Keep test-only signing/build settings separate. The local build uses a CocoaPods staging project and a personal-profile Screen Time stub; none of that staging configuration belongs in production source. Native Screen Time is not validated by this build.
 
-Local transfer/build artifacts are under `/Users/kelvinm/Documents/Codex/2026-11-06/v/work/universal-gate-20261108` and `/private/tmp/veea-universal-phone`; they are not committed.
+Local transfer/build artifacts are under `/Users/kelvinm/Documents/Codex/2026-11-06/v/work/universal-gate-20261108` and `/Users/kelvinm/Documents/Codex/2026-11-06/v/work/gate-phone-rerun`; they are not committed.

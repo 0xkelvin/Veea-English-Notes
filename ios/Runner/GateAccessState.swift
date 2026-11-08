@@ -196,8 +196,15 @@ extension GateAccessState {
           ["shortcuts", "shortcuts-production"].contains(url.scheme?.lowercased() ?? ""),
           url.user == nil, url.password == nil, url.fragment == nil else { return false }
     let host = url.host?.lowercased() ?? ""
-    return host == "callback" || (host == "x-callback-url" &&
-      ["/callback", "/resume", "/complete"].contains(url.path.lowercased()))
+    if host == "callback" { return true }
+    guard host == "x-callback-url" else { return false }
+    if ["/callback", "/resume", "/complete"].contains(url.path.lowercased()) { return true }
+    // iOS 27's Open X-Callback URL uses an invocation UUID in its return path.
+    // Keep this scoped to callback endpoints; never allow run-shortcut URLs.
+    let path = url.path.split(separator: "/", omittingEmptySubsequences: false)
+    return path.count == 3 && path[0].isEmpty
+      && ["ic-success", "ic-cancel"].contains(path[1].lowercased())
+      && UUID(uuidString: String(path[2])) != nil
   }
 
   func earnUniversalPass(for target: String, now: Date = Date()) -> Bool {
