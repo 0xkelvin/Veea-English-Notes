@@ -241,7 +241,7 @@ void main() {
       await tester.pumpWidget(wrap(const AccountScreen(), Brightness.light));
       await tester.pumpAndSettle();
 
-      expect(find.text('Your notebook, backed up'), findsOneWidget);
+      expect(find.text('Your notebook, on this device'), findsOneWidget);
       await expectLater(
         find.byType(AccountScreen),
         matchesGoldenFile('account_signed_out.png'),
@@ -255,7 +255,7 @@ void main() {
       await tester.pumpWidget(wrap(const AccountScreen(), Brightness.light));
       await tester.pumpAndSettle();
       expect(
-        find.textContaining('Phone sign-in is coming soon'),
+        find.textContaining('Account and backup are coming soon'),
         findsOneWidget,
       );
       expect(find.byType(TextField), findsNothing);

@@ -55,6 +55,7 @@ void main() {
   late List<MethodCall> calls;
   late List<VocabularyWord> words;
   late _RecordingTts speech;
+  var nativeMinutes = 15;
   var authorized = false;
   var configured = false;
   var enabled = false;
@@ -66,7 +67,7 @@ void main() {
     'authorized': authorized,
     'enabled': enabled,
     'configured': configured,
-    'passMinutes': 15,
+    'passMinutes': nativeMinutes,
     'applications': [
       {
         'id': target,
@@ -87,6 +88,7 @@ void main() {
     configured = false;
     enabled = false;
     failGrant = false;
+    nativeMinutes = 15;
     expiry = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
@@ -102,6 +104,9 @@ void main() {
               case 'setScreenTimeEnabled':
                 configured = enabled =
                     (call.arguments as Map)['enabled'] == true;
+                return status();
+              case 'setScreenTimeDuration':
+                nativeMinutes = (call.arguments as Map)['passMinutes'] as int;
                 return status();
               case 'grantPass':
                 if (failGrant) {
@@ -892,17 +897,17 @@ void main() {
         await tester.pumpAndSettle();
       }
 
-      await intercept('X');
-      expect(find.text('Locked · X'), findsOneWidget);
-      await intercept('X');
+      await intercept(target);
+      expect(find.text('Locked · Protected app 1'), findsOneWidget);
+      await intercept(target);
       expect(find.byType(AppGateScreen, skipOffstage: false), findsOneWidget);
-      await intercept('YouTube');
-      expect(find.text('Locked · YouTube'), findsOneWidget);
+      await intercept('native:00000000-0000-0000-0000-000000000002');
+      expect(find.text('Locked · Protected app'), findsOneWidget);
       expect(find.byType(AppGateScreen, skipOffstage: false), findsOneWidget);
       Navigator.of(tester.element(find.byType(AppGateScreen))).pop();
       await tester.pumpAndSettle();
-      await intercept('X');
-      expect(find.text('Locked · X'), findsOneWidget);
+      await intercept(target);
+      expect(find.text('Locked · Protected app 1'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
     },
@@ -1488,4 +1493,127 @@ void main() {
     expect(speech.spoken, ['resilient']);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+  test(
+    'upgrade disables old Shortcut config while preserving the notebook and pool',
+    () async {
+      await repo.saveGateConfig(
+        gate.config.copyWith(
+          enabled: true,
+          passDurationMinutes: 0,
+          practiceWordIds: ['a', 'c'],
+        ),
+      );
+      calls.clear();
+      gate.dispose();
+      gate = AppGateProvider(repository: repo, now: () => now);
+      await gate.init();
+      final saved = await repo.getGateConfig();
+      expect(saved.enabled, isFalse);
+      expect(saved.passDurationMinutes, 15);
+      expect(saved.practiceWordIds, ['a', 'c']);
+      expect((await repo.exportAll()).length, 3);
+      expect(calls.where((call) => call.method == 'getInstalledApps'), isEmpty);
+      final retired =
+          calls.singleWhere((call) => call.method == 'setGateEnabled').arguments
+              as Map;
+      expect(retired['enabled'], isFalse);
+      expect(retired['gatedApps'], isEmpty);
+    },
+  );
+
+  test(
+    'incoming old Shortcut events and pending targets cannot start a launch challenge',
+    () async {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      Future<void> incoming(String targetApp) async {
+        await messenger.handlePlatformMessage(
+          AppGateService.channelName,
+          const StandardMethodCodec().encodeMethodCall(
+            MethodCall('onGateTriggered', {'targetApp': targetApp}),
+          ),
+          null,
+        );
+      }
+
+      await incoming('X');
+      await incoming('shortcut:name:books:request:123-456');
+      expect(gate.service.consumePendingTargetApp(), isNull);
+      await incoming(target);
+      expect(gate.service.consumePendingTargetApp(), target);
+      expect(gate.service.consumePendingTargetApp(), isNull);
+    },
+  );
+
+  test(
+    'duration persists through native refresh without changing an earned pass',
+    () async {
+      authorized = enabled = configured = true;
+      expiry = now.add(const Duration(minutes: 15));
+      await gate.refreshNativeScreenTime();
+      expect(await gate.setNativeDuration(90), isTrue);
+      expect(gate.nativeStatus.passMinutes, 90);
+      expect(gate.unlockedUntilFor(target), expiry);
+      gate.dispose();
+      gate = AppGateProvider(repository: repo, now: () => now);
+      await gate.init();
+      expect(gate.nativeStatus.passMinutes, 90);
+      expect(gate.unlockedUntilFor(target), expiry);
+      calls.clear();
+      expect(await gate.setNativeDuration(4), isFalse);
+      expect(await gate.setNativeDuration(1441), isFalse);
+      expect(
+        calls.where((call) => call.method == 'setScreenTimeDuration'),
+        isEmpty,
+      );
+      expect(gate.nativeStatus.passMinutes, 90);
+      expect(gate.unlockedUntilFor(target), expiry);
+    },
+  );
+
+  testWidgets('restored long access uses hours in its countdown', (
+    tester,
+  ) async {
+    authorized = enabled = configured = true;
+    expiry = now.add(const Duration(minutes: 90));
+    await tester.runAsync(() => gate.refreshNativeScreenTime());
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(app(AppGateScreen(targetApp: target)));
+    await tester.pumpAndSettle();
+    expect(find.text('1:30:00 remaining'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+  testWidgets(
+    'unlocking inside Veea gives Home instructions without a misleading return arrow',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      authorized = enabled = configured = true;
+      expiry = now.add(const Duration(minutes: 15));
+      await tester.runAsync(() => gate.refreshNativeScreenTime());
+      await tester.pumpWidget(
+        app(AppGateScreen(targetApp: target, openedFromVeea: true)),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'Open your app from Home or the app switcher. Your access is already active.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Tap the return link in the top-left corner of your screen.'),
+        findsNothing,
+      );
+      expect(find.byIcon(Icons.north_west), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    },
+  );
 }

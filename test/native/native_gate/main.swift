@@ -34,6 +34,67 @@ let appB = NativeGateApplication(id: UUID().uuidString, token: Data([2]))
 try store.update { $0.enabled = true; $0.applications = [appA, appB] }
 precondition(try! store.read().shieldedApplicationIDs(at: now) == [appA.id, appB.id])
 
+// Launch duration policy: every whole minute from 5 minutes to 24 hours.
+for minutes in [5, 6, 14, 15, 16, 59, 60, 90, 1439, 1440] {
+  precondition(NativeGatePolicy.supportedPassMinutes.contains(minutes))
+}
+for minutes in [-1, 0, 4, 1441, 10080] {
+  do {
+    _ = try coordinatorForBounds(store).grant(applicationID: appB.id, minutes: minutes, now: now,
+      startMonitoring: { _, _, _ in preconditionFailure("Invalid duration must not schedule") },
+      stopMonitoring: { _ in }, apply: { _ in preconditionFailure("Invalid duration must not unshield") })
+    preconditionFailure("Expected duration rejection")
+  } catch NativeGateError.invalidDuration {}
+}
+func coordinatorForBounds(_ store: NativeGateStore) -> NativeGateGrantCoordinator {
+  NativeGateGrantCoordinator(store: store)
+}
+// Cross-midnight 24-hour grant has an exact persisted schedule end and survives reload.
+let lateNight = ISO8601DateFormatter().date(from: "2026-11-10T23:59:30Z")!
+let dayPass = try coordinatorForBounds(store).grant(applicationID: appB.id, minutes: 1440, now: lateNight,
+  startMonitoring: { _, start, end in precondition(end.timeIntervalSince(start) == 86400) },
+  stopMonitoring: { _ in }, apply: { _ in })
+precondition(dayPass.expiresAt.timeIntervalSince(lateNight) == 86400)
+precondition(try! store.read().passes[appB.id] == dayPass)
+try store.update { $0.passMinutes = 30 }
+precondition(try! store.read().passes[appB.id] == dayPass) // Settings changes don't shorten earned access.
+try store.update { $0.passes = [:] }
+
+// Short elapsed-time passes still schedule >=15-minute ongoing intervals.
+for minutes in [5, 6, 10, 14] {
+  let shortPass = try coordinatorForBounds(store).grant(applicationID: appB.id, minutes: minutes, now: now,
+    startMonitoring: { _, start, end in
+      precondition(start < now)
+      precondition(end.timeIntervalSince(start) == 900)
+      precondition(end.timeIntervalSince(now) >= Double(minutes * 60))
+      precondition(end.timeIntervalSince(now) < Double(minutes * 60 + 1))
+      // An immediate intervalDidStart callback reconciles before the grant saves.
+      try store.update { $0.reconcile(at: now) }
+    }, stopMonitoring: { _ in }, apply: { _ in })
+  try store.update { $0.reconcile(at: now) } // Or the start callback arrives after save.
+  precondition(try! store.read().passes[appB.id] == shortPass)
+  precondition(try! store.read().shieldedApplicationIDs(at: now) == [appA.id])
+  try store.update { $0.reconcile(at: shortPass.expiresAt) } // End-callback policy.
+  precondition(try! store.read().passes[appB.id] == nil)
+  precondition(try! store.read().shieldedApplicationIDs(at: shortPass.expiresAt).contains(appB.id))
+}
+try store.update { $0.passes = [:] }
+
+// A calendar/timezone is explicit and round-trips instants in DST's repeated hour.
+for iso in ["2026-11-01T08:30:00Z", "2026-11-01T09:30:00Z", "2026-03-08T10:30:00Z"] {
+  let instant = ISO8601DateFormatter().date(from: iso)!
+  let components = NativeGatePolicy.scheduleComponents(for: instant)
+  precondition(components.timeZone?.secondsFromGMT() == 0)
+  precondition(components.calendar?.date(from: components) == instant)
+}
+var oldState = NativeGateState()
+oldState.passMinutes = 0
+oldState.reconcile(at: now)
+precondition(oldState.passMinutes == 5)
+oldState.passMinutes = 10080
+oldState.reconcile(at: now)
+precondition(oldState.passMinutes == 1440)
+
 var scheduled = false
 var applied = false
 let coordinator = NativeGateGrantCoordinator(store: store)
@@ -64,7 +125,7 @@ do {
 precondition(try! store.read() == beforeFailure)
 do {
   _ = try coordinator.grant(applicationID: appB.id, minutes: 0, now: now,
-    startMonitoring: { _, _, _ in preconditionFailure("Every Open is Shortcut only") },
+    startMonitoring: { _, _, _ in preconditionFailure("Zero duration cannot schedule") },
     stopMonitoring: { _ in }, apply: { _ in })
   preconditionFailure("Expected duration failure")
 } catch NativeGateError.invalidDuration {}

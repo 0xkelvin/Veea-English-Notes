@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -8,7 +7,6 @@ import '../core/config/app_config.dart';
 import '../core/theme/pixel_metrics.dart';
 import '../core/theme/pixel_palette.dart';
 import '../models/account_identifier.dart';
-import '../models/gate_config.dart';
 import '../providers/app_gate_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/feedback_provider.dart';
@@ -197,7 +195,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         key: const Key('settings_account'),
                         leading: const Icon(Icons.account_circle_outlined),
                         title: const Text('Account and backup'),
-                        subtitle: const Text('Phone sign-in and your notebook'),
+                        subtitle: Text(
+                          AppConfig.isCloudEnabled
+                              ? 'Phone sign-in and your notebook'
+                              : 'Coming soon · Your notebook stays on this device',
+                        ),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () => Navigator.of(context).push(
                           MaterialPageRoute<void>(
@@ -1731,15 +1733,7 @@ class _AppGateSettingsSection extends StatefulWidget {
 }
 
 class _AppGateSettingsSectionState extends State<_AppGateSettingsSection> {
-  static const List<({int minutes, String label})> _passOptions = [
-    (minutes: 5, label: '5 MIN'),
-    (minutes: 15, label: '15 MIN'),
-    (minutes: 30, label: '30 MIN'),
-    (minutes: 0, label: 'EVERY OPEN'),
-  ];
-
   AppGateProvider? _localFallbackProvider;
-  bool _didInitialScan = false;
 
   @override
   void didChangeDependencies() {
@@ -1757,15 +1751,6 @@ class _AppGateSettingsSectionState extends State<_AppGateSettingsSection> {
           if (mounted) setState(() {});
         })
         ..init();
-    }
-    final activeProvider = treeProvider ?? _localFallbackProvider;
-    if (!_didInitialScan && activeProvider != null) {
-      _didInitialScan = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          activeProvider.scanInstalledApps();
-        }
-      });
     }
   }
 
@@ -1785,476 +1770,19 @@ class _AppGateSettingsSectionState extends State<_AppGateSettingsSection> {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
-    final theme = Theme.of(context);
     final vocabProvider = context.watch<VocabularyProvider>();
     final gateProvider = _resolveProvider(context);
-    final config = gateProvider.config;
-    final totalWords = vocabProvider.stats.totalWords;
-    final canEnable = gateProvider.canEnable(totalWords);
-
-    final legacy = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ExpansionTile(
-          tilePadding: EdgeInsets.zero,
-          title: Text('Shortcut protection', style: theme.textTheme.titleSmall),
-          subtitle: Text(
-            config.enabled
-                ? 'On · ${config.gatedApps.length} apps chosen'
-                : 'Set up protection with Apple Shortcuts',
-          ),
-          initiallyExpanded:
-              !gateProvider.nativeStatus.available || config.enabled,
-          children: [
-            const SizedBox(height: PixelMetrics.space2),
-            Text(
-              gateProvider.nativeStatus.enabled
-                  ? 'Shortcut checks are paused while Screen Time protection is on. Your Shortcut settings are kept for later.'
-                  : 'Use configured Shortcuts to review words before opening selected apps.',
-              style: theme.textTheme.bodyMedium,
-            ),
-            const SizedBox(height: PixelMetrics.space3),
-            if (!canEnable) ...[
-              _Notice(
-                lines: [
-                  'Save at least ${GateConfig.minRequiredWords} words to set up protection. You have $totalWords saved.',
-                ],
-                tone: palette.accent,
-              ),
-              const SizedBox(height: PixelMetrics.space3),
-            ],
-            if (gateProvider.lastError != null) ...[
-              _Notice(
-                lines: [gateProvider.lastError!.toUpperCase()],
-                tone: palette.danger,
-              ),
-              const SizedBox(height: PixelMetrics.space3),
-            ],
-            _ToggleTile(
-              title: 'Use Shortcut protection',
-              subtitle: canEnable
-                  ? 'Challenge selected apps using their configured Shortcuts'
-                  : 'Locked until ${GateConfig.minRequiredWords} words are saved in your notebook',
-              enabled: config.enabled,
-              onChanged: (value) async {
-                await gateProvider.setEnabled(value, totalWords: totalWords);
-              },
-            ),
-            const SizedBox(height: PixelMetrics.space3),
-            Text('UNLOCK PASS DURATION', style: theme.textTheme.labelSmall),
-            const SizedBox(height: PixelMetrics.space2),
-            Wrap(
-              spacing: PixelMetrics.space2,
-              runSpacing: PixelMetrics.space2,
-              children: [
-                for (final opt in _passOptions)
-                  ChoiceChip(
-                    label: Text(opt.label),
-                    selected: config.passDurationMinutes == opt.minutes,
-                    onSelected: (_) =>
-                        gateProvider.setPassDurationMinutes(opt.minutes),
-                  ),
-              ],
-            ),
-            const SizedBox(height: PixelMetrics.space3),
-            Wrap(
-              spacing: PixelMetrics.space2,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Text(
-                  'Apps · ${config.gatedApps.length} chosen',
-                  style: theme.textTheme.titleSmall,
-                ),
-                TextButton.icon(
-                  onPressed: gateProvider.isScanningApps
-                      ? null
-                      : () => gateProvider.scanInstalledApps(),
-                  icon: const Icon(Icons.refresh),
-                  label: Text(
-                    gateProvider.isScanningApps ? 'Searching…' : 'Refresh apps',
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: PixelMetrics.space2),
-            Wrap(
-              spacing: PixelMetrics.space2,
-              runSpacing: PixelMetrics.space2,
-              children: [
-                for (final app in <String>{
-                  ...(gateProvider.installedApps.isNotEmpty
-                      ? gateProvider.installedApps
-                      : GateConfig.defaultPresetApps),
-                  ...config.gatedApps,
-                })
-                  FilterChip(
-                    label: Text(app),
-                    selected: config.gatedApps.contains(app),
-                    onSelected: (_) => gateProvider.toggleGatedApp(app),
-                  ),
-              ],
-            ),
-            if (config.gatedApps.isNotEmpty) ...[
-              const SizedBox(height: PixelMetrics.space3),
-              Container(
-                padding: const EdgeInsets.all(PixelMetrics.space3),
-                decoration: BoxDecoration(
-                  color: palette.surface,
-                  border: Border.all(
-                    color: palette.border,
-                    width: PixelMetrics.border,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Set up Apple Shortcuts',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: palette.accent,
-                      ),
-                    ),
-                    const SizedBox(height: PixelMetrics.space1),
-                    Text(
-                      'On iPhone, create a shortcut and add an App automation for '
-                      'when your chosen app is opened. Add "Check Veea Gate" from '
-                      'Veea English and set the same app name. Add If with that '
-                      'result, then put "Open URLs" with the matching link below '
-                      'inside the true branch. Leave Otherwise empty. '
-                      'Remove any Open URLs action outside If: it causes a return loop. '
-                      'In shortcut Details → Privacy, enable Allow Running When Locked. '
-                      'Run it once to allow opening Veea English.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: palette.ink,
-                      ),
-                    ),
-                    const SizedBox(height: PixelMetrics.space2),
-                    Wrap(
-                      spacing: PixelMetrics.space2,
-                      runSpacing: PixelMetrics.space2,
-                      children: [
-                        for (final app in config.gatedApps)
-                          PixelButton(
-                            label:
-                                'Copy veea://gate?app=${Uri.encodeComponent(app)}',
-                            glyph: PixelGlyph.link,
-                            onPressed: () {
-                              final url =
-                                  'veea://gate?app=${Uri.encodeComponent(app)}';
-                              Clipboard.setData(ClipboardData(text: url));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('COPIED $url'),
-                                  duration: const Duration(seconds: 2),
-                                ),
-                              );
-                            },
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            const SizedBox(height: PixelMetrics.space3),
-            Row(
-              children: [
-                Expanded(
-                  child: PixelButton(
-                    label: 'Pick Apps to Gate',
-                    glyph: PixelGlyph.shield,
-                    expand: true,
-                    onPressed: () async {
-                      final picked = await gateProvider.pickAppsFromSystem();
-                      if (!context.mounted) return;
-                      final isSystemScreenTimeToken =
-                          picked != null &&
-                          picked.any((e) => e.startsWith('Screen Time ('));
-                      if (!isSystemScreenTimeToken) {
-                        _openDialog(
-                          context,
-                          _AppGatePickerDialog(gateProvider: gateProvider),
-                        );
-                      }
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ],
-    );
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
-      return GuidedProtectionSettings(
-        gate: gateProvider,
-        totalWords: totalWords,
-        legacySettings: legacy,
-        onAddWord: () async {
-          await vocabProvider.goToToday();
-          if (!context.mounted) return;
-          await Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const WordEditorScreen()),
-          );
-          await gateProvider.prepareChallenge();
-        },
-      );
-    }
-    return legacy;
-  }
-}
-
-class _AppGatePickerDialog extends StatefulWidget {
-  const _AppGatePickerDialog({required this.gateProvider});
-
-  final AppGateProvider gateProvider;
-
-  @override
-  State<_AppGatePickerDialog> createState() => _AppGatePickerDialogState();
-}
-
-class _AppGatePickerDialogState extends State<_AppGatePickerDialog> {
-  final TextEditingController _searchController = TextEditingController();
-  final TextEditingController _customAppController = TextEditingController();
-  late Set<String> _selected;
-  List<String> _availableApps = const [];
-
-  @override
-  void initState() {
-    super.initState();
-    _selected = Set<String>.from(widget.gateProvider.config.gatedApps);
-    final seed = widget.gateProvider.installedApps.isNotEmpty
-        ? widget.gateProvider.installedApps
-        : GateConfig.selectableAppsCatalog;
-    _availableApps = <String>{...seed, ..._selected}.toList();
-    _loadInstalled();
-  }
-
-  Future<void> _loadInstalled() async {
-    final loaded = await widget.gateProvider.loadAvailableApps();
-    if (!mounted) return;
-    setState(() {
-      _availableApps = <String>{...loaded, ..._selected}.toList();
-    });
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    _customAppController.dispose();
-    super.dispose();
-  }
-
-  void _toggleApp(String app) {
-    setState(() {
-      if (_selected.contains(app)) {
-        _selected.remove(app);
-      } else {
-        _selected.add(app);
-      }
-    });
-  }
-
-  void _addCustomApp() {
-    final custom = _customAppController.text.trim();
-    if (custom.isEmpty) return;
-    setState(() {
-      if (!_availableApps.contains(custom)) {
-        _availableApps = [custom, ..._availableApps];
-      }
-      _selected.add(custom);
-      _customAppController.clear();
-    });
-  }
-
-  Future<void> _saveSelection() async {
-    await widget.gateProvider.setGatedApps(_selected.toList());
-    if (mounted) {
-      Navigator.of(context).pop();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final theme = Theme.of(context);
-    final query = _searchController.text.trim().toLowerCase();
-    final filtered = _availableApps
-        .where((app) => query.isEmpty || app.toLowerCase().contains(query))
-        .toList(growable: false);
-
-    return Dialog(
-      backgroundColor: palette.paper,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(PixelMetrics.radiusLg),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(PixelMetrics.space4),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'SELECT APPS TO GATE',
-                    style: theme.textTheme.titleSmall,
-                  ),
-                  Text(
-                    '${_selected.length} SELECTED',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: palette.accent,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: PixelMetrics.space2),
-              Text(
-                'Choose which apps require spelling 1 English word from your notebook before opening.',
-                style: theme.textTheme.bodyMedium,
-              ),
-              const SizedBox(height: PixelMetrics.space3),
-              PixelSearchField(
-                controller: _searchController,
-                autofocus: false,
-                hint: 'Filter apps (e.g. Instagram, TikTok)…',
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: PixelMetrics.space3),
-              Container(
-                constraints: const BoxConstraints(maxHeight: 240),
-                decoration: BoxDecoration(
-                  color: palette.surface,
-                  border: Border.all(
-                    color: palette.border,
-                    width: PixelMetrics.border,
-                  ),
-                ),
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: filtered.length,
-                  separatorBuilder: (_, _) =>
-                      Container(height: 1, color: palette.border),
-                  itemBuilder: (context, index) {
-                    final app = filtered[index];
-                    final isChecked = _selected.contains(app);
-                    final isInstalled = widget.gateProvider.installedApps.any(
-                      (a) => a.toLowerCase() == app.toLowerCase(),
-                    );
-                    return GestureDetector(
-                      onTap: () => _toggleApp(app),
-                      behavior: HitTestBehavior.opaque,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: PixelMetrics.space3,
-                          vertical: PixelMetrics.space2 + 2,
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 22,
-                              height: 22,
-                              decoration: BoxDecoration(
-                                color: isChecked
-                                    ? palette.accent
-                                    : palette.paper,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: isChecked
-                                      ? palette.accent
-                                      : palette.border,
-                                  width: PixelMetrics.border,
-                                ),
-                              ),
-                              child: isChecked
-                                  ? Center(
-                                      child: PixelIcon(
-                                        PixelGlyph.check,
-                                        color: palette.onAccent,
-                                        scale: 1.5,
-                                      ),
-                                    )
-                                  : null,
-                            ),
-                            const SizedBox(width: PixelMetrics.space3),
-                            Expanded(
-                              child: Text(
-                                app,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: palette.ink,
-                                  fontWeight: isChecked
-                                      ? FontWeight.w700
-                                      : FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                            if (isInstalled)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: palette.accent.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  'ON PHONE',
-                                  style: theme.textTheme.labelSmall?.copyWith(
-                                    fontSize: 10,
-                                    color: palette.accent,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: PixelMetrics.space3),
-              PixelField(
-                controller: _customAppController,
-                label: 'Add Custom App or Package',
-                hint: 'e.g. LinkedIn or com.linkedin.android',
-                onSubmitted: (_) => _addCustomApp(),
-                trailing: PixelButton(
-                  label: 'Add',
-                  glyph: PixelGlyph.plus,
-                  onPressed: _addCustomApp,
-                ),
-              ),
-              const SizedBox(height: PixelMetrics.space4),
-              Row(
-                children: [
-                  Expanded(
-                    child: PixelButton(
-                      label: 'Cancel',
-                      expand: true,
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  ),
-                  const SizedBox(width: PixelMetrics.space2),
-                  Expanded(
-                    flex: 2,
-                    child: PixelButton(
-                      label: 'Save (${_selected.length})',
-                      glyph: PixelGlyph.check,
-                      filled: true,
-                      expand: true,
-                      onPressed: _saveSelection,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
+    return GuidedProtectionSettings(
+      gate: gateProvider,
+      totalWords: vocabProvider.stats.totalWords,
+      onAddWord: () async {
+        await vocabProvider.goToToday();
+        if (!context.mounted) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const WordEditorScreen()),
+        );
+        await gateProvider.prepareChallenge();
+      },
     );
   }
 }

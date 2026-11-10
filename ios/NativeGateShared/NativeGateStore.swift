@@ -9,7 +9,7 @@ enum NativeGateError: LocalizedError {
     case .unavailable: return "Screen Time protection is not available in this build."
     case .storage: return "Protection settings could not be saved. Please try again."
     case .unknownApplication: return "Select this app again in Screen Time settings."
-    case .invalidDuration: return "Screen Time unlocks support 15 or 30 minutes."
+    case .invalidDuration: return "Choose an access duration from 5 minutes to 24 hours."
     case .authorizationRequired: return "Allow Screen Time access before enabling protection."
     case .tooManyApplications: return "Choose up to 50 individual apps for Screen Time protection."
     }

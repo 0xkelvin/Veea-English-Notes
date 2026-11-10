@@ -6,6 +6,8 @@ import '../core/theme/pixel_palette.dart';
 import '../providers/app_gate_provider.dart';
 import '../models/gate_config.dart';
 import '../screens/app_gate_screen.dart';
+import '../models/protection_duration.dart';
+import 'protection_duration_picker.dart';
 import 'pixel/pixel_box.dart';
 import 'pixel/pixel_button.dart';
 import 'pixel/pixel_icon.dart';
@@ -40,13 +42,14 @@ class NativeGateSettings extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleSmall,
               ),
               const SizedBox(height: PixelMetrics.space2),
-              const Text(
-                'Choose your apps once. Complete vocabulary challenges to earn timed access. No Shortcuts setup needed.',
-              ),
+              if (!status.enabled)
+                const Text(
+                  'Allow Screen Time access, then choose the apps you want to protect.',
+                ),
               const SizedBox(height: PixelMetrics.space3),
               if (!status.available)
                 const Text(
-                  'Screen Time protection is not available in this build. You can keep using the Shortcut setup below.',
+                  'Screen Time protection is not available in this build. You can still save and review your vocabulary.',
                 )
               else ...[
                 if (!gate.canEnable(totalWords)) ...[
@@ -79,22 +82,30 @@ class NativeGateSettings extends StatelessWidget {
                       : 'Protection is off',
                 ),
                 const SizedBox(height: PixelMetrics.space2),
-                const Text('EARNED ACCESS DURATION'),
-                Wrap(
-                  spacing: PixelMetrics.space2,
-                  children: [
-                    for (final minutes in [15, 30])
-                      ChoiceChip(
-                        label: Text('$minutes min'),
-                        selected: status.passMinutes == minutes,
-                        onSelected: busy
-                            ? null
-                            : (_) => gate.setNativeDuration(minutes),
-                      ),
-                  ],
+                Material(
+                  type: MaterialType.transparency,
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Access after each challenge'),
+                    subtitle: Text(
+                      ProtectionDuration.label(status.passMinutes),
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: busy
+                        ? null
+                        : () async {
+                            final minutes = await showProtectionDurationPicker(
+                              context,
+                              status.passMinutes,
+                            );
+                            if (minutes != null) {
+                              await gate.setNativeDuration(minutes);
+                            }
+                          },
+                  ),
                 ),
                 const Text(
-                  'Timed passes remain active if you close Veea. Every Open and 5-minute passes are available in Shortcut mode below.',
+                  'Access keeps running when you close Veea. Each app unlocks separately.',
                 ),
                 const SizedBox(height: PixelMetrics.space3),
                 if (!status.enabled)
@@ -117,7 +128,7 @@ class NativeGateSettings extends StatelessWidget {
                   )
                 else ...[
                   PixelButton(
-                    label: 'Protected apps · Learn to unlock',
+                    label: 'Unlock an app',
                     glyph: PixelGlyph.shield,
                     expand: true,
                     onPressed: busy
@@ -132,7 +143,10 @@ class NativeGateSettings extends StatelessWidget {
                               MaterialPageRoute<void>(
                                 builder: (_) => ChangeNotifierProvider.value(
                                   value: gate,
-                                  child: AppGateScreen(targetApp: target),
+                                  child: AppGateScreen(
+                                    targetApp: target,
+                                    openedFromVeea: true,
+                                  ),
                                 ),
                               ),
                             );
@@ -145,9 +159,6 @@ class NativeGateSettings extends StatelessWidget {
                     onPressed: busy
                         ? null
                         : () => gate.chooseNativeApplications(),
-                  ),
-                  const Text(
-                    'Existing Veea Shortcuts are paused while Screen Time protection is on.',
                   ),
                 ],
                 if (status.configured || status.enabled)

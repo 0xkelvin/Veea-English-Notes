@@ -1,6 +1,6 @@
 # Account, notebook and feedback rollout
 
-Implementation prepared 7 November 2026. The existing server and OTP provider belong to the Veea team; Nin will supply their connection details. No production service, paid SMS subscription or Zalo group was created.
+Implementation updated 10 November 2026 for `feat/first-launch-native-accounts`. The existing server and OTP provider belong to the Veea team; Nin will supply their connection details. No production service, paid SMS subscription or Zalo group was created.
 
 ## Experience in the app
 
@@ -17,7 +17,7 @@ Implementation prepared 7 November 2026. The existing server and OTP provider be
 ## What Nin needs to connect
 
 1. Confirm the existing API domain, HTTPS setup, database deployment process and OTP provider. Keep credentials in the server environment. The app receives only the public API URL.
-2. Apply cloud migrations `20261107000008_phone_otp_and_feedback.sql` and `20261107000009_sync_revisions.sql` through the existing migration process, with the usual database backup and deployment coordination. All API nodes that write vocabulary must run the new revision-aware code before enabling protocol 2 clients.
+2. Apply cloud migrations `20261107000008_phone_otp_and_feedback.sql` and `20261107000009_sync_revisions.sql`, and `20261110000010_phone_change_and_deletion_receipts.sql` through the existing migration process, with the usual database backup and deployment coordination. All API nodes that write vocabulary must run the new revision-aware code before enabling protocol 2 clients.
 3. The prepared adapter is Twilio Verify, behind the `OtpDelivery` interface. **This is an optional adapter, not a decision to buy or replace the team's provider.** If the existing provider differs, implement its send/check calls against this interface and wire it in AppState. Preserve provider-owned codes and verification; do not add fixed or client-visible development codes.
 4. For Twilio Verify only, set `OTP_TWILIO_ACCOUNT_SID`, `OTP_TWILIO_AUTH_TOKEN`, `OTP_TWILIO_VERIFY_SERVICE_SID`. Use a Vietnam-enabled SMS service with a 10-minute verification lifetime. Empty configuration keeps phone sign-in unavailable. Confirm Vietnam delivery and sender requirements with the existing provider before release.
 5. Compile the app with `VEEA_API_BASE_URL=https://<existing-api-domain>` and `VEEA_APP_VERSION=<actual-version-and-build>`. The URL is the service origin; `/api/v1` is appended by the app. With an empty API URL, the build stays local. Legacy password UI is hidden by default; `VEEA_LEGACY_PASSWORD_ACCOUNTS=true` is available for a controlled email-account migration build.
@@ -68,12 +68,87 @@ New password-based phone registrations and unverified phone linking are rejected
 
 Flutter checks cover normalization, staged token commit, resend/expiry, invalid codes, sign-in/sign-out UI, account notebook isolation/restoration, concurrent-edit acknowledgement, review-history preservation, offline feedback persistence, idempotent retries, diagnostics allowlisting and Zalo-link restrictions. Screen checks cover compact, large-text, landscape and dark layouts.
 
-Rust unit checks cover provider verification responses and revision pagination/canonical winners. PostgreSQL integration tests are compiled in `cloud/tests/account_data_integration.rs` and explicitly ignored until a disposable local PostgreSQL server is available. Run them with:
+Rust unit checks cover provider verification responses and revision pagination/canonical winners. PostgreSQL integration tests live in `cloud/tests/account_data_integration.rs`. They are opt-in so they never run against an accidental production database. All six were executed successfully against a disposable local PostgreSQL 16 container on 10 November 2026 (zero ignored in that run). Run them with:
 
 ```
 VEEA_TEST_DATABASE_URL=postgres://veea_test@127.0.0.1:5432/veea_test cargo test --test account_data_integration -- --ignored
 ```
 
-The tests create and remove an isolated schema. Never point them at a production database. In this Mac session, PostgreSQL startup was blocked by the execution environment's shared-memory restriction, so the SQL integration tests were **not run**. Real SMS delivery, deployed API integration, two-device sync, account deletion end to end, and team inbox operation remain to be verified with Nin's existing setup. No claim of production readiness should be made before those checks.
+The tests create and remove an isolated schema. Never point them at a production database. The local integration run covered bounded/purpose-bound OTPs, revision pagination and foreign IDs, stable UUID/notebook/cursor on phone change, proof replay/account/purpose/expiry checks, taken-number and stale-parallel-change rejection, refresh-session replacement, and deletion receipts. Real SMS delivery, deployed API integration, two-device sync, account deletion end to end, and team inbox operation remain to be verified with Nin's existing setup. No claim of production readiness should be made before those checks.
 
 Official provider references: [Twilio verification checks](https://www.twilio.com/docs/verify/api/verification-check), [Twilio Verify API](https://www.twilio.com/docs/verify/api), [Zalo group invitations](https://help.zalo.me/huong-dan/chuyen-muc/tro-chuyen-nhom/nhan-duoc-loi-moi-vao-nhom-va-cong-dong/).
+
+
+## Verified account lifecycle in the first-launch branch
+
+Account signup and sign-in remain one optional phone-OTP flow. The client exposes
+resend cooldown, code expiry without requiring another tap, provider/rate-limit
+errors, and SMS autofill. With no public API URL or inactive OTP delivery, there
+is no account form and no claim that a cloud backup has been made.
+
+Signed-in phone accounts can change their phone in three steps: verify the
+current number, enter a new number, then verify the new number. Losing access to
+the current phone requires support; there is no insecure bypass.
+
+| Action | POST route under `/api/v1` | Request / result |
+|---|---|---|
+| Code to current number | `/users/me/phone-change/current-code` | Authenticated; account phone comes from server; returns OTP challenge |
+| Verify current number | `/users/me/phone-change/current-verify` | `{challenge_id,code}` → `{proof_id,expires_in:900}` |
+| Code to new number | `/users/me/phone-change/new-code` | `{proof_id,new_phone}` → OTP challenge |
+| Complete change | `/users/me/phone-change/confirm` | `{challenge_id,code}` → replacement session for the same `user_id` |
+| Recover lost deletion response | `/auth/deletion-receipt` | `{user_id,challenge_id}` → `{deleted:bool}`; no session required |
+
+The old-number proof is account-bound, fresh for 15 minutes, records the expected
+current phone, and can complete only one change. New-code resends reuse the proof.
+The server checks both phone-number advisory locks in sorted order, locks the
+user, checks uniqueness and current-phone/proof freshness again, then updates the
+phone, spends the proof, revokes refresh sessions, writes the outbox event and
+issues one new session in a transaction. Other devices' existing access tokens
+expire according to the configured JWT lifetime; refresh then requires sign-in.
+The client verifies the returned UUID before storing tokens. Phone changes never
+activate a different notebook or reset its sync cursor.
+
+Deletion requires a fresh account-bound OTP and a final destructive confirmation.
+The client stores a pending deletion in secure storage before the request. The
+server atomically deletes the user and records a receipt containing the account
+UUID and a hash of the deletion challenge ID (no phone). Receipts are retained for
+30 days. A matching positive receipt can finish local cleanup after a lost
+response. Generic 401/404 responses never justify wiping a notebook. A negative receipt
+inside the code-expiry plus one-minute grace window is still pending. The
+absolute deadline is retained in secure storage across restarts; pending work
+is rechecked on restore/resume and blocks account switching, repeated deletion
+and phone changes. Sync stays paused until the outcome is resolved. If a request
+or receipt cannot be confirmed, words remain on the device. A receipt outside the
+retention window cannot prove deletion; real-world recovery beyond that window
+needs support/manual handling, not an automatic data wipe.
+
+Signing out keeps the active notebook available. New words added while signed out
+stay linked to that notebook's account; the screen says this explicitly. Switching
+to another account archives it and opens the other notebook. Confirmed account
+deletion removes its active notebook/archive and resets the cursor, while other
+accounts' archives remain intact. Feedback already sent remains separately held,
+as disclosed before deletion; the team's retention/support policy still needs
+finalization.
+
+Focused account validation on 10 November: 34 Flutter provider/widget checks
+passed, including stable ownership, UUID mismatch refusal, expiry/resend, provider
+failure, fresh-code deletion, lost responses, 401/404 preservation, and account
+switching. Backend library checks: 79 passed. These are local/mocked client tests
+and real disposable-database tests, **not** real SMS delivery or production API
+validation. Nin still needs to supply/configure the public API origin and OTP
+provider, run migrations through the existing deployment process, and verify SMS
+and cross-device behavior before release. No production credentials belong in the
+app. Privacy/terms/support URLs must be supplied by the team; no placeholder legal
+links or Zalo community were invented.
+
+
+### Deployment conditions to confirm with Nin
+
+OTP and request rate limits currently use the socket peer IP. If the API is
+behind a reverse proxy/CDN/load balancer, users would share its IP quota. Confirm
+the topology and implement a **trusted-proxy** client-IP policy before enabling
+public OTP traffic. Do not trust arbitrary forwarded headers from the internet.
+The new migration adds an account-binding constraint; check old non-signin OTP
+rows for null user IDs before applying it. Support/contact URLs and the privacy
+policy still need the team's real values. No public account launch has been
+performed by this branch.

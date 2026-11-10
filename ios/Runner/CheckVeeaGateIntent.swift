@@ -1,41 +1,17 @@
 import AppIntents
 
+/// Compatibility only for pre-launch testers. Never requests a challenge.
 @available(iOS 16.0, *)
 struct CheckVeeaGateIntent: AppIntent {
   static var title: LocalizedStringResource = "Check Veea Gate"
-  static var description = IntentDescription(
-    "Returns true when this app needs a vocabulary challenge. Use If to open the Veea gate link only when true."
-  )
+  static var description = IntentDescription("This older action is inactive. Use Screen Time protection in Veea.")
   static var openAppWhenRun: Bool = false
-
-  @available(iOS 26.0, *)
-  static var supportedModes: IntentModes { .background }
-
+  static var isDiscoverable: Bool = false
   @Parameter(title: "App", default: "X")
   var targetApp: String
-
-  static var parameterSummary: some ParameterSummary {
-    Summary("Check Veea Gate for \(\.$targetApp)")
-  }
-
-  @MainActor
   func perform() async throws -> some IntentResult & ReturnsValue<Bool> {
-    if targetApp.hasPrefix("veea-universal\n") {
-      return .result(value: GateAccessState.shared.prepareUniversalCheck(targetApp))
-    }
-    GateAccessState.shared.recordShortcutCheck(for: targetApp)
-    return .result(value: GateAccessState.shared.needsChallenge(for: targetApp))
+    .result(value: false)
   }
 }
 
-@available(iOS 16.0, *)
-struct VeeaGateShortcuts: AppShortcutsProvider {
-  static var appShortcuts: [AppShortcut] {
-    AppShortcut(
-      intent: CheckVeeaGateIntent(),
-      phrases: ["Check a gate in \(.applicationName)"],
-      shortTitle: "Check Veea Gate",
-      systemImageName: "lock.shield"
-    )
-  }
-}
+// No AppShortcutsProvider: first launch exposes no Shortcut setup or actions.
