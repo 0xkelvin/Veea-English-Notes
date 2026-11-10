@@ -19,7 +19,7 @@ import '../services/backup_service.dart';
 import '../services/feedback_service.dart';
 import '../services/reminder_notification_service.dart';
 import '../services/sync_service.dart';
-import '../widgets/native_gate_settings.dart';
+import '../widgets/guided_protection_settings.dart';
 import '../widgets/pixel/pixel_badges_grid.dart';
 import '../widgets/pixel/pixel_box.dart';
 import '../widgets/pixel/pixel_button.dart';
@@ -1793,41 +1793,9 @@ class _AppGateSettingsSectionState extends State<_AppGateSettingsSection> {
     final totalWords = vocabProvider.stats.totalWords;
     final canEnable = gateProvider.canEnable(totalWords);
 
-    return Column(
+    final legacy = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) ...[
-          NativeGateSettings(
-            gate: gateProvider,
-            totalWords: totalWords,
-            onAddWord: () async {
-              await vocabProvider.goToToday();
-              if (!context.mounted) return;
-              await Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const WordEditorScreen(),
-                ),
-              );
-              await gateProvider.prepareChallenge();
-            },
-          ),
-          const SizedBox(height: PixelMetrics.space4),
-        ],
-        PixelButton(
-          label: 'Learning rules',
-          expand: true,
-          glyph: PixelGlyph.cards,
-          onPressed: () async {
-            await gateProvider.prepareChallenge();
-            if (!context.mounted) return;
-            await Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => LearningRulesScreen(gate: gateProvider),
-              ),
-            );
-          },
-        ),
-        const SizedBox(height: PixelMetrics.space4),
         ExpansionTile(
           tilePadding: EdgeInsets.zero,
           title: Text('Shortcut protection', style: theme.textTheme.titleSmall),
@@ -2018,6 +1986,22 @@ class _AppGateSettingsSectionState extends State<_AppGateSettingsSection> {
         ),
       ],
     );
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      return GuidedProtectionSettings(
+        gate: gateProvider,
+        totalWords: totalWords,
+        legacySettings: legacy,
+        onAddWord: () async {
+          await vocabProvider.goToToday();
+          if (!context.mounted) return;
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const WordEditorScreen()),
+          );
+          await gateProvider.prepareChallenge();
+        },
+      );
+    }
+    return legacy;
   }
 }
 

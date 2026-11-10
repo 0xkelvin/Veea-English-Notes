@@ -221,3 +221,11 @@ server setup, desktop data contract and remaining integration checks.
 
 See [Nin’s implementation handoff](docs/nin-handoff.md) for the combined branch,
 Apple signing configuration, completed changes and remaining service setup.
+
+## Guided Every Open setup
+
+App protection now has a guided ready-made shortcut flow for X: add the template,
+enable its automation, then test it. Setup is marked tested only after Veea
+receives a fresh check. Other existing shortcuts remain under advanced management.
+See [guided shortcut setup](docs/guided-shortcut-setup.md) for the verified import
+steps, supported apps, template source and remaining TestFlight build check.

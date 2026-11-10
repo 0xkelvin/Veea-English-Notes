@@ -56,10 +56,18 @@ class AppGateProvider extends ChangeNotifier {
   );
   String? _poolNotice;
   String? get poolNotice => _poolNotice;
+  // Keep learning progress per app while native callbacks remain per opening.
+  static String _stateKey(String app) {
+    final key = app.trim().toLowerCase();
+    return key.startsWith('shortcut:name:')
+        ? key.replaceFirst(RegExp(r':request:[0-9]{1,10}-[0-9]{1,10}$'), '')
+        : key;
+  }
+
   GatePendingAnswer? pendingAnswerForApp(String app) =>
-      _pendingAnswers[app.trim().toLowerCase()];
+      _pendingAnswers[_stateKey(app)];
   Set<String> solvedWordIdsForApp(String app) => Set.unmodifiable({
-    ...?_progressByApp[app.trim().toLowerCase()],
+    ...?_progressByApp[_stateKey(app)],
     if (pendingAnswerForApp(app) case final pending?) pending.wordId,
   });
   VocabularyWord? cachedGateWord(
@@ -112,7 +120,10 @@ class AppGateProvider extends ChangeNotifier {
     for (final app in _nativeStatus.applications) {
       if (app.id == target) return app.label;
     }
-    return target.startsWith('native:') ? 'Protected app' : target;
+    return _service.shortcutAppNames[target] ??
+        (target.startsWith('native:') || target.startsWith('shortcut:')
+            ? 'Protected app'
+            : target);
   }
 
   Future<void> refreshNativeScreenTime() async {
@@ -258,11 +269,11 @@ class AppGateProvider extends ChangeNotifier {
     required String targetApp,
     required int attempts,
   }) async {
-    final key = targetApp.trim().toLowerCase();
+    final key = _stateKey(targetApp);
     await _validateAnswerWord(wordId, targetApp);
     final updatedWord = await _repository.recordGateCompletion(
       wordId: wordId,
-      targetApp: targetApp,
+      targetApp: key,
       attempts: attempts,
       now: _now(),
       completesRound: false,
@@ -338,7 +349,11 @@ class AppGateProvider extends ChangeNotifier {
   }
 
   /// Toggles App Gate on or off, enforcing the 3-word minimum guardrail.
-  Future<bool> setEnabled(bool enabled, {required int totalWords}) async {
+  Future<bool> setEnabled(
+    bool enabled, {
+    required int totalWords,
+    bool useDefaultApps = true,
+  }) async {
     if (enabled && !canEnable(totalWords)) {
       _lastError =
           'Add at least ${GateConfig.minRequiredWords} words to your notebook before enabling App Gate.';
@@ -359,7 +374,7 @@ class AppGateProvider extends ChangeNotifier {
     if (_installedApps.isEmpty) {
       _installedApps = await _service.getInstalledApps();
     }
-    final defaultApps = _config.gatedApps.isEmpty && enabled
+    final defaultApps = useDefaultApps && _config.gatedApps.isEmpty && enabled
         ? (_installedApps.isNotEmpty
               ? _installedApps.take(4).toList(growable: false)
               : const ['Facebook', 'Instagram', 'TikTok', 'YouTube'])
@@ -532,7 +547,7 @@ class AppGateProvider extends ChangeNotifier {
     required String targetApp,
     required int attempts,
   }) async {
-    final key = targetApp.trim().toLowerCase();
+    final key = _stateKey(targetApp);
     if (!_submittingApps.add(key)) {
       throw PlatformException(
         code: 'UNLOCK_BUSY',
@@ -560,7 +575,7 @@ class AppGateProvider extends ChangeNotifier {
           !(_progressByApp[key]?.contains(answerId) ?? false);
       if (pending == null && needsLearningCredit) {
         pending = GatePendingAnswer(wordId: answerId, attempts: answerAttempts);
-        await _repository.savePendingGateAnswer(targetApp, pending);
+        await _repository.savePendingGateAnswer(key, pending);
         _pendingAnswers[key] = pending;
       }
       // Establish the native unlock first. A failed relock schedule must not be
@@ -594,7 +609,7 @@ class AppGateProvider extends ChangeNotifier {
             ? await _repository.findById(answerId)
             : await _repository.recordGateCompletion(
                 wordId: answerId,
-                targetApp: targetApp,
+                targetApp: key,
                 attempts: answerAttempts,
                 now: _now(),
               );
@@ -609,7 +624,7 @@ class AppGateProvider extends ChangeNotifier {
         _progressByApp.remove(key);
         _pendingAnswers.remove(key);
         try {
-          await _repository.clearGateRoundProgress(targetApp);
+          await _repository.clearGateRoundProgress(key);
         } catch (error) {
           debugPrint('Could not clear the consumed round: $error');
         }
@@ -659,13 +674,15 @@ class AppGateProvider extends ChangeNotifier {
   }
 
   /// Immediately re-locks [targetApp] and revokes its active pass.
-  Future<void> revokePass(String targetApp) async {
-    final key = targetApp.trim().toLowerCase();
+  Future<void> revokePass(String targetApp, {bool resetProgress = true}) async {
+    final key = _stateKey(targetApp);
     await _service.revokePass(targetApp);
-    await _repository.clearGateRoundProgress(targetApp);
+    if (resetProgress) await _repository.clearGateRoundProgress(key);
     _unlockedUntilByApp.remove(key);
-    _progressByApp.remove(key);
-    _pendingAnswers.remove(key);
+    if (resetProgress) {
+      _progressByApp.remove(key);
+      _pendingAnswers.remove(key);
+    }
     if (targetApp.startsWith('native:')) await refreshNativeScreenTime();
     notifyListeners();
   }

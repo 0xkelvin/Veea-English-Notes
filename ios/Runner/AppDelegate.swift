@@ -93,8 +93,27 @@ import DeviceActivity
   }
 
   func handleIncomingUrl(_ url: URL) -> Bool {
-    if url.scheme == "veea" && url.host == "gate" {
+    let schemes = (Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? [])
+      .flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+    if schemes.contains(url.scheme ?? "") && url.host == "gate" {
       let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+      if let request = components?.queryItems?.first(where: { $0.name == "request" })?.value {
+        let callback = components?.queryItems?.first(where: { $0.name == "x-success" })?.value ?? ""
+        let cancel = components?.queryItems?.first(where: { $0.name == "x-cancel" })?.value
+        guard let target = GateAccessState.shared.acceptUniversalRequest(id: request, callback: callback, cancel: cancel) else {
+          sharedDefaults()?.set("Could not start this challenge. Update the Veea shortcut and try again.", forKey: "universal_gate_error")
+          // Only the callback shape is retained for troubleshooting; never its tokens.
+          if let parts = URLComponents(string: callback) {
+            sharedDefaults()?.set("\(parts.scheme ?? "")://\(parts.host ?? "")\(parts.path)", forKey: "universal_callback_kind")
+          }
+          return true
+        }
+        sharedDefaults()?.removeObject(forKey: "universal_gate_error")
+        let apps = sharedDefaults()?.dictionary(forKey: "universal_gate_apps") as? [String: String] ?? [:]
+        pendingColdStartTarget = target
+        appGateChannel?.invokeMethod("onGateTriggered", arguments: ["targetApp": target, "appName": apps[GateAccessState.shared.universalSession?.appKey ?? ""] ?? "Protected app"])
+        return true
+      }
       let targetApp = components?.queryItems?.first(where: { $0.name == "app" })?.value
         ?? sharedDefaults()?.string(forKey: "pending_gate_target_app")
         ?? "Facebook"
@@ -226,6 +245,7 @@ import DeviceActivity
         defaults?.set(enabled, forKey: "gate_enabled")
         defaults?.set(passMinutes, forKey: "pass_minutes")
         defaults?.set(gatedApps, forKey: "gated_apps")
+        if !enabled { GateAccessState.shared.setUniversalEnabled(false) }
         result(nil)
 
       case "grantPass":
@@ -239,6 +259,10 @@ import DeviceActivity
             try NativeScreenTimeManager.shared.grantPass(target: targetApp)
             nativeStatus = NativeScreenTimeManager.shared.status()
           } catch { result(self.screenTimeError(error)); return }
+        } else if targetApp.hasPrefix("shortcut:") {
+          guard GateAccessState.shared.earnUniversalPass(for: targetApp) else {
+            result(FlutterError(code: "RETURN_EXPIRED", message: "This app opening has expired. Open the app again to continue.", details: nil)); return
+          }
         } else {
           GateAccessState.shared.grantPass(for: targetApp, minutes: durationMinutes)
         }
@@ -311,13 +335,55 @@ import DeviceActivity
           try NativeScreenTimeManager.shared.manageApplications(from: root) { result($0) }
         } catch { result(self.screenTimeError(error)) }
 
+      case "getShortcutSetupStatus":
+        let supportsImport: Bool
+        if #available(iOS 27.0, *) { supportsImport = true } else { supportsImport = false }
+        result(["supportsImport": supportsImport,
+                "tested": GateAccessState.shared.testedShortcuts()])
+
+      case "beginShortcutSetupTest":
+        let args = call.arguments as? [String: Any] ?? [:]
+        let app = (args["targetApp"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !app.isEmpty else {
+          result(FlutterError(code: "INVALID_APP", message: "Choose an app to test.", details: nil)); return
+        }
+        GateAccessState.shared.beginSetupTest(for: app)
+        result(nil)
+
       case "launchApp":
         let args = call.arguments as? [String: Any] ?? [:]
         let targetApp = args["targetApp"] as? String ?? ""
-        DispatchQueue.main.async {
-          let ok = self.launchTargetApp(named: targetApp)
-          result(ok)
+        if targetApp.hasPrefix("shortcut:") {
+          guard let url = GateAccessState.shared.takeUniversalReturn(for: targetApp) else {
+            result(false); return
+          }
+          UIApplication.shared.open(url, options: [:]) { opened in
+            if !opened { GateAccessState.shared.universalReturnFailed(for: targetApp) }
+            result(opened)
+          }
+        } else {
+          DispatchQueue.main.async { result(self.launchTargetApp(named: targetApp)) }
         }
+
+      case "getUniversalGateStatus":
+        var status = GateAccessState.shared.universalStatus()
+        status["error"] = self.sharedDefaults()?.string(forKey: "universal_gate_error")
+        #if DEBUG
+        status["callbackKind"] = self.sharedDefaults()?.string(forKey: "universal_callback_kind")
+        #endif
+        result(status)
+
+      case "setUniversalGateEnabled":
+        let enabled = (call.arguments as? [String: Any])?["enabled"] as? Bool ?? false
+        GateAccessState.shared.setUniversalEnabled(enabled)
+        result(nil)
+
+      case "cancelUniversalGate":
+        let target = (call.arguments as? [String: Any])?["targetApp"] as? String ?? ""
+        if let url = GateAccessState.shared.cancelUniversalChallenge(for: target) {
+          UIApplication.shared.open(url, options: [:], completionHandler: nil)
+        }
+        result(nil)
 
       default:
         result(FlutterMethodNotImplemented)
