@@ -17,6 +17,7 @@ import 'package:veea_english_app/screens/selected_practice_words_screen.dart';
 import 'package:veea_english_app/services/app_gate_service.dart';
 import 'package:veea_english_app/widgets/gate_learning_settings.dart';
 import 'package:veea_english_app/widgets/native_gate_settings.dart';
+import 'package:veea_english_app/widgets/native_gate_return_hint.dart';
 import 'package:veea_english_app/main.dart';
 import 'package:veea_english_app/data/remote/api_client.dart';
 import 'package:veea_english_app/data/remote/auth_api.dart';
@@ -114,6 +115,11 @@ void main() {
                   return status();
                 }
                 return null;
+              case 'revokePass':
+                if ((call.arguments as Map)['targetApp'] == target) {
+                  expiry = null;
+                }
+                return null;
               default:
                 return null;
             }
@@ -158,14 +164,24 @@ void main() {
         );
   });
 
-  Widget app(Widget child) => MultiProvider(
-    providers: [
-      ChangeNotifierProvider.value(value: gate),
-      ChangeNotifierProvider.value(value: vocab),
-      ChangeNotifierProvider<TtsService>.value(value: speech),
-    ],
-    child: MaterialApp(theme: PixelTheme.light(), home: child),
-  );
+  Widget app(Widget child, {ThemeData? theme, TextScaler? textScaler}) =>
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: gate),
+          ChangeNotifierProvider.value(value: vocab),
+          ChangeNotifierProvider<TtsService>.value(value: speech),
+        ],
+        child: MaterialApp(
+          theme: theme ?? PixelTheme.light(),
+          builder: textScaler == null
+              ? null
+              : (context, child) => MediaQuery(
+                  data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+                  child: child!,
+                ),
+          home: child,
+        ),
+      );
 
   test(
     'interrupted round survives provider restart and excludes solved words for its app only',
@@ -502,6 +518,7 @@ void main() {
       await tester.tap(find.text('Unlock X'));
       await tester.pumpAndSettle();
       expect(find.text('PRACTICE COMPLETE'), findsOneWidget);
+      expect(find.byType(NativeGateReturnHint), findsNothing);
       expect(
         calls.where(
           (c) => ['grantPass', 'launchApp', 'revokePass'].contains(c.method),
@@ -622,6 +639,173 @@ void main() {
   );
 
   testWidgets(
+    'native return guidance appears only after a successful grant and leaving preserves access',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      authorized = enabled = configured = true;
+      await tester.runAsync(() => gate.refreshNativeScreenTime());
+      Object? routeResult = 'not closed';
+      await tester.pumpWidget(
+        app(
+          Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () async {
+                  routeResult = await Navigator.of(context).push<Object?>(
+                    MaterialPageRoute<Object?>(
+                      builder: (_) => AppGateScreen(
+                        targetApp: target,
+                        initialWord: words.first,
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('Veea notebook'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Veea notebook'));
+      await tester.pumpAndSettle();
+      expect(find.byType(NativeGateReturnHint), findsNothing);
+      failGrant = true;
+      await tester.enterText(
+        find.byKey(const Key('app_gate_input')),
+        'resilient',
+      );
+      await tester.ensureVisible(find.text('Unlock Protected app 1'));
+      await tester.runAsync(() async {
+        await tester.tap(find.text('Unlock Protected app 1'));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pumpAndSettle();
+      expect(find.byType(NativeGateReturnHint), findsNothing);
+      expect(gate.unlockedUntilFor(target), isNull);
+      failGrant = false;
+      await tester.ensureVisible(find.text('Claim earned access'));
+      await tester.runAsync(() async {
+        await tester.tap(find.text('Claim earned access'));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('Your app is unlocked'), findsOneWidget);
+      expect(find.text('15:00 remaining'), findsOneWidget);
+      expect(find.textContaining('top-left corner'), findsOneWidget);
+      expect(find.textContaining('No return link?'), findsOneWidget);
+      expect(calls.where((c) => c.method == 'launchApp'), isEmpty);
+      final earnedExpiry = gate.unlockedUntilFor(target);
+      expect(earnedExpiry, isNotNull);
+      await tester.ensureVisible(find.text('Back to Veea'));
+      await tester.tap(find.text('Back to Veea'));
+      await tester.pumpAndSettle();
+      expect(find.text('Veea notebook'), findsOneWidget);
+      expect(routeResult, isNull);
+      expect(gate.unlockedUntilFor(target), earnedExpiry);
+      expect(calls.where((c) => c.method == 'revokePass'), isEmpty);
+    },
+  );
+
+  testWidgets(
+    'native return guidance stays usable with enlarged text in dark mode',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 568);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      authorized = enabled = configured = true;
+      expiry = now.add(const Duration(minutes: 15));
+      await tester.runAsync(() => gate.refreshNativeScreenTime());
+      await tester.pumpWidget(
+        app(
+          const AppGateScreen(targetApp: target),
+          theme: PixelTheme.dark(),
+          textScaler: const TextScaler.linear(2),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('Learn to unlock'), findsOneWidget);
+      expect(find.text('Your app is unlocked'), findsOneWidget);
+      await tester.ensureVisible(find.textContaining('No return link?'));
+      expect(find.text('Back to Veea'), findsNothing);
+      expect(find.text('WORD REVIEWED'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'an active native pass needs no notebook and its return guidance expires',
+    (tester) async {
+      authorized = enabled = configured = true;
+      expiry = now.add(const Duration(seconds: 2));
+      await tester.runAsync(() async {
+        await repo.deleteAll();
+        await gate.prepareChallenge();
+        await gate.refreshNativeScreenTime();
+      });
+      await tester.pumpWidget(app(const AppGateScreen(targetApp: target)));
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('Your app is unlocked'), findsOneWidget);
+      expect(find.text('0:02 remaining'), findsOneWidget);
+      expect(find.text('NO WORDS IN NOTEBOOK'), findsNothing);
+      expect(find.text('WORD REVIEWED'), findsNothing);
+      now = now.add(const Duration(seconds: 2));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pumpAndSettle();
+      expect(find.byType(NativeGateReturnHint), findsNothing);
+      expect(find.text('NO WORDS IN NOTEBOOK'), findsOneWidget);
+      expect(calls.where((c) => c.method == 'launchApp'), isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'relocking after native success removes return guidance and revokes the pass',
+    (tester) async {
+      authorized = enabled = configured = true;
+      await tester.runAsync(() => gate.refreshNativeScreenTime());
+      await tester.pumpWidget(
+        app(AppGateScreen(targetApp: target, initialWord: words.first)),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('app_gate_input')),
+        'resilient',
+      );
+      await tester.ensureVisible(find.text('Unlock Protected app 1'));
+      await tester.runAsync(() async {
+        await tester.tap(find.text('Unlock Protected app 1'));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pumpAndSettle();
+      expect(find.byType(NativeGateReturnHint), findsOneWidget);
+      expect(find.text('WORD REVIEWED'), findsOneWidget);
+      await tester.ensureVisible(find.text('Lock again · Next word'));
+      await tester.runAsync(() async {
+        await tester.tap(find.text('Lock again · Next word'));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pumpAndSettle();
+      expect(find.byType(NativeGateReturnHint), findsNothing);
+      expect(find.byKey(const Key('app_gate_input')), findsOneWidget);
+      expect(gate.unlockedUntilFor(target), isNull);
+      expect(calls.where((c) => c.method == 'revokePass'), hasLength(1));
+      expect(calls.where((c) => c.method == 'launchApp'), isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
     'a restored native pass shows its real remaining time and returns to the challenge at expiry',
     (tester) async {
       tester.view.physicalSize = const Size(800, 1600);
@@ -634,6 +818,8 @@ void main() {
       await tester.pumpWidget(app(const AppGateScreen(targetApp: target)));
       await tester.pumpAndSettle();
       expect(find.text('Unlocked · 0:02 PASS'), findsOneWidget);
+      expect(find.byType(NativeGateReturnHint), findsOneWidget);
+      expect(find.text('WORD REVIEWED'), findsNothing);
       now = now.add(const Duration(seconds: 2));
       await tester.pump(const Duration(seconds: 1));
       await tester.runAsync(() async {
@@ -641,6 +827,7 @@ void main() {
       });
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('app_gate_input')), findsOneWidget);
+      expect(find.byType(NativeGateReturnHint), findsNothing);
       expect(calls.where((c) => c.method == 'revokePass'), isEmpty);
       await tester.pumpWidget(const SizedBox.shrink());
     },

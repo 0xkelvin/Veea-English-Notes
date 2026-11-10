@@ -17,6 +17,7 @@ import '../widgets/pixel/pixel_box.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_icon.dart';
 import '../widgets/practice_word_picker.dart';
+import '../widgets/native_gate_return_hint.dart';
 import 'word_editor_screen.dart';
 
 /// Full-screen "Word Toll" App Gate challenge screen.
@@ -58,6 +59,7 @@ class _AppGateScreenState extends State<AppGateScreen>
       _maybeReadGateProvider(context)?.displayNameForApp(_currentApp) ??
       (_isNativeTarget ? 'Protected app' : _currentApp);
   VocabularyWord? _currentWord;
+  VocabularyWord? _completedNativeWord;
   bool _loading = true;
   int _attempts = 0;
   int _solvedInRound = 0;
@@ -185,7 +187,9 @@ class _AppGateScreenState extends State<AppGateScreen>
   }
 
   String _passBadgeLabel(GateConfig config) {
-    if (!_unlocked || widget.previewMode) return config.passBadgeLabel;
+    if (widget.previewMode || (!_unlocked && !_isNativeTarget)) {
+      return config.passBadgeLabel;
+    }
     final gate = _maybeReadGateProvider(context);
     final expiry = gate?.unlockedUntilFor(_currentApp);
     if (expiry == null) return config.passBadgeLabel;
@@ -253,7 +257,10 @@ class _AppGateScreenState extends State<AppGateScreen>
   Future<void> _loadNextWord({bool force = true}) async {
     if (!mounted) return;
     if (!force && _currentWord != null) return;
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _completedNativeWord = null;
+    });
 
     try {
       VocabularyWord? word;
@@ -300,8 +307,9 @@ class _AppGateScreenState extends State<AppGateScreen>
         _loading = false;
         _attempts =
             !widget.previewMode &&
+                word != null &&
                 gateProvider?.pendingAnswerForApp(_currentApp)?.wordId ==
-                    word?.id
+                    word.id
             ? gateProvider!.pendingAnswerForApp(_currentApp)!.attempts
             : 0;
         _unlocked =
@@ -318,9 +326,14 @@ class _AppGateScreenState extends State<AppGateScreen>
         setState(() {
           _loading = false;
           _currentWord = null;
+          _unlocked =
+              !widget.previewMode &&
+              _maybeReadGateProvider(context)?.unlockedUntilFor(_currentApp) !=
+                  null;
           _challengeError =
               'Could not load your notebook. Your completed words are kept. Please try again.';
         });
+        _watchAccessExpiry();
       }
     }
   }
@@ -438,6 +451,8 @@ class _AppGateScreenState extends State<AppGateScreen>
           _solvedInRound = 0;
           _unlocked = true;
           _flashVisible = false;
+          _challengeError = null;
+          _completedNativeWord = _isNativeTarget ? _currentWord : null;
         });
         _inputFocusNode.unfocus();
         _watchAccessExpiry();
@@ -566,6 +581,9 @@ class _AppGateScreenState extends State<AppGateScreen>
           )
         : baseConfig;
     final requiredWords = gateProvider?.requiredWords ?? config.wordsPerUnlock;
+    final showUnlocked = _isNativeTarget && !widget.previewMode
+        ? gateProvider?.unlockedUntilFor(_currentApp) != null
+        : _unlocked;
 
     return Scaffold(
       backgroundColor: palette.paper,
@@ -574,10 +592,10 @@ class _AppGateScreenState extends State<AppGateScreen>
           children: [
             _GateStatusBar(
               targetApp: _displayApp,
-              unlocked: _unlocked,
+              unlocked: showUnlocked,
               preview: widget.previewMode,
               passBadgeLabel: _passBadgeLabel(config),
-              stepBadgeLabel: requiredWords > 1 && !_unlocked
+              stepBadgeLabel: requiredWords > 1 && !showUnlocked
                   ? 'WORD ${(_solvedInRound + 1).clamp(1, requiredWords)}/$requiredWords'
                   : null,
               onClose: () => Navigator.of(context).maybePop(),
@@ -612,7 +630,9 @@ class _AppGateScreenState extends State<AppGateScreen>
                       ),
                       const SizedBox(height: PixelMetrics.space3),
                     ],
-                    if (_challengeError != null && _currentWord != null)
+                    if (_challengeError != null &&
+                        _currentWord != null &&
+                        !showUnlocked)
                       Text(
                         _challengeError!,
                         style: TextStyle(color: palette.danger),
@@ -621,13 +641,6 @@ class _AppGateScreenState extends State<AppGateScreen>
                       const _GateMessageCard(
                         title: 'LOADING GATE QUEUE…',
                         body: 'Selecting 1 word from your notebook.',
-                      )
-                    else if (_challengeError != null && _currentWord == null)
-                      _GateMessageCard(
-                        title: 'NOTEBOOK UNAVAILABLE',
-                        body: _challengeError!,
-                        actionLabel: 'Try again',
-                        onAction: () => _loadNextWord(),
                       )
                     else if (_isNativeTarget &&
                         !widget.previewMode &&
@@ -639,7 +652,38 @@ class _AppGateScreenState extends State<AppGateScreen>
                         actionLabel: 'Back to Veea',
                         onAction: () => Navigator.of(context).maybePop(),
                       )
-                    else if (_unlocked && _currentWord == null)
+                    else if (_isNativeTarget &&
+                        showUnlocked &&
+                        !widget.previewMode)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          NativeGateReturnHint(
+                            remainingAccess: _passBadgeLabel(
+                              config,
+                            ).replaceFirst(' PASS', ''),
+                            onBackToVeea: Navigator.of(context).canPop()
+                                ? () => Navigator.of(context).maybePop()
+                                : null,
+                          ),
+                          if (_completedNativeWord != null) ...[
+                            const SizedBox(height: PixelMetrics.space4),
+                            _buildUnlockedBody(
+                              context,
+                              _completedNativeWord!,
+                              config,
+                            ),
+                          ],
+                        ],
+                      )
+                    else if (_challengeError != null && _currentWord == null)
+                      _GateMessageCard(
+                        title: 'NOTEBOOK UNAVAILABLE',
+                        body: _challengeError!,
+                        actionLabel: 'Try again',
+                        onAction: () => _loadNextWord(),
+                      )
+                    else if (showUnlocked && _currentWord == null)
                       _GateMessageCard(
                         title: 'ACCESS IS ACTIVE',
                         body:
@@ -689,7 +733,7 @@ class _AppGateScreenState extends State<AppGateScreen>
                         actionLabel: 'Add a word',
                         onAction: _openAddWordEditor,
                       )
-                    else if (!_unlocked &&
+                    else if (!showUnlocked &&
                         !widget.previewMode &&
                         _solvedInRound >= requiredWords)
                       _GateMessageCard(
@@ -702,7 +746,7 @@ class _AppGateScreenState extends State<AppGateScreen>
                           _handleSubmit();
                         },
                       )
-                    else if (!_unlocked)
+                    else if (!showUnlocked)
                       _buildChallengeBody(context, _currentWord!)
                     else
                       _buildUnlockedBody(context, _currentWord!, config),
@@ -1034,6 +1078,8 @@ class _AppGateScreenState extends State<AppGateScreen>
                 child: Text(
                   widget.previewMode
                       ? 'PRACTICE COMPLETE'
+                      : _isNativeTarget
+                      ? 'WORD REVIEWED'
                       : _maybeReadGateProvider(
                               context,
                             )?.unlockedUntilFor(_currentApp) !=
@@ -1072,12 +1118,16 @@ class _AppGateScreenState extends State<AppGateScreen>
 
           Text(
             word.word,
-            style: TextStyle(
-              fontSize: 34,
-              fontWeight: FontWeight.bold,
-              color: palette.ink,
-              letterSpacing: 1.2,
-            ),
+            style: _isNativeTarget && !widget.previewMode
+                ? theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  )
+                : TextStyle(
+                    fontSize: 34,
+                    fontWeight: FontWeight.bold,
+                    color: palette.ink,
+                    letterSpacing: 1.2,
+                  ),
           ),
           const SizedBox(height: PixelMetrics.space2),
 
@@ -1101,42 +1151,38 @@ class _AppGateScreenState extends State<AppGateScreen>
             const Text(
               'Practice finished. Your apps and learning history have not changed.',
             ),
-          if (_isNativeTarget && !widget.previewMode) ...[
-            const Text(
-              'Return to your app using the app switcher. The countdown shows your remaining access time.',
-            ),
-            const SizedBox(height: PixelMetrics.space3),
-          ],
-          PixelButton(
-            label: _isNativeTarget || widget.previewMode
-                ? 'Done'
-                : 'Continue to $_displayApp',
-            glyph: PixelGlyph.check,
-            filled: true,
-            expand: true,
-            onPressed: () async {
-              final gateProvider = _maybeReadGateProvider(context);
-              if (!_isNativeTarget && !widget.previewMode) {
-                final launched = await gateProvider?.launchTargetApp(
-                  _currentApp,
-                );
-                if (launched != true && context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Could not return to your app. Try again, or reopen it from Home.',
-                      ),
-                    ),
+          if (!_isNativeTarget || widget.previewMode) ...[
+            PixelButton(
+              label: _isNativeTarget || widget.previewMode
+                  ? 'Done'
+                  : 'Continue to $_displayApp',
+              glyph: PixelGlyph.check,
+              filled: true,
+              expand: true,
+              onPressed: () async {
+                final gateProvider = _maybeReadGateProvider(context);
+                if (!_isNativeTarget && !widget.previewMode) {
+                  final launched = await gateProvider?.launchTargetApp(
+                    _currentApp,
                   );
-                  return;
+                  if (launched != true && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Could not return to your app. Try again, or reopen it from Home.',
+                        ),
+                      ),
+                    );
+                    return;
+                  }
                 }
-              }
-              if (context.mounted) {
-                Navigator.of(context).maybePop(true);
-              }
-            },
-          ),
-          const SizedBox(height: PixelMetrics.space2),
+                if (context.mounted) {
+                  Navigator.of(context).maybePop(true);
+                }
+              },
+            ),
+            const SizedBox(height: PixelMetrics.space2),
+          ],
 
           PixelButton(
             label: widget.previewMode
