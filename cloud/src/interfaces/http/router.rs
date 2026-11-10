@@ -26,6 +26,11 @@ pub fn build_router(state: AppState) -> Router {
         .route("/auth/otp/request", post(phone_auth_handler::request))
         .route("/auth/otp/verify", post(phone_auth_handler::verify))
         .route("/users/me/delete-otp", post(phone_auth_handler::request_delete).delete(phone_auth_handler::delete_verified))
+        .route("/auth/deletion-receipt", post(phone_auth_handler::deletion_receipt))
+        .route("/users/me/phone-change/current-code", post(phone_auth_handler::change_current_code))
+        .route("/users/me/phone-change/current-verify", post(phone_auth_handler::change_current_verify))
+        .route("/users/me/phone-change/new-code", post(phone_auth_handler::change_new_code))
+        .route("/users/me/phone-change/confirm", post(phone_auth_handler::change_confirm))
         .route("/auth/refresh", post(auth_handler::refresh))
         // ── Protected auth routes ───────────────────────────
         .route("/auth/logout", post(auth_handler::logout))

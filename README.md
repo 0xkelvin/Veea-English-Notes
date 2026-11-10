@@ -96,12 +96,17 @@ This project is open source and available under the [MIT License](LICENSE).
 
 ## Native iOS Screen Time protection
 
-Native protection lets a user authorize Screen Time, choose individual apps,
-and earn a 15- or 30-minute pass by completing vocabulary challenges. It uses
-Family Controls, a named Managed Settings store, and Device Activity monitoring.
-Selection is limited to 50 apps. Categories and websites are intentionally excluded so each earned pass unlocks
-only its selected app. Five-minute and Every Open passes remain in Shortcut mode.
-Existing Veea Shortcut checks pause while native protection is enabled.
+This first-launch branch uses native Screen Time protection only. Users allow
+Screen Time, choose individual apps and review vocabulary to earn access for one
+app. An hours/minutes wheel offers 5 minutes–24 hours, with 15 minutes as default.
+The five-minute option is a candidate pending a signed-device relock test: short
+passes use an ongoing monitoring window of at least 15 minutes that ends at the
+real pass expiry. Rejected scheduling never grants access.
+
+Family Controls, a named Managed Settings store and Device Activity handle native
+protection. Selection is limited to 50 individual apps; categories and websites
+are excluded so each pass unlocks only its selected app. Every Open setup is
+hidden and legacy triggers are retired on this branch.
 
 The **Learning rules** shortcut near the top of Settings opens the practice
 word selection, unlock count, and pronunciation preferences. **Edit practice
@@ -189,7 +194,7 @@ scheduling-failure, stale-callback, and cross-process locking checks. Run
 
 Before distribution, test the signed build on a real device: permission denial,
 app selection/cancellation, app A remaining locked when app B earns access,
-background/terminated-app relock after 15 minutes, revoked permission, a renewed
+background/terminated-app relock after 5 and 15 minutes, revoked permission, a renewed
 pass surviving an old monitor callback, and turning protection off. Simulator
 and unsigned builds do not establish real Screen Time enforcement.
 
@@ -222,10 +227,12 @@ server setup, desktop data contract and remaining integration checks.
 See [Nin’s implementation handoff](docs/nin-handoff.md) for the combined branch,
 Apple signing configuration, completed changes and remaining service setup.
 
-## Guided Every Open setup
+## First-launch candidate
 
-App protection now has a guided ready-made shortcut flow for X: add the template,
-enable its automation, then test it. Setup is marked tested only after Veea
-receives a fresh check. Other existing shortcuts remain under advanced management.
-See [guided shortcut setup](docs/guided-shortcut-setup.md) for the verified import
-steps, supported apps, template source and remaining TestFlight build check.
+Branch: `feat/first-launch-native-accounts`. Every Open is excluded from this
+launch. See [native protection and duration policy](docs/first-launch-native-protection.md),
+[phone account/backend rollout](docs/account-feedback-rollout.md) and
+[executed QA and remaining device checks](docs/first-launch-qa.md).
+
+The guided Shortcut implementation remains in Git history/source for later work;
+it is not reachable from the first-launch settings or native trigger paths.

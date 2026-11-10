@@ -1,9 +1,9 @@
-use axum::response::IntoResponse;
 use axum::Json;
+use axum::response::IntoResponse;
 
 /// GET /api/openapi.json — returns the OpenAPI 3.0 specification.
 pub async fn openapi_spec() -> impl IntoResponse {
-    Json(serde_json::json!({
+    let mut spec = serde_json::json!({
         "openapi": "3.0.3",
         "info": {
             "title": "English Notes Backend API",
@@ -147,7 +147,7 @@ pub async fn openapi_spec() -> impl IntoResponse {
                 "ChangeIdentifierRequest": { "type": "object", "required": ["identifier", "password"], "properties": { "identifier": { "$ref": "#/components/schemas/Identifier" }, "password": { "type": "string" } } },
                 "RefreshTokenRequest": { "type": "object", "required": ["refresh_token"], "properties": { "refresh_token": { "type": "string" } } },
                 "LogoutRequest": { "type": "object", "required": ["refresh_token"], "properties": { "refresh_token": { "type": "string" } } },
-                "ChangeUserRoleRequest": { "type": "object", "required": ["role"], "properties": { "role": { "type": "string", "enum": ["user", "admin", "moderator"] } } },
+                "ChangeUserRoleRequest":{ "type": "object", "required": ["role"], "properties": { "role": { "type": "string", "enum": ["user", "admin", "moderator"] } } },
                 "Word": {
                     "type": "object",
                     "required": ["id", "word", "meaning", "date", "createdAt", "updatedAt"],
@@ -185,5 +185,111 @@ pub async fn openapi_spec() -> impl IntoResponse {
                 }
             }
         }
-    }))
+    });
+    // Kept separate: one json! literal for the whole spec exceeds the macro
+    // recursion limit.
+    merge(&mut spec["paths"], phone_account_paths());
+    merge(&mut spec["components"]["schemas"], phone_account_schemas());
+    Json(spec)
+}
+
+fn merge(target: &mut serde_json::Value, extra: serde_json::Value) {
+    if let (Some(target), serde_json::Value::Object(extra)) = (target.as_object_mut(), extra) {
+        target.extend(extra);
+    }
+}
+
+/// Phone OTP sign-in, verified phone change and recoverable deletion.
+fn phone_account_paths() -> serde_json::Value {
+    serde_json::json!({
+    "/auth/otp/request": {
+                "post": {
+                    "tags": ["auth"],
+                    "summary": "Send a sign-in code to a Vietnamese mobile number",
+                    "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PhoneRequest" } } } },
+                    "responses": { "200": { "description": "Challenge created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OtpChallenge" } } } }, "400": { "description": "Invalid phone" }, "429": { "description": "Send rate limit" }, "503": { "description": "OTP delivery unavailable" } }
+                }
+            },
+            "/auth/otp/verify": {
+                "post": {
+                    "tags": ["auth"],
+                    "summary": "Verify a sign-in code; creates the account on first use",
+                    "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VerifyCodeRequest" } } } },
+                    "responses": { "200": { "description": "Session", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PhoneSession" } } } }, "400": { "description": "Code incorrect, expired, used or out of attempts" }, "409": { "description": "Legacy account needs a support migration" } }
+                }
+            },
+            "/users/me/delete-otp": {
+                "post": {
+                    "tags": ["account"],
+                    "summary": "Send an account-deletion code to the account's phone",
+                    "security": [{ "bearerAuth": [] }],
+                    "responses": { "200": { "description": "Challenge created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OtpChallenge" } } } }, "429": { "description": "Send rate limit" }, "503": { "description": "OTP delivery unavailable" } }
+                },
+                "delete": {
+                    "tags": ["account"],
+                    "summary": "Delete the account with a fresh deletion code",
+                    "description": "Deletes the user, cloud words, refresh tokens and OTP rows (ON DELETE CASCADE) and, in the same transaction, writes a deletion receipt keyed by the user UUID and a hash of the challenge id. Feedback reports are not deleted.",
+                    "security": [{ "bearerAuth": [] }],
+                    "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VerifyCodeRequest" } } } },
+                    "responses": { "204": { "description": "Account deleted" }, "400": { "description": "Code incorrect or expired; account kept" }, "401": { "description": "Session invalid (also returned after the account is gone; use /auth/deletion-receipt)" } }
+                }
+            },
+            "/auth/deletion-receipt": {
+                "post": {
+                    "tags": ["account"],
+                    "summary": "Check whether a specific deletion challenge deleted an account",
+                    "description": "For clients whose deletion response was lost. `deleted: true` only when this challenge deleted this account within the last 30 days. `false` means not proven; the client must keep local data.",
+                    "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DeletionReceiptRequest" } } } },
+                    "responses": { "200": { "description": "`{deleted: boolean}`" } }
+                }
+            },
+            "/users/me/phone-change/current-code": {
+                "post": {
+                    "tags": ["account"],
+                    "summary": "Step 1: send a code to the account's current phone",
+                    "security": [{ "bearerAuth": [] }],
+                    "responses": { "200": { "description": "Challenge created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OtpChallenge" } } } }, "400": { "description": "Not a phone-code account" }, "429": { "description": "Send rate limit" }, "503": { "description": "OTP delivery unavailable" } }
+                }
+            },
+            "/users/me/phone-change/current-verify": {
+                "post": {
+                    "tags": ["account"],
+                    "summary": "Step 2: verify the current-phone code and receive a proof",
+                    "description": "The proof is valid for 15 minutes, belongs to this account and its current number, and can complete one change.",
+                    "security": [{ "bearerAuth": [] }],
+                    "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VerifyCodeRequest" } } } },
+                    "responses": { "200": { "description": "`{proof_id, expires_in}`" }, "400": { "description": "Code incorrect or expired" }, "404": { "description": "Number changed in another session; start again" } }
+                }
+            },
+            "/users/me/phone-change/new-code": {
+                "post": {
+                    "tags": ["account"],
+                    "summary": "Step 3: send a code to the new phone (resend uses the same proof)",
+                    "security": [{ "bearerAuth": [] }],
+                    "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NewPhoneCodeRequest" } } } },
+                    "responses": { "200": { "description": "Challenge created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OtpChallenge" } } } }, "400": { "description": "Invalid or unchanged phone" }, "404": { "description": "Proof expired, used, foreign or stale; start again" }, "429": { "description": "Send rate limit" }, "503": { "description": "OTP delivery unavailable" } }
+                }
+            },
+            "/users/me/phone-change/confirm": {
+                "post": {
+                    "tags": ["account"],
+                    "summary": "Step 4: verify the new-phone code and move the number",
+                    "description": "Atomically re-checks the proof and expected current phone under locks, updates the phone, revokes every refresh token and returns one replacement session. The account UUID is unchanged.",
+                    "security": [{ "bearerAuth": [] }],
+                    "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VerifyCodeRequest" } } } },
+                    "responses": { "200": { "description": "Replacement session", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PhoneSession" } } } }, "400": { "description": "Code incorrect or expired" }, "404": { "description": "Proof expired, used or stale; start again" }, "409": { "description": "New number belongs to another account; nothing changed" } }
+                }
+            }
+    })
+}
+
+fn phone_account_schemas() -> serde_json::Value {
+    serde_json::json!({
+    "PhoneRequest": { "type": "object", "required": ["phone"], "properties": { "phone": { "type": "string", "maxLength": 40, "example": "0901234567" } } },
+                "VerifyCodeRequest": { "type": "object", "required": ["challenge_id", "code"], "properties": { "challenge_id": { "type": "string", "format": "uuid" }, "code": { "type": "string", "pattern": "^[0-9]{4,10}$" } } },
+                "NewPhoneCodeRequest": { "type": "object", "required": ["proof_id", "new_phone"], "properties": { "proof_id": { "type": "string", "format": "uuid" }, "new_phone": { "type": "string", "maxLength": 40 } } },
+                "DeletionReceiptRequest": { "type": "object", "required": ["user_id", "challenge_id"], "properties": { "user_id": { "type": "string", "format": "uuid" }, "challenge_id": { "type": "string", "format": "uuid" } } },
+                "OtpChallenge": { "type": "object", "required": ["challenge_id", "expires_in", "retry_after"], "properties": { "challenge_id": { "type": "string", "format": "uuid" }, "expires_in": { "type": "integer", "example": 600 }, "retry_after": { "type": "integer", "example": 60 } } },
+                "PhoneSession": { "type": "object", "required": ["user_id", "identifier", "auth_method", "tokens"], "properties": { "user_id": { "type": "string", "format": "uuid" }, "identifier": { "type": "string", "example": "+84901234567" }, "auth_method": { "type": "string", "enum": ["phone_otp"] }, "revoked_sessions": { "type": "integer", "description": "Phone change only" }, "tokens": { "type": "object", "properties": { "access_token": { "type": "string" }, "refresh_token": { "type": "string" }, "expires_in": { "type": "integer" }, "token_type": { "type": "string" } } } } }
+    })
 }

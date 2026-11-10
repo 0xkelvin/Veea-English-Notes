@@ -70,6 +70,21 @@ class FakeTokenStore implements TokenStore {
     lastAccount = null;
   }
 
+  PendingDeletion? pendingDeletion;
+
+  @override
+  Future<PendingDeletion?> readPendingDeletion() async => pendingDeletion;
+
+  @override
+  Future<void> savePendingDeletion(PendingDeletion pending) async {
+    pendingDeletion = pending;
+  }
+
+  @override
+  Future<void> clearPendingDeletion() async {
+    pendingDeletion = null;
+  }
+
   @override
   Future<void> clear() async {
     accessToken = null;

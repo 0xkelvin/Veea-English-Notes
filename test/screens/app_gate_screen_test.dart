@@ -315,7 +315,8 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('1 app protected'), findsOneWidget);
         expect(find.text('15 min'), findsOneWidget);
-        expect(find.text('30 min'), findsOneWidget);
+        expect(find.text('Access after each challenge'), findsOneWidget);
+        expect(find.byType(ChoiceChip), findsNothing);
         expect(find.textContaining(nativeTarget), findsNothing);
         expect(find.text('Turn off Screen Time protection'), findsOneWidget);
       },
@@ -519,7 +520,7 @@ void main() {
     );
 
     testWidgets(
-      'SettingsScreen allows user to select and customize gated apps via Pick Apps to Gate dialog',
+      'first-launch Settings exposes native protection without Shortcut setup',
       (tester) async {
         tester.view.physicalSize = const Size(800, 4200);
         tester.view.devicePixelRatio = 1.0;
@@ -545,50 +546,18 @@ void main() {
 
         await tester.tap(find.byKey(const Key('settings_app_protection')));
         await tester.pumpAndSettle();
-        expect(find.text('Shortcut protection'), findsOneWidget);
-        expect(find.text('Pick Apps to Gate'), findsOneWidget);
-
-        await tester.runAsync(() async {
-          await tester.tap(find.text('Pick Apps to Gate'));
-          await Future<void>.delayed(const Duration(milliseconds: 50));
-        });
-        await tester.pumpAndSettle();
-
-        expect(find.text('SELECT APPS TO GATE'), findsOneWidget);
-
-        // Filter for Facebook in the picker search field and select it
-        await tester.enterText(
-          find.widgetWithText(
-            TextField,
-            'Filter apps (e.g. Instagram, TikTok)…',
-          ),
-          'Face',
-        );
-        await tester.pump();
         expect(
-          find.descendant(
-            of: find.byType(Dialog),
-            matching: find.text('Facebook'),
-          ),
+          find.textContaining('App protection is available on iPhone'),
           findsOneWidget,
         );
-
-        await tester.tap(
-          find.descendant(
-            of: find.byType(Dialog),
-            matching: find.text('Facebook'),
-          ),
+        expect(find.text('Shortcut protection'), findsNothing);
+        expect(find.text('Pick Apps to Gate'), findsNothing);
+        expect(find.text('Every time I open an app'), findsNothing);
+        expect(find.text('Learning rules'), findsOneWidget);
+        expect(
+          channelCalls.where((call) => call.method == 'getInstalledApps'),
+          isEmpty,
         );
-        await tester.pump();
-
-        // Save selection
-        await tester.runAsync(() async {
-          await tester.tap(find.textContaining('Save ('));
-          await Future<void>.delayed(const Duration(milliseconds: 50));
-        });
-        await tester.pumpAndSettle();
-
-        expect(gateProvider.config.gatedApps, contains('Facebook'));
       },
     );
 

@@ -31,6 +31,7 @@ class AppGateScreen extends StatefulWidget {
     this.targetApp = 'Instagram',
     this.initialWord,
     this.previewMode = false,
+    this.openedFromVeea = false,
   });
 
   /// Name or package identifier of the intercepted app.
@@ -43,6 +44,9 @@ class AppGateScreen extends StatefulWidget {
   /// When true, renders quick app-switcher pills so the user can test the gate
   /// from Settings.
   final bool previewMode;
+
+  /// Internal unlocks have no system return breadcrumb to a protected app.
+  final bool openedFromVeea;
 
   @override
   State<AppGateScreen> createState() => _AppGateScreenState();
@@ -198,7 +202,10 @@ class _AppGateScreenState extends State<AppGateScreen>
           0,
           86400,
         );
-    return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')} PASS';
+    final clock = seconds >= 3600
+        ? '${seconds ~/ 3600}:${((seconds ~/ 60) % 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}'
+        : '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+    return '$clock PASS';
   }
 
   bool get _canShowAnswerKeyboard {
@@ -659,6 +666,7 @@ class _AppGateScreenState extends State<AppGateScreen>
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           NativeGateReturnHint(
+                            showSystemReturnHint: !widget.openedFromVeea,
                             remainingAccess: _passBadgeLabel(
                               config,
                             ).replaceFirst(' PASS', ''),

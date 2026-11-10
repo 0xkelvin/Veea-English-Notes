@@ -19,10 +19,16 @@ struct NativeGateGrantCoordinator {
           snapshot.applications.contains(where: { $0.id == applicationID }) else {
       throw NativeGateError.unknownApplication
     }
-    let start = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970))
     // Align persisted expiry with the schedule's whole-second end. Otherwise an
     // early callback could see a fractional-second pass still valid and miss it.
     let expiry = Date(timeIntervalSince1970: ceil(now.timeIntervalSince1970) + Double(minutes * 60))
+    // Apple permits starting monitoring while an interval is already ongoing.
+    // Short access passes use a >=15-minute window ending at the real expiry,
+    // rather than pretending a five-minute schedule meets Apple's minimum.
+    let minimumWindow = Double(NativeGatePolicy.minimumMonitoringMinutes * 60)
+    let start = Date(timeIntervalSince1970: min(
+      floor(now.timeIntervalSince1970), expiry.timeIntervalSince1970 - minimumWindow
+    ))
     let pass = NativeGatePass(
       expiresAt: expiry, activityName: "veea.native.\(applicationID).\(UUID().uuidString)"
     )

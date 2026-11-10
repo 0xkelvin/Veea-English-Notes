@@ -4,10 +4,6 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
-    <uses-permission
-        android:name="android.permission.PACKAGE_USAGE_STATS"
-        tools:ignore="ProtectedPermissions"/>
     <application
         android:label="Veea English"
         android:name="${applicationName}"
@@ -62,18 +58,7 @@
             </intent-filter>
         </receiver>
 
-        <service
-            android:name=".VeeaGateAccessibilityService"
-            android:exported="false"
-            android:label="Veea App Gate"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/veea_gate_accessibility_service" />
-        </service>
+        <!-- First launch offers iOS Screen Time only; no app-open interception. -->
     </application>
     <!-- Required to query activities that can process text and send mail, see:
          https://developer.android.com/training/package-visibility -->

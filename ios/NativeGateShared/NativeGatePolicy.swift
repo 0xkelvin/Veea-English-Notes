@@ -31,6 +31,7 @@ struct NativeGateState: Codable, Equatable {
   }
 
   mutating func reconcile(at now: Date) {
+    passMinutes = NativeGatePolicy.normalizedPassMinutes(passMinutes)
     let selected = Set(applications.map(\.id))
     passes = passes.filter { selected.contains($0.key) && $0.value.expiresAt > now }
     if let pending = pendingChallenge,
@@ -51,9 +52,22 @@ struct NativeGateState: Codable, Equatable {
 
 enum NativeGatePolicy {
   // DeviceActivity requires monitoring intervals of at least fifteen minutes.
-  // Shortcuts retain the separate five-minute and Every Open modes.
-  static let supportedPassMinutes = [15, 30]
+  // Apple permits up to one week; launch intentionally caps access at 24 hours.
+  static let supportedPassMinutes = 5...1440
+  static let minimumMonitoringMinutes = 15
   static let maximumApplications = 50
+
+  static func normalizedPassMinutes(_ minutes: Int) -> Int {
+    min(max(minutes, supportedPassMinutes.lowerBound), supportedPassMinutes.upperBound)
+  }
+
+  // Use an explicit fixed calendar so a repeated local DST hour cannot resolve
+  // to a different instant. DeviceActivity uses the components' calendar.
+  static func scheduleComponents(for date: Date) -> DateComponents {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    return calendar.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: date)
+  }
 
   static func validateApplicationCount(_ count: Int) throws {
     guard count <= maximumApplications else { throw NativeGateError.tooManyApplications }

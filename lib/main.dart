@@ -206,7 +206,11 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
   }
 
   Future<void> _syncNotebook() async {
-    if (!widget.auth.isSignedIn || !AppConfig.isCloudEnabled) return;
+    if (!widget.auth.isSignedIn ||
+        !AppConfig.isCloudEnabled ||
+        widget.auth.hasPendingDeletion) {
+      return;
+    }
     if (await widget.sync.synchronise() && mounted) {
       await widget.vocabulary.init();
     }
@@ -214,7 +218,9 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
 
   Future<void> _openGateScreen(String targetApp) async {
     final target = targetApp.trim();
-    if (!mounted || target.isEmpty || _activeGateTarget?.value == target) {
+    if (!mounted ||
+        !target.startsWith('native:') ||
+        _activeGateTarget?.value == target) {
       return;
     }
     final request = ++_gateRequestVersion;
@@ -283,7 +289,10 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
     ) {
       _openGateScreen(targetApp);
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _drainPendingGate());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _drainPendingGate();
+      unawaited(_recoverPendingDeletion());
+    });
 
     _friendChallengeService.init();
     _challengeSubscription = _friendChallengeService.incomingChallenges.listen((
@@ -323,8 +332,21 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
     }
     if (!mounted) return;
     _drainPendingGate();
+    unawaited(_recoverPendingDeletion());
     unawaited(_syncNotebook());
     unawaited(widget.feedback?.refresh() ?? Future.value());
+  }
+
+  Future<void> _recoverPendingDeletion() async {
+    if (!widget.auth.hasPendingDeletion) return;
+    try {
+      final outcome = await widget.auth.checkPendingDeletion();
+      if (outcome == DeletionOutcome.deleted && mounted) {
+        await widget.vocabulary.init();
+      }
+    } catch (error) {
+      debugPrint('Could not recover the pending deletion: $error');
+    }
   }
 
   @override

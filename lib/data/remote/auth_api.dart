@@ -65,12 +65,72 @@ class AuthApi {
     );
   }
 
+  /// Deletes the account with a fresh deletion code. The caller records a
+  /// [PendingDeletion] first, so a lost response can be resolved with
+  /// [deletionConfirmed] instead of being guessed from a later 401.
   Future<void> deleteWithOtp(OtpChallenge challenge, String code) async {
     await _client.delete(
       '/users/me/delete-otp',
       body: {'challenge_id': challenge.id, 'code': code},
     );
     await _tokens.clear();
+  }
+
+  /// True only when the server holds a receipt that this exact challenge
+  /// deleted this account. False means "not proven", never "deleted".
+  Future<bool> deletionConfirmed(PendingDeletion pending) async {
+    final data = await _client.post(
+      '/auth/deletion-receipt',
+      body: {'user_id': pending.accountId, 'challenge_id': pending.challengeId},
+      authenticated: false,
+    );
+    return data['deleted'] == true;
+  }
+
+  // ── Verified phone change: current phone, then new phone ──────────────
+
+  Future<OtpChallenge> requestCurrentPhoneCode() async => OtpChallenge.fromJson(
+    await _client.post('/users/me/phone-change/current-code'),
+  );
+
+  Future<PhoneChangeProof> verifyCurrentPhone(
+    OtpChallenge challenge,
+    String code,
+  ) async => PhoneChangeProof.fromJson(
+    await _client.post(
+      '/users/me/phone-change/current-verify',
+      body: {'challenge_id': challenge.id, 'code': code},
+    ),
+  );
+
+  Future<OtpChallenge> requestNewPhoneCode(
+    PhoneChangeProof proof,
+    String newPhone,
+  ) async => OtpChallenge.fromJson(
+    await _client.post(
+      '/users/me/phone-change/new-code',
+      body: {'proof_id': proof.id, 'new_phone': newPhone},
+    ),
+  ).withPhone(newPhone);
+
+  /// Returns the replacement session WITHOUT storing it: the caller must
+  /// first check it belongs to the same account.
+  Future<AuthSession> confirmPhoneChange(
+    OtpChallenge challenge,
+    String code,
+  ) async {
+    final data = await _client.post(
+      '/users/me/phone-change/confirm',
+      body: {'challenge_id': challenge.id, 'code': code},
+    );
+    if (data['user_id'] is! String) {
+      throw const ApiException('Malformed phone change response');
+    }
+    return AuthSession.fromJson(
+      data,
+      fallbackIdentifier: challenge.phone ?? '',
+      method: 'phone_otp',
+    );
   }
 
   Future<AuthSession> passwordSession({
@@ -239,6 +299,24 @@ class OtpChallenge {
       id: id,
       expiresIn: (data['expires_in'] as num?)?.toInt() ?? 600,
       retryAfter: (data['retry_after'] as num?)?.toInt() ?? 60,
+    );
+  }
+}
+
+/// Server proof that this account's current phone was just verified. Valid
+/// for one change, for [expiresIn] seconds from issue.
+class PhoneChangeProof {
+  const PhoneChangeProof({required this.id, required this.expiresIn});
+  final String id;
+  final int expiresIn;
+  factory PhoneChangeProof.fromJson(Map<String, Object?> data) {
+    final id = data['proof_id'] as String?;
+    if (id == null || id.isEmpty) {
+      throw const ApiException('Could not confirm your current number');
+    }
+    return PhoneChangeProof(
+      id: id,
+      expiresIn: (data['expires_in'] as num?)?.toInt() ?? 900,
     );
   }
 }

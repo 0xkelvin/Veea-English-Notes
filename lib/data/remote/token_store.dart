@@ -1,6 +1,19 @@
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+/// The account UUID and the deletion challenge id that together let the
+/// server confirm a deletion whose response never arrived.
+class PendingDeletion {
+  const PendingDeletion({
+    required this.accountId,
+    required this.challengeId,
+    this.confirmUntil,
+  });
+  final String accountId;
+  final String challengeId;
+  final DateTime? confirmUntil;
+}
+
 /// A session is one atomic keychain entry, so tokens and notebook ownership
 /// cannot be left belonging to different accounts after an interrupted write.
 class TokenStore {
@@ -72,6 +85,42 @@ class TokenStore {
       identifier: identifier,
     );
   }
+
+  /// A phone deletion whose outcome is unknown (response lost, offline,
+  /// session ended mid-request). Kept apart from the session and NOT removed
+  /// by [clear], because the session is exactly what disappears when the
+  /// server did delete the account.
+  static const _pendingDeletionKey = 'auth.pending_deletion.v1';
+
+  Future<PendingDeletion?> readPendingDeletion() async {
+    final raw = await _storage.read(key: _pendingDeletionKey);
+    if (raw == null) return null;
+    try {
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      final account = data['account_id'] as String?;
+      final challenge = data['challenge_id'] as String?;
+      if (account == null || challenge == null) return null;
+      return PendingDeletion(
+        accountId: account,
+        challengeId: challenge,
+        confirmUntil: DateTime.tryParse(data['confirm_until'] as String? ?? ''),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> savePendingDeletion(PendingDeletion pending) => _storage.write(
+    key: _pendingDeletionKey,
+    value: jsonEncode({
+      'account_id': pending.accountId,
+      'challenge_id': pending.challengeId,
+      'confirm_until': pending.confirmUntil?.toUtc().toIso8601String(),
+    }),
+  );
+
+  Future<void> clearPendingDeletion() =>
+      _storage.delete(key: _pendingDeletionKey);
 
   Future<void> clear() async {
     await _storage.delete(key: _sessionKey);

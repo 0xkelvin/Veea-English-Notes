@@ -74,7 +74,7 @@ class AppGateService {
       } else if (args is String) {
         targetApp = args;
       }
-      if (targetApp != null && targetApp.trim().isNotEmpty) {
+      if (targetApp != null && targetApp.trim().startsWith('native:')) {
         final cleaned = targetApp.trim();
         if (_gateTriggeredController.hasListener) {
           _gateTriggeredController.add(cleaned);
@@ -107,10 +107,7 @@ class AppGateService {
         'consumePendingGate',
         <String, dynamic>{},
       );
-      if (nativePending != null && nativePending.trim().isNotEmpty) {
-        if (nativePending.startsWith('shortcut:')) {
-          await getUniversalGateStatus();
-        }
+      if (nativePending != null && nativePending.trim().startsWith('native:')) {
         return nativePending.trim();
       }
     } on MissingPluginException {
@@ -184,9 +181,10 @@ class AppGateService {
   }) async {
     try {
       await _channel.invokeMethod<void>('setGateEnabled', <String, dynamic>{
-        'enabled': enabled,
-        'passMinutes': passMinutes,
-        'gatedApps': gatedApps,
+        // Retire any persisted pre-launch Shortcut/accessibility configuration.
+        'enabled': false,
+        'passMinutes': 15,
+        'gatedApps': const <String>[],
       });
     } on MissingPluginException {
       // No-op when running without native host.

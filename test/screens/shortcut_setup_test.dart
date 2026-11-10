@@ -448,11 +448,10 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('unverified universal setup stays out of the default flow', (
-    tester,
-  ) async {
+  testWidgets('first-launch flow hides all Shortcut setup', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
+        theme: PixelTheme.light(),
         home: Scaffold(
           body: SingleChildScrollView(
             child: GuidedProtectionSettings(
@@ -466,7 +465,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('X'), findsOneWidget);
+    expect(find.text('X'), findsNothing);
+    expect(
+      find.textContaining('App protection is available on iPhone'),
+      findsOneWidget,
+    );
     expect(find.text('Choose apps to protect'), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -501,10 +504,9 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    await tester.ensureVisible(find.text('Choose apps to protect'));
-    await tester.tap(find.text('Choose apps to protect'));
-    await tester.pumpAndSettle();
-    expect(find.byType(UniversalShortcutSetupScreen), findsOneWidget);
+    expect(find.text('Choose apps to protect'), findsNothing);
+    await tester.ensureVisible(find.text('Learning rules'));
+    expect(find.text('Learning rules'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

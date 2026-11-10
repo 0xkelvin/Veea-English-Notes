@@ -5,6 +5,7 @@ import '../data/vocabulary_repository.dart';
 import '../models/gate_config.dart';
 import '../models/gate_word_queue.dart';
 import '../models/native_gate_status.dart';
+import '../models/protection_duration.dart';
 import '../models/vocabulary_word.dart';
 import '../services/app_gate_service.dart';
 
@@ -226,6 +227,12 @@ class AppGateProvider extends ChangeNotifier {
   });
 
   Future<bool> setNativeDuration(int minutes) => _nativeOperation(() async {
+    if (!ProtectionDuration.isValid(minutes)) {
+      throw PlatformException(
+        code: 'INVALID_DURATION',
+        message: 'Choose from 5 minutes to 24 hours.',
+      );
+    }
     _nativeStatus = await _service.setScreenTimeDuration(minutes);
   });
 
@@ -318,9 +325,13 @@ class AppGateProvider extends ChangeNotifier {
   Future<void> init() async {
     try {
       _config = await _repository.getGateConfig();
+      if (_config.enabled || _config.passDurationMinutes <= 0) {
+        _config = _config.copyWith(enabled: false, passDurationMinutes: 15);
+        await _repository.saveGateConfig(_config);
+      }
       _logs = await _repository.recentGateLogs();
       await prepareChallenge();
-      _installedApps = await _service.getInstalledApps();
+      _installedApps = const [];
       _initialized = true;
       await refreshNativeScreenTime();
       await _service.setGateEnabled(
@@ -372,7 +383,7 @@ class AppGateProvider extends ChangeNotifier {
 
     _lastError = null;
     if (_installedApps.isEmpty) {
-      _installedApps = await _service.getInstalledApps();
+      _installedApps = const [];
     }
     final defaultApps = useDefaultApps && _config.gatedApps.isEmpty && enabled
         ? (_installedApps.isNotEmpty

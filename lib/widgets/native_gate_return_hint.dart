@@ -11,9 +11,11 @@ class NativeGateReturnHint extends StatelessWidget {
     super.key,
     required this.remainingAccess,
     required this.onBackToVeea,
+    this.showSystemReturnHint = true,
   });
 
   final String remainingAccess;
+  final bool showSystemReturnHint;
   final VoidCallback? onBackToVeea;
 
   @override
@@ -26,13 +28,14 @@ class NativeGateReturnHint extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ExcludeSemantics(
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: Icon(Icons.north_west, size: 40, color: palette.accent),
+          if (showSystemReturnHint)
+            ExcludeSemantics(
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: Icon(Icons.north_west, size: 40, color: palette.accent),
+              ),
             ),
-          ),
-          const SizedBox(height: PixelMetrics.space3),
+          if (showSystemReturnHint) const SizedBox(height: PixelMetrics.space3),
           Semantics(
             header: true,
             child: Text(
@@ -48,16 +51,21 @@ class NativeGateReturnHint extends StatelessWidget {
           const SizedBox(height: PixelMetrics.space4),
           Text('Return to your app', style: theme.textTheme.titleMedium),
           const SizedBox(height: PixelMetrics.space2),
-          const Text(
-            'Tap the return link in the top-left corner of your screen.',
-          ),
-          const SizedBox(height: PixelMetrics.space3),
-          Text(
-            'No return link? Open your app from Home or the app switcher. Your access is already active.',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: palette.inkMuted,
+          if (showSystemReturnHint) ...[
+            const Text(
+              'Tap the return link in the top-left corner of your screen.',
             ),
-          ),
+            const SizedBox(height: PixelMetrics.space3),
+            Text(
+              'No return link? Open your app from Home or the app switcher. Your access is already active.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: palette.inkMuted,
+              ),
+            ),
+          ] else
+            const Text(
+              'Open your app from Home or the app switcher. Your access is already active.',
+            ),
           if (onBackToVeea != null) ...[
             const SizedBox(height: PixelMetrics.space3),
             TextButton(

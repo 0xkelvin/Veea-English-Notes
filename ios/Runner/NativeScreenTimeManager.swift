@@ -35,7 +35,7 @@ final class NativeScreenTimeManager {
       "enabled": active,
       "configured": configured,
       "error": storageError ? "Protection settings could not be read. Turn protection off to reset them." : "",
-      "passMinutes": state.passMinutes,
+      "passMinutes": NativeGatePolicy.normalizedPassMinutes(state.passMinutes),
       "applications": state.applications.enumerated().map { index, app in
         ["id": "native:\(app.id)", "label": "Protected app \(index + 1)",
          "unlockedUntil": state.passes[app.id]?.expiresAt.timeIntervalSince1970 ?? 0] as [String: Any]
@@ -92,16 +92,14 @@ final class NativeScreenTimeManager {
       throw NativeGateError.unknownApplication
     }
     let store = try NativeGateStore.shared()
-    let minutes = try store.read().passMinutes
+    let minutes = NativeGatePolicy.normalizedPassMinutes(try store.read().passMinutes)
     let center = DeviceActivityCenter()
     _ = try NativeGateGrantCoordinator(store: store).grant(
       applicationID: id, minutes: minutes,
       startMonitoring: { name, start, expiry in
-        let calendar = Calendar.current
-        let components: Set<Calendar.Component> = [.year, .month, .day, .hour, .minute, .second]
         let schedule = DeviceActivitySchedule(
-          intervalStart: calendar.dateComponents(components, from: start),
-          intervalEnd: calendar.dateComponents(components, from: expiry), repeats: false
+          intervalStart: NativeGatePolicy.scheduleComponents(for: start),
+          intervalEnd: NativeGatePolicy.scheduleComponents(for: expiry), repeats: false
         )
         try center.startMonitoring(DeviceActivityName(name), during: schedule)
       },
@@ -251,7 +249,7 @@ private struct NativeGateApplicationsView: View {
           VStack(alignment: .leading, spacing: 12) {
             Label(token).labelStyle(.titleAndIcon)
             if let pass = state.passes[app.id], pass.expiresAt > Date() {
-              Text("Unlocked until \(pass.expiresAt.formatted(date: .omitted, time: .shortened))")
+              Text("Unlocked until \(pass.expiresAt.formatted(date: Calendar.current.isDateInToday(pass.expiresAt) ? .omitted : .abbreviated, time: .shortened))")
                 .font(.callout).foregroundStyle(.secondary)
             } else {
               Button("Learn to unlock") { onSelect(app.id) }.disabled(!state.enabled)
