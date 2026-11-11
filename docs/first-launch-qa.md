@@ -138,7 +138,8 @@ Signed-device acceptance for Nin:
 
 The Settings entry is now an App locks section with Enable locks, per-app
 switches, the No locks yet empty state, and the existing management-page link.
-Per-app OFF pauses locking without deleting selection or time rules. The master
+The original master-switch behavior described below is superseded by the
+aggregate-control correction in the next section. Per-app OFF pauses locking without deleting selection or time rules. The master
 switch retains those choices, which remain visible in disabled switches while
 master locking is off. Turning an app back on starts locked, but partial
 vocabulary progress is deliberately retained. A paused app's monitor/pass and
@@ -161,3 +162,58 @@ Apple's native token renderer. Extend signed-device acceptance to pausing an app
 with an active pass, reopening it without a challenge, re-enabling it, toggling
 the master off/on, restarting Veea with one app paused, and checking the native
 labels/controls with VoiceOver. No upload or phone installation is claimed.
+
+
+## Aggregate switch and unlock-sheet correction — 11 November 2026
+
+The updated contract makes Enable locks an all-on/all-off control, not an
+independent global gate. Partial state shows the enabled count with aggregate OFF;
+individual switches remain interactive. The final individual ON makes aggregate
+ON. All OFF ends passes without deleting selected apps, time rules or unfinished
+vocabulary progress. All ON preserves earned access of already-enabled apps.
+Legacy master-OFF JSON migrates to all app choices OFF. Removing the last active
+app leaves the engine off, including when paused apps remain selected.
+
+The unlock-time fix removes native token-label platform views on covered routes
+and clips both Flutter and native containers. The app navigator observer keeps
+labels hidden until departing-route animations have finished, preventing labels
+from returning through a still-closing sheet. A platform-channel lifecycle test
+checks Settings → management → repeated Freeform/Playground sheets → real custom
+time picker → cancellation/back navigation, checking intermediate animation frames
+as well as settled states and requiring only the current route's label to exist.
+Host tests cannot verify actual UIKit composition.
+Learning rules remains available in Settings and on the management page.
+
+Signed-device acceptance:
+
+1. With two app locks ON, turn one OFF: aggregate must turn OFF, the other stays ON.
+   Re-enable the first app: aggregate becomes ON.
+2. Turn aggregate OFF: both app switches OFF. Enable either app individually:
+   aggregate stays OFF, only that app locks. Turn aggregate ON: both apps ON.
+3. Restart Veea in partial and all-OFF states; verify choices survive. Test with an
+   active earned pass: another app's toggle must not shorten that timer.
+4. Open unlock-time sheets for different apps repeatedly, including Custom time,
+   cancellation and return navigation. Only the edited app appears once; no
+   underlying labels appear over duration rows. Check large text and dark mode.
+5. Confirm Learning rules is present and saved practice words/progress remain.
+
+Claude CLI independently executed the full Flutter suite: **572 tests passed**.
+The focused Settings/label-route/duration run passed **19 tests**. Claude also
+executed the portable Swift suites successfully and confirmed the reverse-route
+transition and individual-enable setup issues were resolved. It found one
+unnecessary import in the new test; that import was removed before the final
+analyzer run. The final analyzer reported no issues; iOS 27.2 native type
+checking and arm64 release Dart/AOT plus assets assembly passed.
+
+Remaining signed-device checks include actual UIKit composition/clipping, the
+briefly hidden background labels during reverse transitions, and VoiceOver's
+privacy-preserving app labels. Provider prerequisite checks use the notebook
+cache maintained by the existing learning flow; active app locks can always be
+turned off even when learning prerequisites are missing. No signed app install or TestFlight upload is claimed in this change.
+
+LockFeed was tested through iPhone Mirroring with the user's explicit approval:
+Music OFF produced aggregate OFF / “1 of 2 locks on” while Podcasts stayed ON;
+Music ON restored aggregate ON; aggregate OFF turned both apps OFF; Podcasts ON
+from all-OFF produced partial state; aggregate ON restored both app locks ON.
+Both app switches were restored to their original ON values afterward, with no
+changes to selections or durations.

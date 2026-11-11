@@ -40,10 +40,32 @@ struct NativeGateState: Codable, Equatable {
     // Existing installations inherit the saved default without resetting passes.
     applicationMinutes = try values.decodeIfPresent([String: Int].self, forKey: .applicationMinutes) ?? [:]
     disabledApplicationIDs = try values.decodeIfPresent(Set<String>.self, forKey: .disabledApplicationIDs) ?? []
+    // Migrate the previous global-OFF model to actual all-app OFF choices.
+    if !enabled || !applications.contains(where: { !disabledApplicationIDs.contains($0.id) }) {
+      enabled = false
+      disabledApplicationIDs = Set(applications.map(\.id))
+      passes = [:]
+      pendingChallenge = nil
+    }
   }
 
   func isApplicationLockEnabled(_ applicationID: String) -> Bool {
-    applications.contains(where: { $0.id == applicationID }) && !disabledApplicationIDs.contains(applicationID)
+    enabled && applications.contains(where: { $0.id == applicationID }) && !disabledApplicationIDs.contains(applicationID)
+  }
+
+  /// The aggregate switch is an all-on/all-off command, not a separate gate.
+  mutating func setAllApplicationLocks(_ locked: Bool) throws {
+    if locked {
+      guard !applications.isEmpty else { throw NativeGateError.unknownApplication }
+      disabledApplicationIDs = []
+      enabled = true
+      // Passes belonging to already-on apps keep their earned end time.
+    } else {
+      disabledApplicationIDs = Set(applications.map(\.id))
+      enabled = false
+      passes = [:]
+      pendingChallenge = nil
+    }
   }
 
   /// Pausing retains selection and time rules, but revokes earned access so
@@ -56,6 +78,7 @@ struct NativeGateState: Codable, Equatable {
     guard enabled != isApplicationLockEnabled(applicationID) else { return nil }
     if enabled { disabledApplicationIDs.remove(applicationID) }
     else { disabledApplicationIDs.insert(applicationID) }
+    self.enabled = applications.contains { !disabledApplicationIDs.contains($0.id) }
     if pendingChallenge?.applicationID == applicationID { pendingChallenge = nil }
     return passes.removeValue(forKey: applicationID)?.activityName
   }
@@ -87,7 +110,7 @@ struct NativeGateState: Codable, Equatable {
     disabledApplicationIDs.remove(applicationID)
     let activity = passes.removeValue(forKey: applicationID)?.activityName
     if pendingChallenge?.applicationID == applicationID { pendingChallenge = nil }
-    if applications.isEmpty { enabled = false }
+    enabled = enabled && applications.contains { !disabledApplicationIDs.contains($0.id) }
     return activity
   }
 
@@ -104,6 +127,8 @@ struct NativeGateState: Codable, Equatable {
     passMinutes = NativeGatePolicy.normalizedPassMinutes(passMinutes)
     let selected = Set(applications.map(\.id))
     disabledApplicationIDs.formIntersection(selected)
+    if !enabled { disabledApplicationIDs = selected }
+    enabled = enabled && applications.contains { !disabledApplicationIDs.contains($0.id) }
     applicationMinutes = applicationMinutes.filter {
       selected.contains($0.key) && NativeGatePolicy.supportedPassMinutes.contains($0.value)
     }

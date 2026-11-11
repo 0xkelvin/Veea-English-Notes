@@ -376,14 +376,16 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
               child: SwitchListTile.adaptive(
                 title: const Text('Lock selected apps'),
                 subtitle: Text(
-                  status.enabled
+                  status.allLocksEnabled
                       ? 'Each app locks again when its own timer ends.'
-                      : 'Off · Turn on when you’re ready to earn screen time.',
+                      : status.enabledApplicationCount > 0
+                      ? '${status.enabledApplicationCount} of ${status.applications.length} locks on'
+                      : 'All locks off',
                 ),
-                value: status.enabled,
+                value: status.allLocksEnabled,
                 onChanged:
                     busy ||
-                        (!status.enabled &&
+                        (!status.allLocksEnabled &&
                             (!canEnable || status.applications.isEmpty))
                     ? null
                     : (enabled) {

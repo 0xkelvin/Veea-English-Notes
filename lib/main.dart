@@ -31,6 +31,7 @@ import 'services/tts_service.dart';
 import 'services/widget_service.dart';
 import 'widgets/pixel/pixel_field.dart';
 import 'widgets/word_drop_overlay.dart';
+import 'widgets/native_application_label.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -395,6 +396,7 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
         builder: (context, theme, _) {
           return MaterialApp(
             navigatorKey: _navigatorKey,
+            navigatorObservers: [nativeApplicationLabelObserver],
             title: 'Veea English',
             debugShowCheckedModeBanner: false,
             theme: theme.activeTheme,

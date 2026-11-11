@@ -66,7 +66,7 @@ final class NativeScreenTimeManager {
       try store.update({ state in
         try NativeGatePolicy.validateApplicationCount(state.applications.count)
         guard !state.applications.isEmpty else { throw NativeGateError.unknownApplication }
-        state.enabled = true
+        try state.setAllApplicationLocks(true)
         state.passMinutes = minutes
         state.reconcile(at: Date())
       }, apply: { NativeGateShielding.apply($0) })
@@ -143,9 +143,18 @@ final class NativeScreenTimeManager {
     guard let id = NativeGatePolicy.applicationID(from: target) else {
       throw NativeGateError.unknownApplication
     }
-    let activity = try NativeGateStore.shared().update({ try $0.setApplicationLockEnabled(enabled, for: id) },
-      apply: { NativeGateShielding.apply($0) })
+    let activity = try NativeGateStore.shared().update({ state in
+      if enabled { try NativeGatePolicy.validateApplicationCount(state.applications.count) }
+      return try state.setApplicationLockEnabled(enabled, for: id)
+    }, apply: { NativeGateShielding.apply($0) })
     if let activity { DeviceActivityCenter().stopMonitoring([DeviceActivityName(activity)]) }
+    if enabled {
+      // Individual ON is another entry into native protection, including from
+      // all-OFF. Retire the same legacy state as the aggregate enable path.
+      ManagedSettingsStore().clearAllSettings()
+      GateAccessState.shared.setUniversalEnabled(false)
+    }
+    _ = status()
   }
 
   func consumePendingChallenge() -> String? {
@@ -331,10 +340,12 @@ private final class NativeApplicationLabelView: NSObject, FlutterPlatformView {
 private final class NativeApplicationLabelContainer: UIView {
   private let host: UIHostingController<AnyView>
   init(frame: CGRect, content: AnyView, dark: Bool) {
-    host = UIHostingController(rootView: content)
+    host = UIHostingController(rootView: AnyView(content.clipped()))
     super.init(frame: frame)
+    clipsToBounds = true
     overrideUserInterfaceStyle = dark ? .dark : .light
     host.view.backgroundColor = .clear
+    host.view.clipsToBounds = true
     host.view.translatesAutoresizingMaskIntoConstraints = false
     addSubview(host.view)
     NSLayoutConstraint.activate([
