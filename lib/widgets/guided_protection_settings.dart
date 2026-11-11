@@ -23,19 +23,10 @@ class GuidedProtectionSettings extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      Text(
-        gate.nativeStatus.supported
-            ? 'Learn before you scroll'
-            : 'App protection',
-        style: Theme.of(context).textTheme.headlineSmall,
-      ),
-      const SizedBox(height: 12),
-      Text(
-        gate.nativeStatus.supported
-            ? 'Review your words to unlock an app for a set time. It locks again automatically.'
-            : 'App protection is available on iPhone. You can still save and review your vocabulary here.',
-      ),
-      const SizedBox(height: 20),
+      if (!gate.nativeStatus.supported)
+        const Text(
+          'App protection is available on iPhone. You can still save and review your vocabulary here.',
+        ),
       if (gate.nativeStatus.supported)
         NativeGateSettings(
           gate: gate,

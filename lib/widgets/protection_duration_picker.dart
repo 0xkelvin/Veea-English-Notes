@@ -2,17 +2,21 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../models/protection_duration.dart';
 
-Future<int?> showProtectionDurationPicker(BuildContext context, int minutes) =>
-    showModalBottomSheet<int>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => _DurationSheet(minutes: minutes),
-    );
+Future<int?> showProtectionDurationPicker(
+  BuildContext context,
+  int minutes, {
+  Widget? header,
+}) => showModalBottomSheet<int>(
+  context: context,
+  isScrollControlled: true,
+  useSafeArea: true,
+  builder: (_) => _DurationSheet(minutes: minutes, header: header),
+);
 
 class _DurationSheet extends StatefulWidget {
-  const _DurationSheet({required this.minutes});
+  const _DurationSheet({required this.minutes, this.header});
   final int minutes;
+  final Widget? header;
   @override
   State<_DurationSheet> createState() => _DurationSheetState();
 }
@@ -52,6 +56,10 @@ class _DurationSheetState extends State<_DurationSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (widget.header != null) ...[
+              widget.header!,
+              const SizedBox(height: 12),
+            ],
             Text(
               'Access duration',
               style: Theme.of(context).textTheme.titleLarge,

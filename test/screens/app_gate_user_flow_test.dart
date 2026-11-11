@@ -566,7 +566,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining('access was removed'), findsOneWidget);
       expect(find.text('Restore Screen Time access'), findsOneWidget);
-      expect(find.text('Turn off Screen Time protection'), findsOneWidget);
+      expect(find.text('Turn off app locking'), findsOneWidget);
     },
   );
 

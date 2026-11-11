@@ -584,7 +584,8 @@ class _AppGateScreenState extends State<AppGateScreen>
     final baseConfig = gateProvider?.config ?? const GateConfig();
     final config = _isNativeTarget
         ? baseConfig.copyWith(
-            passDurationMinutes: gateProvider?.nativeStatus.passMinutes ?? 15,
+            passDurationMinutes:
+                gateProvider?.nativeStatus.durationFor(_currentApp) ?? 15,
           )
         : baseConfig;
     final requiredWords = gateProvider?.requiredWords ?? config.wordsPerUnlock;

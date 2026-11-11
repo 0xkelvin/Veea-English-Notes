@@ -5,18 +5,19 @@ struct NativeGateGrantCoordinator {
 
   func grant(
     applicationID: String,
-    minutes: Int,
+    minutes: Int? = nil,
     now: Date = Date(),
     startMonitoring: (String, Date, Date) throws -> Void,
     stopMonitoring: (String) -> Void,
     apply: (NativeGateState) -> Void
   ) throws -> NativeGatePass {
+    let snapshot = try store.read()
+    let minutes = minutes ?? snapshot.unlockMinutes(for: applicationID)
     guard NativeGatePolicy.supportedPassMinutes.contains(minutes) else {
       throw NativeGateError.invalidDuration
     }
-    let snapshot = try store.read()
     guard snapshot.enabled,
-          snapshot.applications.contains(where: { $0.id == applicationID }) else {
+          snapshot.isApplicationLockEnabled(applicationID) else {
       throw NativeGateError.unknownApplication
     }
     // Align persisted expiry with the schedule's whole-second end. Otherwise an
@@ -36,7 +37,7 @@ struct NativeGateGrantCoordinator {
     do {
       let oldActivity = try store.update({ state -> String? in
         guard state.enabled,
-              state.applications.contains(where: { $0.id == applicationID }) else {
+              state.isApplicationLockEnabled(applicationID) else {
           throw NativeGateError.unknownApplication
         }
         let previous = state.passes[applicationID]?.activityName

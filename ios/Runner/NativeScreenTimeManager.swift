@@ -1,4 +1,5 @@
 import UIKit
+import Flutter
 import SwiftUI
 import FamilyControls
 import ManagedSettings
@@ -38,7 +39,10 @@ final class NativeScreenTimeManager {
       "passMinutes": NativeGatePolicy.normalizedPassMinutes(state.passMinutes),
       "applications": state.applications.enumerated().map { index, app in
         ["id": "native:\(app.id)", "label": "Protected app \(index + 1)",
-         "unlockedUntil": state.passes[app.id]?.expiresAt.timeIntervalSince1970 ?? 0] as [String: Any]
+         "lockEnabled": state.isApplicationLockEnabled(app.id),
+         "unlockedUntil": state.passes[app.id]?.expiresAt.timeIntervalSince1970 ?? 0,
+         "passMinutes": state.unlockMinutes(for: app.id),
+         "customPassMinutes": state.applicationMinutes[app.id].map { $0 as Any } ?? NSNull()] as [String: Any]
       }
     ]
   }
@@ -92,10 +96,9 @@ final class NativeScreenTimeManager {
       throw NativeGateError.unknownApplication
     }
     let store = try NativeGateStore.shared()
-    let minutes = NativeGatePolicy.normalizedPassMinutes(try store.read().passMinutes)
     let center = DeviceActivityCenter()
     _ = try NativeGateGrantCoordinator(store: store).grant(
-      applicationID: id, minutes: minutes,
+      applicationID: id,
       startMonitoring: { name, start, expiry in
         let schedule = DeviceActivitySchedule(
           intervalStart: NativeGatePolicy.scheduleComponents(for: start),
@@ -115,6 +118,33 @@ final class NativeScreenTimeManager {
     let activity = try NativeGateStore.shared().update({ state -> String? in
       state.passes.removeValue(forKey: id)?.activityName
     }, apply: { NativeGateShielding.apply($0) })
+    if let activity { DeviceActivityCenter().stopMonitoring([DeviceActivityName(activity)]) }
+  }
+
+  func setApplicationDuration(target: String, minutes: Int?) throws {
+    guard let id = NativeGatePolicy.applicationID(from: target) else {
+      throw NativeGateError.unknownApplication
+    }
+    try NativeGateStore.shared().update { try $0.setApplicationDuration(minutes, for: id) }
+  }
+
+  func removeApplication(target: String) throws {
+    guard let id = NativeGatePolicy.applicationID(from: target) else {
+      throw NativeGateError.unknownApplication
+    }
+    let activity = try NativeGateStore.shared().update({ try $0.removeApplication(id) },
+      apply: { NativeGateShielding.apply($0) })
+    if let activity { DeviceActivityCenter().stopMonitoring([DeviceActivityName(activity)]) }
+    _ = status()
+  }
+
+  func setApplicationLockEnabled(target: String, enabled: Bool) throws {
+    if enabled { try requireAuthorization() }
+    guard let id = NativeGatePolicy.applicationID(from: target) else {
+      throw NativeGateError.unknownApplication
+    }
+    let activity = try NativeGateStore.shared().update({ try $0.setApplicationLockEnabled(enabled, for: id) },
+      apply: { NativeGateShielding.apply($0) })
     if let activity { DeviceActivityCenter().stopMonitoring([DeviceActivityName(activity)]) }
   }
 
@@ -244,7 +274,7 @@ private struct NativeGateApplicationsView: View {
 
   var body: some View {
     NavigationStack {
-      List(state.applications) { app in
+      List(state.applications.filter { state.isApplicationLockEnabled($0.id) }) { app in
         if let token = NativeGateShielding.token(for: app) {
           VStack(alignment: .leading, spacing: 12) {
             Label(token).labelStyle(.titleAndIcon)
@@ -257,8 +287,76 @@ private struct NativeGateApplicationsView: View {
           }.padding(.vertical, 6)
         }
       }
-      .navigationTitle("Protected apps")
+      .navigationTitle("Choose an app to unlock")
       .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done", action: onClose) } }
     }.interactiveDismissDisabled()
+  }
+}
+
+
+/// Apple renders the private app token; app names/tokens are not exported to Dart.
+@available(iOS 16.0, *)
+final class NativeApplicationLabelFactory: NSObject, FlutterPlatformViewFactory {
+  func createArgsCodec() -> FlutterMessageCodec & NSObjectProtocol { FlutterStandardMessageCodec.sharedInstance() }
+  func create(withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?) -> FlutterPlatformView {
+    NativeApplicationLabelView(frame: frame, arguments: args as? [String: Any] ?? [:])
+  }
+}
+
+@available(iOS 16.0, *)
+private final class NativeApplicationLabelView: NSObject, FlutterPlatformView {
+  private let container: NativeApplicationLabelContainer
+  init(frame: CGRect, arguments: [String: Any]) {
+    let target = arguments["targetApp"] as? String ?? ""
+    let id = NativeGatePolicy.applicationID(from: target)
+    let state = try? NativeGateStore.shared().read()
+    let app = state?.applications.first { $0.id == id }
+    let scale = max(arguments["textScale"] as? Double ?? 1, 0.1)
+    let dark = arguments["dark"] as? Bool ?? false
+    let content: AnyView
+    if let app, let token = NativeGateShielding.token(for: app) {
+      content = AnyView(Label(token).labelStyle(.titleAndIcon)
+        .font(.system(size: CGFloat(17 * scale))).lineLimit(2)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading))
+    } else {
+      content = AnyView(Text("Selected app").font(.system(size: CGFloat(17 * scale))))
+    }
+    container = NativeApplicationLabelContainer(frame: frame, content: content, dark: dark)
+    super.init()
+  }
+  func view() -> UIView { container }
+}
+
+@available(iOS 16.0, *)
+private final class NativeApplicationLabelContainer: UIView {
+  private let host: UIHostingController<AnyView>
+  init(frame: CGRect, content: AnyView, dark: Bool) {
+    host = UIHostingController(rootView: content)
+    super.init(frame: frame)
+    overrideUserInterfaceStyle = dark ? .dark : .light
+    host.view.backgroundColor = .clear
+    host.view.translatesAutoresizingMaskIntoConstraints = false
+    addSubview(host.view)
+    NSLayoutConstraint.activate([
+      host.view.leadingAnchor.constraint(equalTo: leadingAnchor),
+      host.view.trailingAnchor.constraint(equalTo: trailingAnchor),
+      host.view.topAnchor.constraint(equalTo: topAnchor),
+      host.view.bottomAnchor.constraint(equalTo: bottomAnchor)
+    ])
+  }
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil {
+      if host.parent != nil { host.willMove(toParent: nil); host.removeFromParent() }
+    } else if host.parent == nil {
+      var candidate: UIResponder? = superview
+      while let current = candidate {
+        if let parent = current as? UIViewController {
+          parent.addChild(host); host.didMove(toParent: parent); break
+        }
+        candidate = current.next
+      }
+    }
   }
 }

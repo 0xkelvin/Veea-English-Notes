@@ -222,6 +222,15 @@ class AppGateProvider extends ChangeNotifier {
   });
 
   Future<bool> chooseNativeApplications() => _nativeOperation(() async {
+    if (!_nativeStatus.authorized) {
+      _nativeStatus = await _service.requestScreenTimeAuthorization();
+      if (!_nativeStatus.authorized) {
+        throw PlatformException(
+          code: 'SCREEN_TIME_DENIED',
+          message: 'Screen Time access was not allowed.',
+        );
+      }
+    }
     await _service.chooseScreenTimeApplications();
     _nativeStatus = await _service.getScreenTimeStatus();
   });
@@ -243,6 +252,44 @@ class AppGateProvider extends ChangeNotifier {
     });
     return target;
   }
+
+  Future<bool> setNativeApplicationDuration(String target, int? minutes) =>
+      _nativeOperation(() async {
+        if (minutes != null && !ProtectionDuration.isValid(minutes)) {
+          throw PlatformException(
+            code: 'INVALID_DURATION',
+            message: 'Choose from 5 minutes to 24 hours.',
+          );
+        }
+        _nativeStatus = await _service.setScreenTimeApplicationDuration(
+          target,
+          minutes,
+        );
+      });
+
+  Future<bool> setNativeApplicationLocked(String target, bool enabled) =>
+      _nativeOperation(() async {
+        _nativeStatus = await _service.setScreenTimeApplicationLocked(
+          target,
+          enabled,
+        );
+      });
+
+  Future<bool> removeNativeApplication(String target) => _nativeOperation(
+    () async {
+      _nativeStatus = await _service.removeScreenTimeApplication(target);
+      final key = _stateKey(target);
+      _progressByApp.remove(key);
+      _pendingAnswers.remove(key);
+      // iOS has already removed the shield. History cleanup cannot undo that
+      // success or require the user to repeat a destructive-looking action.
+      try {
+        await _repository.clearGateRoundProgress(key);
+      } catch (error) {
+        debugPrint('App removed but round cleanup could not be saved: $error');
+      }
+    },
+  );
 
   /// Saved progress (`completedCount`) per app when `wordsPerUnlock > 1`, so
   /// leaving mid-challenge preserves progress (LockFeed behavior).
@@ -595,7 +642,7 @@ class AppGateProvider extends ChangeNotifier {
       final grantedStatus = await _service.grantPass(
         targetApp: targetApp,
         durationMinutes: nativeTarget
-            ? _nativeStatus.passMinutes
+            ? _nativeStatus.durationFor(targetApp)
             : _config.passDurationMinutes,
       );
       if (nativeTarget) {
