@@ -166,6 +166,69 @@ do {
 } catch TestFailure.mutation {}
 precondition(try! store.read().enabled)
 
+// Per-app rules migrate existing JSON and drive independent production grants.
+let rulesDirectory = directory.appendingPathComponent("rules")
+let rules = try NativeGateStore(directory: rulesDirectory)
+try rules.update { state in
+  state.enabled = true; state.applications = [appA, appB]; state.passMinutes = 15
+}
+let rulesFile = rulesDirectory.appendingPathComponent("state.json")
+var legacyJSON = try JSONSerialization.jsonObject(with: Data(contentsOf: rulesFile)) as! [String: Any]
+legacyJSON.removeValue(forKey: "applicationMinutes")
+try JSONSerialization.data(withJSONObject: legacyJSON).write(to: rulesFile)
+precondition(try! rules.read().applicationMinutes.isEmpty)
+precondition(try! rules.read().unlockMinutes(for: appA.id) == 15)
+try rules.update { try $0.setApplicationDuration(5, for: appA.id) }
+let rulesCoordinator = NativeGateGrantCoordinator(store: rules)
+let rulesA = try rulesCoordinator.grant(applicationID: appA.id, now: now,
+  startMonitoring: { _, start, end in precondition(end.timeIntervalSince(start) >= 900) },
+  stopMonitoring: { _ in }, apply: { _ in })
+let rulesB = try rulesCoordinator.grant(applicationID: appB.id, now: now,
+  startMonitoring: { _, _, _ in }, stopMonitoring: { _ in }, apply: { _ in })
+precondition(rulesA.expiresAt == Date(timeIntervalSince1970: 1301))
+precondition(rulesB.expiresAt == Date(timeIntervalSince1970: 1901))
+try rules.update { $0.passMinutes = 60 }
+precondition(try! rules.read().unlockMinutes(for: appA.id) == 5)
+precondition(try! rules.read().unlockMinutes(for: appB.id) == 60)
+precondition(try! rules.read().passes[appB.id] == rulesB)
+try rules.update { $0.reconcile(at: rulesA.expiresAt) }
+precondition(try! rules.read().shieldedApplicationIDs(at: rulesA.expiresAt) == [appA.id])
+precondition(try! rules.read().passes[appB.id] == rulesB)
+// Explicitly choosing the same value as the default remains a custom rule.
+try rules.update { try $0.setApplicationDuration(60, for: appA.id); $0.passMinutes = 30 }
+precondition(try! rules.read().unlockMinutes(for: appA.id) == 60)
+try rules.update { try $0.setApplicationDuration(nil, for: appA.id) }
+precondition(try! rules.read().unlockMinutes(for: appA.id) == 30)
+let validRules = try rules.read()
+for invalid in [0, 4, 1441] {
+  do { try rules.update { try $0.setApplicationDuration(invalid, for: appA.id) }; preconditionFailure("Invalid override accepted") }
+  catch NativeGateError.invalidDuration {}
+}
+do { try rules.update { try $0.setApplicationDuration(15, for: UUID().uuidString) }; preconditionFailure("Unknown app accepted") }
+catch NativeGateError.unknownApplication {}
+precondition(try! rules.read() == validRules)
+try rules.update { state in
+  try state.setApplicationDuration(5, for: appA.id)
+  state.pendingChallenge = .init(applicationID: appA.id, createdAt: now)
+  _ = try state.removeApplication(appA.id)
+}
+precondition(try! rules.read().pendingChallenge == nil)
+precondition(try! rules.read().applicationMinutes[appA.id] == nil)
+precondition(try! rules.read().enabled)
+precondition(try! rules.read().passes[appB.id] == rulesB)
+let removedMonitor = try rules.update { try $0.removeApplication(appB.id) }
+precondition(removedMonitor == rulesB.activityName)
+precondition(try! rules.read().enabled == false)
+precondition(try! rules.read().passes.isEmpty)
+// Picker changes prune removed app overrides without changing retained app timers.
+try rules.update { state in
+  state.applications = [appA]
+  state.applicationMinutes = [appA.id: 15, appB.id: 30]
+  state.reconcile(at: now)
+}
+precondition(try! rules.read().applicationMinutes == [appA.id: 15])
+print("Per-app migration, inheritance, overrides, independent expiry and removal checks passed")
+
 // Verify that callbacks and the main app cannot lose each other's writes.
 try store.update { $0.passMinutes = 0 }
 let children = try (0..<4).map { _ -> Process in

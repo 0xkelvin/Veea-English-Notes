@@ -21,6 +21,54 @@ struct NativeGateState: Codable, Equatable {
   var applications: [NativeGateApplication] = []
   var passes: [String: NativeGatePass] = [:]
   var pendingChallenge: NativeGatePendingChallenge?
+  var applicationMinutes: [String: Int] = [:]
+
+  init() {}
+
+  private enum CodingKeys: String, CodingKey {
+    case enabled, passMinutes, applications, passes, pendingChallenge, applicationMinutes
+  }
+
+  init(from decoder: Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    enabled = try values.decode(Bool.self, forKey: .enabled)
+    passMinutes = try values.decode(Int.self, forKey: .passMinutes)
+    applications = try values.decode([NativeGateApplication].self, forKey: .applications)
+    passes = try values.decode([String: NativeGatePass].self, forKey: .passes)
+    pendingChallenge = try values.decodeIfPresent(NativeGatePendingChallenge.self, forKey: .pendingChallenge)
+    // Existing installations inherit the saved default without resetting passes.
+    applicationMinutes = try values.decodeIfPresent([String: Int].self, forKey: .applicationMinutes) ?? [:]
+  }
+
+  func unlockMinutes(for applicationID: String) -> Int {
+    if let minutes = applicationMinutes[applicationID], NativeGatePolicy.supportedPassMinutes.contains(minutes) {
+      return minutes
+    }
+    return NativeGatePolicy.normalizedPassMinutes(passMinutes)
+  }
+
+  mutating func setApplicationDuration(_ minutes: Int?, for applicationID: String) throws {
+    guard applications.contains(where: { $0.id == applicationID }) else {
+      throw NativeGateError.unknownApplication
+    }
+    if let minutes, !NativeGatePolicy.supportedPassMinutes.contains(minutes) {
+      throw NativeGateError.invalidDuration
+    }
+    applicationMinutes[applicationID] = minutes
+  }
+
+  @discardableResult
+  mutating func removeApplication(_ applicationID: String) throws -> String? {
+    guard applications.contains(where: { $0.id == applicationID }) else {
+      throw NativeGateError.unknownApplication
+    }
+    applications.removeAll { $0.id == applicationID }
+    applicationMinutes.removeValue(forKey: applicationID)
+    let activity = passes.removeValue(forKey: applicationID)?.activityName
+    if pendingChallenge?.applicationID == applicationID { pendingChallenge = nil }
+    if applications.isEmpty { enabled = false }
+    return activity
+  }
 
   func shieldedApplicationIDs(at now: Date) -> Set<String> {
     guard enabled else { return [] }
@@ -33,6 +81,9 @@ struct NativeGateState: Codable, Equatable {
   mutating func reconcile(at now: Date) {
     passMinutes = NativeGatePolicy.normalizedPassMinutes(passMinutes)
     let selected = Set(applications.map(\.id))
+    applicationMinutes = applicationMinutes.filter {
+      selected.contains($0.key) && NativeGatePolicy.supportedPassMinutes.contains($0.value)
+    }
     passes = passes.filter { selected.contains($0.key) && $0.value.expiresAt > now }
     if let pending = pendingChallenge,
        !selected.contains(pending.applicationID) || now.timeIntervalSince(pending.createdAt) > 120 {

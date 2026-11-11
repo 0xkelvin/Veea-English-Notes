@@ -173,9 +173,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: ListTile(
                         key: const Key('settings_app_protection'),
                         leading: const Icon(Icons.shield_outlined),
-                        title: const Text('App protection'),
+                        title: const Text('Manage Apps to Lock'),
                         subtitle: const Text(
-                          'Choose apps and earn time to use them',
+                          'Choose apps and set their unlock times',
                         ),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () => Navigator.of(context).push(
@@ -1713,7 +1713,7 @@ class AppProtectionScreen extends StatelessWidget {
   const AppProtectionScreen({super.key});
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('App protection')),
+    appBar: AppBar(title: const Text('Manage Apps to Lock')),
     body: const SafeArea(
       top: false,
       child: SingleChildScrollView(

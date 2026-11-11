@@ -313,12 +313,12 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.text('1 app protected'), findsOneWidget);
+        expect(find.text('Your apps · 1'), findsOneWidget);
         expect(find.text('15 min'), findsOneWidget);
-        expect(find.text('Access after each challenge'), findsOneWidget);
+        expect(find.text('Default unlock time'), findsOneWidget);
         expect(find.byType(ChoiceChip), findsNothing);
         expect(find.textContaining(nativeTarget), findsNothing);
-        expect(find.text('Turn off Screen Time protection'), findsOneWidget);
+        expect(find.text('Lock selected apps'), findsOneWidget);
       },
     );
 

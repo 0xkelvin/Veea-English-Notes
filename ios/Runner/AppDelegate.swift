@@ -13,6 +13,7 @@ import DeviceActivity
   private var appGateChannel: FlutterMethodChannel?
   private var pendingColdStartTarget: String?
 
+  private var applicationLabelsRegistered = false
   private var ocrChannelRegistered = false
 
   override func application(
@@ -22,6 +23,10 @@ import DeviceActivity
     if let controller = window?.rootViewController as? FlutterViewController {
       registerOcrChannel(messenger: controller.binaryMessenger)
       registerAppGateChannel(messenger: controller.binaryMessenger)
+      if #available(iOS 16.0, *), !applicationLabelsRegistered,
+         let registrar = registrar(forPlugin: "VeeaApplicationLabel") {
+        registerApplicationLabels(registrar)
+      }
     }
 
     if let url = launchOptions?[.url] as? URL {
@@ -178,6 +183,24 @@ import DeviceActivity
           result(NativeScreenTimeManager.shared.status())
         } catch { result(self.screenTimeError(error)) }
 
+      case "setScreenTimeApplicationDuration", "removeScreenTimeApplication":
+        let args = call.arguments as? [String: Any] ?? [:]
+        do {
+          guard #available(iOS 16.0, *), let target = args["targetApp"] as? String else {
+            throw NativeGateError.unknownApplication
+          }
+          if call.method == "removeScreenTimeApplication" {
+            try NativeScreenTimeManager.shared.removeApplication(target: target)
+          } else {
+            // Null explicitly restores inheritance; malformed values must not reset a rule.
+            guard args["passMinutes"] == nil || args["passMinutes"] is NSNull || args["passMinutes"] is Int else {
+              throw NativeGateError.invalidDuration
+            }
+            try NativeScreenTimeManager.shared.setApplicationDuration(target: target, minutes: args["passMinutes"] as? Int)
+          }
+          result(NativeScreenTimeManager.shared.status())
+        } catch { result(self.screenTimeError(error)) }
+
       case "manageScreenTimeApplications":
         guard #available(iOS 16.0, *), let root = self.activeRootViewController() else {
           result(self.screenTimeError(NativeGateError.unavailable)); return
@@ -277,11 +300,22 @@ import DeviceActivity
     }
   }
 
+  @available(iOS 16.0, *)
+  private func registerApplicationLabels(_ registrar: FlutterPluginRegistrar) {
+    guard !applicationLabelsRegistered else { return }
+    registrar.register(NativeApplicationLabelFactory(), withId: "app.veea.english/application_label")
+    applicationLabelsRegistered = true
+  }
+
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     let messenger = engineBridge.applicationRegistrar.messenger()
     registerOcrChannel(messenger: messenger)
     registerAppGateChannel(messenger: messenger)
+    if #available(iOS 16.0, *), !applicationLabelsRegistered,
+       let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "VeeaApplicationLabel") {
+      registerApplicationLabels(registrar)
+    }
   }
 }
 

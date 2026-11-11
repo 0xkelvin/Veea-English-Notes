@@ -5,16 +5,17 @@ struct NativeGateGrantCoordinator {
 
   func grant(
     applicationID: String,
-    minutes: Int,
+    minutes: Int? = nil,
     now: Date = Date(),
     startMonitoring: (String, Date, Date) throws -> Void,
     stopMonitoring: (String) -> Void,
     apply: (NativeGateState) -> Void
   ) throws -> NativeGatePass {
+    let snapshot = try store.read()
+    let minutes = minutes ?? snapshot.unlockMinutes(for: applicationID)
     guard NativeGatePolicy.supportedPassMinutes.contains(minutes) else {
       throw NativeGateError.invalidDuration
     }
-    let snapshot = try store.read()
     guard snapshot.enabled,
           snapshot.applications.contains(where: { $0.id == applicationID }) else {
       throw NativeGateError.unknownApplication

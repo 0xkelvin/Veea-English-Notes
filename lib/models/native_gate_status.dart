@@ -3,11 +3,13 @@ class NativeGateApplication {
     required this.id,
     required this.label,
     this.unlockedUntil,
+    this.customPassMinutes,
   });
 
   final String id;
   final String label;
   final DateTime? unlockedUntil;
+  final int? customPassMinutes;
 }
 
 class NativeGateStatus {
@@ -31,6 +33,13 @@ class NativeGateStatus {
   final int passMinutes;
   final List<NativeGateApplication> applications;
 
+  int durationFor(String target) {
+    for (final app in applications) {
+      if (app.id == target) return app.customPassMinutes ?? passMinutes;
+    }
+    return passMinutes;
+  }
+
   factory NativeGateStatus.fromMap(Map<dynamic, dynamic>? map) {
     if (map == null) return const NativeGateStatus();
     final applications = <NativeGateApplication>[];
@@ -43,6 +52,7 @@ class NativeGateStatus {
           NativeGateApplication(
             id: raw['id'] as String,
             label: raw['label'] as String? ?? 'Protected app',
+            customPassMinutes: (raw['customPassMinutes'] as num?)?.toInt(),
             unlockedUntil: seconds is num && seconds > 0
                 ? DateTime.fromMillisecondsSinceEpoch((seconds * 1000).round())
                 : null,

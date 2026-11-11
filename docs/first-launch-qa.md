@@ -84,3 +84,52 @@ It explicitly distinguished the documented ongoing-interval inference from
 physical-device verification. Start-callback reconciliation before/after saving
 a short pass, and end-time reconciliation, are additionally exercised in the
 portable Swift tests; actual Apple callbacks remain unverified.
+
+## Per-app management follow-up — 11 November 2026
+
+Branch `feat/per-app-unlock-times` builds on the merged launch candidate. Settings
+now opens **Manage Apps to Lock**: Add Apps, a default unlock time, and a card per
+selected app with Remove and Unlock time. Apps inherit the default unless given
+an explicit override. Use default restores inheritance; an explicit value equal
+to the default remains custom. Existing passes retain their original end times.
+
+Latest executed checks:
+
+- **557 Flutter tests passed**, including 13 management/model/provider checks.
+- Flutter analyzer: no issues.
+- Portable Swift tests passed, including old JSON migration, default inheritance,
+  per-app overrides, independent expiries, retained passes and removal cleanup.
+- Runner's full native source type checked against the iOS 27.2 device SDK.
+- Arm64 release Dart/AOT and Flutter assets assembled successfully.
+- Real Flutter light/dark management and time-sheet renders were inspected;
+  the opt-in render run passed 14 checks, including its capture check.
+- Claude CLI independently reviewed code, UX, previews and QA evidence. Its final
+  targeted review found **no remaining blocking or medium regressions**. Resolved
+  findings include visible error SnackBars, successful removal despite failed
+  SQLite history cleanup, selected-app labels in both time sheets, selected-time
+  semantics, grouped app controls, expired-pass refresh and explicit time styling.
+
+The previews use fixture app labels; Apple renders actual private names/icons in
+an iOS platform view. These renders do not prove native label rendering or
+VoiceOver behavior on an iPhone. The final semantics test, visible-error test,
+real SQLite cleanup-failure test and foreground expiry test all pass.
+
+Current full Xcode packaging is blocked by denied access to the SwiftPM manifest
+diagnostics cache in this environment. This follow-up has no signed archive,
+TestFlight upload or phone installation. The successful AOT assembly and native
+type check are separate checks, not a packaged iOS build.
+
+Signed-device acceptance for Nin:
+
+1. Add two apps. Set default to five minutes and one app's override to 15 minutes.
+   Confirm real app names/icons in the list, both time sheets and Remove dialog.
+2. Unlock both apps at different times. Verify each relocks at its own expiry,
+   including while Veea is backgrounded/terminated. Five-minute schedule
+   acceptance remains a required system test.
+3. Change the default while access is active. Existing end times must stay fixed;
+   the next inherited unlock must use the new default. A custom app must keep its
+   own duration until Use default is chosen.
+4. Cancel picker/time edits; deny/revoke and restore Screen Time; confirm errors
+   are visible. Check large text, dark mode and VoiceOver's selected-time state.
+5. Remove one app during an earned pass: stop locking it without changing the
+   other app's timer. Remove the final app: locking must turn off.
