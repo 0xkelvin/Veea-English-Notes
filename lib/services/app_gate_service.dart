@@ -237,6 +237,16 @@ class AppGateService {
   Future<String?> manageScreenTimeApplications() =>
       _channel.invokeMethod<String>('manageScreenTimeApplications');
 
+  Future<NativeGateStatus> setScreenTimeApplicationLocked(
+    String target,
+    bool enabled,
+  ) async => NativeGateStatus.fromMap(
+    await _channel.invokeMapMethod<dynamic, dynamic>(
+      'setScreenTimeApplicationLocked',
+      {'targetApp': target, 'enabled': enabled},
+    ),
+  );
+
   Future<NativeGateStatus> setScreenTimeApplicationDuration(
     String target,
     int? minutes,

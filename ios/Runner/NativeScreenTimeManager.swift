@@ -39,6 +39,7 @@ final class NativeScreenTimeManager {
       "passMinutes": NativeGatePolicy.normalizedPassMinutes(state.passMinutes),
       "applications": state.applications.enumerated().map { index, app in
         ["id": "native:\(app.id)", "label": "Protected app \(index + 1)",
+         "lockEnabled": state.isApplicationLockEnabled(app.id),
          "unlockedUntil": state.passes[app.id]?.expiresAt.timeIntervalSince1970 ?? 0,
          "passMinutes": state.unlockMinutes(for: app.id),
          "customPassMinutes": state.applicationMinutes[app.id].map { $0 as Any } ?? NSNull()] as [String: Any]
@@ -135,6 +136,16 @@ final class NativeScreenTimeManager {
       apply: { NativeGateShielding.apply($0) })
     if let activity { DeviceActivityCenter().stopMonitoring([DeviceActivityName(activity)]) }
     _ = status()
+  }
+
+  func setApplicationLockEnabled(target: String, enabled: Bool) throws {
+    if enabled { try requireAuthorization() }
+    guard let id = NativeGatePolicy.applicationID(from: target) else {
+      throw NativeGateError.unknownApplication
+    }
+    let activity = try NativeGateStore.shared().update({ try $0.setApplicationLockEnabled(enabled, for: id) },
+      apply: { NativeGateShielding.apply($0) })
+    if let activity { DeviceActivityCenter().stopMonitoring([DeviceActivityName(activity)]) }
   }
 
   func consumePendingChallenge() -> String? {
@@ -263,7 +274,7 @@ private struct NativeGateApplicationsView: View {
 
   var body: some View {
     NavigationStack {
-      List(state.applications) { app in
+      List(state.applications.filter { state.isApplicationLockEnabled($0.id) }) { app in
         if let token = NativeGateShielding.token(for: app) {
           VStack(alignment: .leading, spacing: 12) {
             Label(token).labelStyle(.titleAndIcon)

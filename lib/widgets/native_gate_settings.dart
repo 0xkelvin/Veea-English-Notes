@@ -286,6 +286,11 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
                           );
                         },
                       ),
+                      if (!app.lockEnabled)
+                        Text(
+                          'Locking paused · Enable this app in Settings',
+                          style: theme.textTheme.bodySmall,
+                        ),
                       const Divider(height: 24),
                       LayoutBuilder(
                         builder: (context, constraints) {
@@ -320,6 +325,7 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
                         },
                       ),
                       if (status.enabled &&
+                          app.lockEnabled &&
                           app.unlockedUntil?.isAfter(gate.now) == true)
                         Text(
                           'Unlocked until ${DateUtils.isSameDay(gate.now, app.unlockedUntil) ? '' : '${MaterialLocalizations.of(context).formatShortDate(app.unlockedUntil!)} · '}${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(app.unlockedUntil!))}',
@@ -394,7 +400,8 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
                       },
               ),
             ),
-            if (status.enabled)
+            if (status.enabled &&
+                status.applications.any((app) => app.lockEnabled))
               TextButton.icon(
                 icon: const Icon(Icons.school_outlined),
                 label: const Text('Review to unlock an app'),

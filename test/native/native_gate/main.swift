@@ -175,6 +175,7 @@ try rules.update { state in
 let rulesFile = rulesDirectory.appendingPathComponent("state.json")
 var legacyJSON = try JSONSerialization.jsonObject(with: Data(contentsOf: rulesFile)) as! [String: Any]
 legacyJSON.removeValue(forKey: "applicationMinutes")
+legacyJSON.removeValue(forKey: "disabledApplicationIDs")
 try JSONSerialization.data(withJSONObject: legacyJSON).write(to: rulesFile)
 precondition(try! rules.read().applicationMinutes.isEmpty)
 precondition(try! rules.read().unlockMinutes(for: appA.id) == 15)
@@ -228,6 +229,61 @@ try rules.update { state in
 }
 precondition(try! rules.read().applicationMinutes == [appA.id: 15])
 print("Per-app migration, inheritance, overrides, independent expiry and removal checks passed")
+
+// Settings switches retain app/time choices while pausing only that app.
+let toggles = try NativeGateStore(directory: directory.appendingPathComponent("toggles"))
+try toggles.update { state in
+  state.enabled = true; state.applications = [appA, appB]
+  try state.setApplicationDuration(30, for: appA.id)
+}
+let toggleCoordinator = NativeGateGrantCoordinator(store: toggles)
+let toggleA = try toggleCoordinator.grant(applicationID: appA.id, now: now,
+  startMonitoring: { _, _, _ in }, stopMonitoring: { _ in }, apply: { _ in })
+let toggleB = try toggleCoordinator.grant(applicationID: appB.id, now: now,
+  startMonitoring: { _, _, _ in }, stopMonitoring: { _ in }, apply: { _ in })
+try toggles.update { $0.pendingChallenge = .init(applicationID: appA.id, createdAt: now) }
+let pausedMonitor = try toggles.update { try $0.setApplicationLockEnabled(false, for: appA.id) }
+precondition(pausedMonitor == toggleA.activityName)
+precondition(try! toggles.read().applications == [appA, appB])
+precondition(try! toggles.read().applicationMinutes[appA.id] == 30)
+precondition(try! toggles.read().passes[appA.id] == nil)
+precondition(try! toggles.read().pendingChallenge == nil)
+precondition(try! toggles.read().passes[appB.id] == toggleB)
+precondition(try! toggles.read().isApplicationLockEnabled(appA.id) == false)
+try toggles.update { $0.reconcile(at: toggleA.expiresAt) }
+precondition(try! toggles.read().shieldedApplicationIDs(at: toggleA.expiresAt) == [appB.id])
+do {
+  _ = try toggleCoordinator.grant(applicationID: appA.id, now: now,
+    startMonitoring: { _, _, _ in preconditionFailure("Paused apps cannot earn passes") }, stopMonitoring: { _ in }, apply: { _ in })
+  preconditionFailure("Expected paused app rejection")
+} catch NativeGateError.unknownApplication {}
+try toggles.update { _ = try $0.setApplicationLockEnabled(true, for: appA.id) }
+precondition(try! toggles.read().shieldedApplicationIDs(at: now).contains(appA.id))
+// Repeating an unchanged ON must preserve an existing earned pass.
+let enabledPass = try toggleCoordinator.grant(applicationID: appA.id, now: now,
+  startMonitoring: { _, _, _ in }, stopMonitoring: { _ in }, apply: { _ in })
+try toggles.update { _ = try $0.setApplicationLockEnabled(true, for: appA.id) }
+precondition(try! toggles.read().passes[appA.id] == enabledPass)
+// A switch turning OFF between scheduling and persistence must stop the new monitor.
+var stoppedPausedMonitor = false
+try toggles.update { _ = try $0.setApplicationLockEnabled(false, for: appB.id) }
+try toggles.update { _ = try $0.setApplicationLockEnabled(true, for: appB.id) }
+do {
+  _ = try toggleCoordinator.grant(applicationID: appB.id, now: now,
+    startMonitoring: { _, _, _ in try toggles.update { _ = try $0.setApplicationLockEnabled(false, for: appB.id) } },
+    stopMonitoring: { _ in stoppedPausedMonitor = true }, apply: { _ in preconditionFailure("Paused race cannot unshield with a new pass") })
+  preconditionFailure("Expected paused-app race rejection")
+} catch NativeGateError.unknownApplication {}
+precondition(stoppedPausedMonitor)
+try toggles.disable { _ in }
+precondition(try! toggles.read().applications.count == 2)
+precondition(try! toggles.read().disabledApplicationIDs == [appB.id])
+precondition(try! toggles.read().applicationMinutes[appA.id] == 30)
+try toggles.update { $0.enabled = true; $0.reconcile(at: now) }
+precondition(try! toggles.read().shieldedApplicationIDs(at: now) == [appA.id])
+try toggles.update { _ = try $0.removeApplication(appB.id) }
+precondition(try! toggles.read().disabledApplicationIDs.isEmpty)
+print("App-lock switch migration, persistence, independent pausing, resume and grant-race checks passed")
 
 // Verify that callbacks and the main app cannot lose each other's writes.
 try store.update { $0.passMinutes = 0 }

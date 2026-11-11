@@ -1,3 +1,4 @@
+import '../widgets/app_locks_settings_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -166,25 +167,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       );
                     },
                   ),
-                  PixelBox(
-                    padding: EdgeInsets.zero,
-                    child: Material(
-                      type: MaterialType.transparency,
-                      child: ListTile(
-                        key: const Key('settings_app_protection'),
-                        leading: const Icon(Icons.shield_outlined),
-                        title: const Text('Manage Apps to Lock'),
-                        subtitle: const Text(
-                          'Choose apps and set their unlock times',
-                        ),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => Navigator.of(context).push(
+                  Builder(
+                    builder: (context) {
+                      AppGateProvider? gate;
+                      try {
+                        gate = context.watch<AppGateProvider>();
+                      } catch (_) {
+                        gate = null;
+                      }
+                      return AppLocksSettingsSection(
+                        gate: gate,
+                        totalWords: provider.stats.totalWords,
+                        onManage: () => Navigator.of(context).push(
                           MaterialPageRoute<void>(
                             builder: (_) => const AppProtectionScreen(),
                           ),
                         ),
-                      ),
-                    ),
+                      );
+                    },
                   ),
                   const SizedBox(height: PixelMetrics.space4),
                   PixelBox(

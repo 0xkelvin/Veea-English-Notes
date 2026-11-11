@@ -57,6 +57,29 @@ maximum is a Veea product choice, below Apple's maximum.
 - [intervalTooLong](https://developer.apple.com/documentation/deviceactivity/deviceactivitycenter/monitoringerror/intervaltoolong)
 - [startMonitoring](https://developer.apple.com/documentation/deviceactivity/deviceactivitycenter/startmonitoring(_:during:events:))
 
+## Settings overview and lock switches
+
+Settings shows an **App locks** section with Enable locks, a switch for each
+selected app, and Manage Apps to Lock (Add, remove, and set unlock times).
+The management link opens the existing selection/duration page. With no selected
+apps, Settings shows No locks yet and disables the master switch; management
+remains available to add apps. Vocabulary/build/permission prerequisites still
+apply, and errors appear in a visible SnackBar.
+
+An individual OFF pauses locking without removing the app or its time override.
+It removes that app's active pass/pending challenge, unshields it and stops its
+monitor. The native grant coordinator checks this preference both before
+scheduling and under the write lock, so an app paused during a grant cannot gain
+a new pass. Late callbacks recompute shields and exclude paused apps. Turning
+the app back on starts it locked; completed vocabulary steps are deliberately
+retained so the next challenge can continue its unfinished round.
+
+Master OFF stops all locking and earned passes while retaining app selections,
+time rules and individual choices. Disabled per-app switches continue to display
+their saved choices, with a hint that they apply when Enable locks is on. Master
+ON restores those choices. Older JSON without individual preferences treats all
+selected apps as enabled. Removing/reselecting apps prunes obsolete paused IDs.
+
 ## Every Open is inactive on this branch
 
 - No mode selector, Shortcut installer, import links, legacy settings, app-name

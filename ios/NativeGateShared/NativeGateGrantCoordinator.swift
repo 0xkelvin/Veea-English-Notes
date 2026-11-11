@@ -17,7 +17,7 @@ struct NativeGateGrantCoordinator {
       throw NativeGateError.invalidDuration
     }
     guard snapshot.enabled,
-          snapshot.applications.contains(where: { $0.id == applicationID }) else {
+          snapshot.isApplicationLockEnabled(applicationID) else {
       throw NativeGateError.unknownApplication
     }
     // Align persisted expiry with the schedule's whole-second end. Otherwise an
@@ -37,7 +37,7 @@ struct NativeGateGrantCoordinator {
     do {
       let oldActivity = try store.update({ state -> String? in
         guard state.enabled,
-              state.applications.contains(where: { $0.id == applicationID }) else {
+              state.isApplicationLockEnabled(applicationID) else {
           throw NativeGateError.unknownApplication
         }
         let previous = state.passes[applicationID]?.activityName

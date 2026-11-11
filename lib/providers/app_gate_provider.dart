@@ -267,6 +267,14 @@ class AppGateProvider extends ChangeNotifier {
         );
       });
 
+  Future<bool> setNativeApplicationLocked(String target, bool enabled) =>
+      _nativeOperation(() async {
+        _nativeStatus = await _service.setScreenTimeApplicationLocked(
+          target,
+          enabled,
+        );
+      });
+
   Future<bool> removeNativeApplication(String target) => _nativeOperation(
     () async {
       _nativeStatus = await _service.removeScreenTimeApplication(target);

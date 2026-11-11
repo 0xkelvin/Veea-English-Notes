@@ -22,11 +22,12 @@ struct NativeGateState: Codable, Equatable {
   var passes: [String: NativeGatePass] = [:]
   var pendingChallenge: NativeGatePendingChallenge?
   var applicationMinutes: [String: Int] = [:]
+  var disabledApplicationIDs: Set<String> = []
 
   init() {}
 
   private enum CodingKeys: String, CodingKey {
-    case enabled, passMinutes, applications, passes, pendingChallenge, applicationMinutes
+    case enabled, passMinutes, applications, passes, pendingChallenge, applicationMinutes, disabledApplicationIDs
   }
 
   init(from decoder: Decoder) throws {
@@ -38,6 +39,25 @@ struct NativeGateState: Codable, Equatable {
     pendingChallenge = try values.decodeIfPresent(NativeGatePendingChallenge.self, forKey: .pendingChallenge)
     // Existing installations inherit the saved default without resetting passes.
     applicationMinutes = try values.decodeIfPresent([String: Int].self, forKey: .applicationMinutes) ?? [:]
+    disabledApplicationIDs = try values.decodeIfPresent(Set<String>.self, forKey: .disabledApplicationIDs) ?? []
+  }
+
+  func isApplicationLockEnabled(_ applicationID: String) -> Bool {
+    applications.contains(where: { $0.id == applicationID }) && !disabledApplicationIDs.contains(applicationID)
+  }
+
+  /// Pausing retains selection and time rules, but revokes earned access so
+  /// re-enabling starts locked. Callers stop the returned monitor after saving.
+  mutating func setApplicationLockEnabled(_ enabled: Bool, for applicationID: String) throws -> String? {
+    guard applications.contains(where: { $0.id == applicationID }) else {
+      throw NativeGateError.unknownApplication
+    }
+    // Repeating an unchanged setting must not revoke another earned pass.
+    guard enabled != isApplicationLockEnabled(applicationID) else { return nil }
+    if enabled { disabledApplicationIDs.remove(applicationID) }
+    else { disabledApplicationIDs.insert(applicationID) }
+    if pendingChallenge?.applicationID == applicationID { pendingChallenge = nil }
+    return passes.removeValue(forKey: applicationID)?.activityName
   }
 
   func unlockMinutes(for applicationID: String) -> Int {
@@ -64,6 +84,7 @@ struct NativeGateState: Codable, Equatable {
     }
     applications.removeAll { $0.id == applicationID }
     applicationMinutes.removeValue(forKey: applicationID)
+    disabledApplicationIDs.remove(applicationID)
     let activity = passes.removeValue(forKey: applicationID)?.activityName
     if pendingChallenge?.applicationID == applicationID { pendingChallenge = nil }
     if applications.isEmpty { enabled = false }
@@ -73,6 +94,7 @@ struct NativeGateState: Codable, Equatable {
   func shieldedApplicationIDs(at now: Date) -> Set<String> {
     guard enabled else { return [] }
     return Set(applications.map(\.id).filter { id in
+      guard isApplicationLockEnabled(id) else { return false }
       guard let pass = passes[id] else { return true }
       return pass.expiresAt <= now
     })
@@ -81,12 +103,13 @@ struct NativeGateState: Codable, Equatable {
   mutating func reconcile(at now: Date) {
     passMinutes = NativeGatePolicy.normalizedPassMinutes(passMinutes)
     let selected = Set(applications.map(\.id))
+    disabledApplicationIDs.formIntersection(selected)
     applicationMinutes = applicationMinutes.filter {
       selected.contains($0.key) && NativeGatePolicy.supportedPassMinutes.contains($0.value)
     }
-    passes = passes.filter { selected.contains($0.key) && $0.value.expiresAt > now }
+    passes = passes.filter { isApplicationLockEnabled($0.key) && $0.value.expiresAt > now }
     if let pending = pendingChallenge,
-       !selected.contains(pending.applicationID) || now.timeIntervalSince(pending.createdAt) > 120 {
+       !isApplicationLockEnabled(pending.applicationID) || now.timeIntervalSince(pending.createdAt) > 120 {
       pendingChallenge = nil
     }
   }

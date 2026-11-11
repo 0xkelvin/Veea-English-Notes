@@ -172,6 +172,7 @@ import DeviceActivity
           guard #available(iOS 16.0, *) else { throw NativeGateError.unavailable }
           try NativeScreenTimeManager.shared.setEnabled(args["enabled"] as? Bool ?? false,
                                                        minutes: args["passMinutes"] as? Int ?? 15)
+          if args["enabled"] as? Bool != true { self.pendingColdStartTarget = nil }
           result(NativeScreenTimeManager.shared.status())
         } catch { result(self.screenTimeError(error)) }
 
@@ -183,7 +184,7 @@ import DeviceActivity
           result(NativeScreenTimeManager.shared.status())
         } catch { result(self.screenTimeError(error)) }
 
-      case "setScreenTimeApplicationDuration", "removeScreenTimeApplication":
+      case "setScreenTimeApplicationDuration", "removeScreenTimeApplication", "setScreenTimeApplicationLocked":
         let args = call.arguments as? [String: Any] ?? [:]
         do {
           guard #available(iOS 16.0, *), let target = args["targetApp"] as? String else {
@@ -191,6 +192,12 @@ import DeviceActivity
           }
           if call.method == "removeScreenTimeApplication" {
             try NativeScreenTimeManager.shared.removeApplication(target: target)
+          } else if call.method == "setScreenTimeApplicationLocked" {
+            guard let enabled = args["enabled"] as? Bool else {
+              result(FlutterError(code: "INVALID_LOCK_SETTING", message: "Choose whether to lock this app.", details: nil)); return
+            }
+            try NativeScreenTimeManager.shared.setApplicationLockEnabled(target: target, enabled: enabled)
+            if !enabled && self.pendingColdStartTarget == target { self.pendingColdStartTarget = nil }
           } else {
             // Null explicitly restores inheritance; malformed values must not reset a rule.
             guard args["passMinutes"] == nil || args["passMinutes"] is NSNull || args["passMinutes"] is Int else {

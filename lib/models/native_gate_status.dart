@@ -4,12 +4,14 @@ class NativeGateApplication {
     required this.label,
     this.unlockedUntil,
     this.customPassMinutes,
+    this.lockEnabled = true,
   });
 
   final String id;
   final String label;
   final DateTime? unlockedUntil;
   final int? customPassMinutes;
+  final bool lockEnabled;
 }
 
 class NativeGateStatus {
@@ -53,6 +55,7 @@ class NativeGateStatus {
             id: raw['id'] as String,
             label: raw['label'] as String? ?? 'Protected app',
             customPassMinutes: (raw['customPassMinutes'] as num?)?.toInt(),
+            lockEnabled: raw['lockEnabled'] != false,
             unlockedUntil: seconds is num && seconds > 0
                 ? DateTime.fromMillisecondsSinceEpoch((seconds * 1000).round())
                 : null,

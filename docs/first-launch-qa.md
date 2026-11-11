@@ -133,3 +133,31 @@ Signed-device acceptance for Nin:
    are visible. Check large text, dark mode and VoiceOver's selected-time state.
 5. Remove one app during an earned pass: stop locking it without changing the
    other app's timer. Remove the final app: locking must turn off.
+
+## Settings App locks overview — 11 November 2026
+
+The Settings entry is now an App locks section with Enable locks, per-app
+switches, the No locks yet empty state, and the existing management-page link.
+Per-app OFF pauses locking without deleting selection or time rules. The master
+switch retains those choices, which remain visible in disabled switches while
+master locking is off. Turning an app back on starts locked, but partial
+vocabulary progress is deliberately retained. A paused app's monitor/pass and
+pending challenge are cleared; the grant coordinator rechecks the preference
+under the store lock to reject a pause during scheduling. Callback reconciliation
+cannot relock an app that stays paused. Stale matching cold-start targets are
+also cleared on successful pause or master OFF.
+
+Validation: **569 Flutter tests passed**, including 12 new Settings tests. The
+focused run with opt-in light/dark/empty renders passed **43 checks**. Analyzer
+and iOS 27.2 native type checking pass; arm64 release Dart/AOT and assets
+assembly passed. Native policy checks cover preference
+migration, persisted choices, pause/resume, retained time rules, stale-callback
+shielding and grant/pause races. Claude CLI's focused follow-up found no remaining
+blocking or medium issues after saved-choice visibility and distinct VoiceOver
+labels were fixed. Review was read-only, not physical-device execution.
+
+The rendered app labels are fixtures; actual iPhone names/icons still come from
+Apple's native token renderer. Extend signed-device acceptance to pausing an app
+with an active pass, reopening it without a challenge, re-enabling it, toggling
+the master off/on, restarting Veea with one app paused, and checking the native
+labels/controls with VoiceOver. No upload or phone installation is claimed.
