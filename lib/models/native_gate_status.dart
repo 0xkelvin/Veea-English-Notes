@@ -35,6 +35,16 @@ class NativeGateStatus {
   final int passMinutes;
   final List<NativeGateApplication> applications;
 
+  /// `enabled` describes any active locking; the UI aggregate is ON only
+  /// when every selected app is enabled. An empty selection is never all ON.
+  int get enabledApplicationCount =>
+      enabled ? applications.where((app) => app.lockEnabled).length : 0;
+  bool get allLocksEnabled =>
+      available &&
+      authorized &&
+      applications.isNotEmpty &&
+      enabledApplicationCount == applications.length;
+
   int durationFor(String target) {
     for (final app in applications) {
       if (app.id == target) return app.customPassMinutes ?? passMinutes;
@@ -55,7 +65,7 @@ class NativeGateStatus {
             id: raw['id'] as String,
             label: raw['label'] as String? ?? 'Protected app',
             customPassMinutes: (raw['customPassMinutes'] as num?)?.toInt(),
-            lockEnabled: raw['lockEnabled'] != false,
+            lockEnabled: map['enabled'] == true && raw['lockEnabled'] != false,
             unlockedUntil: seconds is num && seconds > 0
                 ? DateTime.fromMillisecondsSinceEpoch((seconds * 1000).round())
                 : null,

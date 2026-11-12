@@ -74,11 +74,28 @@ a new pass. Late callbacks recompute shields and exclude paused apps. Turning
 the app back on starts it locked; completed vocabulary steps are deliberately
 retained so the next challenge can continue its unfinished round.
 
-Master OFF stops all locking and earned passes while retaining app selections,
-time rules and individual choices. Disabled per-app switches continue to display
-their saved choices, with a hint that they apply when Enable locks is on. Master
-ON restores those choices. Older JSON without individual preferences treats all
-selected apps as enabled. Removing/reselecting apps prunes obsolete paused IDs.
+Enable locks is an aggregate control: ON enables every selected app; OFF turns
+every app off and ends earned passes, retaining selections and time rules. Its
+value is ON only for a nonempty selection with all app locks on. With a partial
+selection it is OFF and shows the enabled count, while the remaining apps keep
+locking. Individual switches stay usable from all-off and partial states; turning
+the final app on also turns the aggregate on. Turning all apps on preserves any
+unexpired pass belonging to an app that was already on.
+
+Internally `enabled` means at least one app is active, not that all apps are on.
+Native state changes occur atomically under the store lock. Legacy master-OFF
+state migrates to actual all-app OFF choices without resurrecting saved ON flags.
+Older enabled JSON without individual preferences treats all selected apps as on.
+Removing/reselecting apps prunes obsolete paused IDs, and removing the last active
+app turns the engine off even when paused apps remain selected.
+
+Native token labels are unmounted when their Flutter route is covered by another
+page or modal sheet. The current sheet owns its own label; Flutter and UIKit
+containers clip the label to its bounds. The navigator observer keeps background
+labels hidden through the departing route's complete reverse animation, including
+the transition from preset options to Custom time. Host tests verify
+platform-view create/dispose behavior; real iOS composition still needs signed
+TestFlight validation.
 
 ## Every Open is inactive on this branch
 

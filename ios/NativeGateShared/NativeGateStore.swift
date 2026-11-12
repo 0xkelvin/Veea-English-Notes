@@ -56,9 +56,7 @@ final class NativeGateStore {
   func disable(apply: (NativeGateState) -> Void) throws {
     try locked {
       var state = (try? load()) ?? NativeGateState()
-      state.enabled = false
-      state.passes = [:]
-      state.pendingChallenge = nil
+      try state.setAllApplicationLocks(false)
       try save(state)
       apply(state)
     }

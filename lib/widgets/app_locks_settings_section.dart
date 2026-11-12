@@ -35,12 +35,12 @@ class AppLocksSettingsSection extends StatelessWidget {
     }
     if (status.applications.isEmpty) return 'No apps added';
     if (!status.authorized) return 'Screen Time access needed';
-    if (!status.enabled) return 'Locks are off · App choices are saved';
-    final count = status.applications.where((app) => app.lockEnabled).length;
+    final count = status.enabledApplicationCount;
     if (count == 0) {
-      return 'No apps enabled · Turn on an app below';
+      return 'All locks off';
     }
-    return '$count of ${status.applications.length} apps protected';
+    if (status.allLocksEnabled) return 'All apps protected';
+    return '$count of ${status.applications.length} locks on';
   }
 
   @override
@@ -64,9 +64,9 @@ class AppLocksSettingsSection extends StatelessWidget {
         status.available &&
         status.applications.isNotEmpty &&
         !busy &&
-        (status.enabled || canEnable);
+        (status.allLocksEnabled || canEnable);
     final needsWords = status.applications.isNotEmpty && !canEnable;
-    final subtitle = needsWords
+    final subtitle = needsWords && status.enabledApplicationCount == 0
         ? totalWords < GateConfig.minRequiredWords
               ? 'Save ${GateConfig.minRequiredWords} words to enable locks'
               : 'Choose practice words in Learning rules'
@@ -87,14 +87,14 @@ class AppLocksSettingsSection extends StatelessWidget {
           child: SwitchListTile.adaptive(
             key: const Key('settings_enable_locks'),
             secondary: Icon(
-              status.enabled ? Icons.lock : Icons.lock_outline,
-              color: status.enabled
+              status.allLocksEnabled ? Icons.lock : Icons.lock_outline,
+              color: status.allLocksEnabled
                   ? theme.colorScheme.primary
                   : theme.colorScheme.onSurfaceVariant,
             ),
             title: const Text('Enable locks'),
             subtitle: Text(subtitle),
-            value: status.enabled,
+            value: status.allLocksEnabled,
             onChanged: canToggle
                 ? (enabled) => _run(
                     context,
@@ -139,9 +139,6 @@ class AppLocksSettingsSection extends StatelessWidget {
                           const SizedBox(width: 12),
                           Semantics(
                             label: 'Lock ${status.applications[i].label}',
-                            hint: status.enabled
-                                ? null
-                                : 'Applies when Enable locks is on',
                             child: Switch.adaptive(
                               key: ValueKey(
                                 'settings_app_lock_${status.applications[i].id}',
@@ -149,7 +146,6 @@ class AppLocksSettingsSection extends StatelessWidget {
                               value: status.applications[i].lockEnabled,
                               onChanged:
                                   !busy &&
-                                      status.enabled &&
                                       status.authorized &&
                                       status.available &&
                                       (status.applications[i].lockEnabled ||

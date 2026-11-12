@@ -79,6 +79,7 @@ void main() {
                 return status();
               case 'setScreenTimeEnabled':
                 enabled = args['enabled'] as bool;
+                paused = enabled ? <String>{} : {...apps};
                 return status();
               case 'setScreenTimeApplicationLocked':
                 if (failToggle) {
@@ -93,6 +94,7 @@ void main() {
                 } else {
                   paused.add(id);
                 }
+                enabled = apps.any((id) => !paused.contains(id));
                 return status();
               default:
                 return null;
@@ -220,22 +222,63 @@ void main() {
     },
   );
   testWidgets(
-    'master off disables app controls and preserves choices for master on',
+    'aggregate OFF turns every app off; one app can turn back on independently',
     (tester) async {
-      paused.add(a);
-      await gate.refreshNativeScreenTime();
       await open(tester);
       await tap(tester, find.byKey(const Key('settings_enable_locks')));
       expect(enabled, isFalse);
-      expect(paused, {a});
-      expect(apps, {a, b});
-      expect(tester.widget<Switch>(appSwitch(b)).onChanged, isNull);
+      expect(paused, {a, b});
       expect(tester.widget<Switch>(appSwitch(a)).value, isFalse);
+      expect(tester.widget<Switch>(appSwitch(b)).value, isFalse);
+      expect(tester.widget<Switch>(appSwitch(b)).onChanged, isNotNull);
+      await tap(tester, appSwitch(b));
+      expect(paused, {a});
+      expect(enabled, isTrue);
+      expect(
+        tester
+            .widget<SwitchListTile>(
+              find.byKey(const Key('settings_enable_locks')),
+            )
+            .value,
+        isFalse,
+      );
+      expect(find.text('1 of 2 locks on'), findsOneWidget);
+      await tap(tester, appSwitch(a));
+      expect(paused, isEmpty);
+      expect(
+        tester
+            .widget<SwitchListTile>(
+              find.byKey(const Key('settings_enable_locks')),
+            )
+            .value,
+        isTrue,
+      );
+    },
+  );
+  testWidgets(
+    'one app OFF clears the aggregate; aggregate ON enables every app',
+    (tester) async {
+      await open(tester);
+      await tap(tester, appSwitch(a));
+      expect(
+        tester
+            .widget<SwitchListTile>(
+              find.byKey(const Key('settings_enable_locks')),
+            )
+            .value,
+        isFalse,
+      );
       expect(tester.widget<Switch>(appSwitch(b)).value, isTrue);
       await tap(tester, find.byKey(const Key('settings_enable_locks')));
-      expect(enabled, isTrue);
-      expect(tester.widget<Switch>(appSwitch(a)).value, isFalse);
-      expect(tester.widget<Switch>(appSwitch(b)).value, isTrue);
+      expect(paused, isEmpty);
+      expect(
+        tester
+            .widget<SwitchListTile>(
+              find.byKey(const Key('settings_enable_locks')),
+            )
+            .value,
+        isTrue,
+      );
     },
   );
   testWidgets('empty state disables the master but still opens management', (
@@ -310,12 +353,10 @@ void main() {
     'all apps paused leaves master available to turn an app back on',
     (tester) async {
       paused.addAll(apps);
+      enabled = false;
       await gate.refreshNativeScreenTime();
       await open(tester);
-      expect(
-        find.text('No apps enabled · Turn on an app below'),
-        findsOneWidget,
-      );
+      expect(find.text('All locks off'), findsOneWidget);
       expect(tester.widget<Switch>(appSwitch(a)).onChanged, isNotNull);
       await tap(tester, appSwitch(a));
       expect(paused, {b});
@@ -360,6 +401,27 @@ void main() {
             .onChanged,
         isNull,
       );
+    },
+  );
+
+  testWidgets(
+    'provider rejects individual ON without practice prerequisites but permits OFF',
+    (tester) async {
+      await tester.runAsync(() async {
+        await repo.softDelete('recipe', now);
+        await gate.prepareChallenge();
+      });
+      calls.clear();
+      expect(await gate.setNativeApplicationLocked(a, true), isFalse);
+      expect(gate.nativeError, contains('Save at least 3 words'));
+      expect(
+        calls.where((call) => call.method == 'setScreenTimeApplicationLocked'),
+        isEmpty,
+      );
+      expect(await gate.setNativeApplicationLocked(a, false), isTrue);
+      expect(paused, {a});
+      await open(tester, totalWords: 2);
+      expect(find.text('1 of 2 locks on'), findsOneWidget);
     },
   );
 

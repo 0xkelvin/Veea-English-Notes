@@ -267,13 +267,25 @@ class AppGateProvider extends ChangeNotifier {
         );
       });
 
-  Future<bool> setNativeApplicationLocked(String target, bool enabled) =>
-      _nativeOperation(() async {
-        _nativeStatus = await _service.setScreenTimeApplicationLocked(
-          target,
-          enabled,
+  Future<bool> setNativeApplicationLocked(
+    String target,
+    bool enabled,
+  ) => _nativeOperation(() async {
+    if (enabled) {
+      if (!canEnable(_notebook.length)) {
+        throw PlatformException(
+          code: 'PRACTICE_WORDS_NEEDED',
+          message: _notebook.length < GateConfig.minRequiredWords
+              ? 'Save at least ${GateConfig.minRequiredWords} words before enabling locks.'
+              : 'Choose at least one practice word in Learning rules before enabling locks.',
         );
-      });
+      }
+    }
+    _nativeStatus = await _service.setScreenTimeApplicationLocked(
+      target,
+      enabled,
+    );
+  });
 
   Future<bool> removeNativeApplication(String target) => _nativeOperation(
     () async {

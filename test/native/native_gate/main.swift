@@ -140,11 +140,14 @@ do {
   preconditionFailure("Expected stale-selection failure")
 } catch NativeGateError.unknownApplication {}
 precondition(stoppedNewMonitor)
-try store.update { $0.enabled = true }
+try store.update { try $0.setAllApplicationLocks(true) }
+// All-off revoked the original pass. Earn a new one before testing renewal.
+let restoredPass = try coordinator.grant(applicationID: appA.id, minutes: 15, now: now,
+  startMonitoring: { _, _, _ in }, stopMonitoring: { _ in }, apply: { _ in })
 
 let renewed = try coordinator.grant(applicationID: appA.id, minutes: 30,
   now: now.addingTimeInterval(600), startMonitoring: { _, _, _ in },
-  stopMonitoring: { old in precondition(old == pass.activityName) }, apply: { _ in })
+  stopMonitoring: { old in precondition(old == restoredPass.activityName) }, apply: { _ in })
 try store.update { $0.reconcile(at: pass.expiresAt) }
 precondition(try! store.read().passes[appA.id] == renewed)
 precondition(try! store.read().shieldedApplicationIDs(at: pass.expiresAt) == [appB.id])
@@ -277,13 +280,59 @@ do {
 precondition(stoppedPausedMonitor)
 try toggles.disable { _ in }
 precondition(try! toggles.read().applications.count == 2)
-precondition(try! toggles.read().disabledApplicationIDs == [appB.id])
+precondition(try! toggles.read().disabledApplicationIDs == [appA.id, appB.id])
 precondition(try! toggles.read().applicationMinutes[appA.id] == 30)
-try toggles.update { $0.enabled = true; $0.reconcile(at: now) }
-precondition(try! toggles.read().shieldedApplicationIDs(at: now) == [appA.id])
+try toggles.update { try $0.setAllApplicationLocks(true); $0.reconcile(at: now) }
+precondition(try! toggles.read().shieldedApplicationIDs(at: now) == [appA.id, appB.id])
 try toggles.update { _ = try $0.removeApplication(appB.id) }
 precondition(try! toggles.read().disabledApplicationIDs.isEmpty)
 print("App-lock switch migration, persistence, independent pausing, resume and grant-race checks passed")
+
+// Aggregate control is all-on/all-off; per-app changes keep the engine active
+// whenever at least one selected app remains on, across persisted reloads.
+try toggles.update { try $0.setAllApplicationLocks(false) }
+precondition(try! toggles.read().enabled == false)
+try toggles.update { _ = try $0.setApplicationLockEnabled(true, for: appA.id) }
+precondition(try! toggles.read().enabled)
+let aggregatePass = try toggleCoordinator.grant(applicationID: appA.id, now: now,
+  startMonitoring: { _, _, _ in }, stopMonitoring: { _ in }, apply: { _ in })
+try toggles.update { $0.applications.append(appB); $0.disabledApplicationIDs.insert(appB.id) }
+precondition(try! toggles.read().shieldedApplicationIDs(at: now).isEmpty)
+try toggles.update { try $0.setAllApplicationLocks(true); $0.reconcile(at: now) }
+precondition(try! toggles.read().shieldedApplicationIDs(at: now) == [appB.id])
+precondition(try! toggles.read().passes[appA.id] == aggregatePass)
+try toggles.update { try $0.setAllApplicationLocks(true) }
+precondition(try! toggles.read().passes[appA.id] == aggregatePass)
+try toggles.update { _ = try $0.setApplicationLockEnabled(false, for: appA.id) }
+precondition(try! toggles.read().enabled)
+precondition(try! toggles.read().disabledApplicationIDs == [appA.id])
+try toggles.update { _ = try $0.setApplicationLockEnabled(false, for: appB.id) }
+precondition(try! toggles.read().enabled == false)
+precondition(try! toggles.read().disabledApplicationIDs == [appA.id, appB.id])
+try toggles.update { _ = try $0.setApplicationLockEnabled(true, for: appB.id) }
+precondition(try! toggles.read().shieldedApplicationIDs(at: now) == [appB.id])
+try toggles.update { _ = try $0.removeApplication(appB.id) }
+precondition(try! toggles.read().enabled == false) // Remaining app A stays off.
+
+// Legacy master-OFF must migrate to all OFF without resurrecting saved choices.
+var legacyOff = NativeGateState()
+legacyOff.applications = [appA, appB]
+legacyOff.applicationMinutes = [appA.id: 30]
+legacyOff.disabledApplicationIDs = [appB.id]
+legacyOff.passes = [appA.id: aggregatePass]
+legacyOff.pendingChallenge = .init(applicationID: appA.id, createdAt: now)
+let migratedOff = try JSONDecoder().decode(NativeGateState.self, from: JSONEncoder().encode(legacyOff))
+precondition(!migratedOff.enabled)
+precondition(migratedOff.disabledApplicationIDs == [appA.id, appB.id])
+precondition(migratedOff.applicationMinutes == [appA.id: 30])
+precondition(migratedOff.passes.isEmpty && migratedOff.pendingChallenge == nil)
+precondition(!migratedOff.isApplicationLockEnabled(appA.id))
+var emptySelection = NativeGateState()
+do {
+  try emptySelection.setAllApplicationLocks(true)
+  preconditionFailure("No selected apps cannot be enabled")
+} catch NativeGateError.unknownApplication {}
+print("Aggregate all-on/all-off, partial-state reload, last-active removal and legacy-OFF migration checks passed")
 
 // Verify that callbacks and the main app cannot lose each other's writes.
 try store.update { $0.passMinutes = 0 }
