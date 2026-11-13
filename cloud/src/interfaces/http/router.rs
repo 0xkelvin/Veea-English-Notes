@@ -59,11 +59,8 @@ pub fn build_router(state: AppState) -> Router {
             "/admin/users/{id}/role",
             put(admin_handler::change_user_role),
         )
-        // ── Idempotency (opt-in via header) ────────────────
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            mw::idempotency::idempotency_middleware,
-        ))
+        // No router-wide idempotency layer: it replayed cached responses before
+        // `AuthUser` ran, keyed only on the header (see tests/idempotency_regression.rs).
         // ── Rate limiting ──────────────────────────────────
         .layer(middleware::from_fn_with_state(
             state.clone(),

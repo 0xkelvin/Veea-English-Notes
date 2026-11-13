@@ -73,8 +73,19 @@ pub async fn handle(
         now,
     );
 
+    // The checks above read outside any lock, so two requests carrying the
+    // same token can both pass them. Only the one whose conditional revoke
+    // succeeds may issue a replacement; the other gets the same 401 as a
+    // reused token. Returning early drops `tx`, which rolls it back, and an
+    // insert failure does the same, so the old token is never consumed
+    // without its replacement being persisted.
     let mut tx = begin_tx(pool).await?;
-    refresh_repo_tx.revoke_tx(&mut tx, existing.id, now).await?;
+    if !refresh_repo_tx
+        .consume_tx(&mut tx, existing.id, now)
+        .await?
+    {
+        return Err(AppError::Unauthorized);
+    }
     refresh_repo_tx.insert_tx(&mut tx, &new_refresh).await?;
     tx.commit().await?;
 
