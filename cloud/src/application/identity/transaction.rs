@@ -67,4 +67,17 @@ pub trait TransactionalRefreshTokenRepository: Send + Sync {
         id: uuid::Uuid,
         revoked_at: chrono::DateTime<chrono::Utc>,
     ) -> impl Future<Output = Result<(), anyhow::Error>> + Send;
+
+    /// Revokes the token only if it is still live (not revoked, not expired)
+    /// and reports whether this call was the one that revoked it.
+    ///
+    /// Concurrent callers serialise on the row lock; after the first commits,
+    /// the rest re-check the condition and get `false`, so a token can be
+    /// consumed at most once. Rolling back the transaction un-consumes it.
+    fn consume_tx<'a>(
+        &self,
+        tx: &mut PgTransaction<'a>,
+        id: uuid::Uuid,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> impl Future<Output = Result<bool, anyhow::Error>> + Send;
 }

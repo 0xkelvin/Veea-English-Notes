@@ -117,4 +117,21 @@ impl TransactionalRefreshTokenRepository for PgRefreshTokenRepository {
             .await?;
         Ok(())
     }
+
+    async fn consume_tx<'a>(
+        &self,
+        tx: &mut PgTransaction<'a>,
+        id: Uuid,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<bool, anyhow::Error> {
+        let result = sqlx::query(
+            "UPDATE refresh_tokens SET revoked_at = $1
+             WHERE id = $2 AND revoked_at IS NULL AND expires_at > $1",
+        )
+        .bind(now)
+        .bind(id)
+        .execute(&mut **tx)
+        .await?;
+        Ok(result.rows_affected() == 1)
+    }
 }
