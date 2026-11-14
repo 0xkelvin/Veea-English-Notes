@@ -143,9 +143,13 @@ abstract interface class VocabularyRepository {
     Map<String, DateTime>? expectedVersions,
   });
 
-  /// Archives the current notebook before restoring another account's local data.
-  /// Only the first verified account may adopt an unclaimed guest notebook.
+  /// Archives the open notebook under its owner (or the guest key) and opens
+  /// [accountId]'s cache, or the guest notebook for null (TRD 05 §9.1). A guest
+  /// notebook is never adopted by an account; importing it is explicit.
   Future<String?> activateNotebook(String? accountId);
+
+  /// The account whose cache is open, or null for the guest notebook.
+  Future<String?> notebookOwner();
 
   /// Applies rows received from the server, resolving conflicts by
   /// last-write-wins on `updatedAt`. Local dirty rows always win so unsent
@@ -162,14 +166,18 @@ abstract interface class VocabularyRepository {
   Future<void> bulkImport({
     required List<VocabularyWord> toInsert,
     required List<VocabularyWord> toUpdate,
+    String? provenance,
+    Map<String, String> provenances = const {},
+    String? syncHold,
   });
 
-  /// Removes every locally stored word.
+  /// Removes every locally stored word of the open notebook.
   ///
-  /// Used when the account is deleted, and when signing in as someone else:
-  /// leaving the previous account's vocabulary on the device would show one
-  /// person another's notes.
-  Future<void> deleteAll();
+  /// Used when an account's deletion is confirmed: that account's cache,
+  /// sync queue, cursor, writer, review set and import decisions are cleared,
+  /// and the guest notebook is reopened (TRD 05 §9.5). For the guest notebook
+  /// it erases it and starts a new guest dataset.
+  Future<void> deleteAll({String? accountId});
 
   Future<void> close();
 }

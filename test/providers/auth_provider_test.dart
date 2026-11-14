@@ -266,6 +266,7 @@ void main() {
     );
 
     test('a wrong password leaves the words and the session alone', () async {
+      await repo.activateNotebook('kelvin@example.com');
       await seedWord('w1');
 
       final auth = providerWith(MockClient((_) async => invalidPassword()));

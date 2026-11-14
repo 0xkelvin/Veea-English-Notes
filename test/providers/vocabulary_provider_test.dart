@@ -13,6 +13,8 @@ import 'package:veea_english_app/providers/vocabulary_provider.dart';
 /// failure handling is tested against genuine SQL behaviour rather than a
 /// hand-rolled stub.
 class FlakyRepository implements VocabularyRepository {
+  @override
+  Future<String?> notebookOwner() async => null;
   FlakyRepository(this._inner);
 
   final VocabularyRepository _inner;
@@ -187,13 +189,16 @@ class FlakyRepository implements VocabularyRepository {
   Future<void> bulkImport({
     required List<VocabularyWord> toInsert,
     required List<VocabularyWord> toUpdate,
+    String? provenance,
+    Map<String, String> provenances = const {},
+    String? syncHold,
   }) {
     _guard();
     return _inner.bulkImport(toInsert: toInsert, toUpdate: toUpdate);
   }
 
   @override
-  Future<void> deleteAll() => _inner.deleteAll();
+  Future<void> deleteAll({String? accountId}) => _inner.deleteAll();
   @override
   Future<void> close() => _inner.close();
 }

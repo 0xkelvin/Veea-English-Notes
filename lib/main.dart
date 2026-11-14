@@ -11,7 +11,9 @@ import 'data/local/sqlite_vocabulary_repository.dart';
 import 'data/remote/api_client.dart';
 import 'data/remote/auth_api.dart';
 import 'data/remote/token_store.dart';
-import 'data/remote/vocabulary_api.dart';
+import 'package:http/http.dart' as http;
+import 'data/sync/learning_sync_api.dart';
+import 'data/sync/sync_engine.dart';
 import 'providers/app_gate_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/cartridge_provider.dart';
@@ -48,7 +50,14 @@ Future<void> main() async {
     final apiClient = ApiClient(tokenStore: tokens);
     final sync = SyncService(
       repository: repository,
-      api: VocabularyApi(apiClient),
+      learningEngine: SyncEngine(
+        db: repository.database,
+        api: LearningSyncApi(
+          client: http.Client(),
+          baseUrl: AppConfig.apiBaseUrl,
+          accessToken: tokens.readAccessToken,
+        ),
+      ),
     );
     final auth = AuthProvider(
       authApi: AuthApi(client: apiClient, tokens: tokens),
@@ -189,6 +198,8 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
   }
 
   Future<void> _refreshNotebook(String? owner, int version) async {
+    await widget.auth.notebookSettled;
+    if (!mounted || version != _accountViewVersion) return;
     await widget.vocabulary.init();
     if (!mounted || version != _accountViewVersion) return;
     await _appGateProvider.init();

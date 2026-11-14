@@ -730,6 +730,9 @@ class SqliteVocabularyRepository implements VocabularyRepository {
         'is_deleted': 0,
         'is_dirty': 1,
         'updated_at': now.toUtc().toIso8601String(),
+        // An explicit undo: the only way a synced delete is ever reverted
+        // (TRD 05 §6 "restore is explicit").
+        'sync_intent': 'restore',
       },
       where: 'id = ?',
       whereArgs: [id],
@@ -878,22 +881,83 @@ class SqliteVocabularyRepository implements VocabularyRepository {
   }
 
   @override
-  Future<void> deleteAll() async {
+  Future<void> deleteAll({String? accountId}) async {
     // A hard delete, not a tombstone: there is no server left to tell, and
     // tombstones would only be re-uploaded to whatever account signs in next.
     await _db.transaction((txn) async {
-      await txn.delete('gate_logs');
-      await txn.delete(_table);
-      final owner = await txn.query(
-        'app_metadata',
-        where: 'key = ?',
-        whereArgs: ['notebook_owner'],
-      );
-      if (owner.isNotEmpty) {
+      final openOwner = await _owner(txn);
+      final owner = accountId ?? openOwner;
+      if (owner != null && owner != openOwner) {
         await txn.delete(
           'account_workspaces',
           where: 'account_id = ?',
-          whereArgs: [owner.first['value']],
+          whereArgs: [owner],
+        );
+        for (final table in [
+          'sync_queue',
+          'sync_review',
+          'sync_staging',
+          'sync_partitions',
+        ]) {
+          await txn.delete(
+            table,
+            where: 'partition = ?',
+            whereArgs: ['account:$owner'],
+          );
+        }
+        await txn.delete(
+          'sync_import_decisions',
+          where: 'user_id = ?',
+          whereArgs: [owner],
+        );
+        await txn.delete(
+          'feedback_outbox',
+          where: 'owner_id = ?',
+          whereArgs: [owner],
+        );
+        return;
+      }
+      await txn.delete('gate_logs');
+      await txn.delete(_table);
+      if (owner != null) {
+        // TRD 05 §9.5: confirmed deletion clears that account's entire cache —
+        // words, queue, cursor, writer, review set and import decisions.
+        await txn.delete(
+          'account_workspaces',
+          where: 'account_id = ?',
+          whereArgs: [owner],
+        );
+        await txn.delete(
+          'feedback_outbox',
+          where: 'owner_id = ?',
+          whereArgs: [owner],
+        );
+        final partition = 'account:$owner';
+        for (final t in [
+          'sync_queue',
+          'sync_review',
+          'sync_staging',
+          'sync_partitions',
+        ]) {
+          await txn.delete(t, where: 'partition = ?', whereArgs: [partition]);
+        }
+        await txn.delete(
+          'sync_import_decisions',
+          where: 'user_id = ?',
+          whereArgs: [owner],
+        );
+      } else {
+        // Erasing the guest notebook also removes retained pre-Go history.
+        await txn.delete(
+          'account_workspaces',
+          where: "account_id GLOB '__legacy__:*'",
+        );
+        // Erasing the guest notebook starts a new guest dataset.
+        await txn.update(
+          'sync_partitions',
+          {'guest_dataset_id': null},
+          where: 'partition = ?',
+          whereArgs: ['guest'],
         );
       }
       await txn.delete(
@@ -905,83 +969,116 @@ class SqliteVocabularyRepository implements VocabularyRepository {
         'practice_word_ids_json': null,
         'words_per_unlock': 1,
       }, where: 'id = 1');
+      if (owner != null) {
+        await _restoreWorkspace(txn, AppDatabase.guestWorkspace);
+      }
     });
+  }
+
+  /// The account whose cache is open, or null for the guest notebook.
+  @override
+  Future<String?> notebookOwner() => _owner(_db);
+
+  Future<String?> _owner(DatabaseExecutor db) async {
+    final rows = await db.query(
+      'app_metadata',
+      where: 'key = ?',
+      whereArgs: ['notebook_owner'],
+    );
+    return rows.isEmpty ? null : rows.first['value'] as String;
+  }
+
+  static const _workspaceTables = [
+    'words',
+    'srs_reviews',
+    'gate_logs',
+    'gate_round_progress',
+    'gate_pending_answers',
+    'gate_word_rotation',
+  ];
+
+  Future<void> _archiveWorkspace(DatabaseExecutor txn, String key) async {
+    final payload = <String, Object?>{};
+    for (final table in _workspaceTables) {
+      payload[table] = await txn.query(table);
+    }
+    final config = (await txn.query('gate_config', where: 'id = 1')).single;
+    payload['practice_pool'] = {
+      'practice_word_ids_json': config['practice_word_ids_json'],
+      'words_per_unlock': config['words_per_unlock'],
+    };
+    if (_workspaceTables.any((t) => (payload[t]! as List).isNotEmpty)) {
+      await txn.insert('account_workspaces', {
+        'account_id': key,
+        'payload': jsonEncode(payload),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    } else {
+      await txn.delete(
+        'account_workspaces',
+        where: 'account_id = ?',
+        whereArgs: [key],
+      );
+    }
+    await txn.delete('gate_logs');
+    await txn.delete('words');
+    await txn.update('gate_config', {
+      'practice_word_ids_json': null,
+      'words_per_unlock': 1,
+    }, where: 'id = 1');
+  }
+
+  Future<void> _restoreWorkspace(DatabaseExecutor txn, String key) async {
+    final saved = await txn.query(
+      'account_workspaces',
+      where: 'account_id = ?',
+      whereArgs: [key],
+    );
+    if (saved.isEmpty) return;
+    final payload =
+        jsonDecode(saved.single['payload'] as String) as Map<String, dynamic>;
+    for (final table in _workspaceTables) {
+      for (final row in (payload[table] as List? ?? const [])) {
+        await txn.insert(table, Map<String, Object?>.from(row as Map));
+      }
+    }
+    await txn.update(
+      'gate_config',
+      Map<String, Object?>.from(payload['practice_pool'] as Map),
+      where: 'id = 1',
+    );
+    await txn.delete(
+      'account_workspaces',
+      where: 'account_id = ?',
+      whereArgs: [key],
+    );
   }
 
   @override
   Future<String?> activateNotebook(String? accountId) async {
-    if (accountId == null) {
-      await _db.delete(
-        'app_metadata',
-        where: 'key = ?',
-        whereArgs: ['notebook_owner'],
-      );
-      return null;
+    if (accountId != null && accountId.isEmpty) {
+      throw ArgumentError('Account identity is required');
     }
-    if (accountId.isEmpty) throw ArgumentError('Account identity is required');
-    const tables = [
-      'words',
-      'srs_reviews',
-      'gate_logs',
-      'gate_round_progress',
-      'gate_pending_answers',
-      'gate_word_rotation',
-    ];
+    // TRD 05 §9.1: one guest partition and one cache per account, never merged.
+    // The open notebook is archived under its own key and the target restored,
+    // so signing out opens the guest notebook and closes the account cache, and
+    // a guest notebook is never adopted by the account that signs in.
     return _db.transaction((txn) async {
-      final metadata = await txn.query(
-        'app_metadata',
-        where: 'key = ?',
-        whereArgs: ['notebook_owner'],
-      );
-      final previous = metadata.isEmpty
-          ? null
-          : metadata.first['value'] as String;
+      final previous = await _owner(txn);
       if (previous == accountId) return previous;
-      if (previous != null) {
-        final payload = <String, Object?>{};
-        for (final table in tables) {
-          payload[table] = await txn.query(table);
-        }
-        final config = (await txn.query('gate_config', where: 'id = 1')).single;
-        payload['practice_pool'] = {
-          'practice_word_ids_json': config['practice_word_ids_json'],
-          'words_per_unlock': config['words_per_unlock'],
-        };
-        await txn.insert('account_workspaces', {
-          'account_id': previous,
-          'payload': jsonEncode(payload),
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
-        await txn.delete('gate_logs');
-        await txn.delete('words');
-        await txn.update('gate_config', {
-          'practice_word_ids_json': null,
-          'words_per_unlock': 1,
-        }, where: 'id = 1');
-        final saved = await txn.query(
-          'account_workspaces',
-          where: 'account_id = ?',
-          whereArgs: [accountId],
+      await _archiveWorkspace(txn, previous ?? AppDatabase.guestWorkspace);
+      await _restoreWorkspace(txn, accountId ?? AppDatabase.guestWorkspace);
+      if (accountId == null) {
+        await txn.delete(
+          'app_metadata',
+          where: 'key = ?',
+          whereArgs: ['notebook_owner'],
         );
-        if (saved.isNotEmpty) {
-          final payload =
-              jsonDecode(saved.single['payload'] as String)
-                  as Map<String, dynamic>;
-          for (final table in tables) {
-            for (final row in payload[table] as List) {
-              await txn.insert(table, Map<String, Object?>.from(row as Map));
-            }
-          }
-          await txn.update(
-            'gate_config',
-            Map<String, Object?>.from(payload['practice_pool'] as Map),
-            where: 'id = 1',
-          );
-        }
+      } else {
+        await txn.insert('app_metadata', {
+          'key': 'notebook_owner',
+          'value': accountId,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
-      await txn.insert('app_metadata', {
-        'key': 'notebook_owner',
-        'value': accountId,
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
       return previous;
     });
   }
@@ -1009,15 +1106,18 @@ class SqliteVocabularyRepository implements VocabularyRepository {
   Future<void> bulkImport({
     required List<VocabularyWord> toInsert,
     required List<VocabularyWord> toUpdate,
+    String? provenance,
+    Map<String, String> provenances = const {},
+    String? syncHold,
   }) async {
     await _db.transaction((txn) async {
       final batch = txn.batch();
       for (final word in toInsert) {
-        batch.insert(
-          _table,
-          word.toDbMap(),
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+        batch.insert(_table, {
+          ...word.toDbMap(),
+          'provenance': ?(provenances[word.id] ?? provenance),
+          'sync_hold': ?syncHold,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
       for (final word in toUpdate) {
         batch.update(

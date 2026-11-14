@@ -728,9 +728,13 @@ Both orders are forced in `TestLearningRights_DeletionRacesPurgeAndReregistratio
 10. Confirmed deletion clears the cache, queue, cursor, writer, review set and import decisions.
 11. The shared canonical encoder produces the same bytes and code-point counts in Dart and Go, against shared test vectors.
 
+Local Flutter implementation and the 11-check result mapping are recorded in
+[Flutter verification](05-flutter-verification.md). The local checks pass; the Go
+identity/lifecycle client contract gap in that record still blocks opening sync.
+
 ## 16. Remaining implementation blockers
 
-1. **The rebuilt Flutter client and §15.2.** Sync must stay closed (`learning_sync_control.open = false`) until the rebuilt client passes them. Opening it is a deliberate operator `UPDATE`.
+1. **The rebuilt Flutter client and §15.2.** The local SQLite/HTTP/widget checks now pass ([verification](05-flutter-verification.md)). The existing Flutter auth/refresh/account-rights adapters still speak the Rust contract; their Go port and end-to-end verification remain blocked release work. Sync stays closed (`learning_sync_control.open = false`); opening it is a deliberate operator action after those gates are met.
 2. **Shared encoder vectors for Dart.** The Go encoder and its tests exist. The vectors (escaping, emoji, combining marks, the 8,192/8,193-byte boundary) still have to be exported to the Flutter test suite.
 3. **Restore tooling and drill.** TRD 04 §12.5 and §12.7 have no restore tool yet. The §8.2 sync steps are SQL in this TRD, exercised by `TestLearningSync_RestoreRunbook`, but not drilled against a real backup.
 4. **Release order.** Migration 00011 runs through `cmd/migrate` before the binaries. It ends any ready version-1 export and adds a trigger on `users`. Every instance must run the new binaries before sync opens.

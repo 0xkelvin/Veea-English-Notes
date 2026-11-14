@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/remote/api_client.dart';
+import '../data/sync/sync_engine.dart';
 import '../data/remote/vocabulary_api.dart';
 import '../data/vocabulary_repository.dart';
 
@@ -16,7 +17,8 @@ enum SyncState { idle, syncing, failed }
 class SyncService extends ChangeNotifier {
   SyncService({
     required VocabularyRepository repository,
-    required VocabularyApi api,
+    VocabularyApi? api,
+    this.learningEngine,
     DateTime Function()? now,
   }) : _repository = repository,
        _api = api,
@@ -31,7 +33,9 @@ class SyncService extends ChangeNotifier {
   static const int _maxPagesPerRun = 20;
 
   final VocabularyRepository _repository;
-  final VocabularyApi _api;
+  final VocabularyApi? _api;
+  final SyncEngine? learningEngine;
+  VoidCallback? onSessionExpired;
   final DateTime Function() _now;
 
   SyncState _state = SyncState.idle;
@@ -45,6 +49,7 @@ class SyncService extends ChangeNotifier {
   Future<void> suspend() async {
     _suspended = true;
     await _activeRun;
+    await learningEngine?.idle;
   }
 
   void resumeForAccount(String accountId) {
@@ -107,6 +112,24 @@ class SyncService extends ChangeNotifier {
     notifyListeners();
 
     try {
+      if (learningEngine case final engine?) {
+        final result = await engine.sync();
+        if (result == SyncRun.unauthorized) onSessionExpired?.call();
+        final done = result == SyncRun.done;
+        _state = done ? SyncState.idle : SyncState.failed;
+        _lastError = switch (result) {
+          SyncRun.done => null,
+          SyncRun.needsImportConfirmation =>
+            'Capacity changed. Review and confirm the import again.',
+          SyncRun.unauthorized => 'Sign in again to sync this account.',
+          SyncRun.skipped => 'Open an account notebook to sync.',
+          SyncRun.pending =>
+            'Sync is waiting. Your changes are saved on this device.',
+        };
+        if (done) _lastSyncedAt = _now();
+        await refreshPendingCount();
+        return done;
+      }
       final prefs = await SharedPreferences.getInstance();
       var cursor = _readCursor(prefs);
       var revision = prefs.getString("$_scopedCursorKey.revision");
@@ -120,7 +143,7 @@ class SyncService extends ChangeNotifier {
         final outgoing = await _repository.pendingChanges(limit: 200);
         if (outgoing.isEmpty) {
           if (pushBatches == 0) {
-            final result = await _api.sync(
+            final result = await _api!.sync(
               changes: const [],
               since: cursor,
               cursor: revision,
@@ -144,7 +167,7 @@ class SyncService extends ChangeNotifier {
         }
 
         pushBatches++;
-        final result = await _api.sync(
+        final result = await _api!.sync(
           changes: outgoing,
           since: cursor,
           cursor: revision,
@@ -182,7 +205,7 @@ class SyncService extends ChangeNotifier {
       var pullPages = 0;
       while (hasMoreRemote && pullPages < _maxPagesPerRun) {
         pullPages++;
-        final result = await _api.sync(
+        final result = await _api!.sync(
           changes: const [],
           since: cursor,
           cursor: revision,
