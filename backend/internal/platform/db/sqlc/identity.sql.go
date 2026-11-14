@@ -12,9 +12,100 @@ import (
 	"github.com/google/uuid"
 )
 
+const changeVerifiedEmail = `-- name: ChangeVerifiedEmail :execrows
+UPDATE users SET email = $1, email_normalized = $2, email_verified_at = now(),
+    email_revision = email_revision + 1, updated_at = now()
+WHERE id = $3
+`
+
+type ChangeVerifiedEmailParams struct {
+	Email           string
+	EmailNormalized string
+	ID              uuid.UUID
+}
+
+func (q *Queries) ChangeVerifiedEmail(ctx context.Context, arg ChangeVerifiedEmailParams) (int64, error) {
+	result, err := q.db.Exec(ctx, changeVerifiedEmail, arg.Email, arg.EmailNormalized, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const closeEmailChange = `-- name: CloseEmailChange :exec
+UPDATE email_changes SET closed_at = now() WHERE id = $1 AND user_id = $2
+`
+
+type CloseEmailChangeParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) CloseEmailChange(ctx context.Context, arg CloseEmailChangeParams) error {
+	_, err := q.db.Exec(ctx, closeEmailChange, arg.ID, arg.UserID)
+	return err
+}
+
+const closePendingEmailChanges = `-- name: ClosePendingEmailChanges :exec
+UPDATE email_changes SET closed_at = now() WHERE user_id = $1 AND closed_at IS NULL
+`
+
+func (q *Queries) ClosePendingEmailChanges(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, closePendingEmailChanges, userID)
+	return err
+}
+
+const deleteExpiredEmailChanges = `-- name: DeleteExpiredEmailChanges :execrows
+DELETE FROM email_changes
+WHERE ctid = ANY (ARRAY(
+    SELECT e.ctid FROM email_changes e
+    WHERE e.expires_at < now() - interval '24 hours'
+      AND NOT EXISTS (SELECT 1 FROM otp_challenges c WHERE c.change_id = e.id)
+    ORDER BY e.expires_at
+    LIMIT $1
+)) AND expires_at < now() - interval '24 hours'
+`
+
+// TRD 03: after challenge cleanup, remove expired requests in bounded oldest-first batches.
+// NOT EXISTS avoids taking parent/FK locks before an in-flight L2 proof verifier.
+func (q *Queries) DeleteExpiredEmailChanges(ctx context.Context, batchSize int32) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredEmailChanges, batchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const getOwnedEmailChange = `-- name: GetOwnedEmailChange :one
+SELECT id, user_id, session_id, source_email_normalized, source_revision, new_email, new_email_normalized, created_at, expires_at, closed_at FROM email_changes WHERE id = $1 AND user_id = $2
+`
+
+type GetOwnedEmailChangeParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) GetOwnedEmailChange(ctx context.Context, arg GetOwnedEmailChangeParams) (EmailChange, error) {
+	row := q.db.QueryRow(ctx, getOwnedEmailChange, arg.ID, arg.UserID)
+	var i EmailChange
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.SessionID,
+		&i.SourceEmailNormalized,
+		&i.SourceRevision,
+		&i.NewEmail,
+		&i.NewEmailNormalized,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.ClosedAt,
+	)
+	return i, err
+}
+
 const getUserByEmailNormalized = `-- name: GetUserByEmailNormalized :one
 
-SELECT id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at FROM users WHERE email_normalized = $1
+SELECT id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at, display_name, preferred_language, time_zone, daily_goal, profile_revision, email_revision FROM users WHERE email_normalized = $1
 `
 
 // Queries for the identity module (users). TRD 01 sections 3, 7.3, 7.4 and 7.5.
@@ -34,12 +125,18 @@ func (q *Queries) GetUserByEmailNormalized(ctx context.Context, emailNormalized 
 		&i.Role,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DisplayName,
+		&i.PreferredLanguage,
+		&i.TimeZone,
+		&i.DailyGoal,
+		&i.ProfileRevision,
+		&i.EmailRevision,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at FROM users WHERE id = $1
+SELECT id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at, display_name, preferred_language, time_zone, daily_goal, profile_revision, email_revision FROM users WHERE id = $1
 `
 
 // Unlocked read, for example GET /v1/me.
@@ -57,15 +154,51 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.Role,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DisplayName,
+		&i.PreferredLanguage,
+		&i.TimeZone,
+		&i.DailyGoal,
+		&i.ProfileRevision,
+		&i.EmailRevision,
 	)
 	return i, err
+}
+
+const insertEmailChange = `-- name: InsertEmailChange :exec
+INSERT INTO email_changes(id,user_id,session_id,source_email_normalized,source_revision,new_email,new_email_normalized,expires_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+`
+
+type InsertEmailChangeParams struct {
+	ID                    uuid.UUID
+	UserID                uuid.UUID
+	SessionID             uuid.UUID
+	SourceEmailNormalized string
+	SourceRevision        int64
+	NewEmail              string
+	NewEmailNormalized    string
+	ExpiresAt             time.Time
+}
+
+func (q *Queries) InsertEmailChange(ctx context.Context, arg InsertEmailChangeParams) error {
+	_, err := q.db.Exec(ctx, insertEmailChange,
+		arg.ID,
+		arg.UserID,
+		arg.SessionID,
+		arg.SourceEmailNormalized,
+		arg.SourceRevision,
+		arg.NewEmail,
+		arg.NewEmailNormalized,
+		arg.ExpiresAt,
+	)
+	return err
 }
 
 const insertUserIfAbsent = `-- name: InsertUserIfAbsent :one
 INSERT INTO users (id, email, email_normalized, email_verified_at, password_hash, password_changed_at)
 VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (email_normalized) DO NOTHING
-RETURNING id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at
+RETURNING id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at, display_name, preferred_language, time_zone, daily_goal, profile_revision, email_revision
 `
 
 type InsertUserIfAbsentParams struct {
@@ -100,15 +233,101 @@ func (q *Queries) InsertUserIfAbsent(ctx context.Context, arg InsertUserIfAbsent
 		&i.Role,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DisplayName,
+		&i.PreferredLanguage,
+		&i.TimeZone,
+		&i.DailyGoal,
+		&i.ProfileRevision,
+		&i.EmailRevision,
+	)
+	return i, err
+}
+
+const lockEmailChange = `-- name: LockEmailChange :one
+SELECT id, user_id, session_id, source_email_normalized, source_revision, new_email, new_email_normalized, created_at, expires_at, closed_at FROM email_changes WHERE id = $1 AND user_id = $2 FOR UPDATE
+`
+
+type LockEmailChangeParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) LockEmailChange(ctx context.Context, arg LockEmailChangeParams) (EmailChange, error) {
+	row := q.db.QueryRow(ctx, lockEmailChange, arg.ID, arg.UserID)
+	var i EmailChange
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.SessionID,
+		&i.SourceEmailNormalized,
+		&i.SourceRevision,
+		&i.NewEmail,
+		&i.NewEmailNormalized,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.ClosedAt,
+	)
+	return i, err
+}
+
+const lockPendingEmailChange = `-- name: LockPendingEmailChange :many
+SELECT id FROM email_changes WHERE user_id = $1 AND closed_at IS NULL ORDER BY id FOR UPDATE
+`
+
+func (q *Queries) LockPendingEmailChange(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, lockPendingEmailChange, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockUserForEmailChange = `-- name: LockUserForEmailChange :one
+SELECT id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at, display_name, preferred_language, time_zone, daily_goal, profile_revision, email_revision FROM users WHERE id = $1 FOR UPDATE
+`
+
+// TRD 03 L3 exception: changing a unique key needs the stronger mode from the outset.
+func (q *Queries) LockUserForEmailChange(ctx context.Context, id uuid.UUID) (User, error) {
+	row := q.db.QueryRow(ctx, lockUserForEmailChange, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.EmailNormalized,
+		&i.EmailVerifiedAt,
+		&i.PasswordHash,
+		&i.PasswordChangedAt,
+		&i.Status,
+		&i.Role,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DisplayName,
+		&i.PreferredLanguage,
+		&i.TimeZone,
+		&i.DailyGoal,
+		&i.ProfileRevision,
+		&i.EmailRevision,
 	)
 	return i, err
 }
 
 const lockUserForNoKeyUpdate = `-- name: LockUserForNoKeyUpdate :one
-SELECT id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at FROM users WHERE id = $1 FOR NO KEY UPDATE
+SELECT id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at, display_name, preferred_language, time_zone, daily_goal, profile_revision, email_revision FROM users WHERE id = $1 FOR NO KEY UPDATE
 `
 
-// Lock level L3 (TRD 7.1). The only explicit lock mode ever taken on users.
+// Lock level L3 (TRD 7.1). All flows except TRD 03 final email cutover use this mode.
 // It conflicts with other writers of the row but not with foreign-key checks from
 // sessions, outbox or challenge inserts, and it never upgrades a weaker lock.
 func (q *Queries) LockUserForNoKeyUpdate(ctx context.Context, id uuid.UUID) (User, error) {
@@ -125,6 +344,12 @@ func (q *Queries) LockUserForNoKeyUpdate(ctx context.Context, id uuid.UUID) (Use
 		&i.Role,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DisplayName,
+		&i.PreferredLanguage,
+		&i.TimeZone,
+		&i.DailyGoal,
+		&i.ProfileRevision,
+		&i.EmailRevision,
 	)
 	return i, err
 }
@@ -170,4 +395,48 @@ func (q *Queries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const updateProfile = `-- name: UpdateProfile :one
+UPDATE users SET display_name = $1, preferred_language = $2,
+    time_zone = $3, daily_goal = $4, profile_revision = profile_revision + 1, updated_at = now()
+WHERE id = $5 RETURNING id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at, display_name, preferred_language, time_zone, daily_goal, profile_revision, email_revision
+`
+
+type UpdateProfileParams struct {
+	DisplayName       *string
+	PreferredLanguage string
+	TimeZone          string
+	DailyGoal         int32
+	ID                uuid.UUID
+}
+
+func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateProfile,
+		arg.DisplayName,
+		arg.PreferredLanguage,
+		arg.TimeZone,
+		arg.DailyGoal,
+		arg.ID,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.EmailNormalized,
+		&i.EmailVerifiedAt,
+		&i.PasswordHash,
+		&i.PasswordChangedAt,
+		&i.Status,
+		&i.Role,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DisplayName,
+		&i.PreferredLanguage,
+		&i.TimeZone,
+		&i.DailyGoal,
+		&i.ProfileRevision,
+		&i.EmailRevision,
+	)
+	return i, err
 }

@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/account"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/httpapi"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/otp"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/password"
@@ -136,6 +137,7 @@ func New(o Options) (http.Handler, error) {
 		return nil, err
 	}
 	auth := &httpapi.Handlers{Signup: signupSvc, Signin: signinSvc, Password: passwordSvc, Sessions: sessions,
+		Account: account.New(o.Pool, otpSvc, outbox, m, o.OnTxRetry),
 		Limiter: ratelimit.NewLimiter(o.Pool), Metrics: m, IPs: clientip.New(o.TrustedProxies),
 		Log: o.Logger.With("component", "http")}
 	m.RegisterOutboxPending(sqlc.New(o.Pool).CountPendingOutbox)

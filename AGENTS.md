@@ -25,7 +25,7 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
 **Go backend** (`backend/`, replaces the Rust service once TRD 01 is implemented; see
 `docs/trd/01-email-authentication-account-foundation.md` and `backend/README.md`)
 - So far: config, pgx pool, `/healthz`, `/readyz`, `cmd/migrate`, a disposable-PostgreSQL test
-  harness, migrations 00001 to 00007 (`backend/migrations/`) and sqlc queries
+  harness, migrations 00001 to 00009 (`backend/migrations/`) and sqlc queries
   (`backend/internal/platform/db/queries/` generates into `.../db/sqlc/`, never edit by hand).
   Identity primitives live in `backend/internal/identity/` (email normalization, password policy
   and blocklist, Argon2id hasher). Hash and verify passwords before opening a transaction; that
@@ -40,8 +40,8 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
   Token refresh authenticates by its body token; logout and `GET /v1/me` sit behind the bearer
   middleware in `backend/internal/auth/httpapi/`. Every protected Go route must be wrapped with
   `authenticated`. OTP and password sign-in are in `backend/internal/auth/signin/`; password
-  set, change and reset are in `backend/internal/auth/password/`. Device management is not
-  built yet. Password mutations hash before their transaction and follow TRD 01 §7.5 lock order.
+  set, change and reset are in `backend/internal/auth/password/`. Session listing, revoking another owned session and logout-all are
+  implemented in `backend/internal/auth/session/management.go` (TRD 02). Own-profile updates and paired-proof email cutover are in `backend/internal/account/` (TRD 03); cutover alone takes `users FOR UPDATE` at L3 for the unique email key. All challenge writes, including paired proofs, remain in OTP core. Password mutations hash before their transaction and follow TRD 01 §7.5 lock order.
   The HTTP contract is `backend/api/openapi.yaml`; a new or changed route updates it in the same
   change (`go test ./api` fails when the router and the spec disagree, and router tests fail on
   any response the spec does not describe).

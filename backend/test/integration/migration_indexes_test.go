@@ -70,8 +70,8 @@ func TestMigrations_UpgradeFromVersion6KeepsDataAndAddsIndexes(t *testing.T) {
 	seedCleanupData(t, d, 500)
 	before := tableCounts(t, d)
 
-	res, err = migrate.Up(ctx, d.URL, migrations.FS)
-	if err != nil || res.Current != latestVersion || len(res.Applied) != 1 || res.Applied[0] != 7 {
+	res, err = migrate.Up(ctx, d.URL, migrationsUpTo(t, 7))
+	if err != nil || res.Current != 7 || len(res.Applied) != 1 || res.Applied[0] != 7 {
 		t.Fatalf("upgrade: %+v %v", res, err)
 	}
 	if after := tableCounts(t, d); after != before {
@@ -79,7 +79,15 @@ func TestMigrations_UpgradeFromVersion6KeepsDataAndAddsIndexes(t *testing.T) {
 	}
 	indexesValid(t, d, cleanupIndexes)
 	requireNames(t, publicNames(t, d,
-		`SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname NOT LIKE '%\_pkey'`), expectedIndexes)
+		`SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname NOT LIKE '%\_pkey'`), func() []string {
+		var out []string
+		for _, idx := range expectedIndexes {
+			if idx != "email_changes_expires" && idx != "email_changes_one_pending" && idx != "otp_challenges_change" && idx != "otp_challenges_change_open" {
+				out = append(out, idx)
+			}
+		}
+		return out
+	}())
 }
 
 // From an empty database every version applies in order and the new indexes are valid.

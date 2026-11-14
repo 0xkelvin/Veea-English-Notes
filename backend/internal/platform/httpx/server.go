@@ -168,47 +168,57 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 // Stable error codes (TRD 5.3). Client-facing titles come only from the titles table, never
 // from an error value (TRD 11.2).
 const (
-	CodeInvalidRequest          = "invalid_request"
-	CodeInvalidEmail            = "invalid_email"
-	CodePasswordPolicyViolation = "password_policy_violation"
-	CodeInvalidCode             = "invalid_code"
-	CodeCodeAttemptsExceeded    = "code_attempts_exceeded"
-	CodeSignupUnavailable       = "signup_unavailable"
-	CodeRateLimited             = "rate_limited"
-	CodeUnauthorized            = "unauthorized"
-	CodeInvalidCredentials      = "invalid_credentials"
-	CodeAccountUnavailable      = "account_unavailable"
-	CodePasswordAlreadySet      = "password_already_set"
-	CodePasswordNotSet          = "password_not_set"
-	CodeInvalidCurrentPassword  = "invalid_current_password"
-	CodeBusy                    = "busy"
-	CodeInternal                = "internal_error"
-	CodeNotReady                = "not_ready"
-	CodeNotFound                = "not_found"
-	CodeMethodNotAllowed        = "method_not_allowed"
-	CodeUnsupportedMediaType    = "unsupported_media_type"
+	CodeInvalidProfile           = "invalid_profile"
+	CodeProfileConflict          = "profile_conflict"
+	CodeEmailUnchanged           = "email_unchanged"
+	CodeEmailUnavailable         = "email_unavailable"
+	CodeInvalidRequest           = "invalid_request"
+	CodeInvalidEmail             = "invalid_email"
+	CodePasswordPolicyViolation  = "password_policy_violation"
+	CodeInvalidCode              = "invalid_code"
+	CodeCodeAttemptsExceeded     = "code_attempts_exceeded"
+	CodeSignupUnavailable        = "signup_unavailable"
+	CodeRateLimited              = "rate_limited"
+	CodeUnauthorized             = "unauthorized"
+	CodeInvalidCredentials       = "invalid_credentials"
+	CodeAccountUnavailable       = "account_unavailable"
+	CodePasswordAlreadySet       = "password_already_set"
+	CodePasswordNotSet           = "password_not_set"
+	CodeInvalidCurrentPassword   = "invalid_current_password"
+	CodeBusy                     = "busy"
+	CodeInternal                 = "internal_error"
+	CodeNotReady                 = "not_ready"
+	CodeNotFound                 = "not_found"
+	CodeCurrentSessionNotAllowed = "current_session_not_allowed"
+	CodeMethodNotAllowed         = "method_not_allowed"
+	CodeUnsupportedMediaType     = "unsupported_media_type"
 )
 
 var titles = map[string]string{
-	CodeInvalidRequest:          "The request is malformed.",
-	CodeInvalidEmail:            "The email address is not valid.",
-	CodePasswordPolicyViolation: "The password does not meet the policy.",
-	CodeInvalidCode:             "The code is not valid.",
-	CodeCodeAttemptsExceeded:    "Too many attempts for this code. Request a new one.",
-	CodeSignupUnavailable:       "This email cannot be used for a new account. Sign in instead.",
-	CodeRateLimited:             "Too many requests. Try again later.",
-	CodeUnauthorized:            "Authentication is required.",
-	CodeInvalidCredentials:      "The email or password is not correct.",
-	CodeAccountUnavailable:      "This account cannot sign in.",
-	CodePasswordAlreadySet:      "This account already has a password.",
-	CodePasswordNotSet:          "This account has no password yet. Set one first.",
-	CodeInvalidCurrentPassword:  "The current password was not accepted.",
-	CodeBusy:                    "The service is busy. Try again shortly.",
-	CodeInternal:                "Something went wrong.",
-	CodeNotReady:                "Not ready",
-	CodeNotFound:                "No such resource.",
-	CodeMethodNotAllowed:        "This method is not allowed here.",
-	CodeUnsupportedMediaType:    "Send the request body as application/json.",
+	CodeInvalidProfile:           "The profile values are not valid.",
+	CodeProfileConflict:          "The profile changed. Reload it before saving.",
+	CodeEmailUnchanged:           "This is already the current sign-in address.",
+	CodeEmailUnavailable:         "This email cannot be used for this change.",
+	CodeInvalidRequest:           "The request is malformed.",
+	CodeInvalidEmail:             "The email address is not valid.",
+	CodePasswordPolicyViolation:  "The password does not meet the policy.",
+	CodeInvalidCode:              "The code is not valid.",
+	CodeCodeAttemptsExceeded:     "Too many attempts for this code. Request a new one.",
+	CodeSignupUnavailable:        "This email cannot be used for a new account. Sign in instead.",
+	CodeRateLimited:              "Too many requests. Try again later.",
+	CodeUnauthorized:             "Authentication is required.",
+	CodeInvalidCredentials:       "The email or password is not correct.",
+	CodeAccountUnavailable:       "This account cannot sign in.",
+	CodePasswordAlreadySet:       "This account already has a password.",
+	CodePasswordNotSet:           "This account has no password yet. Set one first.",
+	CodeInvalidCurrentPassword:   "The current password was not accepted.",
+	CodeBusy:                     "The service is busy. Try again shortly.",
+	CodeInternal:                 "Something went wrong.",
+	CodeNotReady:                 "Not ready",
+	CodeNotFound:                 "No such resource.",
+	CodeCurrentSessionNotAllowed: "Use sign out to end the current session.",
+	CodeMethodNotAllowed:         "This method is not allowed here.",
+	CodeUnsupportedMediaType:     "Send the request body as application/json.",
 }
 
 // WriteProblem writes an RFC 9457 problem document with a stable code and the request id.

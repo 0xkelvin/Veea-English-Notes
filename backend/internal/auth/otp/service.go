@@ -155,7 +155,8 @@ type Target struct {
 	// until it is redeemed or ends (TRD 4.1).
 	PendingPasswordHash string
 	// To is the recipient. Empty means the address as entered (StartRequest.Email.Display).
-	To string
+	To            string
+	EmailRevision int64
 }
 
 // StartRequest is one OTP start.
@@ -197,6 +198,9 @@ type Acknowledgement struct {
 //
 // Errors: *RateLimitedError for a limit or an active cooldown, otherwise an internal error.
 func (s *Service) Start(ctx context.Context, req StartRequest) (Acknowledgement, error) {
+	if req.Purpose == PurposeEmailCurrent || req.Purpose == PurposeEmailNew {
+		return Acknowledgement{}, errors.New("otp: email change requires pair start")
+	}
 	info, err := req.Purpose.info()
 	if err != nil {
 		return Acknowledgement{}, err
@@ -330,6 +334,7 @@ func (s *Service) replaceChallenge(ctx context.Context, q *sqlc.Queries, p start
 		UserID: t.UserID, SessionID: t.SessionID,
 		CodeHash: s.codes.Hash(p.id, p.code), Delivery: delivery(t), MaxAttempts: MaxAttempts,
 		ExpiresAt: expires, RequestIp: addrPtr(p.req.IP.Addr),
+		EmailRevision: t.EmailRevision,
 	}
 	if p.req.Purpose == PurposeSignup {
 		row.SignupMethod = ptr(string(p.req.SignupMethod))
@@ -414,7 +419,7 @@ func bindTarget(info purposeInfo, req StartRequest, t Target) (Target, error) {
 	case !info.needsUser && t.UserID != nil:
 		return Target{}, errors.New("otp: a signup challenge is not bound to an account")
 	case info.callerBound != (t.SessionID != nil):
-		return Target{}, errors.New("otp: only set_password challenges are bound to a session, and they must be")
+		return Target{}, errors.New("otp: invalid caller binding for purpose")
 	case (req.SignupMethod == SignupPassword) != (t.PendingPasswordHash != ""):
 		return Target{}, errors.New("otp: a pending password hash belongs to, and is required by, password signup")
 	}
@@ -457,6 +462,7 @@ type Accepted struct {
 	// PendingPasswordHash is the password signup hash. It has already been cleared from the row
 	// and exists only here, in memory (TRD 7.3 step 5).
 	PendingPasswordHash string
+	EmailRevision       int64
 }
 
 // AfterAccept runs a flow's steps after V accepted the code, in the same transaction and in
@@ -495,6 +501,9 @@ type outcome struct {
 // The returned error is nil on success, ErrInvalidCode or ErrAttemptsExceeded for a rejection,
 // *RateLimitedError, the error a flow passed to CommitFailure or Rollback, or an internal error.
 func (s *Service) Verify(ctx context.Context, req VerifyRequest, then AfterAccept) error {
+	if req.Purpose == PurposeEmailCurrent || req.Purpose == PurposeEmailNew {
+		return errors.New("otp: email change requires pair verification")
+	}
 	info, err := req.Purpose.info()
 	if err != nil {
 		return err
@@ -695,6 +704,7 @@ func accepted(ch sqlc.OtpChallenge, req VerifyRequest, out *outcome) Accepted {
 	a := Accepted{
 		ChallengeID: ch.ID, Purpose: req.Purpose, Email: *out.email, EmailHMAC: out.hmac,
 		UserID: ch.UserID, SessionID: ch.SessionID,
+		EmailRevision: ch.EmailRevision,
 	}
 	if ch.SignupMethod != nil {
 		a.SignupMethod = SignupMethod(*ch.SignupMethod)

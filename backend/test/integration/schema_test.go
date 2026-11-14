@@ -19,13 +19,13 @@ import (
 )
 
 var expectedTables = []string{
-	"audit_events", "email_outbox", "otp_challenges", "otp_cooldowns",
+	"audit_events", "email_changes", "email_outbox", "otp_challenges", "otp_cooldowns",
 	"rate_limit_counters", "refresh_tokens_consumed", "sessions", "users",
 }
 
 var expectedIndexes = []string{ // sorted, as publicNames returns them; 00007 added the cleanup indexes
-	"audit_events_action", "audit_events_target", "email_outbox_challenge",
-	"email_outbox_due", "email_outbox_finished", "otp_challenges_expires",
+	"audit_events_action", "audit_events_target", "email_changes_expires", "email_changes_one_pending", "email_outbox_challenge",
+	"email_outbox_due", "email_outbox_finished", "otp_challenges_change", "otp_challenges_change_open", "otp_challenges_expires",
 	"otp_challenges_one_open", "otp_challenges_token_hash_key", "otp_cooldowns_last_issued",
 	"rate_limit_counters_window", "refresh_tokens_consumed_retain", "refresh_tokens_consumed_session",
 	"sessions_absolute_expires", "sessions_access_token_hash_key", "sessions_refresh_token_hash_key",
@@ -33,7 +33,7 @@ var expectedIndexes = []string{ // sorted, as publicNames returns them; 00007 ad
 }
 
 // latestVersion is the number of the newest migration file.
-const latestVersion = 7
+const latestVersion = 9
 
 func publicNames(t *testing.T, d *pgtest.DB, query string) []string {
 	t.Helper()
@@ -134,7 +134,7 @@ func TestMigrations_AreUpOnlyAndOrdered(t *testing.T) {
 	files, _ := fs.Glob(migrations.FS, "*.sql")
 	want := []string{"00001_users.sql", "00002_otp.sql", "00003_sessions.sql",
 		"00004_email_outbox.sql", "00005_audit_events.sql", "00006_rate_limit_counters.sql",
-		"00007_cleanup_indexes.sql"}
+		"00007_cleanup_indexes.sql", "00008_session_management.sql", "00009_account_profile_email_change.sql"}
 	requireNames(t, files, want)
 	for _, f := range files {
 		raw, _ := fs.ReadFile(migrations.FS, f)
@@ -347,7 +347,7 @@ func TestSchema_Sessions(t *testing.T) {
 		_, err := d.Pool.Exec(ctx, `UPDATE sessions SET revoked_at = now(), revoked_reason = 'bored' WHERE id = $1`, s.ID)
 		wantPgError(t, err, pgCheck, "sessions_revoked_reason_check")
 		for _, reason := range []string{"logout", "password_set", "password_change", "password_reset",
-			"refresh_reuse", "session_limit", "account_inactive"} {
+			"refresh_reuse", "session_limit", "account_inactive", "user_revoked", "logout_all"} {
 			s := newSession(t, q, u.ID)
 			mustExec(t, d.Pool, `UPDATE sessions SET revoked_at = now(), revoked_reason = $2 WHERE id = $1`, s.ID, reason)
 		}

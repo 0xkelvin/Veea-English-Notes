@@ -175,7 +175,7 @@ func (s *Service) StartSet(ctx context.Context, p session.Principal, c Client) (
 			case cur.PasswordHash != nil:
 				return otp.Target{}, ErrPasswordAlreadySet
 			}
-			return otp.Target{Eligible: true, UserID: &cur.ID, SessionID: &p.SessionID, To: cur.Email}, nil
+			return otp.Target{Eligible: true, UserID: &cur.ID, SessionID: &p.SessionID, To: cur.Email, EmailRevision: cur.EmailRevision}, nil
 		},
 	})
 	if errors.Is(err, ErrPasswordAlreadySet) {
@@ -217,7 +217,7 @@ func (s *Service) Set(ctx context.Context, p session.Principal, token, code, new
 		if err != nil {
 			return err
 		}
-		if !ok || !accounts.InGoodStanding(locked) {
+		if !ok || !accounts.InGoodStanding(locked) || !otp.MatchesAccount(a, locked) {
 			return otp.Rollback(reasonAccountUnavailable, session.ErrUnauthorized)
 		}
 		if locked.PasswordHash != nil {
@@ -364,7 +364,7 @@ func (s *Service) StartReset(ctx context.Context, rawEmail string, c Client) (ot
 			if err != nil || !exists || !accounts.InGoodStanding(u) {
 				return otp.Target{}, err
 			}
-			return otp.Target{Eligible: true, UserID: &u.ID, To: u.Email}, nil
+			return otp.Target{Eligible: true, UserID: &u.ID, To: u.Email, EmailRevision: u.EmailRevision}, nil
 		},
 	})
 }
@@ -400,7 +400,7 @@ func (s *Service) CompleteReset(ctx context.Context, token, code, newPassword st
 		if err != nil {
 			return err
 		}
-		if !ok || !accounts.InGoodStanding(locked) {
+		if !ok || !accounts.InGoodStanding(locked) || !otp.MatchesAccount(a, locked) {
 			return otp.Rollback(reasonAccountUnavailable, otp.ErrInvalidCode)
 		}
 		return s.commitMutation(ctx, tx, mutation{

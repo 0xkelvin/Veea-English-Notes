@@ -6,6 +6,7 @@ package httpapi
 
 import (
 	"errors"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/account"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -28,6 +29,7 @@ import (
 
 // Handlers serves the auth endpoints.
 type Handlers struct {
+	Account  *account.Service
 	Signup   *signup.Service
 	Signin   *signin.Service
 	Password *password.Service
@@ -54,6 +56,12 @@ func (h *Handlers) Mount(mux httpx.Router) {
 	mux.HandleFunc("POST /v1/auth/token/refresh", h.refresh)
 	mux.HandleFunc("POST /v1/auth/logout", h.authenticated(h.logout))
 	mux.HandleFunc("GET /v1/me", h.authenticated(h.me))
+	mux.HandleFunc("PUT /v1/me/profile", h.authenticated(h.updateProfile))
+	mux.HandleFunc("POST /v1/me/email-change/start", h.authenticated(h.startEmailChange))
+	mux.HandleFunc("POST /v1/me/email-change/{change_id}/complete", h.authenticated(h.completeEmailChange))
+	mux.HandleFunc("GET /v1/me/sessions", h.authenticated(h.listSessions))
+	mux.HandleFunc("DELETE /v1/me/sessions/{session_id}", h.authenticated(h.revokeSession))
+	mux.HandleFunc("DELETE /v1/me/sessions", h.authenticated(h.logoutAll))
 }
 
 // --- request and response shapes (TRD 5.2) ---------------------------------------------------
@@ -101,14 +109,15 @@ type acknowledgement struct {
 }
 
 type user struct {
-	ID                string     `json:"id"`
-	Email             string     `json:"email"`
-	EmailVerifiedAt   *time.Time `json:"email_verified_at"`
-	HasPassword       bool       `json:"has_password"`
-	PasswordChangedAt *time.Time `json:"password_changed_at"`
-	Status            string     `json:"status"`
-	Role              string     `json:"role"`
-	CreatedAt         time.Time  `json:"created_at"`
+	Profile           profileBody `json:"profile"`
+	ID                string      `json:"id"`
+	Email             string      `json:"email"`
+	EmailVerifiedAt   *time.Time  `json:"email_verified_at"`
+	HasPassword       bool        `json:"has_password"`
+	PasswordChangedAt *time.Time  `json:"password_changed_at"`
+	Status            string      `json:"status"`
+	Role              string      `json:"role"`
+	CreatedAt         time.Time   `json:"created_at"`
 }
 
 type tokenResponse struct {
@@ -126,7 +135,8 @@ func ackBody(a otp.Acknowledgement) acknowledgement {
 
 func userBody(u sqlc.User) user {
 	return user{
-		ID: u.ID.String(), Email: u.Email, EmailVerifiedAt: utc(u.EmailVerifiedAt), HasPassword: u.PasswordHash != nil,
+		Profile: profileBody{DisplayName: u.DisplayName, PreferredLanguage: u.PreferredLanguage, TimeZone: u.TimeZone, DailyGoal: u.DailyGoal, Revision: u.ProfileRevision},
+		ID:      u.ID.String(), Email: u.Email, EmailVerifiedAt: utc(u.EmailVerifiedAt), HasPassword: u.PasswordHash != nil,
 		PasswordChangedAt: utc(u.PasswordChangedAt), Status: u.Status, Role: u.Role, CreatedAt: u.CreatedAt.UTC(),
 	}
 }
@@ -410,6 +420,20 @@ func (h *Handlers) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var policy *identity.PolicyError
 	var limited *otp.RateLimitedError
 	switch {
+	case errors.Is(err, account.ErrInvalidProfile):
+		httpx.WriteProblem(w, 422, httpx.CodeInvalidProfile)
+	case errors.Is(err, account.ErrProfileConflict):
+		httpx.WriteProblem(w, 409, httpx.CodeProfileConflict)
+	case errors.Is(err, account.ErrEmailUnchanged):
+		httpx.WriteProblem(w, 409, httpx.CodeEmailUnchanged)
+	case errors.Is(err, account.ErrEmailUnavailable):
+		httpx.WriteProblem(w, 409, httpx.CodeEmailUnavailable)
+	case errors.Is(err, account.ErrChangeNotFound):
+		httpx.WriteProblem(w, 404, httpx.CodeNotFound)
+	case errors.Is(err, session.ErrSessionNotFound):
+		httpx.WriteProblem(w, http.StatusNotFound, httpx.CodeNotFound)
+	case errors.Is(err, session.ErrCurrentSession):
+		httpx.WriteProblem(w, http.StatusConflict, httpx.CodeCurrentSessionNotAllowed)
 	case errors.Is(err, session.ErrUnauthorized):
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		httpx.WriteProblem(w, http.StatusUnauthorized, httpx.CodeUnauthorized)

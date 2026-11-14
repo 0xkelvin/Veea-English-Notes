@@ -1,9 +1,9 @@
 openapi: 3.0.3
 info:
   title: Veea English Notes — Accounts API
-  version: 1.0.0-trd01
+  version: 1.2.0-trd03
   description: |
-    Email authentication and account foundation (TRD 01 §5). This document is normative for the
+    Email authentication and account foundation (TRD 01 §5), plus session management (TRD 02). This document is normative for the
     Go service in `backend/`: every route the router registers is listed here, and the
     integration suite validates every response it receives against it.
 
@@ -27,6 +27,7 @@ tags:
   - name: signup
   - name: signin
   - name: password
+  - name: account
   - name: session
 
 paths:
@@ -258,6 +259,155 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "500": { $ref: "#/components/responses/InternalError" }
+  /v1/me/profile:
+    put:
+      tags: [account]
+      operationId: updateProfile
+      summary: Replace the caller’s editable profile fields (TRD 03).
+      description: |
+        All four fields and expected_revision are required. No query parameters.
+        Stale revision conflicts; matching unchanged values are a no-op. No credential or session change.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unauthorized, unsupported_media_type, rate_limited, internal_error, invalid_profile, profile_conflict]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProfileRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/AccountUser" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/InvalidProfile" }
+  /v1/me/email-change/start:
+    post:
+      tags: [account]
+      operationId: emailChangeStart
+      summary: Issue current- and proposed-address OTP proofs (TRD 03).
+      description: |
+        Both proofs bind to one request, user and acting session. Both last ten minutes, five attempts each.
+        No query parameters. Starting again closes the old request and obeys existing cooldowns.
+        An occupied proposed address gets the same acknowledgement, but its challenge is inert and no email is sent.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unauthorized, unsupported_media_type, rate_limited, internal_error, invalid_email, email_unchanged]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailChangeStart" }
+      responses:
+        "202": { $ref: "#/components/responses/EmailChangeStarted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/me/email-change/{change_id}/complete:
+    post:
+      tags: [account]
+      operationId: emailChangeComplete
+      summary: Atomically replace verified email and revoke all sessions (TRD 03).
+      description: |
+        Consumes both distinct, caller-bound proofs in the cutover transaction; user_id and ownership stay fixed.
+        Old-address login/reset/set proofs become invalid. All sessions, including caller, lose both token types.
+        Old address is released after commit; old-inbox notice omits the new address. No query parameters.
+        Success returns 204. Retry normally returns 401; an already authenticated concurrent retry may get
+        400 invalid_code. No receipt endpoint. After a lost response, check confirmation mail or sign in
+        with the proposed new address; no error response alone proves whether the original request committed.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unauthorized, unsupported_media_type, rate_limited, internal_error, invalid_code, code_attempts_exceeded, not_found, email_unavailable]
+      parameters:
+        - in: path
+          name: change_id
+          required: true
+          schema: { type: string, format: uuid }
+          description: Nonzero, 36-character hyphenated owned request UUID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailChangeComplete" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "404": { $ref: "#/components/responses/OwnedRequestNotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/me/sessions:
+    get:
+      tags: [session]
+      operationId: listSessions
+      summary: List the caller's owned live sessions, including the current one (TRD 02).
+      description: |
+        One statement snapshot; unrevoked, absolute-valid sessions with usable access or refresh.
+        Current identity comes from the bearer principal. Sorted last_seen_at descending, id ascending.
+        Complete list, no pagination or query parameters. Request bodies are ignored.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unauthorized, rate_limited, internal_error]
+      responses:
+        "200":
+          description: Complete owned live session list. Device labels are client-supplied; last seen is approximate.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      tags: [session]
+      operationId: revokeAllSessions
+      summary: Sign out all devices, including the current session (TRD 02).
+      description: |
+        Valid bearer is sufficient; clients confirm this action with the user. No body or query parameters.
+        Bodies are ignored. Serializes with issuance on the user row; later valid sign-ins may create a
+        new session. All preceding unrevoked rows, including expired ones, transition atomically with audit.
+        A retry with the revoked bearer returns 401, which does not prove the earlier action committed.
+        No operation receipt or unauthenticated replay is provided; pending login proofs remain valid.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unauthorized, rate_limited, internal_error]
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/me/sessions/{session_id}:
+    delete:
+      tags: [session]
+      operationId: revokeSession
+      summary: Revoke one other owned session (TRD 02).
+      description: |
+        No query parameters; bodies are ignored. Unknown and foreign identifiers both return 404.
+        Retained already-revoked owned rows return 204 without a new event or timestamp/reason change.
+        After cleanup removes a target, a retry may return 404. Current session is refused with 409.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          description: Nonzero, 36-character hyphenated session UUID. Authentication precedes path validation.
+          schema: { type: string, format: uuid }
+      x-error-codes: [invalid_request, unauthorized, not_found, current_session_not_allowed, rate_limited, internal_error]
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/SessionNotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
   /v1/me/password/set/start:
     post:
       tags: [password]
@@ -411,6 +561,41 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/TokenResponse" }
+    AccountUser:
+      description: Current account and profile.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/User" }
+    EmailChangeStarted:
+      description: Both proof acknowledgements, regardless of destination eligibility.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [change_id, current_email, new_email]
+            properties:
+              change_id: { type: string, format: uuid }
+              current_email: { $ref: "#/components/schemas/Acknowledgement" }
+              new_email: { $ref: "#/components/schemas/Acknowledgement" }
+    InvalidProfile:
+      description: An editable profile value is invalid.
+      x-codes: [invalid_profile]
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    OwnedRequestNotFound:
+      description: Unknown or foreign request. No ownership disclosure.
+      x-codes: [not_found]
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
     NoContent:
       description: Done. No body.
       headers:
@@ -450,10 +635,19 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
     Conflict:
-      description: "`signup_unavailable`, `password_already_set` or `password_not_set`."
-      x-codes: [signup_unavailable, password_already_set, password_not_set]
+      description: "`signup_unavailable`, `password_already_set`, `password_not_set` or `current_session_not_allowed`."
+      x-codes: [signup_unavailable, password_already_set, password_not_set, current_session_not_allowed, profile_conflict, email_unchanged, email_unavailable]
       headers:
         X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    SessionNotFound:
+      description: Unknown or foreign session; never discloses ownership.
+      x-codes: [not_found]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Cache-Control: { $ref: "#/components/headers/Cache-Control" }
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
@@ -538,13 +732,49 @@ components:
           allOf: [{ $ref: "#/components/schemas/Token" }, { pattern: "^vct_" }]
         expires_at: { $ref: "#/components/schemas/Timestamp" }
         resend_after: { $ref: "#/components/schemas/Timestamp" }
+    Profile:
+      type: object
+      additionalProperties: false
+      required: [display_name, preferred_language, time_zone, daily_goal, revision]
+      properties:
+        display_name: { type: string, nullable: true, minLength: 1, maxLength: 64 }
+        preferred_language: { type: string, enum: [en, vi] }
+        time_zone: { type: string, minLength: 1 }
+        daily_goal: { type: integer, minimum: 1, maximum: 1000, description: "Target words reviewed per day; a preference, not progress." }
+        revision: { type: integer, minimum: 0 }
+    ProfileRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, display_name, preferred_language, time_zone, daily_goal]
+      properties:
+        expected_revision: { type: integer, minimum: 0 }
+        display_name: { type: string, nullable: true }
+        preferred_language: { type: string }
+        time_zone: { type: string }
+        daily_goal: { type: integer }
+    EmailChangeStart:
+      type: object
+      additionalProperties: false
+      required: [new_email]
+      properties:
+        new_email: { type: string }
+    EmailChangeComplete:
+      type: object
+      additionalProperties: false
+      required: [current_challenge_token, current_code, new_challenge_token, new_code]
+      properties:
+        current_challenge_token: { type: string }
+        current_code: { type: string }
+        new_challenge_token: { type: string }
+        new_code: { type: string }
     User:
       type: object
       additionalProperties: false
-      required: [id, email, email_verified_at, has_password, password_changed_at, status, role, created_at]
+      required: [id, email, email_verified_at, has_password, password_changed_at, status, role, created_at, profile]
       properties:
         id: { type: string, format: uuid }
-        email: { type: string, description: As entered at signup. }
+        email: { type: string, description: Current verified sign-in address. }
+        profile: { $ref: "#/components/schemas/Profile" }
         email_verified_at: { type: string, format: date-time, nullable: true }
         has_password: { type: boolean }
         password_changed_at:
@@ -555,6 +785,28 @@ components:
         status: { type: string, enum: [active, suspended, deactivated, pending_deletion] }
         role: { type: string, enum: [user, admin, super_admin] }
         created_at: { $ref: "#/components/schemas/Timestamp" }
+    SessionList:
+      type: object
+      additionalProperties: false
+      required: [current_session_id, sessions]
+      properties:
+        current_session_id: { type: string, format: uuid }
+        sessions:
+          type: array
+          items: { $ref: "#/components/schemas/SessionSummary" }
+    SessionSummary:
+      type: object
+      additionalProperties: false
+      required: [id, device_name, platform, created_at, last_seen_at, refresh_expires_at, absolute_expires_at, is_current]
+      properties:
+        id: { type: string, format: uuid }
+        device_name: { type: string, minLength: 1, maxLength: 64 }
+        platform: { type: string, enum: [ios, android, web, other] }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        last_seen_at: { $ref: "#/components/schemas/Timestamp" }
+        refresh_expires_at: { $ref: "#/components/schemas/Timestamp" }
+        absolute_expires_at: { $ref: "#/components/schemas/Timestamp" }
+        is_current: { type: boolean }
     TokenResponse:
       type: object
       additionalProperties: false
@@ -571,6 +823,10 @@ components:
     ErrorCode:
       type: string
       enum:
+        - invalid_profile
+        - profile_conflict
+        - email_unchanged
+        - email_unavailable
         - invalid_request
         - invalid_email
         - password_policy_violation
@@ -587,6 +843,7 @@ components:
         - busy
         - internal_error
         - not_ready
+        - current_session_not_allowed
         - not_found
         - method_not_allowed
         - unsupported_media_type

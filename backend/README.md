@@ -3,8 +3,8 @@
 Go modular monolith on PostgreSQL. It replaces the Rust service in `cloud/`
 (TRD 01 R9); both live in the repo until `cloud/` is retired. It includes TRD 01's email signup (OTP and password), OTP and password sign-in, sessions with
 refresh rotation, first-password set, change and reset, the encrypted email outbox,
-audit events, rate limits, the cleanup jobs and the metrics listener. The schema is
-migrations 00001 to 00007. Resend is selected for production email (TRD 01 R12); Mailpit remains the local default.
+audit events, rate limits, the cleanup jobs, the metrics listener, TRD 02 session management and TRD 03 profile/email change. The schema is
+migrations 00001 to 00009. Resend is selected for production email (TRD 01 R12); Mailpit remains the local default.
 
 Design: [`docs/trd/01-email-authentication-account-foundation.md`](../docs/trd/01-email-authentication-account-foundation.md).
 
@@ -214,3 +214,26 @@ integration tests skip.
 skips.
 
 Use synthetic data only. Do not point tests, scripts or builds at a deployed server.
+
+## Session management (TRD 02)
+
+A valid bearer session can `GET /v1/me/sessions` to list its account's live sessions,
+`DELETE /v1/me/sessions/{session_id}` to revoke another owned session, and
+`DELETE /v1/me/sessions` to sign out all devices, including the caller. Client confirmation
+is required before logout-all; no fresh password or OTP proof is required. The server
+identifies the current session from the bearer principal, never a supplied device label.
+
+Management writes share the issuance user-row lock and revalidate the acting session in
+that transaction. A valid sign-in serialized after logout-all may issue a new session;
+refresh cannot resurrect a revoked row. Retained already-revoked owned targets return 204
+without another event; foreign and absent targets both return 404. Logout-all retries with
+the revoked bearer return 401, which is not a receipt proving the earlier operation committed.
+See [TRD 02](../docs/trd/02-session-management.md) for response fields, concurrency and audit evidence.
+
+## Account profile and email change (TRD 03)
+
+`GET /v1/me` and token responses include `User.profile`. `PUT /v1/me/profile` replaces display name, language (`en`/`vi`), IANA time zone and daily review target with an expected profile revision. Email cutover uses `POST /v1/me/email-change/start` and `POST /v1/me/email-change/{change_id}/complete`; both current/new OTP proofs bind to the request, account and originating live session.
+
+Completion preserves the user ID and data, consumes both proofs, invalidates older bound challenges using `email_revision`, revokes every session, and enqueues both notifications in one transaction. Retry with the revoked bearer returns 401; recover a lost response through the confirmation email or sign in with the new address. Old-mailbox recovery and receipt endpoints are deferred. The old notification omits the new address.
+
+Migrate before deploying. Every API instance must enforce challenge/password-sign-in email revisions before email cutover is enabled; an older instance could otherwise honor stale work. See [TRD 03](../docs/trd/03-account-profile-email-change.md) for contracts, lock ordering and verification evidence.

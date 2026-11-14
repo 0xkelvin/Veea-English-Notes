@@ -19,6 +19,7 @@ RETURNING last_issued_at;
 UPDATE otp_challenges
 SET superseded_at = now(), pending_password_hash = NULL
 WHERE purpose = @purpose
+  AND change_id IS NULL
   AND email_normalized = @email_normalized
   AND consumed_at IS NULL
   AND superseded_at IS NULL
@@ -27,12 +28,19 @@ RETURNING id;
 -- name: InsertOTPChallenge :one
 INSERT INTO otp_challenges (
     id, token_hash, purpose, signup_method, pending_password_hash, email, email_normalized,
-    user_id, session_id, code_hash, delivery, max_attempts, expires_at, request_ip
+    user_id, session_id, code_hash, delivery, max_attempts, expires_at, request_ip, email_revision
 ) VALUES (
     @id, @token_hash, @purpose, @signup_method, @pending_password_hash, @email, @email_normalized,
-    @user_id, @session_id, @code_hash, @delivery, @max_attempts, @expires_at, @request_ip
+    @user_id, @session_id, @code_hash, @delivery, @max_attempts, @expires_at, @request_ip, @email_revision
 )
 RETURNING *;
+
+-- name: InsertEmailChangeChallenge :exec
+INSERT INTO otp_challenges(id,token_hash,purpose,email,email_normalized,user_id,session_id,code_hash,delivery,max_attempts,expires_at,request_ip,email_revision,change_id)
+VALUES (@id,@token_hash,@purpose,@email,@email_normalized,@user_id,@session_id,@code_hash,@delivery,@max_attempts,@expires_at,@request_ip,@email_revision,@change_id);
+
+-- name: LockOTPProofPair :many
+SELECT * FROM otp_challenges WHERE token_hash = ANY(@token_hashes::bytea[]) ORDER BY id FOR UPDATE;
 
 -- name: LockOTPChallengeByTokenHash :one
 -- Lock level L2, procedure V step 1 (TRD 7.3). Returns no row for an unknown token.

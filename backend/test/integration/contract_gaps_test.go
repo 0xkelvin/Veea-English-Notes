@@ -375,7 +375,13 @@ func TestContract_JSONOperationsRequireTheJSONMediaType(t *testing.T) {
 			}
 			for _, ct := range []string{"", "text/plain", "application/x-www-form-urlencoded"} {
 				t.Run(method+" "+path+" "+ct, func(t *testing.T) {
-					req, _ := http.NewRequest(method, env.srv.URL+path, strings.NewReader(`{}`))
+					concrete := path
+					for _, param := range op.Parameters {
+						if param.Value.In == "path" {
+							concrete = strings.ReplaceAll(concrete, "{"+param.Value.Name+"}", uuid.NewString())
+						}
+					}
+					req, _ := http.NewRequest(method, env.srv.URL+concrete, strings.NewReader(`{}`))
 					if ct != "" {
 						req.Header.Set("Content-Type", ct)
 					}

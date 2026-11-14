@@ -26,13 +26,17 @@ type templateSpec struct {
 // Copy is English only in Phase 1 (Product Doc 5.7). Code emails contain no links, so a stolen
 // email can never sign anyone in (TRD 8.3).
 var specs = map[Template]templateSpec{
-	TemplateSignupCode:      {"Your Veea sign-up code", "Use this code to finish creating your Veea English Notes account."},
-	TemplateLoginCode:       {"Your Veea sign-in code", "Use this code to sign in to Veea English Notes."},
-	TemplateResetCode:       {"Your Veea password reset code", "Use this code to reset your Veea English Notes password."},
-	TemplateSetPasswordCode: {"Your Veea code to add a password", "Use this code to add a password to your Veea English Notes account."},
-	TemplatePasswordAdded:   {"A password was added to your Veea account", "A password was added to your Veea English Notes account."},
-	TemplatePasswordChanged: {"Your Veea password was changed", "The password of your Veea English Notes account was changed."},
-	TemplatePasswordReset:   {"Your Veea password was reset", "The password of your Veea English Notes account was reset."},
+	TemplateEmailCurrentCode: {"Confirm your current Veea email", "Use this code to prove control of your current Veea sign-in address."},
+	TemplateEmailNewCode:     {"Verify your new Veea email", "Use this code to verify this proposed Veea sign-in address."},
+	TemplateEmailChangedOld:  {"Your Veea sign-in email changed", "Your account's sign-in email was changed. If this was unexpected, seek account support."},
+	TemplateEmailChangedNew:  {"Your new Veea sign-in email is confirmed", "Your account now uses this address. Sign in with this address to continue."},
+	TemplateSignupCode:       {"Your Veea sign-up code", "Use this code to finish creating your Veea English Notes account."},
+	TemplateLoginCode:        {"Your Veea sign-in code", "Use this code to sign in to Veea English Notes."},
+	TemplateResetCode:        {"Your Veea password reset code", "Use this code to reset your Veea English Notes password."},
+	TemplateSetPasswordCode:  {"Your Veea code to add a password", "Use this code to add a password to your Veea English Notes account."},
+	TemplatePasswordAdded:    {"A password was added to your Veea account", "A password was added to your Veea English Notes account."},
+	TemplatePasswordChanged:  {"Your Veea password was changed", "The password of your Veea English Notes account was changed."},
+	TemplatePasswordReset:    {"Your Veea password was reset", "The password of your Veea English Notes account was reset."},
 }
 
 type view struct {
@@ -74,6 +78,9 @@ var htmlNotice = htmltemplate.Must(htmltemplate.New("notice").Parse(`<!doctype h
 </body></html>
 `))
 
+var textEmailNotice = texttemplate.Must(texttemplate.New("email_notice").Parse("{{.Intro}}\n\nWhen: {{.When}}\n"))
+var htmlEmailNotice = htmltemplate.Must(htmltemplate.New("email_notice").Parse("<p>{{.Intro}}</p><p>When: {{.When}}</p>"))
+
 // Render builds the email for template t and payload p.
 func Render(t Template, p Payload) (Rendered, error) {
 	spec, ok := specs[t]
@@ -82,6 +89,10 @@ func Render(t Template, p Payload) (Rendered, error) {
 	}
 	v := view{Intro: spec.intro, Lifetime: CodeLifetimeText}
 	textT, htmlT := textNotice, htmlNotice
+	if t == TemplateEmailChangedOld || t == TemplateEmailChangedNew {
+		textT = textEmailNotice
+		htmlT = htmlEmailNotice
+	}
 	if t.IsCode() {
 		if !validCode(p.Code) {
 			return Rendered{}, errors.New("notify: payload has no valid code")

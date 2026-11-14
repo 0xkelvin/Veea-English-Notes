@@ -20,12 +20,20 @@ RETURNING *;
 -- Pre-send re-check (TRD 8.2, 8.3 step 3), read without locks. is_open is false when the
 -- challenge was consumed or superseded, has expired on the database clock, or is not a code
 -- challenge. No row means the challenge is gone, which the worker treats as closed.
-SELECT (consumed_at IS NULL
-        AND superseded_at IS NULL
-        AND expires_at > now()
-        AND delivery = 'code')::boolean AS is_open
-FROM otp_challenges
-WHERE id = @id;
+SELECT (c.consumed_at IS NULL
+        AND c.superseded_at IS NULL
+        AND c.expires_at > now()
+        AND c.delivery = 'code'
+        AND (c.user_id IS NULL OR EXISTS (
+            SELECT 1 FROM users u WHERE u.id = c.user_id AND u.email_revision = c.email_revision
+              AND (c.purpose = 'email_change_new' OR u.email_normalized = c.email_normalized)
+        ))
+        AND (c.change_id IS NULL OR EXISTS (
+            SELECT 1 FROM email_changes e WHERE e.id = c.change_id AND e.closed_at IS NULL
+              AND e.expires_at > now() AND e.source_revision = c.email_revision
+        )))::boolean AS is_open
+FROM otp_challenges c
+WHERE c.id = @id;
 
 -- name: CancelPendingOutboxForChallenge :execrows
 -- Lock level L5, always after the user and session locks (TRD 7.3, 7.5). Also clears the

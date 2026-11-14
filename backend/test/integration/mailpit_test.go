@@ -62,7 +62,11 @@ func TestOutbox_DeliversThroughMailpit(t *testing.T) {
 			Subject   string
 		}
 	}
-	query := url.Values{"query": {fmt.Sprintf("to:%q", env.user.Email)}}
+	var recipient string
+	if err := env.d.Pool.QueryRow(context.Background(), `SELECT to_email FROM email_outbox WHERE id=$1`, id).Scan(&recipient); err != nil {
+		t.Fatal(err)
+	}
+	query := url.Values{"query": {fmt.Sprintf("to:%q", recipient)}}
 	getJSON(t, api+"/api/v1/search?"+query.Encode(), &search)
 	if len(search.Messages) != 1 {
 		t.Fatalf("expected one message for the recipient in Mailpit, got %d", len(search.Messages))

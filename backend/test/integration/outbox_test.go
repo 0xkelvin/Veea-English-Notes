@@ -86,6 +86,7 @@ func (e *outboxEnv) newWorker(t *testing.T, pool *pgxpool.Pool, cfg notify.Worke
 func (e *outboxEnv) codeFixture(t *testing.T) (outboxID, challengeID uuid.UUID, code string) {
 	t.Helper()
 	ctx := context.Background()
+	codeUser := newUser(t, e.q)
 	code = fmt.Sprintf("%06d", 100000+mrand.IntN(900000)) // distinctive, so a leak is detectable
 	e.codes = append(e.codes, code)
 
@@ -94,14 +95,14 @@ func (e *outboxEnv) codeFixture(t *testing.T) (outboxID, challengeID uuid.UUID, 
 		t.Fatal(err)
 	}
 	defer tx.Rollback(ctx)
-	p := challengeParams("login", e.user.EmailNormalized+"-"+uuid.NewString(), "code")
-	p.UserID = &e.user.ID
+	p := challengeParams("login", codeUser.EmailNormalized, "code")
+	p.UserID = &codeUser.ID
 	ch, err := sqlc.New(tx).InsertOTPChallenge(ctx, p)
 	if err != nil {
 		t.Fatal(err)
 	}
 	id, err := e.box.Enqueue(ctx, tx, notify.Message{
-		Template: notify.TemplateLoginCode, To: e.user.Email, UserID: &e.user.ID,
+		Template: notify.TemplateLoginCode, To: codeUser.Email, UserID: &codeUser.ID,
 		ChallengeID: &ch.ID, NotAfter: &ch.ExpiresAt, Payload: notify.Payload{Code: code}})
 	if err != nil {
 		t.Fatal(err)
@@ -275,7 +276,11 @@ func TestOutbox_DeliversAndScrubs(t *testing.T) {
 	}
 	byID := map[uuid.UUID]notify.Email{sent[0].ID: sent[0], sent[1].ID: sent[1]}
 	codeMail, ok := byID[id]
-	if !ok || codeMail.To != env.user.Email || !strings.Contains(codeMail.Text, code) || !strings.Contains(codeMail.HTML, code) {
+	var recipient string
+	if err := env.d.Pool.QueryRow(context.Background(), `SELECT to_email FROM email_outbox WHERE id=$1`, id).Scan(&recipient); err != nil {
+		t.Fatal(err)
+	}
+	if !ok || codeMail.To != recipient || !strings.Contains(codeMail.Text, code) || !strings.Contains(codeMail.HTML, code) {
 		t.Fatalf("code email: %+v", codeMail)
 	}
 	if notice := byID[nid]; !strings.Contains(notice.Text, "Test phone") || !strings.Contains(notice.Text, "reset your password") {

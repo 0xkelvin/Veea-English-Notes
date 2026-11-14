@@ -203,16 +203,17 @@ func TestPurposesMapToTemplatesAndActions(t *testing.T) {
 	want := map[Purpose]notify.Template{
 		PurposeSignup: notify.TemplateSignupCode, PurposeLogin: notify.TemplateLoginCode,
 		PurposePasswordReset: notify.TemplateResetCode, PurposeSetPassword: notify.TemplateSetPasswordCode,
+		PurposeEmailCurrent: notify.TemplateEmailCurrentCode, PurposeEmailNew: notify.TemplateEmailNewCode,
 	}
 	if len(purposes) != len(want) {
-		t.Fatalf("expected exactly the four TRD 4.3 purposes, got %d", len(purposes))
+		t.Fatalf("expected all TRD 01/03 purposes, got %d", len(purposes))
 	}
 	for p, tmpl := range want {
 		info, err := p.info()
 		if err != nil || info.template != tmpl || !tmpl.IsCode() {
 			t.Fatalf("%s: template %s, %v", p, info.template, err)
 		}
-		if !strings.HasPrefix(info.startAction, "auth.") || !strings.HasPrefix(info.verifyAction, "auth.") {
+		if (!strings.HasPrefix(info.startAction, "auth.") && !strings.HasPrefix(info.startAction, "account.")) || (!strings.HasPrefix(info.verifyAction, "auth.") && !strings.HasPrefix(info.verifyAction, "account.")) {
 			t.Fatalf("%s: audit actions %q %q", p, info.startAction, info.verifyAction)
 		}
 	}

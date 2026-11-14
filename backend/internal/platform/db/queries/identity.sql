@@ -10,10 +10,43 @@ SELECT * FROM users WHERE email_normalized = @email_normalized;
 SELECT * FROM users WHERE id = @id;
 
 -- name: LockUserForNoKeyUpdate :one
--- Lock level L3 (TRD 7.1). The only explicit lock mode ever taken on users.
+-- Lock level L3 (TRD 7.1). All flows except TRD 03 final email cutover use this mode.
 -- It conflicts with other writers of the row but not with foreign-key checks from
 -- sessions, outbox or challenge inserts, and it never upgrades a weaker lock.
 SELECT * FROM users WHERE id = @id FOR NO KEY UPDATE;
+
+-- name: LockUserForEmailChange :one
+-- TRD 03 L3 exception: changing a unique key needs the stronger mode from the outset.
+SELECT * FROM users WHERE id = @id FOR UPDATE;
+
+-- name: UpdateProfile :one
+UPDATE users SET display_name = @display_name, preferred_language = @preferred_language,
+    time_zone = @time_zone, daily_goal = @daily_goal, profile_revision = profile_revision + 1, updated_at = now()
+WHERE id = @id RETURNING *;
+
+-- name: ChangeVerifiedEmail :execrows
+UPDATE users SET email = @email, email_normalized = @email_normalized, email_verified_at = now(),
+    email_revision = email_revision + 1, updated_at = now()
+WHERE id = @id;
+
+-- name: LockPendingEmailChange :many
+SELECT id FROM email_changes WHERE user_id = @user_id AND closed_at IS NULL ORDER BY id FOR UPDATE;
+
+-- name: ClosePendingEmailChanges :exec
+UPDATE email_changes SET closed_at = now() WHERE user_id = @user_id AND closed_at IS NULL;
+
+-- name: InsertEmailChange :exec
+INSERT INTO email_changes(id,user_id,session_id,source_email_normalized,source_revision,new_email,new_email_normalized,expires_at)
+VALUES (@id,@user_id,@session_id,@source_email_normalized,@source_revision,@new_email,@new_email_normalized,@expires_at);
+
+-- name: LockEmailChange :one
+SELECT * FROM email_changes WHERE id = @id AND user_id = @user_id FOR UPDATE;
+
+-- name: GetOwnedEmailChange :one
+SELECT * FROM email_changes WHERE id = @id AND user_id = @user_id;
+
+-- name: CloseEmailChange :exec
+UPDATE email_changes SET closed_at = now() WHERE id = @id AND user_id = @user_id;
 
 -- name: InsertUserIfAbsent :one
 -- Signup verify (TRD 7.3). Returns no row when the email already has an account,
@@ -36,3 +69,15 @@ WHERE id = @id;
 UPDATE users
 SET password_hash = @new_hash, updated_at = now()
 WHERE id = @id AND password_hash = @old_hash;
+
+-- name: DeleteExpiredEmailChanges :execrows
+-- TRD 03: after challenge cleanup, remove expired requests in bounded oldest-first batches.
+-- NOT EXISTS avoids taking parent/FK locks before an in-flight L2 proof verifier.
+DELETE FROM email_changes
+WHERE ctid = ANY (ARRAY(
+    SELECT e.ctid FROM email_changes e
+    WHERE e.expires_at < now() - interval '24 hours'
+      AND NOT EXISTS (SELECT 1 FROM otp_challenges c WHERE c.change_id = e.id)
+    ORDER BY e.expires_at
+    LIMIT @batch_size
+)) AND expires_at < now() - interval '24 hours';

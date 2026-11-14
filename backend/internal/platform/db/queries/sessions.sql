@@ -30,6 +30,26 @@ FROM sessions s
 JOIN users u ON u.id = s.user_id
 WHERE s.access_token_hash = @access_token_hash;
 
+-- name: ListLiveSessions :many
+-- TRD 02: caller eligibility and the complete owned live set share one statement snapshot.
+-- The acting row is itself live, so an empty result means the caller no longer authenticates.
+SELECT s.id, s.device_name, s.platform, s.created_at, s.last_seen_at,
+       s.refresh_expires_at, s.absolute_expires_at, (s.id = @acting_session_id) AS is_current
+FROM sessions s
+WHERE s.user_id = @user_id AND s.revoked_at IS NULL AND s.absolute_expires_at > now()
+  AND (s.refresh_expires_at > now() OR s.access_expires_at > now())
+  AND EXISTS (
+      SELECT 1 FROM sessions a JOIN users u ON u.id = a.user_id
+      WHERE a.id = @acting_session_id AND a.user_id = @user_id
+        AND a.revoked_at IS NULL AND a.access_expires_at > now() AND a.absolute_expires_at > now()
+        AND u.status = 'active' AND u.email_verified_at IS NOT NULL
+  )
+ORDER BY s.last_seen_at DESC, s.id ASC;
+
+-- name: LockOwnedSession :one
+-- L4b after user and acting-session locks. Includes retained expired/revoked targets for retry.
+SELECT id FROM sessions WHERE id = @id AND user_id = @user_id FOR UPDATE;
+
 -- name: TouchSessionLastSeen :execrows
 -- At most one write per session every 5 minutes (TRD 8.1).
 UPDATE sessions

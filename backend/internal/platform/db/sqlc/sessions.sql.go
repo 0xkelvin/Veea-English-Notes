@@ -276,6 +276,68 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) (S
 	return i, err
 }
 
+const listLiveSessions = `-- name: ListLiveSessions :many
+SELECT s.id, s.device_name, s.platform, s.created_at, s.last_seen_at,
+       s.refresh_expires_at, s.absolute_expires_at, (s.id = $1) AS is_current
+FROM sessions s
+WHERE s.user_id = $2 AND s.revoked_at IS NULL AND s.absolute_expires_at > now()
+  AND (s.refresh_expires_at > now() OR s.access_expires_at > now())
+  AND EXISTS (
+      SELECT 1 FROM sessions a JOIN users u ON u.id = a.user_id
+      WHERE a.id = $1 AND a.user_id = $2
+        AND a.revoked_at IS NULL AND a.access_expires_at > now() AND a.absolute_expires_at > now()
+        AND u.status = 'active' AND u.email_verified_at IS NOT NULL
+  )
+ORDER BY s.last_seen_at DESC, s.id ASC
+`
+
+type ListLiveSessionsParams struct {
+	ActingSessionID uuid.UUID
+	UserID          uuid.UUID
+}
+
+type ListLiveSessionsRow struct {
+	ID                uuid.UUID
+	DeviceName        string
+	Platform          string
+	CreatedAt         time.Time
+	LastSeenAt        time.Time
+	RefreshExpiresAt  time.Time
+	AbsoluteExpiresAt time.Time
+	IsCurrent         bool
+}
+
+// TRD 02: caller eligibility and the complete owned live set share one statement snapshot.
+// The acting row is itself live, so an empty result means the caller no longer authenticates.
+func (q *Queries) ListLiveSessions(ctx context.Context, arg ListLiveSessionsParams) ([]ListLiveSessionsRow, error) {
+	rows, err := q.db.Query(ctx, listLiveSessions, arg.ActingSessionID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLiveSessionsRow{}
+	for rows.Next() {
+		var i ListLiveSessionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceName,
+			&i.Platform,
+			&i.CreatedAt,
+			&i.LastSeenAt,
+			&i.RefreshExpiresAt,
+			&i.AbsoluteExpiresAt,
+			&i.IsCurrent,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockActingSessionForUpdate = `-- name: LockActingSessionForUpdate :one
 SELECT id, user_id, auth_method, access_token_hash, access_expires_at, refresh_token_hash, refresh_expires_at, absolute_expires_at, rotation_counter, device_name, platform, user_agent, created_ip, last_seen_at, last_seen_ip, created_at, revoked_at, revoked_reason FROM sessions
 WHERE id = $1
@@ -317,6 +379,23 @@ func (q *Queries) LockActingSessionForUpdate(ctx context.Context, arg LockActing
 		&i.RevokedReason,
 	)
 	return i, err
+}
+
+const lockOwnedSession = `-- name: LockOwnedSession :one
+SELECT id FROM sessions WHERE id = $1 AND user_id = $2 FOR UPDATE
+`
+
+type LockOwnedSessionParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+// L4b after user and acting-session locks. Includes retained expired/revoked targets for retry.
+func (q *Queries) LockOwnedSession(ctx context.Context, arg LockOwnedSessionParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockOwnedSession, arg.ID, arg.UserID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const lockSessionByRefreshTokenHash = `-- name: LockSessionByRefreshTokenHash :one

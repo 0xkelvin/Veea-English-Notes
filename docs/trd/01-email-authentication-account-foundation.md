@@ -22,7 +22,7 @@
 ### Changes in TRD v0.3
 - **Locking (§7.1):**
   - One global lock order and one lock mode per table.
-  - The `users` row is always locked `FOR NO KEY UPDATE`, never `FOR SHARE`, so no transaction upgrades a shared lock to an exclusive one.
+  - The `users` row is locked `FOR NO KEY UPDATE` (TRD 03 final email cutover alone takes `FOR UPDATE` from the outset for its unique key), never `FOR SHARE`, so no transaction upgrades a shared lock to an exclusive one.
   - Password mutations re-validate the acting session and the account state inside their transaction.
 - **Ineligible challenges (§4.4, §6.3, §7.3):** `delivery = 'none'` challenges can never authenticate or change a credential. This is enforced in code and by a table constraint. Their errors and failed-attempt accounting are identical to a wrong code.
 - **Consumed refresh tokens (§6.6, §8.4, §8.5):** retention uses the old token's recorded refresh expiry, and lookup enforces that cutoff.
@@ -576,6 +576,7 @@ None of these is an API-level proof. An optional server-side mechanism is listed
 | `00005_audit_events.sql` | `audit_events` |
 | `00006_rate_limit_counters.sql` | `rate_limit_counters` |
 | `00007_cleanup_indexes.sql` | Indexes for the §6.10 cleanup jobs and the cascades their deletes trigger (release hardening) |
+| `00008_session_management.sql` | Extend session revocation reasons for [TRD 02](02-session-management.md) |
 
 ### 6.2 `users`
 ```sql
@@ -813,10 +814,13 @@ CREATE TABLE IF NOT EXISTS rate_limit_counters (
 |---|---|---|---|
 | L1 | `otp_cooldowns` (one row) | Upsert row lock | Start (§7.2) |
 | L2 | `otp_challenges`: the one row by `token_hash`, or the open row for `(purpose, email)` | `FOR UPDATE` (or the `UPDATE` of supersede) | Start, verify, reset complete, set password |
-| L3 | `users`: one row | `FOR NO KEY UPDATE`, **the only explicit mode ever used on `users`**. A signup verify instead inserts a new row and waits on the unique index | Session issuance, all password mutations, Phase 2 status changes |
+| L2b (TRD 03) | `email_changes`: prior pending or completing owned request | `FOR UPDATE`, prior rows in UUID order; after proof locks, before users | Paired start/complete |
+| L3 | `users`: one row | `FOR NO KEY UPDATE`; TRD 03 final email cutover alone uses `FOR UPDATE` from the outset, before sessions, for the unique email-key change. A signup verify instead inserts a new row and waits on the unique index | Session issuance, all password mutations, Phase 2 status changes |
 | L4a | `sessions`: the **acting** session (by `id`) | `FOR UPDATE` | Password set and change (re-validation), refresh, logout, the per-request `account_inactive` revocation |
 | L4b | `sessions`: the user's **other** active sessions | `UPDATE ... WHERE user_id = $u AND id <> $current AND revoked_at IS NULL`, or one row for cap eviction | Password set, change and reset; session cap |
 | L5 | Insert-only rows: `sessions` (new), `refresh_tokens_consumed`, `email_outbox`, `audit_events`. Plus **every** `email_outbox` write by a request transaction, including the cancel `UPDATE` keyed by `challenge_id`. Always the last level, after any L3 and L4 the flow needs | Row-exclusive on new or own rows | Any |
+
+**TRD 03 amendment.** Paired proofs lock at L2 in UUID order and then the owned request at L2b. Final cutover takes the stronger L3 mode before L4; no weaker lock is upgraded. Existing-user OTP and password sign-in revalidate email/revision under L3. Public inert challenges retain null owner/session; TRD 03 inert destination proofs retain the request owner/session while remaining unconsumable and unmailed. Bounded request cleanup runs 24 h after expiry after the code rows are gone. See TRD 03 §2–5 for the complete amendment.
 
 **Why these modes**
 - **No lock upgrade.**
@@ -1549,6 +1553,12 @@ This is the price of having no grace window. It is accepted in exchange for stri
 | `auth.session.refresh` | failure `refresh_reuse`, `session_revoked`, `session_expired`, `account_inactive`. No event for a success or an unknown token | `session.Service.Refresh` | Refresh transaction |
 | `auth.session.revoke` | success (`metadata.reason`, `metadata.count`) for `logout`, `refresh_reuse`, `account_inactive`, `session_limit`, `password_set`, `password_change`, `password_reset` | `session` | Same transaction as the revocation |
 | `auth.logout` | success | `session.Service.Logout` | Logout transaction |
+| `auth.session.revoke` (TRD 02) | success, reasons `user_revoked` and `logout_all`; actor and target = caller, session = acting session, string count; one-target event also has `target_session_id` | `session.Service.manage` | Same management transaction as revocation |
+| `auth.logout.all` (TRD 02) | success, `metadata.revoked_sessions` string count | `session.Service.manage` | Same transaction, before aggregate `auth.session.revoke` |
+| `account.profile.update` (TRD 03) | success; field names and profile revision, no raw values | `account.Service.UpdateProfile` | Same transaction as the effective profile update; no event for a no-op |
+| `account.email.change.start` (TRD 03) | success; owned request ID | `account.Service.StartEmailChange` | Same transaction as paired proofs/outbox; then core `account.email.change.current.start` and `.new.start` (owner/session, email HMAC, delivery) |
+| `account.email.change.current.verify`, `account.email.change.new.verify` (TRD 03) | failure for invalid/exhausted proof; new verify also records fixed flow rollback reasons such as `email_unavailable` | `otp.Service.VerifyPair` | Wrong attempt + failure commit; flow failure audit follows complete rollback |
+| `account.email.change.complete` (TRD 03) | success; request ID, string revoked-session count | `account.Service.CompleteEmailChange` | Same transaction as email, both consumptions, all-session revocation and old/new notices; preceded by aggregate `auth.session.revoke` reason `email_change` |
 | `auth.rate_limited` | failure, reason = the rule (`metadata.rule`, `metadata.subject`) | `ratelimit.Limiter.RecordDenial`, called by the HTTP error mapper for every `429` | Autocommit, after the refusal |
 
 *Decisions.*
@@ -1761,7 +1771,7 @@ This is the price of having no grace window. It is accepted in exchange for stri
 **Lock order and transaction boundaries**
 - `TestLockOrder_StatementSequence`: a query tracer in the test harness records, per transaction, the lock level of each statement (§7.1 table). For every flow in §7.1, run happy and failure paths and assert:
   - The levels never decrease. In particular, no `email_outbox` write precedes an L3 or L4 statement in signup verify, OTP verify, reset complete or set password.
-  - `users` is locked only with `FOR NO KEY UPDATE`.
+  - `users` is locked with `FOR NO KEY UPDATE`, except TRD 03 final email cutover, which takes `FOR UPDATE` from the outset.
 - `TestTransactionBoundaries_VerifyFailures`:
   - A counted V rejection commits the attempt and the audit in T-main, then C.
   - A post-accept failure (account not active, acting session revoked, password already set) rolls back T-main, leaving the challenge unconsumed and `attempts` unchanged, and commits only the T-fail audit.
@@ -1935,7 +1945,7 @@ R1–R11 and R13–R15 were **approved on 2026-11-13** together with TRD v0.4 an
 | **R8** | Approved | Password policy | 15–128 characters + about 100k blocklist + contains-email check | 8 or 12 character minimum | Longer passwords may raise signup friction; client copy should suggest passphrases |
 | **R9** | Approved | Code location and migrations | New `backend/` directory; `cloud/` (Rust) stays until retired. A separate `migrate` step before deploy | Replace `cloud/` in place; migrate on startup | Two backends coexist for a while. AGENTS.md needs updating when work starts |
 | **R10** | Approved | Change-password lost response | No server exception and no per-request proof. A resend returns `403`. The client shows the unknown-outcome UX (§5.4); the notification email is the user's confirmation. `password_changed_at` is informational only | A client-generated `change_id` stored on the user row and checkable on `GET /v1/me` (server-side proof, a small schema addition) | An unknown outcome cannot be resolved by the app alone. The user relies on the email, or uses Forgot password |
-| **R13** | Approved | Lock order and modes | §7.1: `users` always `FOR NO KEY UPDATE`; acting session re-validated under lock; deadlock retry up to 3 times | `SERIALIZABLE` isolation with retries | All same-user sign-ins and mutations serialize on one row. Fine at expected per-user concurrency |
+| **R13** | Approved | Lock order and modes | §7.1: `users FOR NO KEY UPDATE` except TRD 03 final email cutover (`FOR UPDATE` from outset); acting session re-validated under lock; deadlock retry up to 3 times | `SERIALIZABLE` isolation with retries | All same-user sign-ins and mutations serialize on one row. Fine at expected per-user concurrency |
 | **R14** | Approved | Duplicate email delivery and send budget | At most 5 provider sends per row, each durably reserved under a live lease. Duplicates are accepted after an ambiguous result or a lost lease, with the same payload every time | Never retry ambiguous results (risk of no delivery); or a smaller budget | A user may occasionally get the same email twice, at most 5 times. A row whose 5 sends all failed ambiguously ends `failed`, even if one was actually delivered |
 | **R15** | Approved | Outbox lease timing | 2-minute lease, 45 s minimum lease left to reserve, 30 s send timeout, reap and claim every 1 s | Longer lease (slower crash recovery); shorter timeout | A worker crash delays that row's next send by up to 2 minutes |
 | **R11** | Approved | Session cap | 20 active sessions per user, least recently seen evicted | No cap | A heavy multi-device user could be signed out silently |

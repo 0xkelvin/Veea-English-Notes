@@ -27,6 +27,19 @@ type AuditEvent struct {
 	Metadata     []byte
 }
 
+type EmailChange struct {
+	ID                    uuid.UUID
+	UserID                uuid.UUID
+	SessionID             uuid.UUID
+	SourceEmailNormalized string
+	SourceRevision        int64
+	NewEmail              string
+	NewEmailNormalized    string
+	CreatedAt             time.Time
+	ExpiresAt             time.Time
+	ClosedAt              *time.Time
+}
+
 type EmailOutbox struct {
 	ID                uuid.UUID
 	UserID            *uuid.UUID
@@ -67,6 +80,8 @@ type OtpChallenge struct {
 	ConsumedAt          *time.Time
 	SupersededAt        *time.Time
 	RequestIp           *netip.Addr
+	EmailRevision       int64
+	ChangeID            *uuid.UUID
 }
 
 type OtpCooldown struct {
@@ -120,4 +135,10 @@ type User struct {
 	Role              string
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
+	DisplayName       *string
+	PreferredLanguage string
+	TimeZone          string
+	DailyGoal         int32
+	ProfileRevision   int64
+	EmailRevision     int64
 }

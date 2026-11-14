@@ -307,7 +307,12 @@ func TestCleanup_LockIsReleasedOnFailureAndCancellation(t *testing.T) {
 		t.Fatal("the job's advisory lock was not released")
 	}
 	jobs := maintenance.Jobs()
-	counters := jobs[len(jobs)-1]
+	var counters maintenance.Job
+	for _, j := range jobs {
+		if j.Name == "rate_limit_counters" {
+			counters = j
+		}
+	}
 
 	t.Run("failure", func(t *testing.T) {
 		mustExec(t, d.Pool, `INSERT INTO rate_limit_counters (key, window_start, count) VALUES ('old', now() - interval '3 days', 1)`)

@@ -144,7 +144,7 @@ func (s *Service) StartOTP(ctx context.Context, rawEmail string, c Client) (otp.
 			if err != nil || !exists || !accounts.InGoodStanding(u) {
 				return otp.Target{}, err // ineligible: delivery = 'none' (TRD 3.3, 4.4)
 			}
-			return otp.Target{Eligible: true, UserID: &u.ID, To: u.Email}, nil
+			return otp.Target{Eligible: true, UserID: &u.ID, To: u.Email, EmailRevision: u.EmailRevision}, nil
 		},
 	})
 }
@@ -178,7 +178,7 @@ func (s *Service) VerifyOTP(ctx context.Context, token, code string, device sess
 			if err != nil {
 				return err
 			}
-			if !ok || !accounts.InGoodStanding(u) {
+			if !ok || !accounts.InGoodStanding(u) || !otp.MatchesAccount(a, u) {
 				return otp.Rollback(reasonAccountUnavailable, otp.ErrInvalidCode)
 			}
 			issued, err := s.issue(ctx, tx, u, session.MethodOTP, device, "auth.otp.verify", a.EmailHMAC, pending, c)
@@ -277,7 +277,7 @@ func (s *Service) passwordLogin(ctx context.Context, rawEmail, password string, 
 	err = s.tx.Run(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		res, refused = Result{}, nil
 		var err error
-		res, refused, err = s.completeLogin(ctx, tx, e, u.ID, *u.PasswordHash, rehash, device, pending, c)
+		res, refused, err = s.completeLogin(ctx, tx, e, u.ID, u.EmailRevision, *u.PasswordHash, rehash, device, pending, c)
 		return err
 	})
 	if err != nil {
@@ -348,12 +348,15 @@ func (s *Service) recordFailure(ctx context.Context, e identity.Email, u sqlc.Us
 
 // completeLogin is the success transaction. A refusal (second result) commits whatever audit
 // event it wrote and is returned after the commit.
-func (s *Service) completeLogin(ctx context.Context, tx pgx.Tx, e identity.Email, id uuid.UUID, verifiedHash, rehash string,
+func (s *Service) completeLogin(ctx context.Context, tx pgx.Tx, e identity.Email, id uuid.UUID, emailRevision int64, verifiedHash, rehash string,
 	device session.Device, pending session.Pending, c Client) (Result, error, error) {
 	// L3, on the account whose hash verified.
 	u, ok, err := accounts.LockForNoKeyUpdate(ctx, tx, id)
 	if err != nil {
 		return Result{}, nil, err
+	}
+	if ok && (u.EmailRevision != emailRevision || u.EmailNormalized != e.Normalized) {
+		return Result{}, ErrInvalidCredentials, s.recordInTx(ctx, tx, e, u, "email_changed_concurrently", c)
 	}
 	if !ok || u.PasswordHash == nil || *u.PasswordHash != verifiedHash {
 		// A concurrent change or reset replaced the hash after it verified (TRD 7.4 step 3).

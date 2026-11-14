@@ -15,19 +15,23 @@ import (
 type Template string
 
 const (
-	TemplateSignupCode      Template = "signup_code"
-	TemplateLoginCode       Template = "login_code"
-	TemplateResetCode       Template = "reset_code"
-	TemplateSetPasswordCode Template = "set_password_code"
-	TemplatePasswordAdded   Template = "password_added"
-	TemplatePasswordChanged Template = "password_changed"
-	TemplatePasswordReset   Template = "password_reset_done"
+	TemplateSignupCode       Template = "signup_code"
+	TemplateLoginCode        Template = "login_code"
+	TemplateResetCode        Template = "reset_code"
+	TemplateSetPasswordCode  Template = "set_password_code"
+	TemplatePasswordAdded    Template = "password_added"
+	TemplatePasswordChanged  Template = "password_changed"
+	TemplatePasswordReset    Template = "password_reset_done"
+	TemplateEmailCurrentCode Template = "email_change_current_code"
+	TemplateEmailNewCode     Template = "email_change_new_code"
+	TemplateEmailChangedOld  Template = "email_changed_old"
+	TemplateEmailChangedNew  Template = "email_changed_new"
 )
 
 // IsCode reports whether the template carries an OTP code and is tied to a challenge.
 func (t Template) IsCode() bool {
 	switch t {
-	case TemplateSignupCode, TemplateLoginCode, TemplateResetCode, TemplateSetPasswordCode:
+	case TemplateSignupCode, TemplateLoginCode, TemplateResetCode, TemplateSetPasswordCode, TemplateEmailCurrentCode, TemplateEmailNewCode:
 		return true
 	}
 	return false
@@ -35,7 +39,7 @@ func (t Template) IsCode() bool {
 
 func (t Template) valid() bool {
 	switch t {
-	case TemplatePasswordAdded, TemplatePasswordChanged, TemplatePasswordReset:
+	case TemplatePasswordAdded, TemplatePasswordChanged, TemplatePasswordReset, TemplateEmailChangedOld, TemplateEmailChangedNew:
 		return true
 	}
 	return t.IsCode()

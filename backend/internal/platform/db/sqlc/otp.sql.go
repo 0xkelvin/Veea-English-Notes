@@ -165,15 +165,57 @@ func (q *Queries) IncrementOTPChallengeAttempts(ctx context.Context, id uuid.UUI
 	return result.RowsAffected(), nil
 }
 
+const insertEmailChangeChallenge = `-- name: InsertEmailChangeChallenge :exec
+INSERT INTO otp_challenges(id,token_hash,purpose,email,email_normalized,user_id,session_id,code_hash,delivery,max_attempts,expires_at,request_ip,email_revision,change_id)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+`
+
+type InsertEmailChangeChallengeParams struct {
+	ID              uuid.UUID
+	TokenHash       []byte
+	Purpose         string
+	Email           string
+	EmailNormalized string
+	UserID          *uuid.UUID
+	SessionID       *uuid.UUID
+	CodeHash        []byte
+	Delivery        string
+	MaxAttempts     int32
+	ExpiresAt       time.Time
+	RequestIp       *netip.Addr
+	EmailRevision   int64
+	ChangeID        *uuid.UUID
+}
+
+func (q *Queries) InsertEmailChangeChallenge(ctx context.Context, arg InsertEmailChangeChallengeParams) error {
+	_, err := q.db.Exec(ctx, insertEmailChangeChallenge,
+		arg.ID,
+		arg.TokenHash,
+		arg.Purpose,
+		arg.Email,
+		arg.EmailNormalized,
+		arg.UserID,
+		arg.SessionID,
+		arg.CodeHash,
+		arg.Delivery,
+		arg.MaxAttempts,
+		arg.ExpiresAt,
+		arg.RequestIp,
+		arg.EmailRevision,
+		arg.ChangeID,
+	)
+	return err
+}
+
 const insertOTPChallenge = `-- name: InsertOTPChallenge :one
 INSERT INTO otp_challenges (
     id, token_hash, purpose, signup_method, pending_password_hash, email, email_normalized,
-    user_id, session_id, code_hash, delivery, max_attempts, expires_at, request_ip
+    user_id, session_id, code_hash, delivery, max_attempts, expires_at, request_ip, email_revision
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
-    $8, $9, $10, $11, $12, $13, $14
+    $8, $9, $10, $11, $12, $13, $14, $15
 )
-RETURNING id, token_hash, purpose, signup_method, pending_password_hash, email, email_normalized, user_id, session_id, code_hash, delivery, attempts, max_attempts, created_at, expires_at, consumed_at, superseded_at, request_ip
+RETURNING id, token_hash, purpose, signup_method, pending_password_hash, email, email_normalized, user_id, session_id, code_hash, delivery, attempts, max_attempts, created_at, expires_at, consumed_at, superseded_at, request_ip, email_revision, change_id
 `
 
 type InsertOTPChallengeParams struct {
@@ -191,6 +233,7 @@ type InsertOTPChallengeParams struct {
 	MaxAttempts         int32
 	ExpiresAt           time.Time
 	RequestIp           *netip.Addr
+	EmailRevision       int64
 }
 
 func (q *Queries) InsertOTPChallenge(ctx context.Context, arg InsertOTPChallengeParams) (OtpChallenge, error) {
@@ -209,6 +252,7 @@ func (q *Queries) InsertOTPChallenge(ctx context.Context, arg InsertOTPChallenge
 		arg.MaxAttempts,
 		arg.ExpiresAt,
 		arg.RequestIp,
+		arg.EmailRevision,
 	)
 	var i OtpChallenge
 	err := row.Scan(
@@ -230,12 +274,14 @@ func (q *Queries) InsertOTPChallenge(ctx context.Context, arg InsertOTPChallenge
 		&i.ConsumedAt,
 		&i.SupersededAt,
 		&i.RequestIp,
+		&i.EmailRevision,
+		&i.ChangeID,
 	)
 	return i, err
 }
 
 const lockOTPChallengeByTokenHash = `-- name: LockOTPChallengeByTokenHash :one
-SELECT id, token_hash, purpose, signup_method, pending_password_hash, email, email_normalized, user_id, session_id, code_hash, delivery, attempts, max_attempts, created_at, expires_at, consumed_at, superseded_at, request_ip FROM otp_challenges WHERE token_hash = $1 FOR UPDATE
+SELECT id, token_hash, purpose, signup_method, pending_password_hash, email, email_normalized, user_id, session_id, code_hash, delivery, attempts, max_attempts, created_at, expires_at, consumed_at, superseded_at, request_ip, email_revision, change_id FROM otp_challenges WHERE token_hash = $1 FOR UPDATE
 `
 
 // Lock level L2, procedure V step 1 (TRD 7.3). Returns no row for an unknown token.
@@ -261,14 +307,62 @@ func (q *Queries) LockOTPChallengeByTokenHash(ctx context.Context, tokenHash []b
 		&i.ConsumedAt,
 		&i.SupersededAt,
 		&i.RequestIp,
+		&i.EmailRevision,
+		&i.ChangeID,
 	)
 	return i, err
+}
+
+const lockOTPProofPair = `-- name: LockOTPProofPair :many
+SELECT id, token_hash, purpose, signup_method, pending_password_hash, email, email_normalized, user_id, session_id, code_hash, delivery, attempts, max_attempts, created_at, expires_at, consumed_at, superseded_at, request_ip, email_revision, change_id FROM otp_challenges WHERE token_hash = ANY($1::bytea[]) ORDER BY id FOR UPDATE
+`
+
+func (q *Queries) LockOTPProofPair(ctx context.Context, tokenHashes [][]byte) ([]OtpChallenge, error) {
+	rows, err := q.db.Query(ctx, lockOTPProofPair, tokenHashes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OtpChallenge{}
+	for rows.Next() {
+		var i OtpChallenge
+		if err := rows.Scan(
+			&i.ID,
+			&i.TokenHash,
+			&i.Purpose,
+			&i.SignupMethod,
+			&i.PendingPasswordHash,
+			&i.Email,
+			&i.EmailNormalized,
+			&i.UserID,
+			&i.SessionID,
+			&i.CodeHash,
+			&i.Delivery,
+			&i.Attempts,
+			&i.MaxAttempts,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.ConsumedAt,
+			&i.SupersededAt,
+			&i.RequestIp,
+			&i.EmailRevision,
+			&i.ChangeID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const supersedeOpenOTPChallenges = `-- name: SupersedeOpenOTPChallenges :many
 UPDATE otp_challenges
 SET superseded_at = now(), pending_password_hash = NULL
 WHERE purpose = $1
+  AND change_id IS NULL
   AND email_normalized = $2
   AND consumed_at IS NULL
   AND superseded_at IS NULL

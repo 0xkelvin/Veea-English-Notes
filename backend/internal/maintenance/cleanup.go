@@ -75,6 +75,10 @@ func Jobs() []Job {
 		{Name: "rate_limit_counters", Batched: true, run: func(ctx context.Context, q *sqlc.Queries, b int32) (int64, error) {
 			return q.DeleteOldRateLimitCounters(ctx, b) // windows older than 48 h
 		}},
+		// Append to keep existing advisory-lock keys stable across rolling deployments.
+		{Name: "email_changes", Batched: true, run: func(ctx context.Context, q *sqlc.Queries, b int32) (int64, error) {
+			return q.DeleteExpiredEmailChanges(ctx, b)
+		}},
 		// audit_events are not deleted in Phase 1 (Q-L3).
 	}
 	for i := range jobs {

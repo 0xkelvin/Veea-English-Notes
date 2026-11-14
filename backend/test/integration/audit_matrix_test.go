@@ -127,6 +127,29 @@ func TestAudit_Matrix(t *testing.T) {
 	ctx := context.Background()
 	bearerOf := func(s session.Issued) []string { return bearer(s.AccessToken) }
 
+	t.Run("TRD03 profile and paired email change", func(t *testing.T) {
+		u := newUser(t, env.q)
+		a := env.issue(t, u, "Email actor")
+		rid := newRID()
+		wantStatus(t, env.call(t, "PUT", pathProfile, profileInput(0), rid, bearer(a.AccessToken)...), 200)
+		env.wantEvents(t, rid, ev{action: "account.profile.update", outcome: "success", actor: u.ID.String(), target: u.ID.String(), session: a.SessionID.String()})
+		c, n := env.queueCode(), env.queueCode()
+		rid = newRID()
+		r := env.call(t, "POST", pathEmailStart, map[string]string{"new_email": newAddress("matrix-change")}, rid, bearer(a.AccessToken)...)
+		wantStatus(t, r, 202)
+		p := emailProofs{id: r.str("change_id"), currentCode: c, newCode: n, currentToken: r.body["current_email"].(map[string]any)["challenge_token"].(string), newToken: r.body["new_email"].(map[string]any)["challenge_token"].(string)}
+		env.remember(p.currentToken, p.newToken)
+		env.wantEvents(t, rid, ev{action: "account.email.change.start", outcome: "success", actor: u.ID.String(), target: u.ID.String(), session: a.SessionID.String()}, ev{action: "account.email.change.current.start", outcome: "success", actor: u.ID.String(), target: u.ID.String(), session: a.SessionID.String(), email: true}, ev{action: "account.email.change.new.start", outcome: "success", actor: u.ID.String(), target: u.ID.String(), session: a.SessionID.String(), email: true})
+		bad := p
+		bad.currentCode = wrongCode(c)
+		rid = newRID()
+		wantProblem(t, env.call(t, "POST", emailCompletePath(p.id), bad.body(), rid, bearer(a.AccessToken)...), 400, "invalid_code")
+		env.wantEvents(t, rid, ev{action: "account.email.change.current.verify", outcome: "failure", reason: "invalid_code", actor: u.ID.String(), target: u.ID.String(), session: a.SessionID.String(), email: true})
+		rid = newRID()
+		want204(t, env.call(t, "POST", emailCompletePath(p.id), p.body(), rid, bearer(a.AccessToken)...))
+		env.wantEvents(t, rid, ev{action: "auth.session.revoke", outcome: "success", actor: u.ID.String(), target: u.ID.String(), session: a.SessionID.String(), meta: map[string]string{"reason": "email_change", "count": "1"}}, ev{action: "account.email.change.complete", outcome: "success", actor: u.ID.String(), target: u.ID.String(), session: a.SessionID.String()})
+	})
+
 	// --- registration (Flows A, B) ---------------------------------------------------------
 	t.Run("signup start, new email", func(t *testing.T) {
 		rid := newRID()
@@ -351,6 +374,24 @@ func TestAudit_Matrix(t *testing.T) {
 			ev{action: "auth.session.revoke", outcome: "success", target: uid, meta: map[string]string{"reason": "password_reset", "count": "1"}},
 			ev{action: "auth.password.reset.complete", outcome: "success", actor: uid, target: uid, session: "-"})
 	})
+	t.Run("session management: revoke other, retry, logout all", func(t *testing.T) {
+		u := newUser(t, env.q)
+		a, b := env.issue(t, u, "A"), env.issue(t, u, "B")
+		uid, sid := u.ID.String(), a.SessionID.String()
+		rid := newRID()
+		want204(t, env.call(t, "DELETE", pathSessions+"/"+b.SessionID.String(), "", rid, bearerOf(a)...))
+		env.wantEvents(t, rid, ev{action: "auth.session.revoke", outcome: "success", actor: uid, target: uid, session: sid,
+			meta: map[string]string{"reason": "user_revoked", "count": "1", "target_session_id": b.SessionID.String()}})
+		rid = newRID()
+		want204(t, env.call(t, "DELETE", pathSessions+"/"+b.SessionID.String(), "", rid, bearerOf(a)...))
+		env.wantEvents(t, rid)
+		rid = newRID()
+		want204(t, env.call(t, "DELETE", pathSessions, "", rid, bearerOf(a)...))
+		env.wantEvents(t, rid,
+			ev{action: "auth.logout.all", outcome: "success", actor: uid, target: uid, session: sid, meta: map[string]string{"revoked_sessions": "1"}},
+			ev{action: "auth.session.revoke", outcome: "success", actor: uid, target: uid, session: sid, meta: map[string]string{"reason": "logout_all", "count": "1"}})
+	})
+
 }
 
 // auth.rate_limited (TRD 11.1): one event per rule, subject and window, recorded after the
