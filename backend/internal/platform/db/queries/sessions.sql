@@ -129,22 +129,30 @@ WHERE id IN (
 
 -- name: DeleteExpiredConsumedRefreshTokens :execrows
 -- Cleanup job (TRD 6.10). Correctness does not depend on it: lookup enforces the cutoff.
+-- One batch picked through refresh_tokens_consumed_retain and deleted by tuple id (see
+-- DeleteOldRateLimitCounters), with the predicate repeated on the outer side.
 DELETE FROM refresh_tokens_consumed
-WHERE token_hash IN (
-    SELECT token_hash FROM refresh_tokens_consumed
+WHERE ctid = ANY (ARRAY(
+    SELECT ctid FROM refresh_tokens_consumed
     WHERE retain_until <= now()
     LIMIT @batch_size
-);
+))
+  AND retain_until <= now();
 
 -- name: DeleteStaleSessions :execrows
--- Cleanup job (TRD 6.10): 30 days after revocation or absolute expiry. Cascades to consumed tokens.
+-- Cleanup job (TRD 6.10): 30 days after revocation or absolute expiry. Cascades to consumed
+-- tokens. One batch picked through sessions_revoked_at and sessions_absolute_expires
+-- (BitmapOr) and deleted by tuple id (see DeleteOldRateLimitCounters), with the predicate
+-- repeated on the outer side.
 DELETE FROM sessions
-WHERE id IN (
-    SELECT c.id FROM sessions c
+WHERE ctid = ANY (ARRAY(
+    SELECT c.ctid FROM sessions c
     WHERE (c.revoked_at IS NOT NULL AND c.revoked_at < now() - interval '30 days')
        OR c.absolute_expires_at < now() - interval '30 days'
     LIMIT @batch_size
-);
+))
+  AND ((revoked_at IS NOT NULL AND revoked_at < now() - interval '30 days')
+       OR absolute_expires_at < now() - interval '30 days');
 
 -- name: FindSessionForRefreshToken :one
 -- Refresh pre-check (TRD 8.4, 10), unlocked and before any transaction: the session a refresh

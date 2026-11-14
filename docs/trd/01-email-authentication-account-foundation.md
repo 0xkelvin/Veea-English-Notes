@@ -575,6 +575,7 @@ None of these is an API-level proof. An optional server-side mechanism is listed
 | `00004_email_outbox.sql` | `email_outbox` |
 | `00005_audit_events.sql` | `audit_events` |
 | `00006_rate_limit_counters.sql` | `rate_limit_counters` |
+| `00007_cleanup_indexes.sql` | Indexes for the §6.10 cleanup jobs and the cascades their deletes trigger (release hardening) |
 
 ### 6.2 `users`
 ```sql
@@ -773,7 +774,14 @@ CREATE TABLE IF NOT EXISTS rate_limit_counters (
 - **One advisory lock per job.** The keys are `0x5645_4541_434c_0000` plus the job's index. Each job takes its lock with `pg_try_advisory_lock` on one dedicated connection, and every statement of the job runs on that same connection, so the lock is held for the whole job. Another session holding the lock means the job is skipped this time (`Result.Ran = false`).
 - **Release is verified.** `pg_advisory_unlock` must return true. If the release fails or returns false, or a batch failed, the connection is taken out of the pool and closed, which ends its session and every lock with it. A lock can therefore never leak into the pool, also after a cancellation mid-statement.
 - **Bounded batches.** Deletes run 1,000 rows per statement and at most 100 statements per job per run; the next run continues.
-- **Two unbatched statements.** The pending-hash scrub and the outbox reaper backstop are single `UPDATE`s. Both touch only rows that became eligible since the last run, so they stay small.
+- **Indexes (migration `00007_cleanup_indexes.sql`).**
+  - New: `sessions_revoked_at` (partial, revoked rows) and `sessions_absolute_expires`, which the planner combines for the stale-session `OR` (BitmapOr); `rate_limit_counters_window`; `otp_cooldowns_last_issued`; `email_outbox_finished` (partial, non-pending rows).
+  - New, for the cascades: `refresh_tokens_consumed_session` (session delete) and `email_outbox_challenge` (challenge delete, and the per-challenge cancel run by every start and redemption).
+  - Reused: `otp_challenges_expires` (challenge delete and its `ORDER BY`, pending-hash scrub), `refresh_tokens_consumed_retain`, and `email_outbox_due` (reaper).
+  - Built with plain `CREATE INDEX` inside goose's transaction, because the tables are empty or small before the first release. `CONCURRENTLY` cannot run in a transaction, and a failed concurrent build would leave an invalid index that `IF NOT EXISTS` then skips forever. If this ever runs against a large live database, build the indexes concurrently by hand first.
+- **Batch deletes by tuple id.** All six batched deletes select tuple ids through the retention indexes and use `ctid = ANY(ARRAY(...))` for the outer delete. On the representative data below, this avoids the whole-table hash joins chosen for `IN (subquery)`. Tuple ids are used only within one statement and snapshot. Each outer delete repeats its retention predicate so PostgreSQL rechecks eligibility if a concurrent writer updates a selected row. Only challenge deletion specifies batch ordering (`ORDER BY expires_at`), supplied by the existing expiry index without a sort; the other batches have no ordering guarantee.
+- **Plans are checked.** `TestMigrations_CleanupQueriesUseTheirIndexes` loads 20,000 synthetic rows per cleanup table and runs `ANALYZE` followed by plain `EXPLAIN` on the actual statements extracted from the query files. It checks all six batched deletes, both unbatched updates, cancellation and the cascade lookups with default planner settings. On version 6, the four deletes gaining retention indexes have sequential scans. These are plan checks on this fixture, not measured execution times or a guarantee that PostgreSQL will choose indexes for every data distribution.
+- **Two unbatched statements.** The pending-hash scrub and the outbox reaper backstop are single `UPDATE`s. A backlog can make them large; the batch bound applies only to deletes.
 - **Order.** The pending-hash scrub (AC-26) runs before challenge deletion, and session deletion runs before consumed-token deletion so the cascade does most of that work.
 - **Tests.** `TestCleanup_*` run the real runner against PostgreSQL:
   - AC-26 end to end through the router;
@@ -1668,7 +1676,7 @@ This is the price of having no grace window. It is accepted in exchange for stri
 | AC-4 | `TestSignupPassword_BindsTheHashToTheChallengeUntilVerified`, `TestAuth_ExpiryRevocationAndAccountStateAreChecked`, `TestPasswordLogin_NonActiveAccount`, `TestRefresh_RefusedForRevokedExpiredOrInactiveSessions` | An unverified row cannot use a token, sign in or refresh |
 | AC-5 | `TestSignupPassword_BindsTheHashToTheChallengeUntilVerified`, `TestSignin_PasswordAndOTPResolveToTheSameUser` | |
 | AC-6 | `TestOTPLogin_UnknownOrIneligibleEmailGetsTheSameAckAndNoEmail` | |
-| AC-7 | `TestPasswordLogin_GenericFailure` | Equal timing is shown by counting Argon2id runs (one each); there is no wall-clock test |
+| AC-7 | `TestPasswordLogin_GenericFailure` | One Argon2id verification per case with equal reduced test parameters; problem bodies match after removing request_id. Wall-clock timing is unverified |
 | AC-8 | `TestSignin_PasswordAndOTPResolveToTheSameUser`, `TestSignup_DuplicateNeverChangesTheAccount`, `TestPasswordLogin_LockoutStillAllowsOTPSignin` | |
 | AC-9 | `TestPasswordLogin_NonActiveAccount`, `TestAuth_ExpiryRevocationAndAccountStateAreChecked`, `TestRefresh_RefusedForRevokedExpiredOrInactiveSessions` | |
 | AC-10 | `TestSetPassword_KeepsCurrentSessionAndRevokesOthers` | |
@@ -1801,33 +1809,55 @@ This is the price of having no grace window. It is accepted in exchange for stri
 
 ### 12.4 Verification before release
 
-Run unit, integration and contract tests locally against docker-compose Postgres and Mailpit. Record results in the ticket that closes TRD 01. Never run tests or scripts against a deployed server.
+Run unit, integration and contract tests locally against disposable PostgreSQL and Mailpit using the scripts below. Record results in the ticket that closes TRD 01. Never run tests or scripts against a deployed server.
 
-**Recorded evidence** (release hardening, 2026-11-14)
-- **Code:** branch `feat/go-email-auth-account-foundation`, commit `cf62771` plus the uncommitted release-hardening changes (cleanup runner, metrics, 415, `VEEA_ARGON2_*`).
-- **Environment:** local only, on Go 1.26.2 (darwin/arm64).
-  - PostgreSQL 17.11 (`postgres:17-alpine`) from `scripts/test-postgres.sh` at `127.0.0.1:54329`.
-  - Mailpit v1.33.1 from `scripts/test-mailpit.sh` (SMTP `127.0.0.1:1025`, API `127.0.0.1:8025`).
-  - These scripts stand in for the docker-compose services this section names. The Go backend has no compose file of its own.
-- **Commands and results** (from `backend/`):
+**Recorded evidence** (TRD 01 closeout, 2026-11-14)
+
+*What was tested*
+- **Code:** branch `feat/go-email-auth-account-foundation`, commit `d73f15d` plus the uncommitted closeout changes: migration `00007_cleanup_indexes.sql`, all six batch deletes by tuple id, and their tests.
+- **Environment:** local only. Go 1.26.2 (darwin/arm64), PostgreSQL 17.11 (`postgres:17-alpine`) and Mailpit v1.33.1.
+- **Local services:** the Go backend has no docker-compose file of its own. Run `scripts/test-postgres.sh start` and `scripts/test-mailpit.sh start` from `backend/` (or the Make targets below). Both bind only to `127.0.0.1` and are disposable; use each script's `stop` command afterwards to discard its data.
+  - `backend/scripts/test-postgres.sh` (`make test-db-up` / `make test-db-down`) serves PostgreSQL at `127.0.0.1:54329`.
+  - `backend/scripts/test-mailpit.sh` (`make mailpit-up` / `make mailpit-down`) serves SMTP `127.0.0.1:1025` and the API `127.0.0.1:8025`.
+
+*Commands and results* (from `backend/`)
 
 | Command | Result |
 |---|---|
-| `make check` (gofmt, vet with and without the integration tag, unit tests) | Pass, 15 packages |
+| `make check` (gofmt, `go vet` with and without the integration tag, unit tests) | Pass, 15 packages |
 | `make build` | Pass (`bin/api`, `bin/migrate`) |
-| `make sqlc-verify` | "sqlc output is up to date and reproducible" |
-| `VEEA_TEST_DATABASE_URL=… VEEA_TEST_SMTP_ADDR=127.0.0.1:1025 VEEA_TEST_MAILPIT_API=http://127.0.0.1:8025 go test -race -tags=integration -count=1 -v ./...` | 16 packages ok; 757 passed (331 top-level), 0 failed, 0 skipped; `TestOutbox_DeliversThroughMailpit` ran and passed |
-| The same run's contract checker | 0 violations across 99 operation/status/code combinations. Only `GET /readyz 503` (covered by `httpx` unit tests) and `GET /v1/me 500` are not produced through the router |
-| `-count=3`, three times, on `TestCleanup_`, `TestMetrics_`, `TestContract_`, `TestAudit_`, `TestConcurrent_`, `TestRefresh_Concurrent` | Pass every time |
-| `bin/api` smoke test on a throwaway local database | `415` for a form-encoded body, `400` for a missing field, `202` for valid JSON. `/metrics` on `VEEA_METRICS_ADDR` only (`404` on the API port). The cleanup runner ran at start and deleted a 3-day-old counter. Clean `SIGTERM` exit with 0 advisory locks left. No token-shaped strings in the log |
+| `make sqlc` then `make sqlc-verify` | Regenerated successfully; "sqlc output is up to date and reproducible" |
+| `VEEA_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:54329/postgres VEEA_TEST_SMTP_ADDR=127.0.0.1:1025 VEEA_TEST_MAILPIT_API=http://127.0.0.1:8025 go test -race -tags=integration -count=1 -json ./...` | 16 test-bearing packages pass; 11 packages have no test files. **762 passed (334 top-level), 0 failed, 0 skipped tests** (counts include parent tests and subtests). The integration package alone: 405 passed. `TestOutbox_DeliversThroughMailpit` ran and passed |
+| The same run's contract checker | 0 violations across 99 operation/status/code combinations. Not produced through the router: `GET /readyz 503` (covered by `httpx` unit tests) and `GET /v1/me 500` |
+| `VEEA_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:54329/postgres go test -race -tags=integration -count=1 -json -run 'TestCleanup_\|TestMigrations_\|TestQuery_' ./test/integration/` | **49 passed (38 top-level), 0 failed, 0 skipped**, including cleanup, empty-database and version-6 upgrade checks and EXPLAIN evidence |
 
-- **AC-26 at run time:** `TestCleanup_AC26_ScrubsTheExpiredPendingPasswordHash`. A password signup's pending hash is cleared by the real runner once its challenge expires; the open challenge keeps its hash; verify gives `invalid_code`; no account or session exists; the challenge and its email are deleted 24 h after expiry.
-- **AC-7, stated precisely:** what is verified is *equal Argon2id work*. Every credential failure (wrong password, unknown email, passwordless account, pending registration) performs exactly one Argon2id computation with the current parameters, the dummy where there is no hash, and returns a byte-identical `401` (`TestPasswordLogin_GenericFailure` counts the runs). **No wall-clock timing claim is made:** response times were not measured, and differences from the database read or the audit insert are not bounded by any test.
-- **Production gates still open:**
-  - R12, the production email provider (only the fake sender and Mailpit exist);
-  - the Phase 5 alert rules on these metrics, including `db_tx_retries_total`;
-  - indexes supporting the cleanup deletes (`sessions` revocation and absolute expiry, `rate_limit_counters.window_start`, `otp_cooldowns.last_issued_at`, `email_outbox.finished_at`). Each batch is a sequential scan until a migration adds them;
-  - recording these results in the ticket that closes TRD 01.
+*Read-only review*
+- One reviewer checked the migration, cleanup-query and closeout diff. No migration or cleanup-query correctness issues were found. One confirmed AC-7 evidence overstatement was corrected in both the implemented-evidence table and this section: reduced test parameters and request-ID normalization are now explicit. The reviewer verified the correction and reported no remaining findings. The affected cleanup/migration race checks and sqlc verification passed again.
+
+*Migration `00007` evidence*
+- **From an empty database:** `TestMigrations_CleanDatabaseAppliesEveryVersion`, `TestMigrations_EmptyDatabaseGetsTheCleanupIndexes`.
+- **From version 6 with existing rows:** `TestMigrations_UpgradeFromVersion6KeepsDataAndAddsIndexes`. Only version 7 is applied, the row counts are unchanged, and every index is valid and ready.
+- **Replay:** `TestMigrations_StatementsAreReplayable`, so every statement is `IF NOT EXISTS`.
+- **Plans:** `TestMigrations_CleanupQueriesUseTheirIndexes` (§6.10 implementation notes). On version 7:
+  - all six batch selectors use retention indexes, with a TID scan for each outer delete; the challenge expiry index also supplies `ORDER BY expires_at` without a sort;
+  - the password scrub uses `otp_challenges_expires`, the reaper uses the pending-only `email_outbox_due`, and both cascade lookups use the new foreign-key indexes; none of these fixture plans has a sequential scan;
+  - on version 6, the session, rate-limit, cooldown and finished-outbox statements are sequential scans.
+
+*AC-26 at run time*
+- `TestCleanup_AC26_ScrubsTheExpiredPendingPasswordHash` starts a password signup through the router and moves its challenge past `expires_at`. One run of the real cleanup runner then clears `pending_password_hash`, while an open challenge keeps its own.
+- Verifying the abandoned code gives `invalid_code`, and no account or session exists.
+- Once the challenge is 24 h past expiry, the next run deletes it and its outbox row.
+- `cmd/api` wires the same runner to start with the process and repeat every 5 minutes. This run verifies it through the integration tests, including lock release on failure and cancellation; it does not include a separate API-process smoke test. Hash scrubbing is asynchronous: it occurs on the next successful cleanup run after expiry, while code verification rejects an expired challenge immediately.
+
+*AC-7, the verification limit*
+- **Verified: equal Argon2id work in the test configuration.** Wrong password, unknown email, passwordless account and pending registration each perform exactly one real Argon2id verification (the dummy hash where there is none), using the same reduced test parameters: 64 KiB memory, one iteration, one thread. Each returns `401 invalid_credentials` with identical problem bodies after removing the per-request `request_id`. `TestPasswordLogin_GenericFailure` counts verifications through an instrumented hasher. This does not measure production-cost execution.
+- **Not verified: wall-clock timing.** Response times were not measured. Differences from the account read, the failure audit insert or the counter update are not bounded by any test. A timing-tolerance check, as the AC-7 row of §12.2 sketches, remains open.
+
+*Release gates still open*
+- **R12, the production email provider.** Open (§14). Only the fake sender and the loopback-only Mailpit sender exist.
+- **Phase 5 alerting.** The §11.3 metrics are exported, but alert rules on them, including `db_tx_retries_total` (§7.1 rule 7), are Phase 5 scope.
+- **The closing ticket.** These results are to be copied into the ticket that closes TRD 01.
+- **AC-7's wall-clock timing check.** The timing-tolerance part of §12.2 remains unverified and must be measured or explicitly accepted as a release limitation.
 
 ---
 

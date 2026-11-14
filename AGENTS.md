@@ -25,7 +25,7 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
 **Go backend** (`backend/`, replaces the Rust service once TRD 01 is implemented; see
 `docs/trd/01-email-authentication-account-foundation.md` and `backend/README.md`)
 - So far: config, pgx pool, `/healthz`, `/readyz`, `cmd/migrate`, a disposable-PostgreSQL test
-  harness, migrations 00001 to 00006 (`backend/migrations/`) and sqlc queries
+  harness, migrations 00001 to 00007 (`backend/migrations/`) and sqlc queries
   (`backend/internal/platform/db/queries/` generates into `.../db/sqlc/`, never edit by hand).
   Identity primitives live in `backend/internal/identity/` (email normalization, password policy
   and blocklist, Argon2id hasher). Hash and verify passwords before opening a transaction; that

@@ -15,13 +15,18 @@ FROM rate_limit_counters
 WHERE key = @key AND window_start >= @since;
 
 -- name: DeleteOldRateLimitCounters :execrows
--- Cleanup job (TRD 6.10): windows older than 48 hours.
+-- Cleanup job (TRD 6.10): windows older than 48 hours, one batch. The batch is picked through
+-- rate_limit_counters_window and deleted by tuple id, so the outer DELETE is a TID scan instead
+-- of a hash join over the whole table. The array and the delete share one snapshot. The
+-- predicate is repeated on the outer side, so if a concurrent writer updated a row in between,
+-- PostgreSQL re-checks the retention condition on the newest row version before deleting it.
 DELETE FROM rate_limit_counters
-WHERE (key, window_start) IN (
-    SELECT key, window_start FROM rate_limit_counters
+WHERE ctid = ANY (ARRAY(
+    SELECT ctid FROM rate_limit_counters
     WHERE window_start < now() - interval '48 hours'
     LIMIT @batch_size
-);
+))
+  AND window_start < now() - interval '48 hours';
 
 -- name: IncrementRateLimitWindow :one
 -- Fixed-window increment on database time (TRD 10). The window is the epoch-aligned bucket of

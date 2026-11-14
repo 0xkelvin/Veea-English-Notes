@@ -106,14 +106,17 @@ func (q *Queries) CountPendingOutbox(ctx context.Context) (int64, error) {
 
 const deleteFinishedOutbox = `-- name: DeleteFinishedOutbox :execrows
 DELETE FROM email_outbox
-WHERE id IN (
-    SELECT id FROM email_outbox
+WHERE ctid = ANY (ARRAY(
+    SELECT ctid FROM email_outbox
     WHERE status <> 'pending' AND finished_at < now() - interval '7 days'
     LIMIT $1
-)
+))
+  AND status <> 'pending' AND finished_at < now() - interval '7 days'
 `
 
-// Cleanup job (TRD 6.10): terminal rows, 7 days after finished_at.
+// Cleanup job (TRD 6.10): terminal rows, 7 days after finished_at, one batch, picked through
+// email_outbox_finished and deleted by tuple id (see DeleteOldRateLimitCounters), with the
+// predicate repeated on the outer side.
 func (q *Queries) DeleteFinishedOutbox(ctx context.Context, batchSize int32) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteFinishedOutbox, batchSize)
 	if err != nil {

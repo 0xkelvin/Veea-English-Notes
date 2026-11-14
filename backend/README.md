@@ -1,12 +1,10 @@
 # Veea backend (Go)
 
 Go modular monolith on PostgreSQL. It replaces the Rust service in `cloud/`
-(TRD 01 R9); both live in the repo until `cloud/` is retired. This directory
-currently holds the **foundation** (TRD 01 ticket 1: configuration, the database
-pool, `/healthz` and `/readyz`, a separate migration binary and a
-disposable-PostgreSQL test harness) and the **schema and data access** (ticket 2:
-migrations 00001 to 00006 and the generated sqlc queries). There are no auth flows or
-HTTP auth routes yet.
+(TRD 01 R9); both live in the repo until `cloud/` is retired. It includes TRD 01's email signup (OTP and password), OTP and password sign-in, sessions with
+refresh rotation, first-password set, change and reset, the encrypted email outbox,
+audit events, rate limits, the cleanup jobs and the metrics listener. The schema is
+migrations 00001 to 00007. The production email provider is still open (TRD 01 R12).
 
 Design: [`docs/trd/01-email-authentication-account-foundation.md`](../docs/trd/01-email-authentication-account-foundation.md).
 

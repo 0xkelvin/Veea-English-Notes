@@ -73,15 +73,18 @@ func (q *Queries) ConsumeOTPChallenge(ctx context.Context, id uuid.UUID) (int64,
 
 const deleteExpiredOTPChallenges = `-- name: DeleteExpiredOTPChallenges :execrows
 DELETE FROM otp_challenges
-WHERE id IN (
-    SELECT id FROM otp_challenges
+WHERE ctid = ANY (ARRAY(
+    SELECT ctid FROM otp_challenges
     WHERE expires_at < now() - interval '24 hours'
     ORDER BY expires_at
     LIMIT $1
-)
+))
+  AND expires_at < now() - interval '24 hours'
 `
 
-// Cleanup job (TRD 6.10): batched delete, cascades to remaining outbox rows.
+// Cleanup job (TRD 6.10): 24 hours after expiry, oldest first, cascading to remaining outbox
+// rows. One batch picked through otp_challenges_expires and deleted by tuple id (see
+// DeleteOldRateLimitCounters), with the predicate repeated on the outer side.
 func (q *Queries) DeleteExpiredOTPChallenges(ctx context.Context, batchSize int32) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteExpiredOTPChallenges, batchSize)
 	if err != nil {
@@ -92,14 +95,17 @@ func (q *Queries) DeleteExpiredOTPChallenges(ctx context.Context, batchSize int3
 
 const deleteStaleOTPCooldowns = `-- name: DeleteStaleOTPCooldowns :execrows
 DELETE FROM otp_cooldowns
-WHERE (purpose, email_hmac) IN (
-    SELECT purpose, email_hmac FROM otp_cooldowns
+WHERE ctid = ANY (ARRAY(
+    SELECT ctid FROM otp_cooldowns
     WHERE last_issued_at < now() - interval '24 hours'
     LIMIT $1
-)
+))
+  AND last_issued_at < now() - interval '24 hours'
 `
 
-// Cleanup job (TRD 6.10).
+// Cleanup job (TRD 6.10): last issued more than 24 hours ago, one batch, picked through
+// otp_cooldowns_last_issued and deleted by tuple id (see DeleteOldRateLimitCounters). A cooldown
+// re-claimed meanwhile fails the repeated predicate on its new version and is not deleted.
 func (q *Queries) DeleteStaleOTPCooldowns(ctx context.Context, batchSize int32) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteStaleOTPCooldowns, batchSize)
 	if err != nil {

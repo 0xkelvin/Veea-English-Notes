@@ -23,12 +23,17 @@ var expectedTables = []string{
 	"rate_limit_counters", "refresh_tokens_consumed", "sessions", "users",
 }
 
-var expectedIndexes = []string{
-	"audit_events_action", "audit_events_target", "email_outbox_due",
-	"otp_challenges_expires", "otp_challenges_one_open", "otp_challenges_token_hash_key",
-	"refresh_tokens_consumed_retain", "sessions_access_token_hash_key",
-	"sessions_refresh_token_hash_key", "sessions_user_active", "users_email_normalized_key",
+var expectedIndexes = []string{ // sorted, as publicNames returns them; 00007 added the cleanup indexes
+	"audit_events_action", "audit_events_target", "email_outbox_challenge",
+	"email_outbox_due", "email_outbox_finished", "otp_challenges_expires",
+	"otp_challenges_one_open", "otp_challenges_token_hash_key", "otp_cooldowns_last_issued",
+	"rate_limit_counters_window", "refresh_tokens_consumed_retain", "refresh_tokens_consumed_session",
+	"sessions_absolute_expires", "sessions_access_token_hash_key", "sessions_refresh_token_hash_key",
+	"sessions_revoked_at", "sessions_user_active", "users_email_normalized_key",
 }
+
+// latestVersion is the number of the newest migration file.
+const latestVersion = 7
 
 func publicNames(t *testing.T, d *pgtest.DB, query string) []string {
 	t.Helper()
@@ -58,7 +63,7 @@ func requireNames(t *testing.T, got, want []string) {
 
 // --- Migrations ---------------------------------------------------------------------------
 
-func TestMigrations_CleanDatabaseAppliesAllSix(t *testing.T) {
+func TestMigrations_CleanDatabaseAppliesEveryVersion(t *testing.T) {
 	d := pgtest.NewEmpty(t)
 	ctx := context.Background()
 
@@ -66,8 +71,8 @@ func TestMigrations_CleanDatabaseAppliesAllSix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Applied) != 6 || res.Current != 6 {
-		t.Fatalf("expected versions 1 to 6, got %+v", res)
+	if len(res.Applied) != latestVersion || res.Current != latestVersion {
+		t.Fatalf("expected versions 1 to %d, got %+v", latestVersion, res)
 	}
 	for i, v := range res.Applied {
 		if v != int64(i+1) {
@@ -90,11 +95,11 @@ func TestMigrations_RepeatedRunIsANoOp(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, err := migrate.Up(ctx, d.URL, migrations.FS)
-	if err != nil || len(res.Applied) != 0 || res.Current != 6 {
+	if err != nil || len(res.Applied) != 0 || res.Current != latestVersion {
 		t.Fatalf("second run: %+v %v", res, err)
 	}
 	st, err := migrate.Status(ctx, d.URL, migrations.FS)
-	if err != nil || st.Pending != 0 || st.Current != 6 {
+	if err != nil || st.Pending != 0 || st.Current != latestVersion {
 		t.Fatalf("status: %+v %v", st, err)
 	}
 }
@@ -104,8 +109,8 @@ func TestMigrations_RepeatedRunIsANoOp(t *testing.T) {
 func TestMigrations_StatementsAreReplayable(t *testing.T) {
 	d, _ := migratedDB(t)
 	files, err := fs.Glob(migrations.FS, "*.sql")
-	if err != nil || len(files) != 6 {
-		t.Fatalf("expected 6 migration files, got %v %v", files, err)
+	if err != nil || len(files) != latestVersion {
+		t.Fatalf("expected %d migration files, got %v %v", latestVersion, files, err)
 	}
 	for _, f := range files {
 		raw, err := fs.ReadFile(migrations.FS, f)
@@ -128,7 +133,8 @@ func TestMigrations_StatementsAreReplayable(t *testing.T) {
 func TestMigrations_AreUpOnlyAndOrdered(t *testing.T) {
 	files, _ := fs.Glob(migrations.FS, "*.sql")
 	want := []string{"00001_users.sql", "00002_otp.sql", "00003_sessions.sql",
-		"00004_email_outbox.sql", "00005_audit_events.sql", "00006_rate_limit_counters.sql"}
+		"00004_email_outbox.sql", "00005_audit_events.sql", "00006_rate_limit_counters.sql",
+		"00007_cleanup_indexes.sql"}
 	requireNames(t, files, want)
 	for _, f := range files {
 		raw, _ := fs.ReadFile(migrations.FS, f)

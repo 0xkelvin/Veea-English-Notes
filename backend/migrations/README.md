@@ -11,6 +11,7 @@ by sqlc as the schema source (see `../sqlc.yaml`).
 | `00004_email_outbox.sql` | `email_outbox` (6.7) |
 | `00005_audit_events.sql` | `audit_events` (6.8) |
 | `00006_rate_limit_counters.sql` | `rate_limit_counters` (6.9) |
+| `00007_cleanup_indexes.sql` | indexes for the cleanup jobs and their cascades (6.10) |
 
 Rules:
 

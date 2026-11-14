@@ -65,14 +65,17 @@ func (q *Queries) CountActiveSessionsForUser(ctx context.Context, userID uuid.UU
 
 const deleteExpiredConsumedRefreshTokens = `-- name: DeleteExpiredConsumedRefreshTokens :execrows
 DELETE FROM refresh_tokens_consumed
-WHERE token_hash IN (
-    SELECT token_hash FROM refresh_tokens_consumed
+WHERE ctid = ANY (ARRAY(
+    SELECT ctid FROM refresh_tokens_consumed
     WHERE retain_until <= now()
     LIMIT $1
-)
+))
+  AND retain_until <= now()
 `
 
 // Cleanup job (TRD 6.10). Correctness does not depend on it: lookup enforces the cutoff.
+// One batch picked through refresh_tokens_consumed_retain and deleted by tuple id (see
+// DeleteOldRateLimitCounters), with the predicate repeated on the outer side.
 func (q *Queries) DeleteExpiredConsumedRefreshTokens(ctx context.Context, batchSize int32) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteExpiredConsumedRefreshTokens, batchSize)
 	if err != nil {
@@ -83,15 +86,20 @@ func (q *Queries) DeleteExpiredConsumedRefreshTokens(ctx context.Context, batchS
 
 const deleteStaleSessions = `-- name: DeleteStaleSessions :execrows
 DELETE FROM sessions
-WHERE id IN (
-    SELECT c.id FROM sessions c
+WHERE ctid = ANY (ARRAY(
+    SELECT c.ctid FROM sessions c
     WHERE (c.revoked_at IS NOT NULL AND c.revoked_at < now() - interval '30 days')
        OR c.absolute_expires_at < now() - interval '30 days'
     LIMIT $1
-)
+))
+  AND ((revoked_at IS NOT NULL AND revoked_at < now() - interval '30 days')
+       OR absolute_expires_at < now() - interval '30 days')
 `
 
-// Cleanup job (TRD 6.10): 30 days after revocation or absolute expiry. Cascades to consumed tokens.
+// Cleanup job (TRD 6.10): 30 days after revocation or absolute expiry. Cascades to consumed
+// tokens. One batch picked through sessions_revoked_at and sessions_absolute_expires
+// (BitmapOr) and deleted by tuple id (see DeleteOldRateLimitCounters), with the predicate
+// repeated on the outer side.
 func (q *Queries) DeleteStaleSessions(ctx context.Context, batchSize int32) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteStaleSessions, batchSize)
 	if err != nil {

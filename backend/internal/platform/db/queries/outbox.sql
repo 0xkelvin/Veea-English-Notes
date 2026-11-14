@@ -100,13 +100,16 @@ SET next_attempt_at = now() + make_interval(secs => @backoff_seconds::double pre
 WHERE id = @id AND status = 'pending' AND lease_token = @lease_token AND lease_expires_at > now();
 
 -- name: DeleteFinishedOutbox :execrows
--- Cleanup job (TRD 6.10): terminal rows, 7 days after finished_at.
+-- Cleanup job (TRD 6.10): terminal rows, 7 days after finished_at, one batch, picked through
+-- email_outbox_finished and deleted by tuple id (see DeleteOldRateLimitCounters), with the
+-- predicate repeated on the outer side.
 DELETE FROM email_outbox
-WHERE id IN (
-    SELECT id FROM email_outbox
+WHERE ctid = ANY (ARRAY(
+    SELECT ctid FROM email_outbox
     WHERE status <> 'pending' AND finished_at < now() - interval '7 days'
     LIMIT @batch_size
-);
+))
+  AND status <> 'pending' AND finished_at < now() - interval '7 days';
 
 -- name: CountPendingOutbox :one
 -- email_outbox_pending (TRD 11.3), read when metrics are scraped. Uses the partial index.
