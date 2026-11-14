@@ -105,7 +105,7 @@ func (q *Queries) GetOwnedEmailChange(ctx context.Context, arg GetOwnedEmailChan
 
 const getUserByEmailNormalized = `-- name: GetUserByEmailNormalized :one
 
-SELECT id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at, display_name, preferred_language, time_zone, daily_goal, profile_revision, email_revision FROM users WHERE email_normalized = $1
+SELECT id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at, display_name, preferred_language, time_zone, daily_goal, profile_revision, email_revision, lifecycle_revision, state_changed_at FROM users WHERE email_normalized = $1
 `
 
 // Queries for the identity module (users). TRD 01 sections 3, 7.3, 7.4 and 7.5.
@@ -131,12 +131,14 @@ func (q *Queries) GetUserByEmailNormalized(ctx context.Context, emailNormalized 
 		&i.DailyGoal,
 		&i.ProfileRevision,
 		&i.EmailRevision,
+		&i.LifecycleRevision,
+		&i.StateChangedAt,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at, display_name, preferred_language, time_zone, daily_goal, profile_revision, email_revision FROM users WHERE id = $1
+SELECT id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at, display_name, preferred_language, time_zone, daily_goal, profile_revision, email_revision, lifecycle_revision, state_changed_at FROM users WHERE id = $1
 `
 
 // Unlocked read, for example GET /v1/me.
@@ -160,6 +162,8 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.DailyGoal,
 		&i.ProfileRevision,
 		&i.EmailRevision,
+		&i.LifecycleRevision,
+		&i.StateChangedAt,
 	)
 	return i, err
 }
@@ -198,7 +202,7 @@ const insertUserIfAbsent = `-- name: InsertUserIfAbsent :one
 INSERT INTO users (id, email, email_normalized, email_verified_at, password_hash, password_changed_at)
 VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (email_normalized) DO NOTHING
-RETURNING id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at, display_name, preferred_language, time_zone, daily_goal, profile_revision, email_revision
+RETURNING id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at, display_name, preferred_language, time_zone, daily_goal, profile_revision, email_revision, lifecycle_revision, state_changed_at
 `
 
 type InsertUserIfAbsentParams struct {
@@ -239,6 +243,8 @@ func (q *Queries) InsertUserIfAbsent(ctx context.Context, arg InsertUserIfAbsent
 		&i.DailyGoal,
 		&i.ProfileRevision,
 		&i.EmailRevision,
+		&i.LifecycleRevision,
+		&i.StateChangedAt,
 	)
 	return i, err
 }
@@ -295,7 +301,7 @@ func (q *Queries) LockPendingEmailChange(ctx context.Context, userID uuid.UUID) 
 }
 
 const lockUserForEmailChange = `-- name: LockUserForEmailChange :one
-SELECT id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at, display_name, preferred_language, time_zone, daily_goal, profile_revision, email_revision FROM users WHERE id = $1 FOR UPDATE
+SELECT id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at, display_name, preferred_language, time_zone, daily_goal, profile_revision, email_revision, lifecycle_revision, state_changed_at FROM users WHERE id = $1 FOR UPDATE
 `
 
 // TRD 03 L3 exception: changing a unique key needs the stronger mode from the outset.
@@ -319,12 +325,14 @@ func (q *Queries) LockUserForEmailChange(ctx context.Context, id uuid.UUID) (Use
 		&i.DailyGoal,
 		&i.ProfileRevision,
 		&i.EmailRevision,
+		&i.LifecycleRevision,
+		&i.StateChangedAt,
 	)
 	return i, err
 }
 
 const lockUserForNoKeyUpdate = `-- name: LockUserForNoKeyUpdate :one
-SELECT id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at, display_name, preferred_language, time_zone, daily_goal, profile_revision, email_revision FROM users WHERE id = $1 FOR NO KEY UPDATE
+SELECT id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at, display_name, preferred_language, time_zone, daily_goal, profile_revision, email_revision, lifecycle_revision, state_changed_at FROM users WHERE id = $1 FOR NO KEY UPDATE
 `
 
 // Lock level L3 (TRD 7.1). All flows except TRD 03 final email cutover use this mode.
@@ -350,6 +358,8 @@ func (q *Queries) LockUserForNoKeyUpdate(ctx context.Context, id uuid.UUID) (Use
 		&i.DailyGoal,
 		&i.ProfileRevision,
 		&i.EmailRevision,
+		&i.LifecycleRevision,
+		&i.StateChangedAt,
 	)
 	return i, err
 }
@@ -400,7 +410,7 @@ func (q *Queries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams
 const updateProfile = `-- name: UpdateProfile :one
 UPDATE users SET display_name = $1, preferred_language = $2,
     time_zone = $3, daily_goal = $4, profile_revision = profile_revision + 1, updated_at = now()
-WHERE id = $5 RETURNING id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at, display_name, preferred_language, time_zone, daily_goal, profile_revision, email_revision
+WHERE id = $5 RETURNING id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at, display_name, preferred_language, time_zone, daily_goal, profile_revision, email_revision, lifecycle_revision, state_changed_at
 `
 
 type UpdateProfileParams struct {
@@ -437,6 +447,8 @@ func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (U
 		&i.DailyGoal,
 		&i.ProfileRevision,
 		&i.EmailRevision,
+		&i.LifecycleRevision,
+		&i.StateChangedAt,
 	)
 	return i, err
 }

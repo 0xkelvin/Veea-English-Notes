@@ -44,6 +44,7 @@ type Job struct {
 	// Batched jobs repeat while a batch comes back full. Unbatched ones run one statement.
 	Batched bool
 	run     func(ctx context.Context, q *sqlc.Queries, batch int32) (int64, error)
+	custom  func(context.Context, *pgxpool.Conn, int32) (int64, error)
 }
 
 // Jobs is the TRD 6.10 table, in the order they run. Pending password hashes are scrubbed
@@ -79,7 +80,8 @@ func Jobs() []Job {
 		{Name: "email_changes", Batched: true, run: func(ctx context.Context, q *sqlc.Queries, b int32) (int64, error) {
 			return q.DeleteExpiredEmailChanges(ctx, b)
 		}},
-		// audit_events are not deleted in Phase 1 (Q-L3).
+		// audit_events retention (180 days, TRD 04 §1.1) and purge minimization run in the
+		// appended account_lifecycle job when cfg.AccountJob is set (cmd/api always sets it).
 	}
 	for i := range jobs {
 		jobs[i].LockKey = lockBase + int64(i)
@@ -101,6 +103,7 @@ type Result struct {
 // Config wires a Runner.
 type Config struct {
 	Pool       *pgxpool.Pool
+	AccountJob func(context.Context, *pgxpool.Conn, int32) (int64, error)
 	Interval   time.Duration // zero means DefaultInterval
 	BatchSize  int32         // zero means DefaultBatchSize
 	MaxBatches int           // zero means DefaultMaxBatches
@@ -136,7 +139,11 @@ func New(cfg Config) (*Runner, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.New(slog.DiscardHandler)
 	}
-	return &Runner{cfg: cfg, jobs: Jobs()}, nil
+	jobs := Jobs()
+	if cfg.AccountJob != nil {
+		jobs = append(jobs, Job{Name: "account_lifecycle", LockKey: lockBase + 9, custom: cfg.AccountJob})
+	}
+	return &Runner{cfg: cfg, jobs: jobs}, nil
 }
 
 // Run runs every job once at start and then every Interval until ctx is cancelled. A job in
@@ -201,7 +208,13 @@ func (r *Runner) runJob(ctx context.Context, j Job) (res Result) {
 
 	// The lock is held by this connection's session; every batch runs on it.
 	for res.Batches < r.cfg.MaxBatches {
-		n, err := j.run(ctx, q, r.cfg.BatchSize)
+		var n int64
+		var err error
+		if j.custom != nil {
+			n, err = j.custom(ctx, conn, r.cfg.BatchSize)
+		} else {
+			n, err = j.run(ctx, q, r.cfg.BatchSize)
+		}
 		res.Batches++
 		res.Rows += n
 		if err != nil {

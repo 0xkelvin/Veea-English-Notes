@@ -25,7 +25,8 @@ SELECT (c.consumed_at IS NULL
         AND c.expires_at > now()
         AND c.delivery = 'code'
         AND (c.user_id IS NULL OR EXISTS (
-            SELECT 1 FROM users u WHERE u.id = c.user_id AND u.email_revision = c.email_revision
+            SELECT 1 FROM users u WHERE u.id = c.user_id AND u.email_revision = c.email_revision AND u.lifecycle_revision = c.lifecycle_revision
+              AND (u.status = 'active' OR (c.purpose IN ('account_export','account_delete') AND u.status IN ('deactivated','suspended')) OR (c.purpose='account_reactivate' AND u.status='deactivated'))
               AND (c.purpose = 'email_change_new' OR u.email_normalized = c.email_normalized)
         ))
         AND (c.change_id IS NULL OR EXISTS (

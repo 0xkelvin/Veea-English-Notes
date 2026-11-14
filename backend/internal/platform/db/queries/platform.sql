@@ -12,3 +12,7 @@ SELECT pg_try_advisory_lock(@lock_key::bigint) AS acquired;
 
 -- name: ReleaseCleanupAdvisoryLock :one
 SELECT pg_advisory_unlock(@lock_key::bigint) AS released;
+
+-- name: WallClock :one
+-- After advisory/row lock waits, OTP expiry must use actual database time.
+SELECT clock_timestamp()::timestamptz AS now;

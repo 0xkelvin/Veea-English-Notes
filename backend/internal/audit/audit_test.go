@@ -37,6 +37,7 @@ func TestRecordRefusesSecretsAndMalformedEvents(t *testing.T) {
 		"password key":       func(e *Event) { e.Metadata = map[string]string{"new_password": "x"} },
 		"hash key":           func(e *Event) { e.Metadata = map[string]string{"code_hash": "x"} },
 		"challenge token":    func(e *Event) { e.Metadata = map[string]string{"note": "vct_abc"} },
+		"rights capability":  func(e *Event) { e.Metadata = map[string]string{"note": "vop_secret"} },
 		"access token":       func(e *Event) { e.Metadata = map[string]string{"note": "Bearer vat_abc"} },
 		"upper-case token":   func(e *Event) { e.Metadata = map[string]string{"note": "VCT_abc"} },
 		"uppercase key":      func(e *Event) { e.Metadata = map[string]string{"Delivery": "none"} },

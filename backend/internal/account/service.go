@@ -190,7 +190,7 @@ func (s *Service) StartEmailChange(ctx context.Context, p session.Principal, raw
 		if err := audit.Record(ctx, tx, event(p, c, "account.email.change.start", map[string]string{"change_id": id.String()})); err != nil {
 			return otp.PairBinding{}, err
 		}
-		return otp.PairBinding{ChangeID: id, UserID: p.UserID, SessionID: p.SessionID, EmailRevision: cur.EmailRevision, NewEligible: !occupied}, nil
+		return otp.PairBinding{ChangeID: id, UserID: p.UserID, SessionID: p.SessionID, EmailRevision: cur.EmailRevision, LifecycleRevision: cur.LifecycleRevision, NewEligible: !occupied}, nil
 	})
 }
 
@@ -228,7 +228,7 @@ func (s *Service) CompleteEmailChange(ctx context.Context, p session.Principal, 
 		if !ok || !accounts.InGoodStanding(u) {
 			return otp.Rollback("account_unavailable", session.ErrUnauthorized)
 		}
-		if change.SourceRevision != u.EmailRevision || change.SourceEmailNormalized != u.EmailNormalized || a.EmailRevision != u.EmailRevision || a.Email.Normalized != change.NewEmailNormalized {
+		if change.SourceRevision != u.EmailRevision || change.SourceEmailNormalized != u.EmailNormalized || a.EmailRevision != u.EmailRevision || a.LifecycleRevision != u.LifecycleRevision || a.Email.Normalized != change.NewEmailNormalized {
 			return otp.Rollback("email_changed", otp.ErrInvalidCode)
 		}
 		if _, ok, err := session.LockActing(ctx, tx, p.UserID, p.SessionID); err != nil {

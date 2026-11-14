@@ -7,6 +7,7 @@ package httpapi
 import (
 	"errors"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/account"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/lifecycle"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -29,15 +30,16 @@ import (
 
 // Handlers serves the auth endpoints.
 type Handlers struct {
-	Account  *account.Service
-	Signup   *signup.Service
-	Signin   *signin.Service
-	Password *password.Service
-	Sessions *session.Service
-	Limiter  *ratelimit.Limiter // records auth.rate_limited
-	Metrics  *metrics.Metrics   // auth_rate_limited_total; nil disables
-	IPs      *clientip.Resolver
-	Log      *slog.Logger
+	Lifecycle *lifecycle.Service
+	Account   *account.Service
+	Signup    *signup.Service
+	Signin    *signin.Service
+	Password  *password.Service
+	Sessions  *session.Service
+	Limiter   *ratelimit.Limiter // records auth.rate_limited
+	Metrics   *metrics.Metrics   // auth_rate_limited_total; nil disables
+	IPs       *clientip.Resolver
+	Log       *slog.Logger
 }
 
 // Mount registers the routes (TRD 5.3, endpoints 1 to 14).
@@ -56,6 +58,14 @@ func (h *Handlers) Mount(mux httpx.Router) {
 	mux.HandleFunc("POST /v1/auth/token/refresh", h.refresh)
 	mux.HandleFunc("POST /v1/auth/logout", h.authenticated(h.logout))
 	mux.HandleFunc("GET /v1/me", h.authenticated(h.me))
+	mux.HandleFunc("POST /v1/me/deactivate", h.authenticated(h.deactivate))
+	for _, action := range []string{"export", "delete", "reactivate"} {
+		mux.HandleFunc("POST /v1/account-rights/"+action+"/start", h.rightsStart(action))
+		mux.HandleFunc("POST /v1/account-rights/"+action+"/{operation_id}/complete", h.rightsAuthenticated(action, h.rightsComplete))
+	}
+	mux.HandleFunc("GET /v1/account-rights/exports/{operation_id}", h.rightsAuthenticated("export", h.rightsStatus))
+	mux.HandleFunc("GET /v1/account-rights/exports/{operation_id}/download", h.rightsAuthenticated("export", h.rightsDownload))
+	mux.HandleFunc("GET /v1/account-rights/deletions/{operation_id}", h.rightsAuthenticated("delete", h.rightsStatus))
 	mux.HandleFunc("PUT /v1/me/profile", h.authenticated(h.updateProfile))
 	mux.HandleFunc("POST /v1/me/email-change/start", h.authenticated(h.startEmailChange))
 	mux.HandleFunc("POST /v1/me/email-change/{change_id}/complete", h.authenticated(h.completeEmailChange))
@@ -109,6 +119,7 @@ type acknowledgement struct {
 }
 
 type user struct {
+	LifecycleRevision int64       `json:"lifecycle_revision"`
 	Profile           profileBody `json:"profile"`
 	ID                string      `json:"id"`
 	Email             string      `json:"email"`
@@ -135,8 +146,9 @@ func ackBody(a otp.Acknowledgement) acknowledgement {
 
 func userBody(u sqlc.User) user {
 	return user{
-		Profile: profileBody{DisplayName: u.DisplayName, PreferredLanguage: u.PreferredLanguage, TimeZone: u.TimeZone, DailyGoal: u.DailyGoal, Revision: u.ProfileRevision},
-		ID:      u.ID.String(), Email: u.Email, EmailVerifiedAt: utc(u.EmailVerifiedAt), HasPassword: u.PasswordHash != nil,
+		LifecycleRevision: u.LifecycleRevision,
+		Profile:           profileBody{DisplayName: u.DisplayName, PreferredLanguage: u.PreferredLanguage, TimeZone: u.TimeZone, DailyGoal: u.DailyGoal, Revision: u.ProfileRevision},
+		ID:                u.ID.String(), Email: u.Email, EmailVerifiedAt: utc(u.EmailVerifiedAt), HasPassword: u.PasswordHash != nil,
 		PasswordChangedAt: utc(u.PasswordChangedAt), Status: u.Status, Role: u.Role, CreatedAt: u.CreatedAt.UTC(),
 	}
 }
@@ -420,6 +432,16 @@ func (h *Handlers) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var policy *identity.PolicyError
 	var limited *otp.RateLimitedError
 	switch {
+	case errors.Is(err, lifecycle.ErrNotFound):
+		httpx.WriteProblem(w, 404, httpx.CodeNotFound)
+	case errors.Is(err, lifecycle.ErrConflict):
+		httpx.WriteProblem(w, 409, httpx.CodeLifecycleConflict)
+	case errors.Is(err, lifecycle.ErrNotReady):
+		httpx.WriteProblem(w, 409, httpx.CodeExportNotReady)
+	case errors.Is(err, lifecycle.ErrCanceled):
+		httpx.WriteProblem(w, 409, httpx.CodeOperationCanceled)
+	case errors.Is(err, lifecycle.ErrExpired):
+		httpx.WriteProblem(w, 410, httpx.CodeExportExpired)
 	case errors.Is(err, account.ErrInvalidProfile):
 		httpx.WriteProblem(w, 422, httpx.CodeInvalidProfile)
 	case errors.Is(err, account.ErrProfileConflict):

@@ -55,7 +55,7 @@ const Redacted = "[redacted]"
 var forbiddenKeys = []string{"password", "code", "token", "hash", "payload", "ciphertext", "secret", "key"}
 
 // tokenPrefixes mark the service's bearer secrets (TRD 4.1, 8.1).
-var tokenPrefixes = []string{"vct_", "vat_", "vrt_"}
+var tokenPrefixes = []string{"vct_", "vat_", "vrt_", "vop_"}
 
 // Record inserts e through db, which is a transaction or the pool.
 func Record(ctx context.Context, db sqlc.DBTX, e Event) error {

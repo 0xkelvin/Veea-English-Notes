@@ -8,7 +8,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // SQLSTATE codes that make a whole transaction safe to retry (TRD 7.1 rule 7).
@@ -23,7 +22,9 @@ const DefaultTxRetries = 3
 
 // Tx runs use-case transactions at READ COMMITTED (TRD 7.1 rule 1).
 type Tx struct {
-	Pool *pgxpool.Pool
+	Pool interface {
+		BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error)
+	}
 	// Retries is the number of retries after a deadlock or serialization failure. Zero means
 	// DefaultTxRetries; a negative value disables retries.
 	Retries int

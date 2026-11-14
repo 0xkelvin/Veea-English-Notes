@@ -28,16 +28,16 @@ RETURNING id;
 -- name: InsertOTPChallenge :one
 INSERT INTO otp_challenges (
     id, token_hash, purpose, signup_method, pending_password_hash, email, email_normalized,
-    user_id, session_id, code_hash, delivery, max_attempts, expires_at, request_ip, email_revision
+    user_id, session_id, code_hash, delivery, max_attempts, expires_at, request_ip, email_revision, lifecycle_revision, operation_id, created_at
 ) VALUES (
     @id, @token_hash, @purpose, @signup_method, @pending_password_hash, @email, @email_normalized,
-    @user_id, @session_id, @code_hash, @delivery, @max_attempts, @expires_at, @request_ip, @email_revision
+    @user_id, @session_id, @code_hash, @delivery, @max_attempts, @expires_at, @request_ip, @email_revision, @lifecycle_revision, @operation_id, COALESCE(sqlc.narg(created_at)::timestamptz, now())
 )
 RETURNING *;
 
 -- name: InsertEmailChangeChallenge :exec
-INSERT INTO otp_challenges(id,token_hash,purpose,email,email_normalized,user_id,session_id,code_hash,delivery,max_attempts,expires_at,request_ip,email_revision,change_id)
-VALUES (@id,@token_hash,@purpose,@email,@email_normalized,@user_id,@session_id,@code_hash,@delivery,@max_attempts,@expires_at,@request_ip,@email_revision,@change_id);
+INSERT INTO otp_challenges(id,token_hash,purpose,email,email_normalized,user_id,session_id,code_hash,delivery,max_attempts,expires_at,request_ip,email_revision,lifecycle_revision,change_id)
+VALUES (@id,@token_hash,@purpose,@email,@email_normalized,@user_id,@session_id,@code_hash,@delivery,@max_attempts,@expires_at,@request_ip,@email_revision,@lifecycle_revision,@change_id);
 
 -- name: LockOTPProofPair :many
 SELECT * FROM otp_challenges WHERE token_hash = ANY(@token_hashes::bytea[]) ORDER BY id FOR UPDATE;
@@ -102,3 +102,17 @@ SELECT GREATEST(
 )::double precision AS seconds_remaining
 FROM otp_cooldowns
 WHERE purpose = @purpose AND email_hmac = @email_hmac;
+
+-- name: LockOwnedOTPBatch :many
+SELECT id FROM otp_challenges WHERE user_id= @user_id ORDER BY id LIMIT @batch_size FOR UPDATE;
+-- name: DeleteLockedOwnedOTP :execrows
+DELETE FROM otp_challenges WHERE user_id= @user_id AND id=ANY(@ids::uuid[]);
+
+-- name: LockDeletionProofs :many
+-- L2 in UUID order, after the address barrier. Pre-lock the open public signup proof too.
+SELECT id FROM otp_challenges WHERE token_hash= @token_hash OR
+ (purpose='signup' AND email_normalized= @email_normalized AND consumed_at IS NULL AND superseded_at IS NULL)
+ORDER BY id FOR UPDATE;
+-- name: InvalidateLockedSignupProofs :exec
+UPDATE otp_challenges SET superseded_at=clock_timestamp(),pending_password_hash=NULL
+WHERE id=ANY(@ids::uuid[]) AND purpose='signup' AND consumed_at IS NULL AND superseded_at IS NULL;

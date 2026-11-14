@@ -15,6 +15,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/app"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/lifecycle"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/maintenance"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/notify"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/config"
@@ -57,7 +59,24 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	cleanup, err := maintenance.New(maintenance.Config{Pool: pool, Logger: log.With("component", "cleanup")})
+	maintenancePool := pool
+	if cfg.MaintenanceDatabaseURL != "" {
+		maintenancePool, err = db.NewPool(ctx, cfg.MaintenanceDatabaseURL, cfg.DBMaxConns)
+		if err != nil {
+			return err
+		}
+		defer maintenancePool.Close()
+	}
+	keys, err := notify.NewKeyring(cfg.OutboxKeys...)
+	if err != nil {
+		return err
+	}
+	digests, err := identity.NewEmailHMAC(cfg.EmailHMACKeys...)
+	if err != nil {
+		return err
+	}
+	rightsJobs := lifecycle.New(maintenancePool, nil, keys, digests, m, nil)
+	cleanup, err := maintenance.New(maintenance.Config{Pool: maintenancePool, Logger: log.With("component", "cleanup"), AccountJob: rightsJobs.RunBatch})
 	if err != nil {
 		return err
 	}

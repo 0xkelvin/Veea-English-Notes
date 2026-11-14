@@ -21,6 +21,7 @@ import (
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/signin"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/signup"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/lifecycle"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/notify"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/clientip"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db/sqlc"
@@ -137,9 +138,11 @@ func New(o Options) (http.Handler, error) {
 		return nil, err
 	}
 	auth := &httpapi.Handlers{Signup: signupSvc, Signin: signinSvc, Password: passwordSvc, Sessions: sessions,
-		Account: account.New(o.Pool, otpSvc, outbox, m, o.OnTxRetry),
-		Limiter: ratelimit.NewLimiter(o.Pool), Metrics: m, IPs: clientip.New(o.TrustedProxies),
+		Account:   account.New(o.Pool, otpSvc, outbox, m, o.OnTxRetry),
+		Lifecycle: lifecycle.New(o.Pool, otpSvc, keyring, emailHMAC, m, o.OnTxRetry),
+		Limiter:   ratelimit.NewLimiter(o.Pool), Metrics: m, IPs: clientip.New(o.TrustedProxies),
 		Log: o.Logger.With("component", "http")}
 	m.RegisterOutboxPending(sqlc.New(o.Pool).CountPendingOutbox)
+	m.RegisterDeletionBacklog(sqlc.New(o.Pool).OldestPendingDeletionSeconds)
 	return httpx.NewHandler(o.Pool, o.ReadyTimeout, auth.Mount), nil
 }

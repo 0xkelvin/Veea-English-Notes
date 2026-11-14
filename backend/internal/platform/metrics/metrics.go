@@ -25,6 +25,7 @@ import (
 type Metrics struct {
 	reg         *prometheus.Registry
 	pendingOnce sync.Once
+	backlogOnce sync.Once
 
 	otpStarted      *prometheus.CounterVec
 	otpVerified     *prometheus.CounterVec
@@ -37,6 +38,8 @@ type Metrics struct {
 	staleResults    prometheus.Counter
 	txRetries       *prometheus.CounterVec
 	argon2Wait      prometheus.Histogram
+	lifecycle       *prometheus.CounterVec
+	accountJobs     *prometheus.CounterVec
 }
 
 // New registers every TRD 11.3 metric plus the Go runtime and process collectors.
@@ -75,6 +78,12 @@ func New() *Metrics {
 	m.argon2Wait = f(prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name: "argon2_wait_seconds", Help: "Time spent waiting for an Argon2id slot (TRD 9.2).",
 		Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2}})).(prometheus.Histogram)
+	m.lifecycle = f(prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "account_lifecycle_accepted_total", Help: "Committed owner lifecycle transitions and accepted rights operations, by action (TRD 04)."},
+		[]string{"action"})).(*prometheus.CounterVec)
+	m.accountJobs = f(prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "account_jobs_total", Help: "Durable export/deletion job transactions, by job and result (TRD 04)."},
+		[]string{"job", "result"})).(*prometheus.CounterVec)
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	return m
 }
@@ -206,4 +215,39 @@ func (m *Metrics) Argon2Wait(d time.Duration) {
 	if m != nil {
 		m.argon2Wait.Observe(d.Seconds())
 	}
+}
+
+// LifecycleAccepted counts one committed transition or newly accepted rights operation.
+func (m *Metrics) LifecycleAccepted(action string) {
+	if m != nil {
+		m.lifecycle.WithLabelValues(label(action)).Inc()
+	}
+}
+
+// AccountJob counts one committed job outcome, or a failed job transaction (result error).
+func (m *Metrics) AccountJob(job, result string) {
+	if m != nil {
+		m.accountJobs.WithLabelValues(label(job), label(result)).Inc()
+	}
+}
+
+// RegisterDeletionBacklog exports account_deletion_oldest_pending_seconds, the age of the
+// oldest accepted deletion whose purge has not completed, read when scraped. The TRD 04
+// target is 24 h; alerting on it belongs to deployment. Only the first call registers.
+func (m *Metrics) RegisterDeletionBacklog(age func(ctx context.Context) (float64, error)) {
+	if m == nil || age == nil {
+		return
+	}
+	m.backlogOnce.Do(func() {
+		m.reg.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "account_deletion_oldest_pending_seconds", Help: "Age of the oldest accepted, unfinished account purge (0 when none)."}, func() float64 {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			v, err := age(ctx)
+			if err != nil {
+				return -1 // visible as an impossible value rather than a silent zero
+			}
+			return v
+		}))
+	})
 }

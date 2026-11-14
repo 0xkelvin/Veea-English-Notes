@@ -97,6 +97,9 @@ func TestNilMetricsAreSafe(t *testing.T) {
 	m.TxRetry("40001")
 	m.Argon2Wait(time.Second)
 	m.RegisterOutboxPending(nil)
+	m.LifecycleAccepted("delete")
+	m.AccountJob("delete", "completed")
+	m.RegisterDeletionBacklog(nil)
 }
 
 func TestPendingGaugeRegistersOnce(t *testing.T) {
@@ -113,5 +116,25 @@ func TestPendingGaugeReportsAFailedReadAsMinusOne(t *testing.T) {
 	m.RegisterOutboxPending(func(context.Context) (int64, error) { return 0, context.DeadlineExceeded })
 	if !strings.Contains(scrape(t, m), "email_outbox_pending -1") {
 		t.Fatal("a failed count must be visible, not a silent zero")
+	}
+}
+
+func TestDeletionBacklogGauge(t *testing.T) {
+	m := New()
+	m.RegisterDeletionBacklog(func(context.Context) (float64, error) { return 90000, nil })
+	m.RegisterDeletionBacklog(func(context.Context) (float64, error) { return 1, nil }) // ignored
+	m.LifecycleAccepted("someone@example.test")
+	m.AccountJob("delete", "completed")
+	out := scrape(t, m)
+	for _, want := range []string{"account_deletion_oldest_pending_seconds 90000",
+		`account_lifecycle_accepted_total{action="other"} 1`, `account_jobs_total{job="delete",result="completed"} 1`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %s in:\n%s", want, out)
+		}
+	}
+	f := New()
+	f.RegisterDeletionBacklog(func(context.Context) (float64, error) { return 0, context.DeadlineExceeded })
+	if !strings.Contains(scrape(t, f), "account_deletion_oldest_pending_seconds -1") {
+		t.Fatal("a failed read must be visible, not a silent zero")
 	}
 }

@@ -82,7 +82,7 @@ func TestMigrations_UpgradeFromVersion6KeepsDataAndAddsIndexes(t *testing.T) {
 		`SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname NOT LIKE '%\_pkey'`), func() []string {
 		var out []string
 		for _, idx := range expectedIndexes {
-			if idx != "email_changes_expires" && idx != "email_changes_one_pending" && idx != "otp_challenges_change" && idx != "otp_challenges_change_open" {
+			if !strings.HasPrefix(idx, "account_operations_") && !strings.HasPrefix(idx, "deletion_ledger_") && idx != "audit_events_retention" && idx != "erased_addresses_expires" && idx != "otp_challenges_user" && idx != "email_changes_expires" && idx != "email_changes_one_pending" && idx != "otp_challenges_change" && idx != "otp_challenges_change_open" {
 				out = append(out, idx)
 			}
 		}

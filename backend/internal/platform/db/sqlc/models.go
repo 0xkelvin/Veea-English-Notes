@@ -11,6 +11,28 @@ import (
 	"github.com/google/uuid"
 )
 
+type AccountOperation struct {
+	ID                 uuid.UUID
+	TokenHash          []byte
+	Action             string
+	UserID             *uuid.UUID
+	ChallengeID        uuid.UUID
+	EmailRevision      int64
+	LifecycleRevision  int64
+	State              string
+	CreatedAt          time.Time
+	ProofExpiresAt     time.Time
+	AcceptedAt         *time.Time
+	CompletedAt        *time.Time
+	ExpiresAt          time.Time
+	DownloadExpiresAt  *time.Time
+	ArtifactID         uuid.UUID
+	ArtifactCiphertext []byte
+	ArtifactKeyID      *int16
+	PurgeStep          int32
+	EmailDigests       [][]byte
+}
+
 type AuditEvent struct {
 	ID           int64
 	OccurredAt   time.Time
@@ -25,6 +47,14 @@ type AuditEvent struct {
 	UserAgent    *string
 	RequestID    *string
 	Metadata     []byte
+}
+
+type DeletionLedger struct {
+	OperationID uuid.UUID
+	UserID      uuid.UUID
+	AcceptedAt  time.Time
+	CompletedAt *time.Time
+	RetainUntil *time.Time
 }
 
 type EmailChange struct {
@@ -61,6 +91,12 @@ type EmailOutbox struct {
 	FinishedAt        *time.Time
 }
 
+type ErasedAddress struct {
+	EmailHmac []byte
+	Cutoff    time.Time
+	ExpiresAt *time.Time
+}
+
 type OtpChallenge struct {
 	ID                  uuid.UUID
 	TokenHash           []byte
@@ -82,6 +118,8 @@ type OtpChallenge struct {
 	RequestIp           *netip.Addr
 	EmailRevision       int64
 	ChangeID            *uuid.UUID
+	LifecycleRevision   int64
+	OperationID         *uuid.UUID
 }
 
 type OtpCooldown struct {
@@ -141,4 +179,6 @@ type User struct {
 	DailyGoal         int32
 	ProfileRevision   int64
 	EmailRevision     int64
+	LifecycleRevision int64
+	StateChangedAt    *time.Time
 }

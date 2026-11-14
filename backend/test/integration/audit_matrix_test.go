@@ -150,6 +150,32 @@ func TestAudit_Matrix(t *testing.T) {
 		env.wantEvents(t, rid, ev{action: "auth.session.revoke", outcome: "success", actor: u.ID.String(), target: u.ID.String(), session: a.SessionID.String(), meta: map[string]string{"reason": "email_change", "count": "1"}}, ev{action: "account.email.change.complete", outcome: "success", actor: u.ID.String(), target: u.ID.String(), session: a.SessionID.String()})
 	})
 
+	t.Run("TRD04 lifecycle and rights", func(t *testing.T) {
+		u := newUser(t, env.q)
+		a := env.issue(t, u, "Lifecycle actor")
+		rid := newRID()
+		want204(t, env.call(t, "POST", pathDeactivate, map[string]any{"confirm": true, "expected_revision": 0}, rid, bearer(a.AccessToken)...))
+		env.wantEvents(t, rid, ev{action: "auth.session.revoke", outcome: "success", actor: u.ID.String(), target: u.ID.String(), session: a.SessionID.String(), meta: map[string]string{"reason": "deactivated", "count": "1"}}, ev{action: "account.deactivate", outcome: "success", actor: u.ID.String(), target: u.ID.String(), session: a.SessionID.String()})
+		p, r := env.rightsStart(t, "reactivate", u.Email)
+		wantStatus(t, r, 202)
+		rid = newRID()
+		want204(t, env.call(t, "POST", p.completePath(), p.body(), rid, rightsHeaders(p.cap)...))
+		env.wantEvents(t, rid, ev{action: "account.reactivate", outcome: "success", actor: u.ID.String(), target: u.ID.String(), meta: map[string]string{"operation_id": p.id}})
+		p, r = env.rightsStart(t, "export", u.Email)
+		wantStatus(t, r, 202)
+		rid = newRID()
+		wantStatus(t, env.call(t, "POST", p.completePath(), p.body(), rid, rightsHeaders(p.cap)...), 202)
+		env.wantEvents(t, rid, ev{action: "account.export.request", outcome: "success", actor: u.ID.String(), target: u.ID.String()})
+		export := p
+		p, r = env.rightsStart(t, "delete", u.Email)
+		wantStatus(t, r, 202)
+		rid = newRID()
+		wantStatus(t, env.call(t, "POST", p.completePath(), p.body(), rid, rightsHeaders(p.cap)...), 202)
+		// The still-pending export is canceled inside the deletion transaction.
+		env.wantEvents(t, rid, ev{action: "account.export.cancel", outcome: "success", actor: u.ID.String(), target: u.ID.String(), meta: map[string]string{"operation_id": export.id}},
+			ev{action: "auth.session.revoke", outcome: "success", actor: u.ID.String(), target: u.ID.String(), meta: map[string]string{"reason": "account_delete", "count": "0"}}, ev{action: "account.delete.request", outcome: "success", actor: u.ID.String(), target: u.ID.String()})
+	})
+
 	// --- registration (Flows A, B) ---------------------------------------------------------
 	t.Run("signup start, new email", func(t *testing.T) {
 		rid := newRID()

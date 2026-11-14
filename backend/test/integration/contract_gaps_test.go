@@ -381,12 +381,26 @@ func TestContract_JSONOperationsRequireTheJSONMediaType(t *testing.T) {
 							concrete = strings.ReplaceAll(concrete, "{"+param.Value.Name+"}", uuid.NewString())
 						}
 					}
+					rightsToken := ""
+					if op.Security != nil && len(*op.Security) > 0 {
+						if _, ok := (*op.Security)[0]["rightsAuth"]; ok {
+							action := strings.Split(path, "/")[3]
+							p, r := env.rightsStart(t, action, newUser(t, env.q).Email)
+							wantStatus(t, r, 202)
+							concrete = p.completePath()
+							rightsToken = p.cap
+						}
+					}
 					req, _ := http.NewRequest(method, env.srv.URL+concrete, strings.NewReader(`{}`))
 					if ct != "" {
 						req.Header.Set("Content-Type", ct)
 					}
 					if op.Security != nil && len(*op.Security) > 0 {
-						req.Header.Set("Authorization", "Bearer "+s.AccessToken)
+						if rightsToken != "" {
+							req.Header.Set("Authorization", "Rights "+rightsToken)
+						} else {
+							req.Header.Set("Authorization", "Bearer "+s.AccessToken)
+						}
 					}
 					res, err := http.DefaultClient.Do(req)
 					if err != nil {

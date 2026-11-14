@@ -24,6 +24,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/getkin/kin-openapi/routers"
 	"github.com/getkin/kin-openapi/routers/gorillamux"
+	"github.com/google/uuid"
 
 	"github.com/0xkelvin/Veea-English-Notes/backend/api"
 )
@@ -130,7 +131,7 @@ func (c *contract) check(r *http.Request, status int, header http.Header, body [
 	op := route.Method + " " + route.Path
 	auth := func(_ context.Context, in *openapi3filter.AuthenticationInput) error {
 		h := in.RequestValidationInput.Request.Header.Get("Authorization")
-		if scheme, tok, ok := strings.Cut(h, " "); !ok || !strings.EqualFold(scheme, "Bearer") || tok == "" {
+		if scheme, tok, ok := strings.Cut(h, " "); !ok || !(strings.EqualFold(scheme, "Bearer") || (in.SecuritySchemeName == "rightsAuth" && strings.EqualFold(scheme, "Rights"))) || tok == "" {
 			return errors.New("no bearer token")
 		}
 		return nil
@@ -294,18 +295,28 @@ func TestContract_BearerRequirementMatchesTheSpec(t *testing.T) {
 	for path, item := range doc.Paths.Map() {
 		for method, op := range item.Operations() {
 			protected := op.Security != nil && len(*op.Security) > 0
+			rights := false
+			if protected {
+				_, rights = (*op.Security)[0]["rightsAuth"]
+			}
 			t.Run(method+" "+path, func(t *testing.T) {
 				var r response
+				concrete := path
+				if rights {
+					concrete = strings.ReplaceAll(path, "{operation_id}", uuid.NewString())
+				}
 				if method == http.MethodGet {
-					r = env.get(t, path)
+					r = env.get(t, concrete)
 				} else {
 					body := bodies[path]
 					if body == nil {
 						body = ""
 					}
-					r = env.send(t, method, path, body)
+					r = env.send(t, method, concrete, body)
 				}
 				switch {
+				case rights:
+					wantProblem(t, r, 404, "not_found")
 				case protected:
 					wantUnauthorized(t, r)
 				case r.status == http.StatusUnauthorized && r.str("code") == "unauthorized" && path != "/v1/auth/token/refresh":

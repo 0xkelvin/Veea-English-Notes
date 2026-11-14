@@ -347,3 +347,23 @@ func TestArgon2Settings(t *testing.T) {
 		}
 	}
 }
+
+func TestMaintenanceDatabaseURLValidationAndRedaction(t *testing.T) {
+	raw := "postgres://maintenance:throwaway-maintenance-password@localhost/local_test"
+	cfg, err := Load(with(map[string]string{"VEEA_MAINTENANCE_DATABASE_URL": raw}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MaintenanceDatabaseURL != raw {
+		t.Fatal("maintenance URL not loaded")
+	}
+	var buf bytes.Buffer
+	slog.New(slog.NewJSONHandler(&buf, nil)).Info("config", "config", cfg)
+	if strings.Contains(buf.String(), "throwaway-maintenance-password") || strings.Contains(buf.String(), raw) {
+		t.Fatal("maintenance credentials logged")
+	}
+	_, err = Load(with(map[string]string{"VEEA_MAINTENANCE_DATABASE_URL": "mysql://maintenance:throwaway-maintenance-password@localhost/db"}))
+	if err == nil || strings.Contains(err.Error(), "throwaway-maintenance-password") {
+		t.Fatal("invalid maintenance URL not safely rejected")
+	}
+}

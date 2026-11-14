@@ -17,7 +17,7 @@ const Redacted = "[redacted]"
 
 // tokenPattern matches challenge, access and refresh tokens anywhere in a string, whatever the
 // case of the prefix (TRD 4.1, 8.1).
-var tokenPattern = regexp.MustCompile(`(?i)v(?:ct|at|rt)_[A-Za-z0-9_\-]*`)
+var tokenPattern = regexp.MustCompile(`(?i)v(?:ct|at|rt|op)_[A-Za-z0-9_\-]*`)
 
 // sensitiveKeys are attribute names whose values are always dropped (TRD 11.2), the transport
 // headers that carry credentials, and email addresses, which are logged only as email_hmac.

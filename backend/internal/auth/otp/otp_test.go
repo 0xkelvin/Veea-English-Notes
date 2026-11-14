@@ -201,6 +201,7 @@ func TestCodeKeyValidationNeverLeaksKeys(t *testing.T) {
 
 func TestPurposesMapToTemplatesAndActions(t *testing.T) {
 	want := map[Purpose]notify.Template{
+		PurposeAccountExport: notify.TemplateAccountExportCode, PurposeAccountDelete: notify.TemplateAccountDeleteCode, PurposeAccountReactivate: notify.TemplateAccountReactivateCode,
 		PurposeSignup: notify.TemplateSignupCode, PurposeLogin: notify.TemplateLoginCode,
 		PurposePasswordReset: notify.TemplateResetCode, PurposeSetPassword: notify.TemplateSetPasswordCode,
 		PurposeEmailCurrent: notify.TemplateEmailCurrentCode, PurposeEmailNew: notify.TemplateEmailNewCode,

@@ -31,6 +31,7 @@ internal/auth/signin/    Flows C and D: OTP sign-in and password sign-in
 internal/auth/password/  Flows E, F and G: first-password set, change and reset
 internal/identity/accounts/  the only writer of users (database side of identity)
 internal/maintenance/    TRD 6.10 cleanup jobs, run by cmd/api every 5 minutes under per-job advisory locks
+internal/lifecycle/      TRD 04 deactivation, mailbox-proven export/deletion/reactivation, durable export and purge jobs
 internal/platform/metrics/  TRD 11.3 Prometheus metrics, served on VEEA_METRICS_ADDR
 internal/auth/otp/       OTP challenge core: start (cooldown, supersede, challenge, email) and verify (procedure V, committed failures)
 internal/audit/          append-only audit writer; refuses secret-looking metadata, redacts client text
@@ -51,6 +52,7 @@ scripts/test-postgres.sh disposable local PostgreSQL in Docker
 | `VEEA_DATABASE_URL` | yes | | `postgres://` or `postgresql://` URL |
 | `VEEA_HTTP_ADDR` | no | `:18386` | listen address |
 | `VEEA_DB_MAX_CONNS` | no | `10` | pool size, 1 to 200 |
+| `VEEA_MAINTENANCE_DATABASE_URL` | no | `VEEA_DATABASE_URL` | separate pool for the cleanup runner, account purge and audit minimization/retention (TRD 04). Production should use a role restricted to those writes; locally the same URL is fine |
 | `VEEA_LOG_LEVEL` | no | `info` | `debug`, `info`, `warn`, `error` |
 | `VEEA_SHUTDOWN_TIMEOUT` | no | `15s` | graceful shutdown limit |
 | `VEEA_READY_TIMEOUT` | no | `2s` | database ping limit for `/readyz` |

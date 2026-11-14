@@ -12,12 +12,15 @@ import (
 type Purpose string
 
 const (
-	PurposeSignup        Purpose = "signup"
-	PurposeLogin         Purpose = "login"
-	PurposePasswordReset Purpose = "password_reset"
-	PurposeSetPassword   Purpose = "set_password"
-	PurposeEmailCurrent  Purpose = "email_change_current"
-	PurposeEmailNew      Purpose = "email_change_new"
+	PurposeAccountExport     Purpose = "account_export"
+	PurposeAccountDelete     Purpose = "account_delete"
+	PurposeAccountReactivate Purpose = "account_reactivate"
+	PurposeSignup            Purpose = "signup"
+	PurposeLogin             Purpose = "login"
+	PurposePasswordReset     Purpose = "password_reset"
+	PurposeSetPassword       Purpose = "set_password"
+	PurposeEmailCurrent      Purpose = "email_change_current"
+	PurposeEmailNew          Purpose = "email_change_new"
 )
 
 // SignupMethod distinguishes the two signup paths (TRD 4.3). Only signup challenges have one.
@@ -41,6 +44,9 @@ type purposeInfo struct {
 
 // purposes maps each purpose to its email template and audit actions (TRD 11.1).
 var purposes = map[Purpose]purposeInfo{
+	PurposeAccountExport:     {template: notify.TemplateAccountExportCode, needsUser: true, startAction: "account.export.start", verifyAction: "account.export.verify"},
+	PurposeAccountDelete:     {template: notify.TemplateAccountDeleteCode, needsUser: true, startAction: "account.delete.start", verifyAction: "account.delete.verify"},
+	PurposeAccountReactivate: {template: notify.TemplateAccountReactivateCode, needsUser: true, startAction: "account.reactivate.start", verifyAction: "account.reactivate.verify"},
 	PurposeEmailCurrent: {template: notify.TemplateEmailCurrentCode, needsUser: true, callerBound: true,
 		startAction: "account.email.change.current.start", verifyAction: "account.email.change.current.verify"},
 	PurposeEmailNew: {template: notify.TemplateEmailNewCode, needsUser: true, callerBound: true,

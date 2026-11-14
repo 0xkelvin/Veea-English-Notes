@@ -175,7 +175,7 @@ func (s *Service) StartSet(ctx context.Context, p session.Principal, c Client) (
 			case cur.PasswordHash != nil:
 				return otp.Target{}, ErrPasswordAlreadySet
 			}
-			return otp.Target{Eligible: true, UserID: &cur.ID, SessionID: &p.SessionID, To: cur.Email, EmailRevision: cur.EmailRevision}, nil
+			return otp.Target{Eligible: true, UserID: &cur.ID, SessionID: &p.SessionID, To: cur.Email, EmailRevision: cur.EmailRevision, LifecycleRevision: cur.LifecycleRevision}, nil
 		},
 	})
 	if errors.Is(err, ErrPasswordAlreadySet) {
@@ -364,7 +364,7 @@ func (s *Service) StartReset(ctx context.Context, rawEmail string, c Client) (ot
 			if err != nil || !exists || !accounts.InGoodStanding(u) {
 				return otp.Target{}, err
 			}
-			return otp.Target{Eligible: true, UserID: &u.ID, To: u.Email, EmailRevision: u.EmailRevision}, nil
+			return otp.Target{Eligible: true, UserID: &u.ID, To: u.Email, EmailRevision: u.EmailRevision, LifecycleRevision: u.LifecycleRevision}, nil
 		},
 	})
 }

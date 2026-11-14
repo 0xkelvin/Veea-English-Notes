@@ -23,6 +23,7 @@ type PairAcknowledgement struct {
 type PairBinding struct {
 	ChangeID, UserID, SessionID uuid.UUID
 	EmailRevision               int64
+	LifecycleRevision           int64
 	NewEligible                 bool
 }
 
@@ -58,6 +59,9 @@ func (s *Service) StartPair(ctx context.Context, current, proposed StartRequest,
 	var out PairAcknowledgement
 	err := s.tx.Run(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		out = PairAcknowledgement{}
+		if err := LockAddresses(ctx, tx, current.Email.Normalized, proposed.Email.Normalized); err != nil {
+			return err
+		}
 		for _, p := range plans { // fixed current/new purpose order, L1 only
 			claim, err := s.cooldown.Claim(ctx, tx, string(p.req.Purpose), p.req.Email)
 			if err != nil {
@@ -79,11 +83,11 @@ func (s *Service) StartPair(ctx context.Context, current, proposed StartRequest,
 		out.ChangeID = binding.ChangeID
 		for i, p := range plans {
 			t := Target{Eligible: i == 0 || binding.NewEligible, UserID: &binding.UserID,
-				SessionID: &binding.SessionID, EmailRevision: binding.EmailRevision, To: p.req.Email.Display}
+				SessionID: &binding.SessionID, EmailRevision: binding.EmailRevision, LifecycleRevision: binding.LifecycleRevision, To: p.req.Email.Display}
 			if err := sqlc.New(tx).InsertEmailChangeChallenge(ctx, sqlc.InsertEmailChangeChallengeParams{
 				ID: p.id, TokenHash: p.tokenHash, Purpose: string(p.req.Purpose), Email: p.req.Email.Display, EmailNormalized: p.req.Email.Normalized,
 				UserID: t.UserID, SessionID: t.SessionID, CodeHash: s.codes.Hash(p.id, p.code), Delivery: delivery(t),
-				MaxAttempts: MaxAttempts, ExpiresAt: expires, RequestIp: addrPtr(p.req.IP.Addr), EmailRevision: t.EmailRevision, ChangeID: &binding.ChangeID,
+				MaxAttempts: MaxAttempts, ExpiresAt: expires, RequestIp: addrPtr(p.req.IP.Addr), EmailRevision: t.EmailRevision, LifecycleRevision: t.LifecycleRevision, ChangeID: &binding.ChangeID,
 			}); err != nil {
 				return err
 			}
@@ -132,12 +136,12 @@ func (s *Service) VerifyPair(ctx context.Context, changeID uuid.UUID, reqs [2]Ve
 		outcomes = [2]outcome{}
 		completed = false
 		q := sqlc.New(tx)
-		now, err := q.DatabaseNow(ctx)
+		hashes := [][]byte{HashToken(reqs[0].Token), HashToken(reqs[1].Token)}
+		rows, err := q.LockOTPProofPair(ctx, hashes)
 		if err != nil {
 			return err
 		}
-		hashes := [][]byte{HashToken(reqs[0].Token), HashToken(reqs[1].Token)}
-		rows, err := q.LockOTPProofPair(ctx, hashes)
+		now, err := q.WallClock(ctx)
 		if err != nil {
 			return err
 		}
@@ -216,5 +220,5 @@ func (s *Service) VerifyPair(ctx context.Context, changeID uuid.UUID, reqs [2]Ve
 
 // MatchesAccount must be checked under the flow's L3 user lock after single-code acceptance.
 func MatchesAccount(a Accepted, u sqlc.User) bool {
-	return a.EmailRevision == u.EmailRevision && a.Email.Normalized == u.EmailNormalized
+	return a.EmailRevision == u.EmailRevision && a.LifecycleRevision == u.LifecycleRevision && a.Email.Normalized == u.EmailNormalized
 }

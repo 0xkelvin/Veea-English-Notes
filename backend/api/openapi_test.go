@@ -61,7 +61,7 @@ func TestEveryOperationDeclaresKnownErrorCodes(t *testing.T) {
 			if path != "/healthz" && path != "/readyz" && !slices.Contains(codes, "internal_error") {
 				t.Errorf("%s %s must document internal_error", method, path)
 			}
-			if op.Security != nil && len(*op.Security) > 0 && !slices.Contains(codes, "unauthorized") {
+			if op.Security != nil && len(*op.Security) > 0 && func() bool { _, ok := (*op.Security)[0]["bearerAuth"]; return ok }() && !slices.Contains(codes, "unauthorized") {
 				t.Errorf("%s %s requires a bearer token but does not list unauthorized", method, path)
 			}
 			if slices.Contains(codes, "rate_limited") && op.Responses.Status(http.StatusTooManyRequests) == nil {

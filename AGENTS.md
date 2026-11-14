@@ -42,6 +42,12 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
   `authenticated`. OTP and password sign-in are in `backend/internal/auth/signin/`; password
   set, change and reset are in `backend/internal/auth/password/`. Session listing, revoking another owned session and logout-all are
   implemented in `backend/internal/auth/session/management.go` (TRD 02). Own-profile updates and paired-proof email cutover are in `backend/internal/account/` (TRD 03); cutover alone takes `users FOR UPDATE` at L3 for the unique email key. All challenge writes, including paired proofs, remain in OTP core. Password mutations hash before their transaction and follow TRD 01 §7.5 lock order.
+  Deactivation, mailbox-proven export/deletion/reactivation and the durable export and purge jobs are
+  in `backend/internal/lifecycle/` (TRD 04). The `/v1/account-rights/*` routes are the one recorded
+  exception to `authenticated`: `rightsAuthenticated` accepts only an action-scoped `vop_` capability,
+  never a bearer, and must never yield a `Principal`. Address advisory locks (`otp.LockAddresses`, L0)
+  precede every cooldown, challenge and user lock. A new user-owned table must be removed by the purge
+  in `lifecycle/jobs.go` and, if it is product data, added to the export.
   The HTTP contract is `backend/api/openapi.yaml`; a new or changed route updates it in the same
   change (`go test ./api` fails when the router and the spec disagree, and router tests fail on
   any response the spec does not describe).

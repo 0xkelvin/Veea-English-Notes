@@ -26,17 +26,20 @@ type templateSpec struct {
 // Copy is English only in Phase 1 (Product Doc 5.7). Code emails contain no links, so a stolen
 // email can never sign anyone in (TRD 8.3).
 var specs = map[Template]templateSpec{
-	TemplateEmailCurrentCode: {"Confirm your current Veea email", "Use this code to prove control of your current Veea sign-in address."},
-	TemplateEmailNewCode:     {"Verify your new Veea email", "Use this code to verify this proposed Veea sign-in address."},
-	TemplateEmailChangedOld:  {"Your Veea sign-in email changed", "Your account's sign-in email was changed. If this was unexpected, seek account support."},
-	TemplateEmailChangedNew:  {"Your new Veea sign-in email is confirmed", "Your account now uses this address. Sign in with this address to continue."},
-	TemplateSignupCode:       {"Your Veea sign-up code", "Use this code to finish creating your Veea English Notes account."},
-	TemplateLoginCode:        {"Your Veea sign-in code", "Use this code to sign in to Veea English Notes."},
-	TemplateResetCode:        {"Your Veea password reset code", "Use this code to reset your Veea English Notes password."},
-	TemplateSetPasswordCode:  {"Your Veea code to add a password", "Use this code to add a password to your Veea English Notes account."},
-	TemplatePasswordAdded:    {"A password was added to your Veea account", "A password was added to your Veea English Notes account."},
-	TemplatePasswordChanged:  {"Your Veea password was changed", "The password of your Veea English Notes account was changed."},
-	TemplatePasswordReset:    {"Your Veea password was reset", "The password of your Veea English Notes account was reset."},
+	TemplateAccountExportCode:     {"Confirm your Veea data export", "Use this code to authorize an export of your Veea account data."},
+	TemplateAccountDeleteCode:     {"Confirm deletion of your Veea account", "Use this code to permanently delete your Veea account. This cannot be undone."},
+	TemplateAccountReactivateCode: {"Reactivate your Veea account", "Use this code to reactivate your deactivated Veea account."},
+	TemplateEmailCurrentCode:      {"Confirm your current Veea email", "Use this code to prove control of your current Veea sign-in address."},
+	TemplateEmailNewCode:          {"Verify your new Veea email", "Use this code to verify this proposed Veea sign-in address."},
+	TemplateEmailChangedOld:       {"Your Veea sign-in email changed", "Your account's sign-in email was changed. If this was unexpected, seek account support."},
+	TemplateEmailChangedNew:       {"Your new Veea sign-in email is confirmed", "Your account now uses this address. Sign in with this address to continue."},
+	TemplateSignupCode:            {"Your Veea sign-up code", "Use this code to finish creating your Veea English Notes account."},
+	TemplateLoginCode:             {"Your Veea sign-in code", "Use this code to sign in to Veea English Notes."},
+	TemplateResetCode:             {"Your Veea password reset code", "Use this code to reset your Veea English Notes password."},
+	TemplateSetPasswordCode:       {"Your Veea code to add a password", "Use this code to add a password to your Veea English Notes account."},
+	TemplatePasswordAdded:         {"A password was added to your Veea account", "A password was added to your Veea English Notes account."},
+	TemplatePasswordChanged:       {"Your Veea password was changed", "The password of your Veea English Notes account was changed."},
+	TemplatePasswordReset:         {"Your Veea password was reset", "The password of your Veea English Notes account was reset."},
 }
 
 type view struct {

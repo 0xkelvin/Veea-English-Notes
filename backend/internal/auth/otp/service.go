@@ -155,8 +155,9 @@ type Target struct {
 	// until it is redeemed or ends (TRD 4.1).
 	PendingPasswordHash string
 	// To is the recipient. Empty means the address as entered (StartRequest.Email.Display).
-	To            string
-	EmailRevision int64
+	To                string
+	EmailRevision     int64
+	LifecycleRevision int64
 }
 
 // StartRequest is one OTP start.
@@ -164,6 +165,8 @@ type StartRequest struct {
 	Purpose      Purpose
 	SignupMethod SignupMethod // signup only
 	Email        identity.Email
+	OperationID  *uuid.UUID
+	AfterStart   func(context.Context, pgx.Tx, Target, uuid.UUID, time.Time) error
 	Check        Eligibility
 	IP           clientip.Result
 	UserAgent    string
@@ -198,6 +201,8 @@ type Acknowledgement struct {
 //
 // Errors: *RateLimitedError for a limit or an active cooldown, otherwise an internal error.
 func (s *Service) Start(ctx context.Context, req StartRequest) (Acknowledgement, error) {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
 	if req.Purpose == PurposeEmailCurrent || req.Purpose == PurposeEmailNew {
 		return Acknowledgement{}, errors.New("otp: email change requires pair start")
 	}
@@ -218,6 +223,9 @@ func (s *Service) Start(ctx context.Context, req StartRequest) (Acknowledgement,
 	var ack Acknowledgement
 	err = s.tx.Run(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		var err error
+		if err = LockAddresses(ctx, tx, p.req.Email.Normalized); err != nil {
+			return err
+		}
 		ack, err = s.issue(ctx, tx, p)
 		return err
 	})
@@ -287,7 +295,7 @@ func (s *Service) issue(ctx context.Context, tx pgx.Tx, p startPlan) (Acknowledg
 	if !claim.Granted {
 		return Acknowledgement{}, s.cooldownError(p.req.Purpose, p.req.Email, claim.RetryAfterSeconds())
 	}
-	now, err := q.DatabaseNow(ctx)
+	now, err := q.WallClock(ctx)
 	if err != nil {
 		return Acknowledgement{}, fmt.Errorf("otp: read database time: %w", err)
 	}
@@ -310,6 +318,11 @@ func (s *Service) issue(ctx context.Context, tx pgx.Tx, p startPlan) (Acknowledg
 
 	// L5: every outbox write comes after the challenge writes (step 4's cancel, step 6), then
 	// the audit event (step 7).
+	if p.req.AfterStart != nil {
+		if err := p.req.AfterStart(ctx, tx, target, p.id, expires); err != nil {
+			return Acknowledgement{}, err
+		}
+	}
 	if err := s.queueEmails(ctx, tx, p, target, superseded, expires); err != nil {
 		return Acknowledgement{}, err
 	}
@@ -328,13 +341,15 @@ func (s *Service) replaceChallenge(ctx context.Context, q *sqlc.Queries, p start
 	if err != nil {
 		return nil, fmt.Errorf("otp: supersede: %w", err)
 	}
+	issued := expires.Add(-Lifetime)
 	row := sqlc.InsertOTPChallengeParams{
-		ID: p.id, TokenHash: p.tokenHash, Purpose: string(p.req.Purpose),
+		CreatedAt: &issued,
+		ID:        p.id, TokenHash: p.tokenHash, Purpose: string(p.req.Purpose),
 		Email: p.req.Email.Display, EmailNormalized: p.req.Email.Normalized,
 		UserID: t.UserID, SessionID: t.SessionID,
 		CodeHash: s.codes.Hash(p.id, p.code), Delivery: delivery(t), MaxAttempts: MaxAttempts,
 		ExpiresAt: expires, RequestIp: addrPtr(p.req.IP.Addr),
-		EmailRevision: t.EmailRevision,
+		EmailRevision: t.EmailRevision, LifecycleRevision: t.LifecycleRevision, OperationID: p.req.OperationID,
 	}
 	if p.req.Purpose == PurposeSignup {
 		row.SignupMethod = ptr(string(p.req.SignupMethod))
@@ -446,7 +461,9 @@ type VerifyRequest struct {
 	// Prechecked means the caller already ran CheckVerifyLimits for this request, for example
 	// before an Argon2id run it must not spend on a limited request. Verify then skips them, so
 	// the per-IP counter moves once per request.
-	Prechecked bool
+	Prechecked  bool
+	OperationID *uuid.UUID
+	BeforeLock  func(context.Context, pgx.Tx) error
 }
 
 // Accepted describes a challenge that procedure V just consumed. It is handed to the flow's
@@ -463,6 +480,8 @@ type Accepted struct {
 	// and exists only here, in memory (TRD 7.3 step 5).
 	PendingPasswordHash string
 	EmailRevision       int64
+	LifecycleRevision   int64
+	OperationID         *uuid.UUID
 }
 
 // AfterAccept runs a flow's steps after V accepted the code, in the same transaction and in
@@ -501,6 +520,8 @@ type outcome struct {
 // The returned error is nil on success, ErrInvalidCode or ErrAttemptsExceeded for a rejection,
 // *RateLimitedError, the error a flow passed to CommitFailure or Rollback, or an internal error.
 func (s *Service) Verify(ctx context.Context, req VerifyRequest, then AfterAccept) error {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
 	if req.Purpose == PurposeEmailCurrent || req.Purpose == PurposeEmailNew {
 		return errors.New("otp: email change requires pair verification")
 	}
@@ -526,6 +547,22 @@ func (s *Service) Verify(ctx context.Context, req VerifyRequest, then AfterAccep
 	var out outcome
 	err = s.tx.Run(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		out = outcome{}
+		if req.BeforeLock != nil {
+			if err := req.BeforeLock(ctx, tx); err != nil {
+				return err
+			}
+		}
+		if req.Purpose == PurposeSignup {
+			addr, err := sqlc.New(tx).GetOTPChallengeEmailByTokenHash(ctx, tokenHash)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+			if addr != "" {
+				if err := LockAddresses(ctx, tx, addr); err != nil {
+					return err
+				}
+			}
+		}
 		return s.redeem(ctx, tx, info, req, tokenHash, then, &out)
 	})
 	return s.settle(ctx, info, req, &out, err)
@@ -650,11 +687,6 @@ func (s *Service) countFailure(ctx context.Context, e identity.Email) {
 func (s *Service) redeem(ctx context.Context, tx pgx.Tx, info purposeInfo, req VerifyRequest,
 	tokenHash []byte, then AfterAccept, out *outcome) error {
 	q := sqlc.New(tx)
-	now, err := q.DatabaseNow(ctx)
-	if err != nil {
-		return fmt.Errorf("otp: read database time: %w", err)
-	}
-
 	// V1, L2: lock the challenge by token.
 	ch, err := q.LockOTPChallengeByTokenHash(ctx, tokenHash)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -663,6 +695,11 @@ func (s *Service) redeem(ctx context.Context, tx pgx.Tx, info purposeInfo, req V
 	if err != nil {
 		return fmt.Errorf("otp: lock challenge: %w", err)
 	}
+	now, err := q.WallClock(ctx)
+	if err != nil {
+		return err
+	}
+
 	email := identity.Email{Display: ch.Email, Normalized: ch.EmailNormalized}
 	out.email, out.hmac, out.target = &email, s.emailHMAC.Current(email), ch.UserID
 
@@ -670,6 +707,15 @@ func (s *Service) redeem(ctx context.Context, tx pgx.Tx, info purposeInfo, req V
 	if reason := unusable(info, ch, req, now); reason != nil {
 		return s.reject(ctx, tx, info, req, out, reason, false)
 	}
+	if req.Purpose == PurposeSignup {
+		if err := s.checkSignupFence(ctx, tx, ch); err != nil {
+			if errors.Is(err, ErrInvalidCode) {
+				return s.reject(ctx, tx, info, req, out, err, false)
+			}
+			return err
+		}
+	}
+
 	// V4: always run the constant-time compare; a delivery = 'none' challenge can never pass,
 	// whatever the code (TRD 4.4).
 	match := s.codes.Match(ch.ID, req.Code, ch.CodeHash)
@@ -690,7 +736,7 @@ func (s *Service) redeem(ctx context.Context, tx pgx.Tx, info purposeInfo, req V
 // wrong caller binding, consumed, superseded, expired on the database clock (V2, invalid_code)
 // or out of attempts (V3, code_attempts_exceeded). Nil means V continues to the compare.
 func unusable(info purposeInfo, ch sqlc.OtpChallenge, req VerifyRequest, now time.Time) error {
-	if Purpose(ch.Purpose) != req.Purpose || !bindingMatches(info, ch, req) ||
+	if Purpose(ch.Purpose) != req.Purpose || !bindingMatches(info, ch, req) || !sameOperation(ch.OperationID, req.OperationID) ||
 		ch.ConsumedAt != nil || ch.SupersededAt != nil || !ch.ExpiresAt.After(now) {
 		return ErrInvalidCode
 	}
@@ -704,7 +750,7 @@ func accepted(ch sqlc.OtpChallenge, req VerifyRequest, out *outcome) Accepted {
 	a := Accepted{
 		ChallengeID: ch.ID, Purpose: req.Purpose, Email: *out.email, EmailHMAC: out.hmac,
 		UserID: ch.UserID, SessionID: ch.SessionID,
-		EmailRevision: ch.EmailRevision,
+		EmailRevision: ch.EmailRevision, LifecycleRevision: ch.LifecycleRevision, OperationID: ch.OperationID,
 	}
 	if ch.SignupMethod != nil {
 		a.SignupMethod = SignupMethod(*ch.SignupMethod)
@@ -801,3 +847,7 @@ func addrPtr(a netip.Addr) *netip.Addr {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+func sameOperation(a, b *uuid.UUID) bool {
+	return (a == nil && b == nil) || (a != nil && b != nil && *a == *b)
+}

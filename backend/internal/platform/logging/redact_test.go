@@ -30,6 +30,7 @@ func TestRedactingHandlerRemovesSecrets(t *testing.T) {
 		"refresh_token", "vrt_named",
 		"note", "header Authorization: Bearer vat_inline here",
 		"error", errors.New("lookup failed for vct_inerror"),
+		"detail", "operation vop_inerror",
 		"value", stringer{},
 		"config", secretConfig{},
 		"raw", []byte("0123456789abcdef"),
@@ -38,7 +39,7 @@ func TestRedactingHandlerRemovesSecrets(t *testing.T) {
 	)
 	out := buf.String()
 	for _, leak := range []string{
-		"vat_", "vct_", "vrt_", "VAT_", "correct horse", "another long secret", "123456", "0123456789abcdef", "plain",
+		"vat_", "vct_", "vrt_", "vop_", "VAT_", "correct horse", "another long secret", "123456", "0123456789abcdef", "plain",
 	} {
 		if strings.Contains(out, leak) {
 			t.Errorf("log output leaks %q: %s", leak, out)

@@ -123,7 +123,7 @@ func RequestID(w http.ResponseWriter) string { return w.Header().Get(HeaderReque
 
 // tokenPrefixes are the service's bearer-token prefixes (TRD 8.1, 4.1). An inbound request id
 // that looks like a token is replaced, so it can never be echoed, logged or stored.
-var tokenPrefixes = []string{"vct_", "vat_", "vrt_"}
+var tokenPrefixes = []string{"vct_", "vat_", "vrt_", "vop_"}
 
 func validRequestID(s string) bool {
 	if len(s) < 8 || len(s) > 64 {
@@ -186,6 +186,10 @@ const (
 	CodePasswordNotSet           = "password_not_set"
 	CodeInvalidCurrentPassword   = "invalid_current_password"
 	CodeBusy                     = "busy"
+	CodeLifecycleConflict        = "lifecycle_conflict"
+	CodeExportNotReady           = "export_not_ready"
+	CodeOperationCanceled        = "operation_canceled"
+	CodeExportExpired            = "export_expired"
 	CodeInternal                 = "internal_error"
 	CodeNotReady                 = "not_ready"
 	CodeNotFound                 = "not_found"
@@ -195,6 +199,10 @@ const (
 )
 
 var titles = map[string]string{
+	CodeLifecycleConflict:        "The account state changed. Request a new proof.",
+	CodeExportNotReady:           "The export is not ready.",
+	CodeOperationCanceled:        "This operation was canceled.",
+	CodeExportExpired:            "The export download expired.",
 	CodeInvalidProfile:           "The profile values are not valid.",
 	CodeProfileConflict:          "The profile changed. Reload it before saving.",
 	CodeEmailUnchanged:           "This is already the current sign-in address.",

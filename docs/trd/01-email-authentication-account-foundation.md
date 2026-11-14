@@ -1559,6 +1559,13 @@ This is the price of having no grace window. It is accepted in exchange for stri
 | `account.email.change.start` (TRD 03) | success; owned request ID | `account.Service.StartEmailChange` | Same transaction as paired proofs/outbox; then core `account.email.change.current.start` and `.new.start` (owner/session, email HMAC, delivery) |
 | `account.email.change.current.verify`, `account.email.change.new.verify` (TRD 03) | failure for invalid/exhausted proof; new verify also records fixed flow rollback reasons such as `email_unavailable` | `otp.Service.VerifyPair` | Wrong attempt + failure commit; flow failure audit follows complete rollback |
 | `account.email.change.complete` (TRD 03) | success; request ID, string revoked-session count | `account.Service.CompleteEmailChange` | Same transaction as email, both consumptions, all-session revocation and old/new notices; preceded by aggregate `auth.session.revoke` reason `email_change` |
+| `account.deactivate` (TRD 04) | success; owner actor/target and acting session | `lifecycle.Service.Deactivate` | Same transaction as state/revision change and all-session revocation; preceded by aggregate `auth.session.revoke` reason `deactivated` |
+| `account.export.start`, `account.delete.start`, `account.reactivate.start` (TRD 04) | success; owner when eligible, email HMAC, delivery | `otp.Service.Start` | Same transaction as challenge, rights operation and outbox; inert starts are indistinguishable to the caller |
+| `account.export.verify`, `account.delete.verify`, `account.reactivate.verify` (TRD 04) | failure for invalid/exhausted proof, or fixed rollback reasons `binding_invalid`, `lifecycle_changed`, `export_limit` | `otp.Service.Verify` | Wrong attempt + failure commit; flow failure audit follows complete rollback |
+| `account.export.request`, `account.delete.request`, `account.reactivate` (TRD 04) | success; operation ID | `lifecycle.Service.Complete` | Same transaction as proof consumption and acceptance. Deletion also seals the account, revokes all sessions (aggregate `auth.session.revoke` reason `account_delete`), fences the address and writes the restoration ledger. Reactivation adds `auth.session.revoke` reason `account_inactive` only when it revoked a row |
+| `account.export.ready`, `account.export.cancel`, `account.export.expire` (TRD 04) | success; operation ID | `lifecycle` jobs (`runJob`, `expireArtifacts`) and every transition that cancels exports (`cancelExports`) | Same transaction as publication, cancellation or artifact discard |
+| `account.export.download` (TRD 04) | success; operation ID | `lifecycle.Service.Download` | Same transaction as the authorized decryption, before bytes are written |
+| `account.delete.purge_step`, `account.audit.minimize`, `account.delete.complete` (TRD 04) | success; fixed step, or operation ID on completion; no client context | `lifecycle` purge job | Same checkpoint transaction; the final event commits with user erasure, ledger completion and receipt update, so a failed insert rolls all of them back |
 | `auth.rate_limited` | failure, reason = the rule (`metadata.rule`, `metadata.subject`) | `ratelimit.Limiter.RecordDenial`, called by the HTTP error mapper for every `429` | Autocommit, after the refusal |
 
 *Decisions.*
@@ -1617,6 +1624,7 @@ This is the price of having no grace window. It is accepted in exchange for stri
 | Email outbox | `email_outbox_pending`, `email_send_total{template,result}` (result includes `ambiguous`), `email_outbox_stale_result_total` |
 | Database | `db_tx_retries_total{reason}` (deadlock or serialization retries, §7.1 rule 7) |
 | Argon2 | `argon2_wait_seconds` |
+| Account lifecycle (TRD 04) | `account_lifecycle_accepted_total{action}` (`deactivate`, `reactivate`, `export`, `delete`), `account_jobs_total{job,result}` (`ready`, `canceled`, `expired`, `completed`, `error`), `account_deletion_oldest_pending_seconds` |
 
 **Implementation notes** (`internal/platform/metrics`, release hardening)
 - **Where they are served.** `GET /metrics` on `VEEA_METRICS_ADDR`, a listener separate from the API, with its own registry. The Go runtime and process collectors are included. Alerting is Phase 5.
@@ -1628,6 +1636,7 @@ This is the price of having no grace window. It is accepted in exchange for stri
   - `db_tx_retries_total{reason}`: `deadlock` or `serialization`.
 - **Label hygiene.** Every label value passes a filter that keeps only `[a-z0-9_]{1,40}` and turns anything else into `other`. An email, an IP address or a token cannot become a label even by mistake (`TestLabelsCannotCarryPersonalDataOrTokens`, and a scan of the scraped output in `TestMetrics_RecordedThroughTheRouter`).
 - **`email_outbox_pending`** is read with a count query when scraped, with a 1 s timeout. A failed read reports `-1`, not a silent `0`. At most two scrapes run at once, each bounded to 5 s, so scraping cannot tie up the API pool. The gauge registers once per `Metrics`, so building a second handler with the same instance does not panic.
+- **`account_deletion_oldest_pending_seconds`** is the age of the oldest accepted, unfinished purge, read when scraped like `email_outbox_pending` (`-1` on a failed read, `0` when none). It is the measure for the TRD 04 24-hour purge target; the alert threshold belongs to deployment. An idempotent completion replay is not counted again.
 - **Hooks reused.** `OnTxRetry`, the hasher's `ObserveWait` and the worker's new `OnSend` and `OnStale` hooks feed the collectors; `notify` and `db` do not import the metrics package.
 
 ---

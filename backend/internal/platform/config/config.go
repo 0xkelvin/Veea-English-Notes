@@ -21,12 +21,13 @@ import (
 
 // Config is the validated runtime configuration.
 type Config struct {
-	HTTPAddr        string
-	DatabaseURL     string
-	DBMaxConns      int32
-	LogLevel        slog.Level
-	ShutdownTimeout time.Duration
-	ReadyTimeout    time.Duration
+	HTTPAddr               string
+	DatabaseURL            string
+	MaintenanceDatabaseURL string
+	DBMaxConns             int32
+	LogLevel               slog.Level
+	ShutdownTimeout        time.Duration
+	ReadyTimeout           time.Duration
 
 	// EmailHMACKeys holds the keys behind EmailHMAC, current first and optionally one previous
 	// (TRD 13). The values are secrets and are never logged.
@@ -101,10 +102,16 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 
 	var errs []error
 	cfg := Config{
-		HTTPAddr:    get(EnvHTTPAddr, DefaultHTTPAddr),
-		DatabaseURL: get(EnvDatabaseURL, ""),
+		MaintenanceDatabaseURL: get("VEEA_MAINTENANCE_DATABASE_URL", ""),
+		HTTPAddr:               get(EnvHTTPAddr, DefaultHTTPAddr),
+		DatabaseURL:            get(EnvDatabaseURL, ""),
 	}
 
+	if cfg.MaintenanceDatabaseURL != "" {
+		if err := validateDatabaseURL(cfg.MaintenanceDatabaseURL); err != nil {
+			errs = append(errs, errors.New("VEEA_MAINTENANCE_DATABASE_URL: invalid database URL"))
+		}
+	}
 	if cfg.DatabaseURL == "" {
 		errs = append(errs, fmt.Errorf("%s is required", EnvDatabaseURL))
 	} else if err := validateDatabaseURL(cfg.DatabaseURL); err != nil {

@@ -48,3 +48,15 @@ func (q *Queries) TryCleanupAdvisoryLock(ctx context.Context, lockKey int64) (bo
 	err := row.Scan(&acquired)
 	return acquired, err
 }
+
+const wallClock = `-- name: WallClock :one
+SELECT clock_timestamp()::timestamptz AS now
+`
+
+// After advisory/row lock waits, OTP expiry must use actual database time.
+func (q *Queries) WallClock(ctx context.Context) (time.Time, error) {
+	row := q.db.QueryRow(ctx, wallClock)
+	var now time.Time
+	err := row.Scan(&now)
+	return now, err
+}

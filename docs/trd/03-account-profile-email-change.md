@@ -1,6 +1,6 @@
 # TRD 03 — Account Profile & Email Change
 
-**Status:** v1.0 — Nin's product decisions recorded on 2026-11-14 before implementation.
+**Status:** v1.0 — implemented and locally verified; Nin's product decisions were recorded on 2026-11-14 before implementation.
 **Scope:** Own-account profile and verified sign-in email; account suspension, export and deletion remain separate work.
 
 ## 1. Authority and approved decisions
@@ -98,3 +98,44 @@ Follow the actual lock order using observed database waiters/barriers, not only 
 ## 7. Conflicts resolved from the draft
 
 Field names/goal semantics now match Nin's decision; profile uses full replacement PUT. Both proofs are consumed together, not staged grants. Completion revokes the caller too, returns 204 and has no receipt endpoint. Recovery without the old mailbox, avatars and counters are deferred. Old notification omits rather than masks the new address. Unique conflicts use whole-transaction rollback rather than a committed terminal proof failure. The narrow stronger L3 mode and pair OTP hooks above explicitly amend shared-code assumptions before editing them.
+
+## 8. Implementation and verification record — 2026-11-14
+
+Implemented on the existing branch without staging, committing or pushing. Existing staged TRD 02 work remains intact. Migration **00009_account_profile_email_change.sql** adds the profile/revision fields, owned request table and expiry cleanup index, paired-proof schema/indexes, email templates and revocation reason. `identity/accounts` owns user persistence; OTP core owns both proof writes. Router handlers use `authenticated`, the existing transaction/audit/outbox helpers, and the shared `User` projection. No Flutter implementation is included; the Product Doc explicitly schedules its rebuild after the backend.
+
+Commands actually run from `backend/` (all service addresses are disposable loopback instances):
+
+```sh
+scripts/test-postgres.sh start
+scripts/test-mailpit.sh start
+make sqlc
+make sqlc-verify
+make check
+make build
+VEEA_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:54329/postgres \
+VEEA_TEST_SMTP_ADDR=127.0.0.1:1025 \
+VEEA_TEST_MAILPIT_API=http://127.0.0.1:8025 \
+go test -race -tags=integration -count=1 -json ./...
+```
+
+Final results: `make check` passed formatting, vet in both build modes and unit tests; `make build` built API and migration binaries; sqlc compile/regeneration verification passed. The full race run passed **907 tests/subtests, 0 failures, 0 skipped tests** (369 top-level tests): **402 unit + 505 integration**. Sixteen packages passed; twelve additional packages have no test files, not skipped test cases. Mailpit delivery ran and passed. Contract coverage checked **142 operation/status/code combinations**; the four existing explicit exclusions remain readiness `503`/`not_ready` (HTTP unit coverage) and GET me `500`/`internal_error` (shared error mapper). No new exclusions were added.
+
+Acceptance evidence in `backend/test/integration/account_test.go` and `TestAudit_Matrix`:
+
+| Tests | Actual evidence |
+|---|---|
+| `TestAccount_Profile` | Defaults, editable-field normalization/validation, revision conflicts/no-op, strict inputs, own-account isolation and transactional audit |
+| `TestAccount_EmailCutoverAndRecovery` | Distinct current/new proofs and mailbox delivery; atomic consumption; caller/other access and refresh rejection; foreign session survives; original user ID/password/profile after new-email sign-in; old address released to a different new account; both notices and old-notice omission |
+| `TestAccount_ProofBindingExpiryAndAttempts` | Owner, acting session, request and purpose binding, substituted login/duplicate/swapped tokens, either proof expiry, request expiry/closure, independent five-attempt budget and occupied-address inert proof/no mail |
+| `TestAccount_ConcurrentEmailClaims`, `TestAccount_PendingSignupLosesToCutover` | Observed database waiters/advisory barriers force either user to win the same normalized address and signup/cutover to win in both orders; losing cutover is `409`, preserves its proofs/account/sessions, and cannot replace the winner |
+| `TestAccount_EmailAuditOutboxRollback`, `TestAccount_CommitRetryAndDuplicateCompletion`, `TestAccount_ConcurrentCompletionIsSafe` | Injected audit/outbox failures roll back email, consumption, sessions and notices; forced `40001` retries commit once; an authenticated overlapping duplicate gets `400`, subsequent revoked-bearer retry gets `401`; no duplicate success/notifications/metrics |
+| `TestAccount_StaleChallengesAndABA`, `TestAccount_PasswordReadBeforeCutoverRejected` | Old login/reset/set proofs rejected; fresh B sign-in works; A → B → A does not restore old proofs; password verification paused before cutover cannot issue on the stale email snapshot |
+| `TestAccount_EmailVsIssuance`, `TestAccount_EmailVsRefresh`, `TestAccount_ActingRevalidationInsideTransaction` | Deterministic issuance-before/cutover-before and refresh-before/cutover-before (caller and other device); winning issued/rotated pairs are revoked; later stale issuance/refresh refused; logout after authentication prevents each management write |
+| `TestAccount_EmailContractErrors`, `TestAccount_RateLimitsAndWriteFailures`, existing spec-driven router checks | Real router status/code/header contract, unknown/foreign request equivalence, strict body/media/query validation, all new route limits and internal errors |
+| `TestMigrations_AccountUpgradeFrom8`, existing clean/replay/schema tests, `TestAccount_ExpiredRequestCleanup` | Empty/previous schema, populated version 8 → 9 without data loss, replay and constraint compatibility, initialized defaults/revisions, bounded expired-request cleanup preserving live requests |
+
+The first regression attempts exposed obsolete outbox fixtures that bound login mail to an address different from its user, historical migrations expecting the newest schema, an unquoted YAML flow description, and a media-type test sending literal path placeholders. These were corrected and the final full run above passed. Hygiene scans include nested proof tokens, OTPs and passwords; no provider/live-account credentials were used.
+
+**Contract amendments, with no unresolved design conflict:** three authenticated operations were added; `User.profile` is required in GET me and token responses; four new fixed error codes are `invalid_profile`, `profile_conflict`, `email_unchanged` and `email_unavailable`. Profile uses revision-checked full replacement PUT. TRD 01 now explicitly records the narrow stronger L3 email-key lock, L2b request lock, revision-aware grant checks, and owned inert-pair binding exception. Public OTP inert behavior and TRD 02 logout-all semantics remain as recorded.
+
+**Remaining release gates:** deploy migration 00009 before the matching binaries and ensure all instances enforce email revisions before enabling cutover; verify the Resend sending domain/permission and real OTP/security-notification inbox delivery; measure AC-7 timing in staging. Local passing tests establish neither real delivery nor timing indistinguishability. Old-mailbox recovery, receipt endpoints, account suspension/export/deletion, avatar/progress work and Phase 5 alerting remain in their separate existing scope. R12 remains **Resend selected**, with its existing delivery-readiness gates.
