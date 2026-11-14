@@ -145,3 +145,22 @@ WHERE id IN (
        OR c.absolute_expires_at < now() - interval '30 days'
     LIMIT @batch_size
 );
+
+-- name: FindSessionForRefreshToken :one
+-- Refresh pre-check (TRD 8.4, 10), unlocked and before any transaction: the session a refresh
+-- token belongs to, as its current token or as a consumed one still within retention. Both
+-- branches read one snapshot, so a token being rotated right now is found in one or the other.
+-- No row means the token is unknown or past retention: a plain 401, nothing else to do.
+SELECT id AS session_id FROM sessions WHERE refresh_token_hash = @token_hash
+UNION ALL
+SELECT c.session_id FROM refresh_tokens_consumed c
+WHERE c.token_hash = @token_hash AND c.retain_until > now()
+LIMIT 1;
+
+-- name: FindReusedRefreshToken :one
+-- Reuse lookup with the retention cutoff enforced (TRD 8.4 step 3), returning the session and
+-- its owner for the revocation and the audit event.
+SELECT c.session_id, s.user_id
+FROM refresh_tokens_consumed c
+JOIN sessions s ON s.id = c.session_id
+WHERE c.token_hash = @token_hash AND c.retain_until > now();

@@ -1,0 +1,104 @@
+// Package app wires the modules into the HTTP handler. cmd/api and the integration tests both
+// build the router through New, so tests exercise the same routes and dependencies as the
+// binary; they only swap the email sender, the randomness source and the limits.
+package app
+
+import (
+	"errors"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/netip"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/httpapi"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/otp"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/session"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/signup"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/notify"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/clientip"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/httpx"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/ratelimit"
+)
+
+// Options are the handler's dependencies. Keys come from config.Config.
+type Options struct {
+	Pool           *pgxpool.Pool
+	ReadyTimeout   time.Duration
+	Logger         *slog.Logger
+	EmailHMACKeys  [][]byte
+	OTPKeys        [][]byte
+	OutboxKeys     []notify.Key
+	TrustedProxies []netip.Prefix
+
+	// Hasher hashes signup passwords. Nil means an identity.Hasher with the approved parameters.
+	Hasher signup.PasswordHasher
+	// Policy is the password policy. Nil means the embedded blocklist.
+	Policy *identity.Policy
+	// Rules overrides the TRD 10 limits. Nil means the defaults.
+	Rules *ratelimit.Rules
+	// Random overrides crypto/rand for codes and tokens (tests only).
+	Random io.Reader
+	// OnTxRetry is called when a transaction is retried after a deadlock (tests assert none).
+	OnTxRetry func(sqlstate string)
+}
+
+// New builds the router with every Phase 1 route implemented so far.
+func New(o Options) (http.Handler, error) {
+	if o.Pool == nil {
+		return nil, errors.New("app: a database pool is required")
+	}
+	if o.Logger == nil {
+		o.Logger = slog.New(slog.DiscardHandler)
+	}
+	emailHMAC, err := identity.NewEmailHMAC(o.EmailHMACKeys...)
+	if err != nil {
+		return nil, err
+	}
+	codes, err := otp.NewCodeKeys(o.OTPKeys...)
+	if err != nil {
+		return nil, err
+	}
+	keyring, err := notify.NewKeyring(o.OutboxKeys...)
+	if err != nil {
+		return nil, err
+	}
+	if o.Hasher == nil {
+		if o.Hasher, err = identity.NewHasher(identity.HasherConfig{Params: identity.DefaultParams}); err != nil {
+			return nil, err
+		}
+	}
+	if o.Policy == nil {
+		blocklist, err := identity.DefaultBlocklist()
+		if err != nil {
+			return nil, err
+		}
+		o.Policy = identity.NewPolicy(blocklist)
+	}
+
+	otpSvc, err := otp.NewService(otp.Config{
+		Pool: o.Pool, Codes: codes, EmailHMAC: emailHMAC, Outbox: notify.NewOutbox(keyring), Rules: o.Rules,
+		Random: o.Random, Logger: o.Logger.With("component", "otp"), OnTxRetry: o.OnTxRetry,
+	})
+	if err != nil {
+		return nil, err
+	}
+	signupSvc, err := signup.New(signup.Config{
+		Pool: o.Pool, OTP: otpSvc, Hasher: o.Hasher, Policy: o.Policy, Rules: o.Rules, Random: o.Random,
+	})
+	if err != nil {
+		return nil, err
+	}
+	sessions, err := session.NewService(session.Config{
+		Pool: o.Pool, Rules: o.Rules, Random: o.Random, Logger: o.Logger.With("component", "session"), OnTxRetry: o.OnTxRetry,
+	})
+	if err != nil {
+		return nil, err
+	}
+	auth := &httpapi.Handlers{Signup: signupSvc, Sessions: sessions, IPs: clientip.New(o.TrustedProxies),
+		Log: o.Logger.With("component", "http")}
+	return httpx.NewHandler(o.Pool, o.ReadyTimeout, auth.Mount), nil
+}

@@ -28,18 +28,18 @@ func (d noDB) QueryRow(context.Context, string, ...any) pgx.Row {
 func TestRecordRefusesSecretsAndMalformedEvents(t *testing.T) {
 	ok := Event{Action: "auth.otp.verify", Outcome: Failure, Reason: "invalid_code"}
 	cases := map[string]func(e *Event){
-		"empty action":        func(e *Event) { e.Action = "" },
-		"action with spaces":  func(e *Event) { e.Action = "auth otp" },
-		"unknown outcome":     func(e *Event) { e.Outcome = "maybe" },
-		"free text reason":    func(e *Event) { e.Reason = "wrong code 123456" },
-		"code key":            func(e *Event) { e.Metadata = map[string]string{"code": "123456"} },
-		"token key":           func(e *Event) { e.Metadata = map[string]string{"challenge_token": "x"} },
-		"password key":        func(e *Event) { e.Metadata = map[string]string{"new_password": "x"} },
-		"hash key":            func(e *Event) { e.Metadata = map[string]string{"code_hash": "x"} },
-		"challenge token":     func(e *Event) { e.Metadata = map[string]string{"note": "vct_abc"} },
-		"access token":        func(e *Event) { e.Metadata = map[string]string{"note": "Bearer vat_abc"} },
-		"token in user agent": func(e *Event) { e.UserAgent = "client vrt_abc" },
-		"uppercase key":       func(e *Event) { e.Metadata = map[string]string{"Delivery": "none"} },
+		"empty action":       func(e *Event) { e.Action = "" },
+		"action with spaces": func(e *Event) { e.Action = "auth otp" },
+		"unknown outcome":    func(e *Event) { e.Outcome = "maybe" },
+		"free text reason":   func(e *Event) { e.Reason = "wrong code 123456" },
+		"code key":           func(e *Event) { e.Metadata = map[string]string{"code": "123456"} },
+		"token key":          func(e *Event) { e.Metadata = map[string]string{"challenge_token": "x"} },
+		"password key":       func(e *Event) { e.Metadata = map[string]string{"new_password": "x"} },
+		"hash key":           func(e *Event) { e.Metadata = map[string]string{"code_hash": "x"} },
+		"challenge token":    func(e *Event) { e.Metadata = map[string]string{"note": "vct_abc"} },
+		"access token":       func(e *Event) { e.Metadata = map[string]string{"note": "Bearer vat_abc"} },
+		"upper-case token":   func(e *Event) { e.Metadata = map[string]string{"note": "VCT_abc"} },
+		"uppercase key":      func(e *Event) { e.Metadata = map[string]string{"Delivery": "none"} },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {

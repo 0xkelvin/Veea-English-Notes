@@ -48,6 +48,9 @@ type Event struct {
 // ErrUnsafeEvent is returned when an event would store something that looks like a secret.
 var ErrUnsafeEvent = errors.New("audit: event would store a secret")
 
+// Redacted replaces a client-supplied text field that looks like a token.
+const Redacted = "[redacted]"
+
 // forbiddenKeys are metadata keys that name a secret (TRD 11.1, 11.2).
 var forbiddenKeys = []string{"password", "code", "token", "hash", "payload", "ciphertext", "secret", "key"}
 
@@ -56,32 +59,17 @@ var tokenPrefixes = []string{"vct_", "vat_", "vrt_"}
 
 // Record inserts e through db, which is a transaction or the pool.
 func Record(ctx context.Context, db sqlc.DBTX, e Event) error {
-	if e.Action == "" || !isCode(e.Action, ".") {
-		return errors.New("audit: action must be dotted lowercase words")
+	if err := e.check(); err != nil {
+		return err
 	}
-	if e.Outcome != Success && e.Outcome != Failure {
-		return errors.New("audit: outcome must be success or failure")
+	// The user agent and request id come from the client. A token-shaped value there is not a
+	// programming error but hostile or careless input, so it is redacted rather than refused:
+	// refusing would let any client turn every audited request into a 500.
+	if looksSecret(e.UserAgent) {
+		e.UserAgent = Redacted
 	}
-	if e.Reason != "" && !isCode(e.Reason, "") {
-		return errors.New("audit: reason must be a lowercase code")
-	}
-	for k, v := range e.Metadata {
-		if !isCode(k, "") {
-			return errors.New("audit: metadata keys must be lowercase codes")
-		}
-		for _, f := range forbiddenKeys {
-			if strings.Contains(k, f) {
-				return fmt.Errorf("%w: metadata key names a secret", ErrUnsafeEvent)
-			}
-		}
-		if looksSecret(v) {
-			return fmt.Errorf("%w: metadata value looks like a token", ErrUnsafeEvent)
-		}
-	}
-	for _, s := range []string{e.UserAgent, e.RequestID} {
-		if looksSecret(s) {
-			return fmt.Errorf("%w: a text field looks like a token", ErrUnsafeEvent)
-		}
+	if looksSecret(e.RequestID) {
+		e.RequestID = Redacted
 	}
 	meta := []byte("{}")
 	if len(e.Metadata) > 0 {
@@ -102,6 +90,40 @@ func Record(ctx context.Context, db sqlc.DBTX, e Event) error {
 	}
 	if err := sqlc.New(db).InsertAuditEvent(ctx, p); err != nil {
 		return fmt.Errorf("audit: insert %s: %w", e.Action, err)
+	}
+	return nil
+}
+
+// check refuses malformed events and secret-looking metadata, which are programming errors.
+func (e Event) check() error {
+	if e.Action == "" || !isCode(e.Action, ".") {
+		return errors.New("audit: action must be dotted lowercase words")
+	}
+	if e.Outcome != Success && e.Outcome != Failure {
+		return errors.New("audit: outcome must be success or failure")
+	}
+	if e.Reason != "" && !isCode(e.Reason, "") {
+		return errors.New("audit: reason must be a lowercase code")
+	}
+	for k, v := range e.Metadata {
+		if err := checkMetadata(k, v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func checkMetadata(k, v string) error {
+	if !isCode(k, "") {
+		return errors.New("audit: metadata keys must be lowercase codes")
+	}
+	for _, f := range forbiddenKeys {
+		if strings.Contains(k, f) {
+			return fmt.Errorf("%w: metadata key names a secret", ErrUnsafeEvent)
+		}
+	}
+	if looksSecret(v) {
+		return fmt.Errorf("%w: metadata value looks like a token", ErrUnsafeEvent)
 	}
 	return nil
 }
@@ -131,8 +153,9 @@ func isCode(s, sep string) bool {
 }
 
 func looksSecret(s string) bool {
+	lower := strings.ToLower(s)
 	for _, p := range tokenPrefixes {
-		if strings.Contains(s, p) {
+		if strings.Contains(lower, p) {
 			return true
 		}
 	}

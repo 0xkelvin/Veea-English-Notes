@@ -89,3 +89,70 @@ func TestUnknownRouteAndMethod(t *testing.T) {
 		t.Fatalf("status = %d", rec.Code)
 	}
 }
+
+func TestTokenShapedRequestIDIsReplaced(t *testing.T) {
+	h := NewHandler(fakePinger{}, time.Second)
+	for _, id := range []string{"vct_abcdefgh", "xx-VAT_abcdef", "vrt_0123456789"} {
+		if got := get(h, "/healthz", "X-Request-Id", id).Header().Get("X-Request-Id"); got == id || len(got) != 24 {
+			t.Fatalf("token-shaped id %q was reused: %q", id, got)
+		}
+	}
+}
+
+func TestMountedRoutesShareTheMiddleware(t *testing.T) {
+	h := NewHandler(fakePinger{}, time.Second, func(mux *http.ServeMux) {
+		mux.HandleFunc("GET /v1/x", func(w http.ResponseWriter, _ *http.Request) {
+			WriteProblem(w, http.StatusConflict, CodeSignupUnavailable, map[string]any{"violations": []string{"a"}, "code": "overridden"})
+		})
+	})
+	rec := get(h, "/v1/x")
+	body := rec.Body.String()
+	if rec.Code != http.StatusConflict || rec.Header().Get("X-Request-Id") == "" ||
+		!strings.Contains(body, `"code":"signup_unavailable"`) || !strings.Contains(body, `"violations":["a"]`) ||
+		!strings.Contains(body, `"request_id":"`+rec.Header().Get("X-Request-Id")+`"`) {
+		t.Fatalf("unexpected problem: %d %s", rec.Code, body)
+	}
+}
+
+func TestWriteProblemNeverEmitsAnUnknownCode(t *testing.T) {
+	rec := httptest.NewRecorder()
+	WriteProblem(rec, http.StatusBadRequest, "leaked detail: pq error")
+	if strings.Contains(rec.Body.String(), "leaked") || !strings.Contains(rec.Body.String(), `"code":"internal_error"`) {
+		t.Fatalf("unknown codes must fall back to internal_error: %s", rec.Body)
+	}
+}
+
+func TestWriteRateLimitedSetsRetryAfter(t *testing.T) {
+	rec := httptest.NewRecorder()
+	WriteRateLimited(rec, 0)
+	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") != "1" {
+		t.Fatalf("status %d, Retry-After %q", rec.Code, rec.Header().Get("Retry-After"))
+	}
+}
+
+func TestDecodeJSONIsStrict(t *testing.T) {
+	type body struct {
+		Email string `json:"email"`
+	}
+	cases := map[string]bool{
+		`{"email":"a@example.test"}`:              true,
+		`  {"email":"a@example.test"}  ` + "\n":   true,
+		`{"email":"a@example.test","extra":1}`:    false,
+		`{"email":"a@example.test"}{"email":"b"}`: false,
+		`{"email":"a@example.test"} x`:            false,
+		`[]`:                                      false,
+		``:                                        false,
+		`{"email":` + strings.Repeat(" ", MaxBodyBytes) + `"a"}`: false,
+	}
+	for raw, ok := range cases {
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(raw))
+		var b body
+		err := DecodeJSON(httptest.NewRecorder(), req, &b)
+		if (err == nil) != ok {
+			t.Errorf("%.40q: err = %v, want ok=%v", raw, err, ok)
+		}
+		if err != nil && !errors.Is(err, ErrBadRequest) {
+			t.Errorf("errors must be ErrBadRequest without detail, got %v", err)
+		}
+	}
+}

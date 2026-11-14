@@ -114,6 +114,46 @@ func (q *Queries) FindConsumedRefreshToken(ctx context.Context, tokenHash []byte
 	return session_id, err
 }
 
+const findReusedRefreshToken = `-- name: FindReusedRefreshToken :one
+SELECT c.session_id, s.user_id
+FROM refresh_tokens_consumed c
+JOIN sessions s ON s.id = c.session_id
+WHERE c.token_hash = $1 AND c.retain_until > now()
+`
+
+type FindReusedRefreshTokenRow struct {
+	SessionID uuid.UUID
+	UserID    uuid.UUID
+}
+
+// Reuse lookup with the retention cutoff enforced (TRD 8.4 step 3), returning the session and
+// its owner for the revocation and the audit event.
+func (q *Queries) FindReusedRefreshToken(ctx context.Context, tokenHash []byte) (FindReusedRefreshTokenRow, error) {
+	row := q.db.QueryRow(ctx, findReusedRefreshToken, tokenHash)
+	var i FindReusedRefreshTokenRow
+	err := row.Scan(&i.SessionID, &i.UserID)
+	return i, err
+}
+
+const findSessionForRefreshToken = `-- name: FindSessionForRefreshToken :one
+SELECT id AS session_id FROM sessions WHERE refresh_token_hash = $1
+UNION ALL
+SELECT c.session_id FROM refresh_tokens_consumed c
+WHERE c.token_hash = $1 AND c.retain_until > now()
+LIMIT 1
+`
+
+// Refresh pre-check (TRD 8.4, 10), unlocked and before any transaction: the session a refresh
+// token belongs to, as its current token or as a consumed one still within retention. Both
+// branches read one snapshot, so a token being rotated right now is found in one or the other.
+// No row means the token is unknown or past retention: a plain 401, nothing else to do.
+func (q *Queries) FindSessionForRefreshToken(ctx context.Context, tokenHash []byte) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, findSessionForRefreshToken, tokenHash)
+	var session_id uuid.UUID
+	err := row.Scan(&session_id)
+	return session_id, err
+}
+
 const getSessionOwnerStatus = `-- name: GetSessionOwnerStatus :one
 SELECT s.id AS session_id, s.user_id, s.revoked_at, u.status, u.email_verified_at
 FROM sessions s

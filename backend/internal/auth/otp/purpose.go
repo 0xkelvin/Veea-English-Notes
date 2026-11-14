@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/notify"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/ratelimit"
 )
 
 // Purpose is what a challenge is for (TRD 4.3), matching the otp_challenges.purpose CHECK.
@@ -64,16 +65,9 @@ var (
 	ErrAttemptsExceeded = errors.New("code_attempts_exceeded")
 )
 
-// RateLimitedError is a 429 (TRD 10). RetryAfter is the Retry-After value in whole seconds,
-// at least 1. Rule names the limit, for logs and the auth.rate_limited audit event.
-type RateLimitedError struct {
-	Rule       string
-	RetryAfter int
-}
-
-func (e *RateLimitedError) Error() string {
-	return fmt.Sprintf("rate_limited: %s, retry after %ds", e.Rule, e.RetryAfter)
-}
+// RateLimitedError is a 429 (TRD 10). It is ratelimit.Error, so every module reports limits
+// with one type the HTTP layer maps.
+type RateLimitedError = ratelimit.Error
 
 // Audit reasons written by this package (TRD 11.1).
 const (

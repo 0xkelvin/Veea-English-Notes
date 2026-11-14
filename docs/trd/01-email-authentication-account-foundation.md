@@ -1252,6 +1252,30 @@ This is the price of having no grace window. It is accepted in exchange for stri
 **Storage format**
 - Hashes only. Raw tokens are never stored.
 
+**Implementation notes** (Ticket 08: `internal/auth/session`, `internal/auth/httpapi`). These fill gaps in §8.1, §8.4, §8.5 and §10; none changes an approved decision.
+- **Refresh needs its session before the transaction.**
+  - The refresh limit is per session (§10), but the request carries only the token. So an unlocked read (`FindSessionForRefreshToken`) runs first and finds the session: as its current refresh hash, or as a consumed hash with `retain_until > now()`. Both branches run in one statement, so they see one snapshot: a token being rotated at that moment is in one branch or the other.
+  - No row means the token is unknown or past retention: plain `401`, with no transaction and no audit event. Only then is the per-session limit counted and the §8.4 transaction run.
+  - A limited refresh therefore rotates nothing; the token stays current.
+  - Retention is enforced twice, in this pre-check and in the reuse lookup (`FindReusedRefreshToken`, which also returns the owner for the audit event).
+- **Audit volume.**
+  - §11.1 audits refresh "failures and reuse". Failures are audited only when a session is identified: a revoked session (`session_revoked`), an expired one (`session_expired`), an inactive account (`account_inactive`) and reuse (`refresh_reuse`). All of these sit behind the per-session limit.
+  - An unknown token is not audited, so a flood of random tokens cannot grow `audit_events`.
+  - Every revoking operation also writes `auth.session.revoke` with `metadata.reason` and `metadata.count`: reuse, logout, `account_inactive` and the cap.
+- **Rotation expiries.** The new `refresh_expires_at` is `least(now + 30 days, absolute_expires_at)`, as specified. The new access expiry is capped at the absolute expiry as well (the TRD is silent). `retain_until` is the locked row's `refresh_expires_at`, read before the update.
+- **Per-request check.**
+  - The bearer middleware wraps every protected route. A request is refused unless it carries exactly one `Authorization: Bearer vat_…` header (scheme case-insensitive).
+  - It then runs the §8.1 query. On no match, it re-reads the session's owner, and if the session is live but the account is not active or not verified, revokes that session only (`account_inactive`, §8.7).
+  - The per-session request limit is counted after a successful authentication; unauthenticated requests do not count. `last_seen_at` is updated in autocommit, at most every 5 minutes; a failure there is logged and does not fail the request.
+- **Responses.**
+  - Every refused token gives the same `401 unauthorized` with `WWW-Authenticate: Bearer`, byte-identical apart from `request_id`.
+  - Refresh bodies are strict like the others: unknown fields give `400 invalid_request`.
+  - Logout returns `204` with no body. A retry after logout gets `401`.
+- **Rate-limit error type.** `ratelimit.Error` is the one 429 type across modules; `otp.RateLimitedError` is an alias.
+- **Not done yet.**
+  - `auth_refresh_reuse_total` and the other §11.3 metrics (no Prometheus yet).
+  - The races of refresh against password change and reset (§12.3) need Ticket 10.
+
 ### 8.6 Session creation and cap
 
 **[Proposed]**
@@ -1263,6 +1287,35 @@ This is the price of having no grace window. It is accepted in exchange for stri
 - A user may have at most 20 active sessions.
 - Inserting the 21st revokes the session with the oldest `last_seen_at` (`session_limit`), in the same transaction (L4b).
 - Concurrent sign-ins of the same user serialize on L3 (`SELECT ... FROM users WHERE id = $u FOR NO KEY UPDATE`), so the count and the eviction are consistent.
+
+**Implementation notes** (Ticket 07: `internal/auth/session`, `internal/auth/signup`, `internal/auth/httpapi`, `internal/identity/accounts`, `internal/app`). These fill gaps; none changes an approved decision.
+- **Session issuance primitive.**
+  - `session.NewPending` generates the id and both tokens before the transaction (§7.1 rule 5).
+  - `session.Issue(ctx, tx, pending, request)` runs inside the caller's transaction. The caller must hold the user at L3: a `FOR NO KEY UPDATE` lock, or the row it just inserted (signup).
+  - It applies the cap (L4b), inserts the session with SHA-256 token hashes (L5), and writes `auth.session.revoke` when it evicts.
+  - All three expiries come from one database `now()`.
+  - The cap is enforced here, not deferred to Ticket 08, because every issuance must keep it.
+- **Who writes `users`.** §2.2 says only `identity` writes `users`, but `internal/identity` must stay free of database code (Ticket 03). The writer is the subpackage `internal/identity/accounts`. `CreateVerified` is the `ON CONFLICT DO NOTHING` insert of §7.3.
+- **Signup verify.**
+  - The after-accept steps are: L3 account insert, then L4b/L5 session, then `auth.signup.verify` success (metadata `method`).
+  - The OTP core then cancels the challenge's pending email and commits. Tokens are written to the response only after `Verify` returns, so after commit.
+  - On conflict, the flow returns `otp.CommitFailure("account_exists", ...)`: the consumption commits, the existing row is never read or updated, and the response is `409`.
+  - Any other failure, including a failed session insert, rolls back the account, the consumption and the email cancellation together.
+- **`password_changed_at` on password signup.** It is set to the verification time, because the account has a password from creation (§5.2: null until a password is first set). OTP signups leave it null.
+- **Order in password signup start.** Email validation, then the password policy (`422`), then the per-IP password-signup limit, then argon2id, then the OTP start. The OTP start's own per-email and per-IP limits run after hashing, so a request refused by those limits still costs one hash. The per-IP password-signup rule bounds that cost.
+- **Request contract details §5 leaves open.**
+  - Bodies are decoded strictly: at most 16 KiB, one JSON object, no unknown fields, no trailing data. Anything else is `400 invalid_request`.
+  - A missing or invalid `device` on verify is also `400 invalid_request`, before the challenge is touched.
+  - `503 busy` (hasher saturated) carries `Retry-After: 1`.
+  - Timestamps are RFC 3339 in UTC with sub-second precision.
+  - Problem titles come from a fixed table in `httpx`; an unknown code falls back to `internal_error`.
+- **Client-supplied text.**
+  - The stored `User-Agent` is limited to 256 characters without control characters, and dropped entirely if it contains `vct_`, `vat_` or `vrt_`.
+  - An inbound `X-Request-Id` containing a token prefix is replaced.
+  - The audit writer redacts such values in `user_agent` and `request_id` instead of refusing the event. Before this change, a client could turn every audited request into a `500` with a header like `User-Agent: vct_x`.
+- **Not done yet.**
+  - `VEEA_ARGON2_*` (§13) is not read; the approved defaults are used.
+  - `api/openapi.yaml` and contract validation are Ticket 12.
 
 ### 8.7 Automatic revocation summary
 
@@ -1346,7 +1399,7 @@ This is the price of having no grace window. It is accepted in exchange for stri
 - **Concurrency.** Each increment is one atomic `INSERT ... ON CONFLICT DO UPDATE`. N concurrent callers on a limit of L see exactly L allowed and N−L denied, with no check-then-act gap. (The TRD did not say whether a denied attempt still counts. Counting it keeps this single-statement and race-free; the cost is that a counter keeps growing under sustained attack until its window ends.)
 - **Retry-After** is the time until the end of the window of the rule that denied, rounded up to whole seconds and never below 1. When several rules deny, the longest wait is reported, so a client that obeys it is not refused again by the other rule. Because windows are fixed, a client denied just after the window opened is told to wait out the whole window.
 - **Independent of the caller's transaction.** The limiter only accepts a connection pool and runs every statement in autocommit (§7.1 rule 6). A business transaction that rolls back never rolls back a counter, and the limiter never waits on locks that transaction holds.
-- **Cooldown** takes the opposite stance: `Cooldown.Claim` runs on the caller's `pgx.Tx`, so a claim commits or rolls back with the challenge it allows (§7.2 step 1). Boundary: a claim exactly 60 s after the previous one is granted. Inside a transaction the database `now()` is the transaction start.
+- **Cooldown** takes the opposite stance: `Cooldown.Claim` runs on the caller's `pgx.Tx`, so a claim commits or rolls back with the challenge it allows (§7.2 step 1). Boundary: a claim exactly 60 s after the previous one is granted. Inside a transaction the database `now()` is the transaction start. So a transaction that started before a concurrent winner computes slightly more than 60 s left. Its `Retry-After` is therefore capped at the cooldown length: the winner committed before the read, so 60 s from the real current time is always enough (`TestCooldown_RetryAfterNeverExceedsTheCooldown`; found in Ticket 07).
 - **Failure mode:** if the database errors, the limiter returns the error and no allowance. Callers answer 503. Failing open would let an attacker bypass limits by stressing the database.
 - **Key rotation:** counters and cooldown rows are keyed by the digest under the **current** `VEEA_EMAIL_HMAC_KEY` only. Right after a rotation these start from zero. That brief loss of history is accepted. The previous key is kept for later audit lookups.
 
@@ -1506,6 +1559,7 @@ This is the price of having no grace window. It is accepted in exchange for stri
 - `TestConcurrent_FirstOTPIssuance`: 20 parallel starts for a new email and purpose give exactly one `202` and the rest `429`, with one open challenge row and at most one outbox row. Run for eligible and ineligible emails.
 - `TestConcurrent_VerifySameToken`: exactly one success; the others get `invalid_code`; one session.
 - `TestConcurrent_SignupDifferentAttemptsSameEmail`: two password signups verified at once give one `201` and one `409 signup_unavailable`; the stored hash is the winner's.
+  - *Correction (Ticket 07):* two open signup attempts for one email cannot exist, because a new start supersedes the open one (§4.2, `otp_challenges_one_open`). The race that does exist is a verify of attempt Y against a new start X for the same email. `TestSignup_VerifyRacingANewAttemptForTheSameEmail` covers it. Whatever the interleaving, there is at most one account, it carries Y's hash, and X then gets `409` or `invalid_code`, never a session. `TestSignup_AccountAppearedMeanwhileGives409` covers the `409` path deterministically.
 
 **Concurrency: sessions and password mutations**
 - `TestConcurrent_SignInsSameUser_NoDeadlock`: 20 parallel password logins and OTP verifies for one user, with the session cap at 5 and some logins rehashing. No deadlock; exactly 5 active sessions afterwards; evictions recorded as `session_limit`.

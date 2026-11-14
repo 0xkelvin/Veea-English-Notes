@@ -35,7 +35,11 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
   flow) is `backend/internal/auth/otp/`; flows plug in an eligibility check and an after-accept
   callback and must not write `otp_challenges` themselves. The API now needs `VEEA_EMAIL_HMAC_KEY` and
   `VEEA_OTP_KEY` (each `openssl rand -hex 32`) and `VEEA_OUTBOX_KEY` (`1:$(openssl rand -hex 32)`) to
-  start; use throwaway values locally. There are no auth routes yet.
+  start; use throwaway values locally. Signup routes (`/v1/auth/signup/*`) are wired through
+  `backend/internal/app/`, which builds the router for both `cmd/api` and the integration tests.
+  Token refresh authenticates by its body token; logout and `GET /v1/me` sit behind the bearer
+  middleware in `backend/internal/auth/httpapi/`. Every protected Go route must be wrapped with
+  `authenticated`. Sign-in, password and device-management flows are not built yet.
 - After changing a query or migration run `make sqlc` and `make sqlc-verify` (from `backend/`)
   and commit the generated code with it.
 - Migrations run through `cmd/migrate` before a deploy, never on API startup.

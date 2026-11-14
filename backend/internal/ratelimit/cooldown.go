@@ -93,5 +93,10 @@ func (c Cooldown) Claim(ctx context.Context, tx pgx.Tx, purpose string, e identi
 	case err != nil:
 		return CooldownResult{}, fmt.Errorf("ratelimit: read cooldown: %w", err)
 	}
-	return CooldownResult{RetryAfter: time.Duration(remaining * float64(time.Second))}, nil
+	// remaining is measured against this transaction's now(), its start time. A transaction that
+	// started just before a concurrent winner, then waited for it on the row lock, sees the
+	// winner's later last_issued_at and would compute slightly more than the cooldown. The real
+	// time is already past the winner's claim (it committed before this read), so the cooldown
+	// length is a correct upper bound.
+	return CooldownResult{RetryAfter: time.Duration(min(remaining, secs) * float64(time.Second))}, nil
 }

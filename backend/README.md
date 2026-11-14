@@ -23,6 +23,11 @@ internal/platform/
   httpx/                 router, /healthz, /readyz, X-Request-Id
   migrate/               goose runner (up-only, advisory-locked)
   pgtest/                disposable PostgreSQL harness for tests
+internal/app/            wires every module into the router; used by cmd/api and the integration tests
+internal/auth/httpapi/   auth HTTP handlers and the TRD 5.3 error mapping
+internal/auth/session/   session issuance in the caller's transaction (tokens, cap), bearer authentication, refresh rotation, logout
+internal/auth/signup/    Flows A and B: signup start (OTP, password) and verify
+internal/identity/accounts/  the only writer of users (database side of identity)
 internal/auth/otp/       OTP challenge core: start (cooldown, supersede, challenge, email) and verify (procedure V, committed failures)
 internal/audit/          append-only audit writer; refuses secret-looking metadata
 internal/notify/         email outbox: encrypted enqueue (on the caller's tx), leased worker, templates, fake and SMTP senders
@@ -61,6 +66,24 @@ Generate throwaway keys for local runs with `openssl rand -hex 32` (`VEEA_EMAIL_
 
 - `GET /healthz`: liveness. Always `200` while the process runs; ignores the database.
 - `GET /readyz`: readiness. `200`, or `503` (`application/problem+json`, code `not_ready`) when the database does not answer within `VEEA_READY_TIMEOUT`.
+- `POST /v1/auth/signup/otp/start` `{email}` and `POST /v1/auth/signup/password/start` `{email, password}`:
+  `202 {challenge_token, expires_at, resend_after}`, the same for new and existing emails. Only a
+  new email gets a `signup_code` email.
+- `POST /v1/auth/signup/verify` `{challenge_token, code, device: {name, platform}}`: `201` with the
+  session tokens and the user, `409 signup_unavailable` if the email gained an account meanwhile.
+
+- `POST /v1/auth/token/refresh` `{refresh_token}`: `200` with a new pair, rotated atomically
+  with no grace window. A reused token (for example a retry after a lost response) revokes that
+  session. Every refused token gets the same `401 unauthorized`.
+- `POST /v1/auth/logout` (bearer): `204`, revokes the current session only.
+- `GET /v1/me` (bearer): `200` with the account.
+
+Protected routes need `Authorization: Bearer vat_...`; the session, its expiry and the account's
+status and verified email are checked on every request.
+
+Errors are `application/problem+json` with a stable `code` and `request_id` (TRD 01 §5.3). Bodies
+are decoded strictly: unknown fields are `400 invalid_request`. A local run with
+`VEEA_EMAIL_SENDER=smtp` and `make mailpit-up` shows the code emails at http://127.0.0.1:8025.
 
 ## Commands
 

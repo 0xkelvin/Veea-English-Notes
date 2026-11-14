@@ -793,6 +793,36 @@ func TestCooldown_WaiterFollowsTheFirstTransactionsOutcome(t *testing.T) {
 	}
 }
 
+// A transaction that started before the winning claim sees an earlier now() than the winner's
+// last_issued_at. Its Retry-After must still not exceed the cooldown (found by Ticket 07's
+// concurrent signup test as "Retry-After: 61").
+func TestCooldown_RetryAfterNeverExceedsTheCooldown(t *testing.T) {
+	d, _ := migratedDB(t)
+	cd := newCooldown(t)
+	ctx := context.Background()
+	e := email(t, "early-starter@example.test")
+
+	early := begin(t, d.Pool)
+	if _, err := early.Exec(ctx, `SELECT now()`); err != nil { // fixes this transaction's now()
+		t.Fatal(err)
+	}
+	time.Sleep(1200 * time.Millisecond)
+	winner := begin(t, d.Pool)
+	if res, err := cd.Claim(ctx, winner, "signup", e); err != nil || !res.Granted {
+		t.Fatalf("winner: %+v %v", res, err)
+	}
+	if err := winner.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	res, err := cd.Claim(ctx, early, "signup", e)
+	if err != nil || res.Granted {
+		t.Fatalf("the early transaction must be denied: %+v %v", res, err)
+	}
+	if got := res.RetryAfterSeconds(); got < 1 || got > ratelimit.CooldownSeconds {
+		t.Fatalf("Retry-After %d s, want 1 to %d", got, ratelimit.CooldownSeconds)
+	}
+}
+
 func TestCooldown_StoresOnlyTheEmailHMAC(t *testing.T) {
 	d, _ := migratedDB(t)
 	h := testEmailHMAC(t)

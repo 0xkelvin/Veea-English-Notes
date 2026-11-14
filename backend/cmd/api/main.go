@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/app"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/notify"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/config"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db"
@@ -58,7 +59,15 @@ func run() error {
 		<-workerDone
 	}()
 
-	srv := httpx.NewServer(cfg.HTTPAddr, httpx.NewHandler(pool, cfg.ReadyTimeout))
+	handler, err := app.New(app.Options{
+		Pool: pool, ReadyTimeout: cfg.ReadyTimeout, Logger: log,
+		EmailHMACKeys: cfg.EmailHMACKeys, OTPKeys: cfg.OTPKeys, OutboxKeys: cfg.OutboxKeys,
+		TrustedProxies: cfg.TrustedProxies,
+	})
+	if err != nil {
+		return err
+	}
+	srv := httpx.NewServer(cfg.HTTPAddr, handler)
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()
 	log.Info("api started", "config", cfg)

@@ -74,6 +74,25 @@ func (d Decision) RetryAfterSeconds() int {
 	return max(1, int(math.Ceil(d.ResetsIn.Seconds())))
 }
 
+// Error is a refused request, answered with 429 and Retry-After (TRD 10). RetryAfter is in
+// whole seconds, at least 1. Rule names the limit, for logs and the auth.rate_limited event.
+type Error struct {
+	Rule       string
+	RetryAfter int
+}
+
+func (e *Error) Error() string {
+	return fmt.Sprintf("rate_limited: %s, retry after %ds", e.Rule, e.RetryAfter)
+}
+
+// Err is nil for an allowed decision and an *Error for a denied one.
+func (d Decision) Err() error {
+	if d.Allowed {
+		return nil
+	}
+	return &Error{Rule: d.Rule.Name, RetryAfter: d.RetryAfterSeconds()}
+}
+
 // Limiter counts events in fixed windows stored in PostgreSQL. It is safe for concurrent use.
 //
 // It holds a *pgxpool.Pool on purpose and never accepts a transaction: counter writes are
