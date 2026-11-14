@@ -38,6 +38,11 @@ RETURNING *;
 -- Lock level L2, procedure V step 1 (TRD 7.3). Returns no row for an unknown token.
 SELECT * FROM otp_challenges WHERE token_hash = @token_hash FOR UPDATE;
 
+-- name: GetOTPChallengeEmailByTokenHash :one
+-- Verify pre-check P (TRD 7.3): an unlocked autocommit read, before any transaction, of the
+-- email whose verify-failure limit applies. No row means an unknown token.
+SELECT email_normalized FROM otp_challenges WHERE token_hash = @token_hash;
+
 -- name: IncrementOTPChallengeAttempts :execrows
 -- Procedure V step 4. The caller commits this before returning an error.
 UPDATE otp_challenges SET attempts = attempts + 1 WHERE id = @id;

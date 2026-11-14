@@ -30,9 +30,12 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
   Identity primitives live in `backend/internal/identity/` (email normalization, password policy
   and blocklist, Argon2id hasher). Hash and verify passwords before opening a transaction; that
   package must not import database code. Rate limiting is in `backend/internal/ratelimit/` (limiter on the pool, cooldown on the caller's
-  transaction) and client IP resolution in `backend/internal/platform/clientip/`. The API now needs
-  `VEEA_EMAIL_HMAC_KEY` to start (`openssl rand -hex 32` for a local throwaway). There are no auth
-  flows or auth routes yet.
+  transaction) and client IP resolution in `backend/internal/platform/clientip/`. The email outbox and its worker are in `backend/internal/notify/`
+  (`make mailpit-up` for local SMTP). The OTP challenge core (start and verify, used by every code
+  flow) is `backend/internal/auth/otp/`; flows plug in an eligibility check and an after-accept
+  callback and must not write `otp_challenges` themselves. The API now needs `VEEA_EMAIL_HMAC_KEY` and
+  `VEEA_OTP_KEY` (each `openssl rand -hex 32`) and `VEEA_OUTBOX_KEY` (`1:$(openssl rand -hex 32)`) to
+  start; use throwaway values locally. There are no auth routes yet.
 - After changing a query or migration run `make sqlc` and `make sqlc-verify` (from `backend/`)
   and commit the generated code with it.
 - Migrations run through `cmd/migrate` before a deploy, never on API startup.

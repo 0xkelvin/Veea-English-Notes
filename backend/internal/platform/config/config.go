@@ -12,13 +12,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/otp"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/notify"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/clientip"
 )
 
 // Config is the validated runtime configuration.
-//
-// The OTP and outbox keys and the email sender belong to later tickets and are absent for now.
 type Config struct {
 	HTTPAddr        string
 	DatabaseURL     string
@@ -30,9 +30,20 @@ type Config struct {
 	// EmailHMACKeys holds the keys behind EmailHMAC, current first and optionally one previous
 	// (TRD 13). The values are secrets and are never logged.
 	EmailHMACKeys [][]byte
+	// OTPKeys hold the keys behind the stored code hashes, HMAC(key, challenge_id || code),
+	// current first and optionally one previous (TRD 4.2, 13). Secrets, never logged.
+	OTPKeys [][]byte
 	// TrustedProxies are the networks whose X-Forwarded-For header is believed (TRD 10).
 	// Empty means the header is ignored.
 	TrustedProxies []netip.Prefix
+
+	// OutboxKeys encrypt email payloads, current first (TRD 8.2, 13). Secrets, never logged.
+	OutboxKeys []notify.Key
+	// EmailSender selects the delivery backend: "smtp" (local Mailpit) or "fake" (tests). The
+	// production provider is still open (TRD R12).
+	EmailSender string
+	SMTPAddr    string
+	EmailFrom   string
 }
 
 // Defaults for optional settings.
@@ -41,6 +52,9 @@ const (
 	DefaultDBMaxConns      = 10
 	DefaultShutdownTimeout = 15 * time.Second
 	DefaultReadyTimeout    = 2 * time.Second
+	DefaultEmailSender     = "smtp"
+	DefaultSMTPAddr        = "localhost:1025"
+	DefaultEmailFrom       = "no-reply@veea.local"
 )
 
 // Environment variable names.
@@ -52,7 +66,12 @@ const (
 	EnvShutdownTimeout = "VEEA_SHUTDOWN_TIMEOUT"
 	EnvReadyTimeout    = "VEEA_READY_TIMEOUT"
 	EnvEmailHMACKey    = "VEEA_EMAIL_HMAC_KEY"
+	EnvOTPKey          = "VEEA_OTP_KEY"
 	EnvTrustedProxies  = "VEEA_TRUSTED_PROXIES"
+	EnvOutboxKey       = "VEEA_OUTBOX_KEY"
+	EnvEmailSender     = "VEEA_EMAIL_SENDER"
+	EnvSMTPAddr        = "VEEA_SMTP_ADDR"
+	EnvEmailFrom       = "VEEA_EMAIL_FROM"
 )
 
 // Load reads configuration through lookup (os.LookupEnv in production) and
@@ -97,11 +116,29 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 	}
 
 	var kerr error
-	if cfg.EmailHMACKeys, kerr = parseEmailHMACKeys(get(EnvEmailHMACKey, "")); kerr != nil {
+	if cfg.EmailHMACKeys, kerr = parseHexKeys(get(EnvEmailHMACKey, ""), identity.MinEmailHMACKeyBytes); kerr != nil {
 		errs = append(errs, fmt.Errorf("%s: %w", EnvEmailHMACKey, kerr))
+	}
+	if cfg.OTPKeys, kerr = parseHexKeys(get(EnvOTPKey, ""), otp.MinKeyBytes); kerr != nil {
+		errs = append(errs, fmt.Errorf("%s: %w", EnvOTPKey, kerr))
 	}
 	if cfg.TrustedProxies, kerr = clientip.ParseTrustedProxies(get(EnvTrustedProxies, "")); kerr != nil {
 		errs = append(errs, fmt.Errorf("%s: %w", EnvTrustedProxies, kerr))
+	}
+	if cfg.OutboxKeys, kerr = parseOutboxKeys(get(EnvOutboxKey, "")); kerr != nil {
+		errs = append(errs, fmt.Errorf("%s: %w", EnvOutboxKey, kerr))
+	}
+	cfg.EmailSender = get(EnvEmailSender, DefaultEmailSender)
+	cfg.SMTPAddr = get(EnvSMTPAddr, DefaultSMTPAddr)
+	cfg.EmailFrom = get(EnvEmailFrom, DefaultEmailFrom)
+	switch cfg.EmailSender {
+	case "fake":
+	case "smtp":
+		if _, err := notify.NewSMTPSender(cfg.SMTPAddr, cfg.EmailFrom); err != nil {
+			errs = append(errs, fmt.Errorf("%s / %s: %w", EnvSMTPAddr, EnvEmailFrom, err))
+		}
+	default:
+		errs = append(errs, fmt.Errorf("%s must be smtp or fake (the production provider is not chosen yet)", EnvEmailSender))
 	}
 
 	if len(errs) > 0 {
@@ -132,9 +169,42 @@ func validateDatabaseURL(raw string) error {
 	return nil
 }
 
-// parseEmailHMACKeys parses "current[,previous]", each key hex encoded and at least
-// identity.MinEmailHMACKeyBytes bytes long once decoded. Errors never include key material.
-func parseEmailHMACKeys(raw string) ([][]byte, error) {
+// parseOutboxKeys parses "id:hex[,id:hex]" (TRD 13), current first. Ids are 1 to 32767 and
+// unique; each key is exactly 32 bytes (64 hex characters). Errors never include key material.
+func parseOutboxKeys(raw string) ([]notify.Key, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, errors.New("is required: id:hexkey, optionally followed by more id:hexkey entries after commas, current first")
+	}
+	var keys []notify.Key
+	seen := map[int16]bool{}
+	for i, item := range strings.Split(raw, ",") {
+		idText, keyText, ok := strings.Cut(strings.TrimSpace(item), ":")
+		if !ok {
+			return nil, fmt.Errorf("entry %d must be id:hexkey", i+1)
+		}
+		id, err := strconv.ParseInt(idText, 10, 16)
+		if err != nil || id < 1 {
+			return nil, fmt.Errorf("entry %d: id must be a number from 1 to 32767", i+1)
+		}
+		if seen[int16(id)] {
+			return nil, fmt.Errorf("entry %d: id %d is used twice", i+1, id)
+		}
+		seen[int16(id)] = true
+		key, err := hex.DecodeString(keyText)
+		if err != nil {
+			return nil, fmt.Errorf("entry %d: key is not valid hex", i+1)
+		}
+		if len(key) != notify.KeyBytes {
+			return nil, fmt.Errorf("entry %d: key must be exactly %d bytes (%d hex characters)", i+1, notify.KeyBytes, 2*notify.KeyBytes)
+		}
+		keys = append(keys, notify.Key{ID: int16(id), Key: key})
+	}
+	return keys, nil
+}
+
+// parseHexKeys parses "current[,previous]", each key hex encoded and at least minBytes long
+// once decoded (VEEA_EMAIL_HMAC_KEY, VEEA_OTP_KEY). Errors never include key material.
+func parseHexKeys(raw string, minBytes int) ([][]byte, error) {
 	if strings.TrimSpace(raw) == "" {
 		return nil, errors.New("is required: current key as hex, optionally followed by the previous key after a comma")
 	}
@@ -148,9 +218,8 @@ func parseEmailHMACKeys(raw string) ([][]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("key %d is not valid hex", i+1)
 		}
-		if len(key) < identity.MinEmailHMACKeyBytes {
-			return nil, fmt.Errorf("key %d is shorter than %d bytes (%d hex characters)",
-				i+1, identity.MinEmailHMACKeyBytes, 2*identity.MinEmailHMACKeyBytes)
+		if len(key) < minBytes {
+			return nil, fmt.Errorf("key %d is shorter than %d bytes (%d hex characters)", i+1, minBytes, 2*minBytes)
 		}
 		keys = append(keys, key)
 	}
@@ -167,6 +236,11 @@ func (c Config) LogValue() slog.Value {
 		slog.String("shutdown_timeout", c.ShutdownTimeout.String()),
 		slog.String("ready_timeout", c.ReadyTimeout.String()),
 		slog.Int("email_hmac_keys", len(c.EmailHMACKeys)), // a count, never the keys
+		slog.Int("otp_keys", len(c.OTPKeys)),              // a count, never the keys
 		slog.Int("trusted_proxies", len(c.TrustedProxies)),
+		slog.Int("outbox_keys", len(c.OutboxKeys)), // a count, never the keys
+		slog.String("email_sender", c.EmailSender),
+		slog.String("smtp_addr", c.SMTPAddr),
+		slog.String("email_from", c.EmailFrom),
 	)
 }

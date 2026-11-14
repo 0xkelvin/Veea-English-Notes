@@ -6,12 +6,26 @@
 
 -- name: InsertOutboxEmail :one
 -- Lock level L5. Written in the same transaction as the state change that triggers it.
+-- not_after: OTP mail passes the challenge's expires_at. Notifications pass NULL and get
+-- created_at + 24 h on the database clock (TRD 6.7).
 INSERT INTO email_outbox (
     id, user_id, challenge_id, to_email, template, payload_ciphertext, payload_key_id, not_after
 ) VALUES (
-    @id, @user_id, @challenge_id, @to_email, @template, @payload_ciphertext, @payload_key_id, @not_after
+    @id, @user_id, @challenge_id, @to_email, @template, @payload_ciphertext, @payload_key_id,
+    COALESCE(sqlc.narg(not_after)::timestamptz, now() + make_interval(hours => 24))
 )
 RETURNING *;
+
+-- name: GetOutboxChallengeState :one
+-- Pre-send re-check (TRD 8.2, 8.3 step 3), read without locks. is_open is false when the
+-- challenge was consumed or superseded, has expired on the database clock, or is not a code
+-- challenge. No row means the challenge is gone, which the worker treats as closed.
+SELECT (consumed_at IS NULL
+        AND superseded_at IS NULL
+        AND expires_at > now()
+        AND delivery = 'code')::boolean AS is_open
+FROM otp_challenges
+WHERE id = @id;
 
 -- name: CancelPendingOutboxForChallenge :execrows
 -- Lock level L5, always after the user and session locks (TRD 7.3, 7.5). Also clears the

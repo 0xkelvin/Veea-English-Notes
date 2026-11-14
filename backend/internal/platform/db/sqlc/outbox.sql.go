@@ -141,12 +141,32 @@ func (q *Queries) FinishOutboxUnderLease(ctx context.Context, arg FinishOutboxUn
 	return result.RowsAffected(), nil
 }
 
+const getOutboxChallengeState = `-- name: GetOutboxChallengeState :one
+SELECT (consumed_at IS NULL
+        AND superseded_at IS NULL
+        AND expires_at > now()
+        AND delivery = 'code')::boolean AS is_open
+FROM otp_challenges
+WHERE id = $1
+`
+
+// Pre-send re-check (TRD 8.2, 8.3 step 3), read without locks. is_open is false when the
+// challenge was consumed or superseded, has expired on the database clock, or is not a code
+// challenge. No row means the challenge is gone, which the worker treats as closed.
+func (q *Queries) GetOutboxChallengeState(ctx context.Context, id uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, getOutboxChallengeState, id)
+	var is_open bool
+	err := row.Scan(&is_open)
+	return is_open, err
+}
+
 const insertOutboxEmail = `-- name: InsertOutboxEmail :one
 
 INSERT INTO email_outbox (
     id, user_id, challenge_id, to_email, template, payload_ciphertext, payload_key_id, not_after
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8
+    $1, $2, $3, $4, $5, $6, $7,
+    COALESCE($8::timestamptz, now() + make_interval(hours => 24))
 )
 RETURNING id, user_id, challenge_id, to_email, template, payload_ciphertext, payload_key_id, status, send_attempts, last_send_started_at, next_attempt_at, lease_token, lease_expires_at, not_after, provider_message_id, last_error, created_at, finished_at
 `
@@ -159,7 +179,7 @@ type InsertOutboxEmailParams struct {
 	Template          string
 	PayloadCiphertext []byte
 	PayloadKeyID      *int16
-	NotAfter          time.Time
+	NotAfter          *time.Time
 }
 
 // Queries for the email outbox. TRD 01 sections 6.7, 8.2 and 8.3.
@@ -168,6 +188,8 @@ type InsertOutboxEmailParams struct {
 // lease on a still-pending row. Zero rows affected means the worker lost its claim and must
 // discard its result. All timestamps here use the database clock.
 // Lock level L5. Written in the same transaction as the state change that triggers it.
+// not_after: OTP mail passes the challenge's expires_at. Notifications pass NULL and get
+// created_at + 24 h on the database clock (TRD 6.7).
 func (q *Queries) InsertOutboxEmail(ctx context.Context, arg InsertOutboxEmailParams) (EmailOutbox, error) {
 	row := q.db.QueryRow(ctx, insertOutboxEmail,
 		arg.ID,

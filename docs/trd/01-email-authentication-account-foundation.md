@@ -904,6 +904,20 @@ V touches only L2. The flow then continues **in the same transaction** with L3, 
 - Two verifies of the same token serialize on the L2 row. The second sees `consumed_at` and gets `invalid_code`.
 - Two verifies of different signup attempts for one email serialize on the `users` unique index. Exactly one creates the account; the other gets `409`.
 
+**Implementation notes** (`internal/auth/otp`, Ticket 06). These fill gaps in §7.2 and §7.3; none changes an approved decision.
+- **Shape.** `otp.Service.Start` and `otp.Service.Verify` are the shared core. A flow supplies only an eligibility check, which runs in the start transaction after the cooldown claim, and an after-accept callback, which runs in T-main after V. The callback ends the redemption in one of four ways: commit; `CommitFailure(reason, err)`, which keeps the consumption and writes the failure audit in T-main (signup `409`); `Rollback(reason, err)`, which rolls back and writes the T-fail audit (account no longer active); or any other error, which rolls back with no audit. The core cancels the challenge's pending email as the last L5 write, after the callback returns.
+- **Order of outbox writes in start.** §7.2 step 4 describes the superseded email's cancellation next to the supersede, but labels it L5. The code supersedes, inserts the new challenge, and only then cancels the old email and enqueues the new one. So every `email_outbox` write follows every `otp_challenges` write.
+- **Ineligible requests.** The core drops `user_id`, `session_id` and any pending hash from an ineligible result before inserting, and never enqueues for it. The flow cannot bind a `delivery = 'none'` challenge even by mistake.
+- **P needs an email the request does not carry.** Verify requests hold only the token. P therefore reads `email_normalized` by token hash in an unlocked autocommit statement (`GetOTPChallengeEmailByTokenHash`) and peeks the per-email failure counter. An unknown token has no email to limit; V rejects it without counting. The per-IP verify limit (§10) is counted, in autocommit, before P.
+- **Clock.** Expiry, `resend_after`, supersession and the expiry check in V all use the transaction's database `now()`, like the cooldown claim. No application clock is involved, so the fake clock of §12.1 is not used here. Tests move `expires_at` or `last_issued_at` directly.
+- **Randomness.** Tokens and codes come from an injectable `Random` (default `crypto/rand`). Start reads the 32 token bytes, then 4 bytes per code candidate (rejection sampling below 4,294,000,000). Tests use this to learn the code of a `delivery = 'none'` challenge.
+- **Responses at the limit.** Failures 1 to 5 return `invalid_code`, and the 5th leaves `attempts = 5`. From then on even the right code gives `code_attempts_exceeded`, and that rejection is not counted (§4.4, §12.3). Audit reasons are `invalid_code` and `attempts_exceeded` for every verify action, not only `auth.signup.verify`.
+- **Backstop index.** A unique violation on `otp_challenges_one_open` maps to `429` with `Retry-After` equal to the cooldown (60 s). The TRD names no value.
+- **Programming errors are not code errors.** `set_password` verification without the caller's user and session, or another purpose with them, returns an internal error, not `invalid_code`.
+- **Retries.** `platform/db.Tx` runs every transaction at READ COMMITTED and retries the whole transaction up to 3 times on `40P01` or `40001` (§7.1 rule 7). Until Prometheus exists, a retry is a warning log plus an `OnTxRetry` hook. The integration tests assert it never fires.
+- **Audit.** A minimal `internal/audit` writer exists so start and V can write their events. It refuses metadata keys that name a secret and any value that looks like a `vct_`, `vat_` or `vrt_` token. `auth.rate_limited` events and the §11.3 OTP metrics are not written yet (Tickets 11 and 12).
+- **Left to the flow tickets.** The per-IP password-signup limit runs before argon2 hashing, so it belongs to the signup flow (Ticket 07), not the core.
+
 ### 7.4 Password login
 
 1. Outside a transaction: load the user by `email_normalized`. Run argon2id against the stored hash, or against the dummy hash.
@@ -1169,6 +1183,17 @@ The `outbox_payload_only_pending` constraint enforces that no non-pending row ke
 **Security notifications (AC-23)**
 - `password_added`, `password_changed`, `password_reset_done`.
 - Each includes the time and the device name, and says "If this wasn't you, reset your password."
+
+**Implementation notes** (`internal/notify`, Ticket 05). These fill gaps the text above leaves open; none changes an approved decision.
+- **Payload and AAD.** The payload is JSON (`{"code":...}` or `{"device_name":...,"occurred_at":...}`), sealed with AES-256-GCM as `nonce || ciphertext || tag` with the 16-byte row id as associated data. `Enqueue` takes a `pgx.Tx`, so a row exists exactly when the caller's transaction commits.
+- **Deadline.** Code emails must pass the challenge's `expires_at` as `not_after`. Notifications pass nothing and the insert sets `now() + 24 h` on the database clock.
+- **Pre-send re-check** reads `consumed_at`, `superseded_at`, `expires_at > now()` and also `delivery = 'code'`. A missing challenge counts as closed. A database error during the re-check releases the claim instead of guessing.
+- **`last_error`** is `<class>:<code>` (for example `retryable:throttled`, `permanent:smtp_rcpt_550`, `ambiguous:timeout`) or a worker reason (`challenge_closed`, `decrypt_error`, `render_error`, `send_budget_exhausted`, `not_after_passed`). Codes are reduced to `[a-z0-9_]`, at most 40 characters, so no provider text reaches the database.
+- **Unclassified sender errors are ambiguous**, including timeouts and cancellations: the provider may have accepted the email, so the row is retried within the budget.
+- **Concurrency inside a batch.** Claimed rows are processed up to 4 at a time. Rows late in a batch whose lease has fallen under the 45 s margin are released, not sent.
+- **Shutdown.** Claimed but unreserved rows are released. A send that is already reserved is not cancelled: it runs to its 30 s timeout and records its result, because cutting it short would only turn it into an ambiguous result.
+- **Senders.** `fake` records in memory (tests). `smtp` is plain SMTP without TLS or authentication, refused for any non-loopback host, so codes never cross a network in clear text. It is for Mailpit only. Before the end of DATA, connection errors and 4xx replies are retryable and 5xx replies permanent. A lost reply after the final "." is ambiguous. The Message-ID is `<outbox id@veea.local>` and is stored as `provider_message_id`.
+- **Not yet built:** the scheduled cleanup job (backstop reaper, `DeleteFinishedOutbox`) and the Prometheus metrics. The worker exposes the counts, including stale results, through `Worker.Totals()`.
 
 ### 8.4 Refresh: atomic rotation without grace
 
@@ -1578,12 +1603,12 @@ Run unit, integration and contract tests locally against docker-compose Postgres
 | `VEEA_HTTP_ADDR` | Listen address | `:18386` |
 | `VEEA_METRICS_ADDR` | Internal metrics listener | `127.0.0.1:9090` |
 | `VEEA_DATABASE_URL` | Postgres DSN | docker-compose value |
-| `VEEA_OTP_KEY` | 32-byte HMAC key for codes | Generated by `make backend-env` |
+| `VEEA_OTP_KEY` | HMAC key for stored code hashes (§4.2): hex, at least 32 bytes (64 hex characters), as `current` or `current,previous`. New hashes use the current key; verification tries both | Generated by `make backend-env` |
 | `VEEA_EMAIL_HMAC_KEY` | HMAC key for email in cooldown, rate-limit and audit keys: hex, at least 32 bytes (64 hex characters), as `current` or `current,previous` | Generated |
-| `VEEA_OUTBOX_KEY` | 32-byte AES-256-GCM key(s) for outbox payloads, as `id:key[,id:key]` | Generated |
+| `VEEA_OUTBOX_KEY` | AES-256-GCM key(s) for outbox payloads, as `id:hexkey[,id:hexkey]`, current first. Ids 1 to 32767, unique; keys exactly 32 bytes (64 hex characters). Earlier keys only decrypt old rows | Generated |
 | `VEEA_TRUSTED_PROXIES` | Comma-separated CIDRs or bare IPs trusted for `X-Forwarded-For`. Empty means the header is ignored | Empty |
-| `VEEA_EMAIL_SENDER` | `smtp` (Mailpit), `fake` (tests), or the production provider once chosen | `smtp` |
-| `VEEA_SMTP_ADDR`, `VEEA_EMAIL_FROM` | Mail settings | `localhost:1025`, `no-reply@veea.local` |
+| `VEEA_EMAIL_SENDER` | `smtp` (Mailpit), `fake` (tests), or the production provider once chosen (R12) | `smtp` |
+| `VEEA_SMTP_ADDR`, `VEEA_EMAIL_FROM` | Mail settings. The SMTP host must be loopback; the sender must be a bare address | `localhost:1025`, `no-reply@veea.local` |
 | `VEEA_ARGON2_MEMORY_KIB`, `_TIME`, `_THREADS` | Hash parameters | `19456`, `2`, `1` |
 
 - Startup fails if any key is missing or shorter than 32 bytes.

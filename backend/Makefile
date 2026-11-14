@@ -6,7 +6,8 @@
 SQLC := go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
 SQLC_OUT := internal/platform/db/sqlc
 
-.PHONY: help build fmt vet test test-db-up test-db-down test-integration check sqlc sqlc-verify
+.PHONY: help build fmt vet test test-db-up test-db-down test-integration check sqlc sqlc-verify \
+        mailpit-up mailpit-down
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -32,8 +33,14 @@ test-db-up: ## Start the disposable local PostgreSQL (Docker) and print its URL
 test-db-down: ## Stop and discard the disposable PostgreSQL
 	scripts/test-postgres.sh stop
 
-test-integration: ## Integration tests; needs `make test-db-up` first
+test-integration: ## Integration tests; needs `make test-db-up` first. The Mailpit test runs only with VEEA_TEST_SMTP_ADDR and VEEA_TEST_MAILPIT_API set
 	VEEA_TEST_DATABASE_URL="$$(scripts/test-postgres.sh url)" go test -tags=integration -count=1 ./test/integration/...
+
+mailpit-up: ## Start local Mailpit (SMTP 127.0.0.1:1025, UI http://127.0.0.1:8025)
+	scripts/test-mailpit.sh start
+
+mailpit-down: ## Stop Mailpit and discard captured mail
+	scripts/test-mailpit.sh stop
 
 sqlc: ## Regenerate internal/platform/db/sqlc from migrations/ and internal/platform/db/queries/
 	$(SQLC) generate

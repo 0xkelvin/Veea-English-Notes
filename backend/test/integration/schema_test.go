@@ -387,7 +387,7 @@ func TestSchema_ConsumedRefreshTokens(t *testing.T) {
 func outboxParams() sqlc.InsertOutboxEmailParams {
 	return sqlc.InsertOutboxEmailParams{
 		ID: newID(), ToEmail: "someone@example.test", Template: "login_code",
-		PayloadCiphertext: []byte("ciphertext"), PayloadKeyID: ptr(int16(1)), NotAfter: time.Now().Add(10 * time.Minute),
+		PayloadCiphertext: []byte("ciphertext"), PayloadKeyID: ptr(int16(1)), NotAfter: ptr(time.Now().Add(10 * time.Minute)),
 	}
 }
 

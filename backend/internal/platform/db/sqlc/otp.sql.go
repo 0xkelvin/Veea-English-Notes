@@ -108,6 +108,19 @@ func (q *Queries) DeleteStaleOTPCooldowns(ctx context.Context, batchSize int32) 
 	return result.RowsAffected(), nil
 }
 
+const getOTPChallengeEmailByTokenHash = `-- name: GetOTPChallengeEmailByTokenHash :one
+SELECT email_normalized FROM otp_challenges WHERE token_hash = $1
+`
+
+// Verify pre-check P (TRD 7.3): an unlocked autocommit read, before any transaction, of the
+// email whose verify-failure limit applies. No row means an unknown token.
+func (q *Queries) GetOTPChallengeEmailByTokenHash(ctx context.Context, tokenHash []byte) (string, error) {
+	row := q.db.QueryRow(ctx, getOTPChallengeEmailByTokenHash, tokenHash)
+	var email_normalized string
+	err := row.Scan(&email_normalized)
+	return email_normalized, err
+}
+
 const getOTPCooldownRemaining = `-- name: GetOTPCooldownRemaining :one
 SELECT GREATEST(
     0,

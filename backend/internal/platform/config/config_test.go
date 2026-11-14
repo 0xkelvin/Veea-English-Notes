@@ -11,6 +11,7 @@ import (
 // testKey is 32 bytes of hex, a throwaway value for tests only.
 const testKey = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
 const testKey2 = "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100"
+const testKey3 = "a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0"
 
 func env(m map[string]string) func(string) (string, bool) {
 	return func(k string) (string, bool) { v, ok := m[k]; return v, ok }
@@ -18,7 +19,8 @@ func env(m map[string]string) func(string) (string, bool) {
 
 // with returns a valid environment plus overrides.
 func with(overrides map[string]string) func(string) (string, bool) {
-	m := map[string]string{EnvDatabaseURL: "postgres://u:secret@localhost:5432/db", EnvEmailHMACKey: testKey}
+	m := map[string]string{EnvDatabaseURL: "postgres://u:secret@localhost:5432/db", EnvEmailHMACKey: testKey,
+		EnvOutboxKey: "1:" + testKey2, EnvOTPKey: testKey3}
 	for k, v := range overrides {
 		m[k] = v
 	}
@@ -74,7 +76,7 @@ func TestLoadRequiresDatabaseURL(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error")
 	}
-	for _, want := range []string{EnvDatabaseURL, EnvEmailHMACKey} {
+	for _, want := range []string{EnvDatabaseURL, EnvEmailHMACKey, EnvOutboxKey, EnvOTPKey} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("expected %s to be required, got %v", want, err)
 		}
@@ -88,12 +90,12 @@ func TestLoggingConfigOmitsDatabaseURL(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	slog.New(slog.NewJSONHandler(&buf, nil)).Info("x", "config", cfg)
-	for _, want := range []string{`"email_hmac_keys":1`, `"trusted_proxies":0`, `"ready_timeout":"2s"`} {
+	for _, want := range []string{`"email_hmac_keys":1`, `"otp_keys":1`, `"trusted_proxies":0`, `"ready_timeout":"2s"`} {
 		if !strings.Contains(buf.String(), want) {
 			t.Fatalf("log output should contain %s: %s", want, buf.String())
 		}
 	}
-	for _, secret := range []string{"hunter2", "postgres://", testKey, testKey[:16]} {
+	for _, secret := range []string{"hunter2", "postgres://", testKey, testKey[:16], testKey2, testKey2[:16], testKey3, testKey3[:16]} {
 		if strings.Contains(buf.String(), secret) {
 			t.Fatalf("log output leaks %q: %s", secret, buf.String())
 		}
@@ -143,6 +145,37 @@ func TestEmailHMACKeyErrorsNeverContainKeyMaterial(t *testing.T) {
 	}
 }
 
+func TestOTPKeys(t *testing.T) {
+	cfg, err := Load(with(map[string]string{EnvOTPKey: testKey3 + "," + testKey}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.OTPKeys) != 2 || len(cfg.OTPKeys[0]) != 32 || cfg.OTPKeys[0][0] != 0xa1 || cfg.OTPKeys[1][0] != 0x00 {
+		t.Fatalf("expected two 32 byte keys, current first; got %d", len(cfg.OTPKeys))
+	}
+}
+
+func TestOTPKeyErrorsNeverContainKeyMaterial(t *testing.T) {
+	cases := map[string]string{
+		"missing":        "",
+		"too short":      testKey3[:62],
+		"not hex":        strings.Repeat("zz", 32),
+		"three keys":     testKey3 + "," + testKey3 + "," + testKey3,
+		"short previous": testKey3 + ",a1a2",
+	}
+	for name, raw := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := Load(with(map[string]string{EnvOTPKey: raw}))
+			if err == nil || !strings.Contains(err.Error(), EnvOTPKey) {
+				t.Fatalf("expected an error naming %s, got %v", EnvOTPKey, err)
+			}
+			if strings.Contains(err.Error(), testKey3[:12]) || strings.Contains(err.Error(), "a1a2") {
+				t.Fatalf("error leaks key material: %v", err)
+			}
+		})
+	}
+}
+
 func TestTrustedProxies(t *testing.T) {
 	cfg, err := Load(with(nil))
 	if err != nil || len(cfg.TrustedProxies) != 0 {
@@ -166,6 +199,69 @@ func TestTrustedProxies(t *testing.T) {
 		}
 		if err != nil && strings.Contains(err.Error(), bad) {
 			t.Errorf("%q: error echoes the value", bad)
+		}
+	}
+}
+
+func TestOutboxKeys(t *testing.T) {
+	cfg, err := Load(with(map[string]string{EnvOutboxKey: "2:" + testKey + ", 1:" + testKey2}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.OutboxKeys) != 2 || cfg.OutboxKeys[0].ID != 2 || cfg.OutboxKeys[1].ID != 1 {
+		t.Fatalf("keys = %+v", len(cfg.OutboxKeys))
+	}
+	if cfg.OutboxKeys[0].Key[0] != 0x00 || cfg.OutboxKeys[1].Key[0] != 0xff || len(cfg.OutboxKeys[0].Key) != 32 {
+		t.Fatal("keys parsed in the wrong order or length")
+	}
+}
+
+func TestOutboxKeyErrorsNeverContainKeyMaterial(t *testing.T) {
+	cases := map[string]string{
+		"no id":         testKey,
+		"id zero":       "0:" + testKey,
+		"id too big":    "40000:" + testKey,
+		"id not number": "x:" + testKey,
+		"duplicate id":  "1:" + testKey + ",1:" + testKey2,
+		"short key":     "1:" + testKey[:62],
+		"long key":      "1:" + testKey + "aa",
+		"not hex":       "1:" + strings.Repeat("zz", 32),
+		"empty entry":   "1:" + testKey + ",",
+		"whitespace":    "   ",
+	}
+	for name, raw := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := Load(with(map[string]string{EnvOutboxKey: raw}))
+			if err == nil || !strings.Contains(err.Error(), EnvOutboxKey) {
+				t.Fatalf("expected an error naming %s, got %v", EnvOutboxKey, err)
+			}
+			if strings.Contains(err.Error(), testKey[:12]) || strings.Contains(err.Error(), testKey2[:12]) {
+				t.Fatalf("error leaks key material: %v", err)
+			}
+		})
+	}
+}
+
+func TestEmailSenderSettings(t *testing.T) {
+	cfg, err := Load(with(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EmailSender != "smtp" || cfg.SMTPAddr != "localhost:1025" || cfg.EmailFrom != "no-reply@veea.local" {
+		t.Fatalf("defaults: %q %q %q", cfg.EmailSender, cfg.SMTPAddr, cfg.EmailFrom)
+	}
+	if _, err := Load(with(map[string]string{EnvEmailSender: "fake"})); err != nil {
+		t.Fatalf("fake sender: %v", err)
+	}
+	for name, env := range map[string]map[string]string{
+		"unknown sender": {EnvEmailSender: "ses"},
+		"remote smtp":    {EnvSMTPAddr: "smtp.example.com:25"},
+		"smtp no port":   {EnvSMTPAddr: "localhost"},
+		"from with name": {EnvEmailFrom: "Veea <no-reply@veea.local>"},
+		"from not email": {EnvEmailFrom: "nobody"},
+	} {
+		if _, err := Load(with(env)); err == nil {
+			t.Errorf("%s: expected an error", name)
 		}
 	}
 }

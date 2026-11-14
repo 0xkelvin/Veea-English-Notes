@@ -7,7 +7,23 @@ package sqlc
 
 import (
 	"context"
+	"time"
 )
+
+const databaseNow = `-- name: DatabaseNow :one
+
+SELECT now()::timestamptz AS now
+`
+
+// Cross-cutting queries. TRD 01 section 6.10.
+// The database clock. Inside a transaction this is the transaction's start time, the same
+// now() that every other statement of the transaction sees (cooldown claim, supersede, consume).
+func (q *Queries) DatabaseNow(ctx context.Context) (time.Time, error) {
+	row := q.db.QueryRow(ctx, databaseNow)
+	var now time.Time
+	err := row.Scan(&now)
+	return now, err
+}
 
 const releaseCleanupAdvisoryLock = `-- name: ReleaseCleanupAdvisoryLock :one
 SELECT pg_advisory_unlock($1::bigint) AS released
@@ -21,11 +37,9 @@ func (q *Queries) ReleaseCleanupAdvisoryLock(ctx context.Context, lockKey int64)
 }
 
 const tryCleanupAdvisoryLock = `-- name: TryCleanupAdvisoryLock :one
-
 SELECT pg_try_advisory_lock($1::bigint) AS acquired
 `
 
-// Cross-cutting queries. TRD 01 section 6.10.
 // Session-level advisory lock so only one instance runs a cleanup job. The caller must
 // hold one connection for the job and release with ReleaseCleanupAdvisoryLock.
 func (q *Queries) TryCleanupAdvisoryLock(ctx context.Context, lockKey int64) (bool, error) {
