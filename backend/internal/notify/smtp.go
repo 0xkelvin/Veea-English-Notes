@@ -19,7 +19,7 @@ import (
 
 // SMTPSender delivers through a plain SMTP server without authentication or TLS. It exists for
 // local development against Mailpit (TRD 2.3) and is restricted to loopback addresses, so OTP
-// codes never cross a network in clear text. The production provider is still open (TRD R12).
+// codes never cross a network in clear text. Production uses Resend (TRD R12).
 type SMTPSender struct {
 	addr string // host:port
 	from string

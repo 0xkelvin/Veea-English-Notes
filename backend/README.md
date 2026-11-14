@@ -4,7 +4,7 @@ Go modular monolith on PostgreSQL. It replaces the Rust service in `cloud/`
 (TRD 01 R9); both live in the repo until `cloud/` is retired. It includes TRD 01's email signup (OTP and password), OTP and password sign-in, sessions with
 refresh rotation, first-password set, change and reset, the encrypted email outbox,
 audit events, rate limits, the cleanup jobs and the metrics listener. The schema is
-migrations 00001 to 00007. The production email provider is still open (TRD 01 R12).
+migrations 00001 to 00007. Resend is selected for production email (TRD 01 R12); Mailpit remains the local default.
 
 Design: [`docs/trd/01-email-authentication-account-foundation.md`](../docs/trd/01-email-authentication-account-foundation.md).
 
@@ -34,7 +34,7 @@ internal/maintenance/    TRD 6.10 cleanup jobs, run by cmd/api every 5 minutes u
 internal/platform/metrics/  TRD 11.3 Prometheus metrics, served on VEEA_METRICS_ADDR
 internal/auth/otp/       OTP challenge core: start (cooldown, supersede, challenge, email) and verify (procedure V, committed failures)
 internal/audit/          append-only audit writer; refuses secret-looking metadata, redacts client text
-internal/notify/         email outbox: encrypted enqueue (on the caller's tx), leased worker, templates, fake and SMTP senders
+internal/notify/         email outbox: encrypted enqueue (on the caller's tx), leased worker, templates, fake, SMTP and Resend senders
 internal/ratelimit/      fixed-window limiter (autocommit, database time) and OTP cooldown (on the caller's tx)
 internal/platform/clientip/  trusted-proxy client IP resolution, IPv6 /64 buckets
 internal/identity/       email HMAC, email normalization, password policy and blocklist, Argon2id hasher (no database access)
@@ -58,11 +58,12 @@ scripts/test-postgres.sh disposable local PostgreSQL in Docker
 | `VEEA_TRUSTED_PROXIES` | no | empty | comma-separated CIDRs or bare IPs whose `X-Forwarded-For` is believed |
 | `VEEA_OTP_KEY` | yes | | hex key of at least 32 bytes for stored code hashes, `current` or `current,previous`. Never logged |
 | `VEEA_OUTBOX_KEY` | yes | | email payload keys, `id:hexkey[,id:hexkey]`, current first, each key 32 bytes. Never logged |
-| `VEEA_EMAIL_SENDER` | no | `smtp` | `smtp` (local Mailpit) or `fake` (in memory, nothing delivered). Production provider not chosen yet (TRD R12) |
+| `VEEA_EMAIL_SENDER` | no | `smtp` | `smtp` (local Mailpit), `fake` (in memory, nothing delivered), or `resend` (production API, TRD R12) |
 | `VEEA_SMTP_ADDR` | no | `localhost:1025` | Mailpit SMTP address. Loopback hosts only |
 | `VEEA_METRICS_ADDR` | no | `127.0.0.1:9090` | internal Prometheus listener, `GET /metrics` (TRD 01 §11.3) |
 | `VEEA_ARGON2_MEMORY_KIB`, `VEEA_ARGON2_TIME`, `VEEA_ARGON2_THREADS` | no | `19456`, `2`, `1` | password hash cost; memory × time may not go below the default's |
-| `VEEA_EMAIL_FROM` | no | `no-reply@veea.local` | sender address |
+| `VEEA_EMAIL_FROM` | no | `no-reply@veea.local` | bare sender address shared by SMTP and Resend; use a verified Resend sending domain outside local development |
+| `VEEA_RESEND_API_KEY` | when `resend` selected | | Resend API key (`re_…`); ignored for SMTP/fake and omitted from configuration logs |
 
 Startup fails with every problem listed. The database URL and keys are never printed.
 Generate throwaway keys for local runs with `openssl rand -hex 32` (`VEEA_EMAIL_HMAC_KEY`,
@@ -183,6 +184,19 @@ make mailpit-down
 ```
 
 `VEEA_EMAIL_SENDER=fake` keeps emails in memory and delivers nothing.
+
+For Resend, set `VEEA_EMAIL_SENDER=resend`, supply `VEEA_RESEND_API_KEY` through the deployment's
+secret environment, and set `VEEA_EMAIL_FROM` to a bare address on a verified Resend sending
+domain. Startup checks key/address syntax locally; it does not authenticate the key or verify
+the domain over the network. Never put the key in logs, commands saved to shell history, or Git.
+
+The adapter posts text and HTML to `https://api.resend.com/emails`, using the outbox row UUID
+as `Idempotency-Key`. It performs no application retries or redirects; the existing worker
+controls the send budget, timeout, leases and backoff. Resend retains keys for 24 hours; keep
+From and rendered templates stable while rows are pending, since a changed request under the
+same key is rejected permanently. Acceptance is not proof of inbox delivery. See TRD §8.3 and
+§12.4 for outcome classes and the remaining staging checks. Local tests use `httptest` and
+Mailpit, never Resend's live API.
 
 ## Integration tests
 

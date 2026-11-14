@@ -1,12 +1,12 @@
 # TRD 01 — Email Authentication & Account Foundation
 
-**Status:** v0.4. Decisions R1–R11 and R13–R15 approved (2026-11-13); R12 open
+**Status:** v0.4. Decisions R1–R11 and R13–R15 approved (2026-11-13); R12: Resend selected (2026-11-14)
 **Date:** 2026-11-13
 **Source of scope:** [User Management Product Doc **v0.2**](../product/user-management.md), §5 (Phase 1 approved decisions) and §13 (acceptance criteria AC-1 to AC-28)
 **Audience:** Backend engineers implementing the Go service, QA, and the engineers who will rebuild the Flutter client
 
 ### Changes in TRD v0.4
-- **Approval record (§14, 2026-11-13):** R1–R11 and R13–R15 are recorded as approved. R12 stays open.
+- **Approval record (§14, 2026-11-13):** R1–R11 and R13–R15 are recorded as approved. R12 was subsequently selected as Resend on 2026-11-14; see §8.3 and §14.
 - **Lock order (§7.1, §7.3, §7.5):**
   - Code validation is one shared procedure V that touches only the challenge row (L2).
   - Outbox cancellation is an L5 write, made after the user and session locks the flow needs.
@@ -1123,6 +1123,24 @@ The `outbox_payload_only_pending` constraint enforces that no non-pending row ke
 
 **[Proposed]**
 
+**R12: Resend selected (2026-11-14)**
+- Production uses `ResendSender` behind the existing `Sender` interface: `POST https://api.resend.com/emails`, Bearer API key, and the rendered From, recipient, subject, text and HTML. SMTP remains loopback-only Mailpit for local development; fake remains available for tests.
+- `VEEA_EMAIL_SENDER=resend` requires `VEEA_RESEND_API_KEY`. Only that selection reads and validates the key. `VEEA_EMAIL_FROM` is reused as a bare sender address. Startup validates syntax locally, without checking credentials or domain ownership online.
+- Each call uses the outbox row UUID as `Idempotency-Key`. Retries reuse the same key and rendered body, including across worker restarts. Resend's retention is **24 hours**, not indefinite deduplication. Keep From and template rendering stable while retries are pending; a changed-payload conflict must never be bypassed by generating a new key.
+- The adapter adds no retry loop, redirect following, or backoff sleeps. Request-body replay in Go's HTTP transport is disabled. The worker retains the approved 30 s timeout, live-lease guard, reservation margin, five-send cap and fixed backoff. Throttling and quota rejections consume the normal retry budget; recovery after a quota reset is not guaranteed before the row expires or exhausts that budget.
+- Response text, transport errors and request data never enter errors or logs. Errors contain fixed local classes/codes; only a validated UUID provider message ID is returned on acceptance. Provider response reads are bounded.
+
+| Resend outcome | Sender outcome |
+|---|---|
+| Successful HTTP response with a valid nonzero UUID email ID, including an idempotent replay | Accepted; worker records `sent`. This proves provider acceptance, not inbox delivery |
+| `429` (rate or quota limit); connection refused during dial | Retryable, with worker backoff |
+| `409 concurrent_idempotent_requests` | Retryable: this attempt was refused while the original is in progress; reuse the same key |
+| `409 invalid_idempotent_request` | Permanent: same key with a changed payload; fail the row without changing the key |
+| Other `4xx` rejections, including invalid key, unverified domain and invalid content, except `408`/unknown `409` | Permanent |
+| Timeout/cancellation, reset after request, `408`, `5xx`, unknown conflict, malformed success/conflict response, missing/invalid ID or unexpected redirect/status | Ambiguous; retry within the existing worker limits |
+
+Contract sources checked 2026-11-14: [Send Email](https://resend.com/docs/api-reference/emails/send-email), [Idempotency Keys](https://resend.com/docs/dashboard/emails/idempotency-keys), [Errors](https://resend.com/docs/api-reference/errors). The ambiguity policy for transport failures, `5xx` and unknown responses follows this TRD's outcome classes below.
+
 **Send budget**
 - At most **5 application-initiated provider sends** per outbox row, over the row's whole life, across workers, retries and crashes.
 - A "send" is one call to `Sender.Send`.
@@ -1811,7 +1829,7 @@ This is the price of having no grace window. It is accepted in exchange for stri
 
 Run unit, integration and contract tests locally against disposable PostgreSQL and Mailpit using the scripts below. Record results in the ticket that closes TRD 01. Never run tests or scripts against a deployed server.
 
-**Recorded evidence** (TRD 01 closeout, 2026-11-14)
+**Cleanup closeout evidence** (2026-11-14, before R12 integration)
 
 *What was tested*
 - **Code:** branch `feat/go-email-auth-account-foundation`, commit `d73f15d` plus the uncommitted closeout changes: migration `00007_cleanup_indexes.sql`, all six batch deletes by tuple id, and their tests.
@@ -1853,8 +1871,25 @@ Run unit, integration and contract tests locally against disposable PostgreSQL a
 - **Verified: equal Argon2id work in the test configuration.** Wrong password, unknown email, passwordless account and pending registration each perform exactly one real Argon2id verification (the dummy hash where there is none), using the same reduced test parameters: 64 KiB memory, one iteration, one thread. Each returns `401 invalid_credentials` with identical problem bodies after removing the per-request `request_id`. `TestPasswordLogin_GenericFailure` counts verifications through an instrumented hasher. This does not measure production-cost execution.
 - **Not verified: wall-clock timing.** Response times were not measured. Differences from the account read, the failure audit insert or the counter update are not bounded by any test. A timing-tolerance check, as the AC-7 row of §12.2 sketches, remains open.
 
+**R12 Resend implementation evidence** (2026-11-14)
+
+- **Code:** branch `feat/go-email-auth-account-foundation`, commit `1f0ebda` plus the uncommitted Resend sender, configuration, startup wiring and tests. The cleanup closeout evidence above is preserved from the preceding change.
+- **Target:** the same disposable local PostgreSQL 17.11 and Mailpit v1.33.1 services described above, plus loopback `httptest` servers standing in for Resend. No real Resend API call, credential validation, domain verification or inbox-delivery check was performed.
+- **Adapter evidence:** `TestResend_AcceptedRequest` checks authentication, JSON text/HTML, row-ID idempotency, one HTTP attempt and disabled transport replay. `TestResend_OutcomeClassesAndSafeErrors` checks permanent, retryable and ambiguous responses, including both documented idempotency conflicts, quotas, invalid responses and untrusted provider text. Redirect, connection-failure, cancellation, input-validation and credential-formatting tests pass.
+- **Lost response:** `TestResend_TimeoutThenRetryKeepsKeyAndPayload` models acceptance before withholding the response until timeout; the retry uses identical key/body and retrieves the modeled acceptance. `TestResendWorker_TimeoutRetryPreservesReservationAndIdempotency` exercises the real worker and PostgreSQL: first send records `pending`, one reservation and an ambiguous timeout; a new sender/worker retries the identical row ID and payload, then records `sent`, two reservations, the provider ID, cleared lease and scrubbed payload. These establish behavior against the stand-in, not live provider deduplication.
+- **Configuration:** `TestResendSettingsAndSecretHygiene` confirms keys are required only for Resend, unused Resend credentials are ignored for SMTP/fake, From is shared, and the credential is absent from configuration logs. Sender errors use fixed local codes and worker logs exclude the key and email content.
+
+Commands run from `backend/` (all exited 0 after implementation fixes):
+
+| Command | Result |
+|---|---|
+| `make check` | Formatting, vet with/without integration tags and unit tests passed; 15 test-bearing packages |
+| `make build` | API and migration binaries built |
+| `VEEA_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:54329/postgres go test -race -tags=integration -count=1 -json -run 'TestResend\|TestResendSettings' ./internal/notify ./internal/platform/config` | **45 passed (8 top-level), 0 failed, 0 skipped**, across 2 packages |
+| `VEEA_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:54329/postgres VEEA_TEST_SMTP_ADDR=127.0.0.1:1025 VEEA_TEST_MAILPIT_API=http://127.0.0.1:8025 go test -race -tags=integration -count=1 -json ./...` | **807 passed (342 top-level), 0 failed, 0 skipped tests**; 16 test-bearing packages passed, 11 packages have no test files. Counts include parents and subtests. `TestOutbox_DeliversThroughMailpit` passed; the contract checker covered 99 operation/status/code combinations with no violations and the same documented coverage limits as above |
+
 *Release gates still open*
-- **R12, the production email provider.** Open (§14). Only the fake sender and the loopback-only Mailpit sender exist.
+- **Resend staging checks.** Verify the sending domain and the deployed key's sending permission, then confirm real delivery of OTP and security-notification email from the configured From address. None of these live checks was run locally; R12 is selected, while delivery readiness remains unverified.
 - **Phase 5 alerting.** The §11.3 metrics are exported, but alert rules on them, including `db_tx_retries_total` (§7.1 rule 7), are Phase 5 scope.
 - **The closing ticket.** These results are to be copied into the ticket that closes TRD 01.
 - **AC-7's wall-clock timing check.** The timing-tolerance part of §12.2 remains unverified and must be measured or explicitly accepted as a release limitation.
@@ -1874,18 +1909,19 @@ Run unit, integration and contract tests locally against disposable PostgreSQL a
 | `VEEA_EMAIL_HMAC_KEY` | HMAC key for email in cooldown, rate-limit and audit keys: hex, at least 32 bytes (64 hex characters), as `current` or `current,previous` | Generated |
 | `VEEA_OUTBOX_KEY` | AES-256-GCM key(s) for outbox payloads, as `id:hexkey[,id:hexkey]`, current first. Ids 1 to 32767, unique; keys exactly 32 bytes (64 hex characters). Earlier keys only decrypt old rows | Generated |
 | `VEEA_TRUSTED_PROXIES` | Comma-separated CIDRs or bare IPs trusted for `X-Forwarded-For`. Empty means the header is ignored | Empty |
-| `VEEA_EMAIL_SENDER` | `smtp` (Mailpit), `fake` (tests), or the production provider once chosen (R12) | `smtp` |
-| `VEEA_SMTP_ADDR`, `VEEA_EMAIL_FROM` | Mail settings. The SMTP host must be loopback; the sender must be a bare address | `localhost:1025`, `no-reply@veea.local` |
+| `VEEA_EMAIL_SENDER` | `smtp` (Mailpit), `fake` (tests), or `resend` (R12) | `smtp` |
+| `VEEA_RESEND_API_KEY` | Resend Bearer API key, required and validated only with `VEEA_EMAIL_SENDER=resend`; never logged | Unset |
+| `VEEA_SMTP_ADDR`, `VEEA_EMAIL_FROM` | Mail settings. SMTP host must be loopback; From is a bare address shared with Resend and must use a verified sending domain for Resend | `localhost:1025`, `no-reply@veea.local` |
 | `VEEA_ARGON2_MEMORY_KIB`, `VEEA_ARGON2_TIME`, `VEEA_ARGON2_THREADS` | Hash parameters (§9.2). They must pass the hasher's bounds; memory × time must be at least 19456 KiB × 2; and memory must be at least 7168 KiB, the smallest in the OWASP equivalent-cost table. So the cost can be tuned up or traded between memory and passes, but never below the approved floor or into a setting that is barely memory-hard | `19456`, `2`, `1` |
 
-- Startup fails if any key is missing or shorter than 32 bytes.
-- **Key rotation:** keys accept a current and a previous value. Verification tries both, and writes use the current key. `VEEA_EMAIL_HMAC_KEY` is the exception: new digests always use the current key, and counters are keyed by it only (§10).
+- Startup fails if an HMAC/encryption key is missing or too short. The Resend API key has its own syntax check and is required only when selected.
+- **HMAC/encryption key rotation:** keys accept a current and a previous value. Verification tries both, and writes use the current key. `VEEA_EMAIL_HMAC_KEY` is the exception: new digests always use the current key, and counters are keyed by it only (§10). The Resend API key is a single deployment credential, not a comma-separated keyring.
 
 ---
 
 ## 14. Decisions
 
-R1–R11 and R13–R15 were **approved on 2026-11-13** together with TRD v0.4 and are binding for implementation. **R12 (production email provider) is still open.** It does not block implementation or tests.
+R1–R11 and R13–R15 were **approved on 2026-11-13** together with TRD v0.4 and are binding for implementation. **R12: Resend selected on 2026-11-14.** Verified-domain and real-delivery checks remain staging gates (§12.4).
 
 | ID | Status | Decision | Chosen | Alternative considered | Cost of the choice |
 |---|---|---|---|---|---|
@@ -1903,7 +1939,7 @@ R1–R11 and R13–R15 were **approved on 2026-11-13** together with TRD v0.4 an
 | **R14** | Approved | Duplicate email delivery and send budget | At most 5 provider sends per row, each durably reserved under a live lease. Duplicates are accepted after an ambiguous result or a lost lease, with the same payload every time | Never retry ambiguous results (risk of no delivery); or a smaller budget | A user may occasionally get the same email twice, at most 5 times. A row whose 5 sends all failed ambiguously ends `failed`, even if one was actually delivered |
 | **R15** | Approved | Outbox lease timing | 2-minute lease, 45 s minimum lease left to reserve, 30 s send timeout, reap and claim every 1 s | Longer lease (slower crash recovery); shorter timeout | A worker crash delays that row's next send by up to 2 minutes |
 | **R11** | Approved | Session cap | 20 active sessions per user, least recently seen evicted | No cap | A heavy multi-device user could be signed out silently |
-| **R12** | **Open** | Production email provider | **Open.** Behind `Sender`; fake sender in tests, Mailpit locally | — | Must be chosen before production. Does not block implementation or tests |
+| **R12** | **Resend selected** | Production email provider | Resend Email API behind `Sender`; outbox UUID as idempotency key. Fake sender in tests, Mailpit locally | — | Provider deduplication lasts 24 h. Verify the sending domain and real delivery before release (§12.4) |
 
 ---
 
@@ -1929,7 +1965,7 @@ R1–R11 and R13–R15 were **approved on 2026-11-13** together with TRD v0.4 an
 ### 15.2 Sequence
 
 1. Product Doc v0.2 approval.
-2. **This TRD's approval** (R1–R11 and R13–R15 approved; R12 open).
+2. **This TRD's approval** (R1–R11 and R13–R15 approved; R12 Resend selected).
 3. Tickets.
 4. Implementation.
 5. Verification (§12.4).

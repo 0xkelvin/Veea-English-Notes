@@ -266,6 +266,41 @@ func TestEmailSenderSettings(t *testing.T) {
 	}
 }
 
+func TestResendSettingsAndSecretHygiene(t *testing.T) {
+	const key = "re_synthetic_config_key"
+	for _, sender := range []string{"smtp", "fake"} {
+		t.Run(sender+" ignores Resend key", func(t *testing.T) {
+			cfg, err := Load(with(map[string]string{EnvEmailSender: sender, EnvResendAPIKey: "invalid private\nkey"}))
+			if err != nil || cfg.ResendAPIKey != "" {
+				t.Fatal("unused Resend credentials must not be loaded or validated")
+			}
+		})
+	}
+	for name, overrides := range map[string]map[string]string{
+		"missing key":      {EnvEmailSender: "resend"},
+		"invalid key":      {EnvEmailSender: "resend", EnvResendAPIKey: "private-key"},
+		"header injection": {EnvEmailSender: "resend", EnvResendAPIKey: "re_private\r\nheader"},
+		"invalid From":     {EnvEmailSender: "resend", EnvResendAPIKey: key, EnvEmailFrom: "private-not-an-email"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Load(with(overrides))
+			if err == nil || !strings.Contains(err.Error(), EnvResendAPIKey) || strings.Contains(err.Error(), "private") || strings.Contains(err.Error(), key) {
+				t.Fatal("Resend setting validation failed or exposed a secret")
+			}
+		})
+	}
+	cfg, err := Load(with(map[string]string{EnvEmailSender: "resend", EnvResendAPIKey: key,
+		EnvEmailFrom: "sender@example.test", EnvSMTPAddr: "unused-invalid-smtp"}))
+	if err != nil || cfg.ResendAPIKey != key || cfg.EmailFrom != "sender@example.test" {
+		t.Fatal("Resend settings were not loaded independently of SMTP")
+	}
+	var logs bytes.Buffer
+	slog.New(slog.NewJSONHandler(&logs, nil)).Info("config", "config", cfg)
+	if strings.Contains(logs.String(), key) || strings.Contains(logs.String(), "resend_api_key") || !strings.Contains(logs.String(), `"email_sender":"resend"`) {
+		t.Fatal("configuration logging leaked the API key or lost the sender selection")
+	}
+}
+
 func TestMetricsAddr(t *testing.T) {
 	cfg, err := Load(with(nil))
 	if err != nil || cfg.MetricsAddr != "127.0.0.1:9090" {

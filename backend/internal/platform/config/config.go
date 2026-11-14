@@ -40,11 +40,12 @@ type Config struct {
 
 	// OutboxKeys encrypt email payloads, current first (TRD 8.2, 13). Secrets, never logged.
 	OutboxKeys []notify.Key
-	// EmailSender selects the delivery backend: "smtp" (local Mailpit) or "fake" (tests). The
-	// production provider is still open (TRD R12).
+	// EmailSender selects "smtp" (local Mailpit), "fake" (tests) or "resend" (TRD R12).
 	EmailSender string
 	SMTPAddr    string
 	EmailFrom   string
+	// ResendAPIKey is read and validated only for the resend sender. Never logged.
+	ResendAPIKey string
 
 	// MetricsAddr is the internal Prometheus listener (TRD 11.3, 13).
 	MetricsAddr string
@@ -81,6 +82,7 @@ const (
 	EnvEmailSender     = "VEEA_EMAIL_SENDER"
 	EnvSMTPAddr        = "VEEA_SMTP_ADDR"
 	EnvEmailFrom       = "VEEA_EMAIL_FROM"
+	EnvResendAPIKey    = "VEEA_RESEND_API_KEY"
 	EnvMetricsAddr     = "VEEA_METRICS_ADDR"
 	EnvArgon2Memory    = "VEEA_ARGON2_MEMORY_KIB"
 	EnvArgon2Time      = "VEEA_ARGON2_TIME"
@@ -150,8 +152,13 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		if _, err := notify.NewSMTPSender(cfg.SMTPAddr, cfg.EmailFrom); err != nil {
 			errs = append(errs, fmt.Errorf("%s / %s: %w", EnvSMTPAddr, EnvEmailFrom, err))
 		}
+	case "resend":
+		cfg.ResendAPIKey = get(EnvResendAPIKey, "")
+		if _, err := notify.NewResendSender(cfg.ResendAPIKey, cfg.EmailFrom); err != nil {
+			errs = append(errs, fmt.Errorf("%s / %s: %w", EnvResendAPIKey, EnvEmailFrom, err))
+		}
 	default:
-		errs = append(errs, fmt.Errorf("%s must be smtp or fake (the production provider is not chosen yet)", EnvEmailSender))
+		errs = append(errs, fmt.Errorf("%s must be smtp, fake or resend", EnvEmailSender))
 	}
 
 	cfg.MetricsAddr = get(EnvMetricsAddr, DefaultMetricsAddr)

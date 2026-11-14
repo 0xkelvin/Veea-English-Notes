@@ -127,6 +127,10 @@ func newOutboxWorker(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger, m 
 		if sender, err = notify.NewSMTPSender(cfg.SMTPAddr, cfg.EmailFrom); err != nil {
 			return nil, err
 		}
+	case "resend":
+		if sender, err = notify.NewResendSender(cfg.ResendAPIKey, cfg.EmailFrom); err != nil {
+			return nil, err
+		}
 	case "fake":
 		log.Warn("email sender is fake: emails are kept in memory and never delivered")
 		sender = &notify.FakeSender{}

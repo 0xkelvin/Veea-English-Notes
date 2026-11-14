@@ -19,7 +19,7 @@ type Email struct {
 	HTML    string
 }
 
-// Sender delivers one email. The production provider is still open (TRD R12). Any implementation
+// Sender delivers one email. Resend is the production provider (TRD R12). Any implementation
 // must:
 //   - return the provider's message id on acceptance;
 //   - classify failures with Permanent or Retryable when it knows the outcome. Any other error,
