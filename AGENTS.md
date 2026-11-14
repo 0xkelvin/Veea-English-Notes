@@ -22,6 +22,25 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
 - Schema: `cloud/migrations/` (run automatically on startup).
 - Integration tests: `cloud/tests/account_data_integration.rs`.
 
+**Go backend** (`backend/`, replaces the Rust service once TRD 01 is implemented; see
+`docs/trd/01-email-authentication-account-foundation.md` and `backend/README.md`)
+- So far: config, pgx pool, `/healthz`, `/readyz`, `cmd/migrate`, a disposable-PostgreSQL test
+  harness, migrations 00001 to 00006 (`backend/migrations/`) and sqlc queries
+  (`backend/internal/platform/db/queries/` generates into `.../db/sqlc/`, never edit by hand).
+  Identity primitives live in `backend/internal/identity/` (email normalization, password policy
+  and blocklist, Argon2id hasher). Hash and verify passwords before opening a transaction; that
+  package must not import database code. Rate limiting is in `backend/internal/ratelimit/` (limiter on the pool, cooldown on the caller's
+  transaction) and client IP resolution in `backend/internal/platform/clientip/`. The API now needs
+  `VEEA_EMAIL_HMAC_KEY` to start (`openssl rand -hex 32` for a local throwaway). There are no auth
+  flows or auth routes yet.
+- After changing a query or migration run `make sqlc` and `make sqlc-verify` (from `backend/`)
+  and commit the generated code with it.
+- Migrations run through `cmd/migrate` before a deploy, never on API startup.
+- Commands (from `backend/`): `make check` (no database), `make test-db-up`,
+  `make test-integration`, `make test-db-down`. Integration tests need Docker and refuse
+  any non-local `VEEA_TEST_DATABASE_URL`.
+- The Rust rules below apply to `cloud/` only. The Go service follows TRD 01.
+
 **Backend conventions** (layering, errors, naming, SQL/migration style, tests) live in
 `cloud/.github/copilot-instructions.md` and `cloud/.github/instructions/*.md`. That is the
 source of truth; do not duplicate it here. Where it disagrees with the code, trust the code

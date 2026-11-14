@@ -1,0 +1,48 @@
+# sqlc configuration. Regenerate with `make sqlc`, verify with `make sqlc-verify`.
+# The schema comes straight from the goose migrations (the Down sections do not exist).
+version: "2"
+sql:
+  - engine: postgresql
+    schema: migrations
+    queries: internal/platform/db/queries
+    gen:
+      go:
+        package: sqlc
+        out: internal/platform/db/sqlc
+        sql_package: pgx/v5
+        emit_empty_slices: true
+        emit_exact_table_names: false
+        overrides:
+          - db_type: uuid
+            go_type: github.com/google/uuid.UUID
+          - db_type: uuid
+            nullable: true
+            go_type:
+              import: github.com/google/uuid
+              type: UUID
+              pointer: true
+          - db_type: timestamptz
+            go_type: time.Time
+          - db_type: timestamptz
+            nullable: true
+            go_type:
+              type: time.Time
+              pointer: true
+          - db_type: inet
+            go_type: net/netip.Addr
+          - db_type: inet
+            nullable: true
+            go_type:
+              import: net/netip
+              type: Addr
+              pointer: true
+          - db_type: text
+            nullable: true
+            go_type:
+              type: string
+              pointer: true
+          - db_type: pg_catalog.int2
+            nullable: true
+            go_type:
+              type: int16
+              pointer: true

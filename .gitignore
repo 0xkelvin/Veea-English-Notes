@@ -57,3 +57,6 @@ test/golden/failures/
 # `flutter run` on macOS during development.
 /linux/
 /macos/
+
+# Go backend build output
+/backend/bin/
