@@ -12,7 +12,6 @@ import (
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db/sqlc"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/migrate"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/pgtest"
-	"github.com/0xkelvin/Veea-English-Notes/backend/migrations"
 	"github.com/google/uuid"
 	"strings"
 	"testing"
@@ -594,7 +593,7 @@ func TestMigrations_LifecycleUpgradeFrom9(t *testing.T) {
 	}
 	seedCleanupData(t, d, 50)
 	before := tableCounts(t, d)
-	r, err := migrate.Up(ctx, d.URL, migrations.FS)
+	r, err := migrate.Up(ctx, d.URL, migrationsUpTo(t, 10))
 	if err != nil || r.Current != 10 || len(r.Applied) != 1 || before != tableCounts(t, d) {
 		t.Fatalf("upgrade: %+v %v", r, err)
 	}

@@ -2,12 +2,12 @@ package lifecycle
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/audit"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/otp"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/session"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity/accounts"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/learning"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db/sqlc"
 	"github.com/google/uuid"
@@ -22,7 +22,7 @@ func formatCount(n int64) string { return strconv.FormatInt(n, 10) }
 // RunBatch runs on the cleanup runner's dedicated advisory-lock connection, with each
 // checkpoint committed independently. The application handler cannot invoke this worker.
 func (s *Service) RunBatch(ctx context.Context, conn *pgxpool.Conn, batch int32) (int64, error) {
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, max(60*time.Second, s.generationTimeout()+30*time.Second))
 	defer cancel()
 	q := sqlc.New(conn)
 	ids, err := q.ListAccountJobs(ctx, batch)
@@ -64,6 +64,13 @@ func (s *Service) expireArtifacts(ctx context.Context, conn *pgxpool.Conn, batch
 			return err
 		}
 		expired = len(rows)
+		ids := make([]uuid.UUID, 0, len(rows))
+		for _, r := range rows {
+			ids = append(ids, r.ID)
+		}
+		if err := sqlc.New(tx).DeleteExportChunks(ctx, ids); err != nil {
+			return err
+		}
 		for _, r := range rows {
 			if err := audit.Record(ctx, tx, evidence(sessionClient(), r.UserID, "account.export.expire", map[string]string{"operation_id": r.ID.String()})); err != nil {
 				return err
@@ -89,6 +96,10 @@ func (s *Service) runJob(ctx context.Context, conn *pgxpool.Conn, id uuid.UUID, 
 	job = before.Action
 	if before.State != "pending" || before.UserID == nil {
 		return job, "", nil
+	}
+	if before.Action == "export" {
+		result, err := s.runExport(ctx, conn, id)
+		return job, result, err
 	}
 	err = (db.Tx{Pool: conn}).Run(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		result = ""
@@ -135,57 +146,6 @@ func (s *Service) runJob(ctx context.Context, conn *pgxpool.Conn, id uuid.UUID, 
 		if op.State != "pending" {
 			return nil
 		}
-		if op.Action == "export" {
-			if !ok || !eligible("export", u) || u.EmailRevision != op.EmailRevision || u.LifecycleRevision != op.LifecycleRevision {
-				n, err := q.CancelAccountOperation(ctx, op.ID)
-				if err != nil || n == 0 {
-					return err
-				}
-				result = "canceled"
-				return audit.Record(ctx, tx, evidence(sessionClient(), op.UserID, "account.export.cancel", map[string]string{"operation_id": id.String()}))
-			}
-			// All product data presently lives in one row. No auth, session or audit material.
-			payload := struct {
-				SchemaVersion int       `json:"schema_version"`
-				SnapshotAt    time.Time `json:"snapshot_at"`
-				Account       struct {
-					ID          uuid.UUID  `json:"user_id"`
-					Email       string     `json:"email"`
-					VerifiedAt  *time.Time `json:"email_verified_at"`
-					CreatedAt   time.Time  `json:"created_at"`
-					DisplayName *string    `json:"display_name"`
-					Language    string     `json:"preferred_language"`
-					TimeZone    string     `json:"time_zone"`
-					DailyGoal   int32      `json:"daily_goal"`
-				} `json:"account"`
-			}{SchemaVersion: 1}
-			payload.SnapshotAt, err = q.WallClock(ctx)
-			if err != nil {
-				return err
-			}
-			payload.Account.ID = u.ID
-			payload.Account.Email = u.Email
-			payload.Account.VerifiedAt = u.EmailVerifiedAt
-			payload.Account.CreatedAt = u.CreatedAt
-			payload.Account.DisplayName = u.DisplayName
-			payload.Account.Language = u.PreferredLanguage
-			payload.Account.TimeZone = u.TimeZone
-			payload.Account.DailyGoal = u.DailyGoal
-			plain, err := json.Marshal(payload)
-			if err != nil {
-				return errors.New("rights: encode export")
-			}
-			defer clear(plain)
-			sealed, key, err := s.keys.Seal(op.ArtifactID, plain)
-			if err != nil {
-				return err
-			}
-			if err := q.PublishAccountExport(ctx, sqlc.PublishAccountExportParams{ID: id, ArtifactCiphertext: sealed, ArtifactKeyID: &key}); err != nil {
-				return err
-			}
-			result = "ready"
-			return audit.Record(ctx, tx, evidence(sessionClient(), op.UserID, "account.export.ready", map[string]string{"operation_id": id.String()}))
-		}
 		if !ok || u.Status != "pending_deletion" {
 			return errors.New("rights: purge owner not sealed")
 		}
@@ -219,6 +179,10 @@ func (s *Service) runJob(ctx context.Context, conn *pgxpool.Conn, id uuid.UUID, 
 			if remaining {
 				return nil
 			} // late inserts retry via ordered L2 on the next pass
+			// TRD 05 §11.2: learning rows, children before parents, one bounded batch per checkpoint.
+			if n, err := learning.PurgeBatch(ctx, tx, u.ID, batch); err != nil || n > 0 {
+				return err
+			}
 			n, err := q.DeleteAccountSessions(ctx, sqlc.DeleteAccountSessionsParams{UserID: u.ID, BatchSize: batch})
 			if err != nil {
 				return err
@@ -237,6 +201,12 @@ func (s *Service) runJob(ctx context.Context, conn *pgxpool.Conn, id uuid.UUID, 
 				return err
 			}
 			if err := q.DeleteOtherAccountOperations(ctx, sqlc.DeleteOtherAccountOperationsParams{UserID: &u.ID, KeepID: id}); err != nil {
+				return err
+			}
+			if left, err := learning.HasRows(ctx, tx, u.ID); err != nil || left {
+				if err == nil {
+					err = errors.New("rights: learning rows remain before erase")
+				}
 				return err
 			}
 			n, err = accounts.Erase(ctx, tx, u.ID)

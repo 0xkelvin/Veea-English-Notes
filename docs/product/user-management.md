@@ -1,9 +1,12 @@
 # Veea English Notes — User Management Product Doc
 
-**Version:** v0.2 (Phase 1 decisions approved; later phases still proposals)
-**Date:** 2026-11-13
+**Version:** v0.3 (Phase 1 and the Phase 3 v1 sync decisions approved; other later phases still proposals)
+**Date:** 2026-11-14
 **Audience:** Product, backend and Flutter engineers, QA
 **Next document:** TRD 01 — *Email Authentication & Account Foundation*
+
+### Changes since v0.2
+- §8 Learning data sync: the v1 product rules are approved; protocol details live in [TRD 05](../trd/05-learning-data-sync.md). Q-L2 (sync conflict rule) is resolved.
 
 ### Changes since v0.1
 - Two registration paths: email OTP without a password, and email + password followed by email OTP verification (Q1 resolved).
@@ -57,7 +60,7 @@ Veea English Notes is an offline-first vocabulary app. It stays fully usable wit
 |---|---|---|
 | **1** | Email OTP registration, email + password registration with OTP verification, email OTP sign-in, email + password sign-in, verified-email requirement, first-password set, password change and reset, session creation, refresh, current-device sign-out, automatic session revocation | **[Approved]**, detailed in §5 and §13 |
 | 2 | Account and profile management. **Follow-up scope [Approved]:** email change, device listing, revoking individual other sessions, user-initiated sign-out on all devices. Account status and data lifecycle (deactivate, delete, export) | Follow-up items approved as deferred; the rest **[Proposed]** |
-| 3 | Learning data sync | **[Proposed]** |
+| 3 | Learning data sync | **[Approved]** v1 scope: vocabulary sync, detailed in §8 and TRD 05. Review progress is deferred |
 | 4 | RBAC and user administration | **[Proposed]** |
 | 5 | Audit and monitoring | **[Proposed]** |
 | 6 | Free/Premium entitlements (no payments) | **[Proposed]** |
@@ -257,11 +260,30 @@ Phase 1 must reserve the notion of account status so sign-in can reject non-Acti
 
 ## 8. Learning data sync (Phase 3 outline)
 
-- **[Proposed]** Every vocabulary record belongs to exactly one account. One user can never read or change another's data.
-- **[Proposed]** A client can resend the same change safely: a retry or a lost response must not duplicate or corrupt data.
-- **[Proposed]** Deletes propagate across devices. Conflicting edits resolve by a documented rule (TRD).
-- **[Proposed]** First sign-in on a device with existing local-only data offers to merge that data into the account.
-- **[Open]** Conflict rule: last write wins, or field-level merge (Q-L2).
+Product rules only. API, storage, retry and restore protocol details are in [TRD 05](../trd/05-learning-data-sync.md).
+
+- **[Approved]** **Scope.** V1 syncs vocabulary only: word, meaning, pronunciation, part of speech, source, examples, tags and capture day. Review progress, gate history and other app data stay on the device until the product defines one canonical review model.
+- **[Approved]** **Ownership.** Every word belongs to exactly one account, identified by its `user_id`. One user can never read or change another's words. Word IDs and deletions are scoped to the owning account.
+- **[Approved]** **Safe resends.** A retry or a lost response never duplicates or corrupts data. An old change is never applied again after its retry record expires.
+- **[Approved]** **Conflict rule (Q-L2).** Edits to different fields of a word are merged. For the same field, the last edit the server accepted wins. Deletes beat stale edits. A deleted word comes back only by an explicit restore. Device clocks never decide.
+- **[Approved]** **Deletes propagate across devices.** The server keeps a deleted word only as a content-free marker, for 90 days.
+- **[Approved]** **Signed out.** The app uses the guest notebook. The account's notebook is closed on the device until that account signs in again.
+- **[Approved]** **Guest words.**
+  - They stay on the device by default.
+  - The app asks once per account and guest notebook whether to add them to the account. Later additions are explicit.
+  - If the account lacks capacity, the learner chooses which words to add, and the rest stay on the device. If capacity changes before the server accepts, the learner sees the new capacity and confirms again.
+- **[Approved]** **Backups.** Backups from another account are refused. Older untagged backups open in the guest notebook but cannot be added to an account.
+- **[Approved]** **Accounts stay separate on a device.**
+  - Once account deletion is confirmed, the device clears that account's notebook, pending changes and review items.
+  - A new account registered with the same email starts empty and cannot reach the old notebook.
+- **[Approved]** **Limits per account.**
+  - 50,000 words.
+  - Per word: word 200, meaning 2,000, pronunciation 200 and source 500 characters (Unicode code points), up to 20 examples of 500 and 30 tags of 50.
+  - At most 8 KiB per stored word and 64 MiB of word content in total.
+- **[Approved]** **Devices.**
+  - Up to 20 devices can sync each account.
+  - Adding a 21st retires the least recently used device's sync registration. That device's unsent changes go to manual review. Signing out of devices is unaffected (§5.6).
+- **[Approved]** **Review instead of silent replay.** After a server restore or a retired registration, the device downloads a fresh copy of the account. Unsynced changes from before stay for the learner to apply or discard one at a time. There is no bulk replay.
 
 ## 9. RBAC and user administration (Phase 4 outline)
 
@@ -312,12 +334,17 @@ Phase 1 must reserve the notion of account status so sign-in can reject non-Acti
 | Q2 | Reveal whether an email is registered? | **No.** Same acknowledgement within each public flow. Only eligible requests send email. Existing-email signup changes nothing and signs nobody in. |
 | Q3 | Email change in Phase 1? | **No.** Follow-up scope. |
 
+### Resolved in v0.3
+
+| ID | Question | Resolution |
+|---|---|---|
+| Q-L2 | Sync conflict rule | **Field-level merge.** Different fields merge. For the same field, the last server-accepted edit wins. Deletes beat stale edits; restore is explicit; device clocks never decide (§8, TRD 05 §6). |
+
 ### Still open (later phases)
 
 | ID | Question | Affects |
 |---|---|---|
 | Q-L1 | Deletion grace period and retention | Phase 2 |
-| Q-L2 | Sync conflict rule | Phase 3 |
 | Q-L3 | Audit retention | Phase 5 |
 | Q-L4 | Premium feature list and Free limits | Phase 6 |
 

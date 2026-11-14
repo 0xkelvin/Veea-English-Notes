@@ -268,7 +268,7 @@ func (q *Queries) FenceDeletedAddress(ctx context.Context, emailHmac []byte) err
 }
 
 const getAccountOperation = `-- name: GetAccountOperation :one
-SELECT id, token_hash, action, user_id, challenge_id, email_revision, lifecycle_revision, state, created_at, proof_expires_at, accepted_at, completed_at, expires_at, download_expires_at, artifact_id, artifact_ciphertext, artifact_key_id, purge_step, email_digests FROM account_operations WHERE id= $1 AND action= $2 AND token_hash= $3 AND expires_at>clock_timestamp()
+SELECT id, token_hash, action, user_id, challenge_id, email_revision, lifecycle_revision, state, created_at, proof_expires_at, accepted_at, completed_at, expires_at, download_expires_at, artifact_id, artifact_ciphertext, artifact_key_id, purge_step, email_digests, schema_version, artifact_plain_bytes FROM account_operations WHERE id= $1 AND action= $2 AND token_hash= $3 AND expires_at>clock_timestamp()
 `
 
 type GetAccountOperationParams struct {
@@ -300,6 +300,8 @@ func (q *Queries) GetAccountOperation(ctx context.Context, arg GetAccountOperati
 		&i.ArtifactKeyID,
 		&i.PurgeStep,
 		&i.EmailDigests,
+		&i.SchemaVersion,
+		&i.ArtifactPlainBytes,
 	)
 	return i, err
 }
@@ -432,7 +434,7 @@ func (q *Queries) LockAccountEmailChanges(ctx context.Context, userID uuid.UUID)
 }
 
 const lockAccountOperation = `-- name: LockAccountOperation :one
-SELECT id, token_hash, action, user_id, challenge_id, email_revision, lifecycle_revision, state, created_at, proof_expires_at, accepted_at, completed_at, expires_at, download_expires_at, artifact_id, artifact_ciphertext, artifact_key_id, purge_step, email_digests FROM account_operations WHERE id= $1 FOR UPDATE
+SELECT id, token_hash, action, user_id, challenge_id, email_revision, lifecycle_revision, state, created_at, proof_expires_at, accepted_at, completed_at, expires_at, download_expires_at, artifact_id, artifact_ciphertext, artifact_key_id, purge_step, email_digests, schema_version, artifact_plain_bytes FROM account_operations WHERE id= $1 FOR UPDATE
 `
 
 func (q *Queries) LockAccountOperation(ctx context.Context, id uuid.UUID) (AccountOperation, error) {
@@ -458,6 +460,8 @@ func (q *Queries) LockAccountOperation(ctx context.Context, id uuid.UUID) (Accou
 		&i.ArtifactKeyID,
 		&i.PurgeStep,
 		&i.EmailDigests,
+		&i.SchemaVersion,
+		&i.ArtifactPlainBytes,
 	)
 	return i, err
 }
@@ -517,20 +521,25 @@ func (q *Queries) OldestPendingDeletionSeconds(ctx context.Context) (float64, er
 	return age, err
 }
 
-const publishAccountExport = `-- name: PublishAccountExport :exec
-UPDATE account_operations SET state='ready',artifact_ciphertext= $1,artifact_key_id= $2,
- download_expires_at=clock_timestamp()+interval '24 hours',completed_at=clock_timestamp() WHERE id= $3
+const publishAccountExport = `-- name: PublishAccountExport :execrows
+UPDATE account_operations SET state='ready',schema_version=2,artifact_plain_bytes= $1,
+ artifact_key_id= $2,download_expires_at=clock_timestamp()+interval '24 hours',completed_at=clock_timestamp()
+WHERE id= $3 AND state='pending'
 `
 
 type PublishAccountExportParams struct {
-	ArtifactCiphertext []byte
+	ArtifactPlainBytes *int64
 	ArtifactKeyID      *int16
 	ID                 uuid.UUID
 }
 
-func (q *Queries) PublishAccountExport(ctx context.Context, arg PublishAccountExportParams) error {
-	_, err := q.db.Exec(ctx, publishAccountExport, arg.ArtifactCiphertext, arg.ArtifactKeyID, arg.ID)
-	return err
+// Schema version 2: the sealed chunks are already inserted in the same transaction (TRD 05 §11.1).
+func (q *Queries) PublishAccountExport(ctx context.Context, arg PublishAccountExportParams) (int64, error) {
+	result, err := q.db.Exec(ctx, publishAccountExport, arg.ArtifactPlainBytes, arg.ArtifactKeyID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const purgeAccountOutbox = `-- name: PurgeAccountOutbox :execrows
@@ -551,7 +560,7 @@ func (q *Queries) PurgeAccountOutbox(ctx context.Context, arg PurgeAccountOutbox
 }
 
 const readAccountOperation = `-- name: ReadAccountOperation :one
-SELECT id, token_hash, action, user_id, challenge_id, email_revision, lifecycle_revision, state, created_at, proof_expires_at, accepted_at, completed_at, expires_at, download_expires_at, artifact_id, artifact_ciphertext, artifact_key_id, purge_step, email_digests FROM account_operations WHERE id= $1
+SELECT id, token_hash, action, user_id, challenge_id, email_revision, lifecycle_revision, state, created_at, proof_expires_at, accepted_at, completed_at, expires_at, download_expires_at, artifact_id, artifact_ciphertext, artifact_key_id, purge_step, email_digests, schema_version, artifact_plain_bytes FROM account_operations WHERE id= $1
 `
 
 func (q *Queries) ReadAccountOperation(ctx context.Context, id uuid.UUID) (AccountOperation, error) {
@@ -577,6 +586,8 @@ func (q *Queries) ReadAccountOperation(ctx context.Context, id uuid.UUID) (Accou
 		&i.ArtifactKeyID,
 		&i.PurgeStep,
 		&i.EmailDigests,
+		&i.SchemaVersion,
+		&i.ArtifactPlainBytes,
 	)
 	return i, err
 }

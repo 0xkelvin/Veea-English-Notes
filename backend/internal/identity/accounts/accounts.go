@@ -127,3 +127,17 @@ func CreateVerified(ctx context.Context, tx pgx.Tx, a NewVerified) (u sqlc.User,
 func InGoodStanding(u sqlc.User) bool {
 	return u.Status == StatusActive && u.EmailVerifiedAt != nil
 }
+
+// LockForKeyShare holds the account at L3 in its weakest mode (TRD 05 §14) for learning writes:
+// the row cannot be erased meanwhile, but no other L3 mode waits on it. ok is false when the
+// account no longer exists.
+func LockForKeyShare(ctx context.Context, tx pgx.Tx, id uuid.UUID) (u sqlc.User, ok bool, err error) {
+	u, err = sqlc.New(tx).LockUserForKeyShare(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return sqlc.User{}, false, nil
+	}
+	if err != nil {
+		return sqlc.User{}, false, fmt.Errorf("accounts: lock key share: %w", err)
+	}
+	return u, true, nil
+}

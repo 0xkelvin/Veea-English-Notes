@@ -7,6 +7,7 @@ package httpapi
 import (
 	"errors"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/account"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/learning"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/lifecycle"
 	"log/slog"
 	"net/http"
@@ -31,6 +32,7 @@ import (
 // Handlers serves the auth endpoints.
 type Handlers struct {
 	Lifecycle *lifecycle.Service
+	Learning  *learning.Service
 	Account   *account.Service
 	Signup    *signup.Service
 	Signin    *signin.Service
@@ -72,6 +74,12 @@ func (h *Handlers) Mount(mux httpx.Router) {
 	mux.HandleFunc("GET /v1/me/sessions", h.authenticated(h.listSessions))
 	mux.HandleFunc("DELETE /v1/me/sessions/{session_id}", h.authenticated(h.revokeSession))
 	mux.HandleFunc("DELETE /v1/me/sessions", h.authenticated(h.logoutAll))
+	mux.HandleFunc("GET /v1/learning/sync/state", h.authenticated(h.learningState))
+	mux.HandleFunc("POST /v1/learning/sync/writers", h.authenticated(h.learningRegisterWriter))
+	mux.HandleFunc("POST /v1/learning/sync/push", h.authenticated(h.learningPush))
+	mux.HandleFunc("POST /v1/learning/sync/import", h.authenticated(h.learningImport))
+	mux.HandleFunc("GET /v1/learning/sync/changes", h.authenticated(h.learningChanges))
+	mux.HandleFunc("GET /v1/learning/sync/snapshot", h.authenticated(h.learningSnapshot))
 }
 
 // --- request and response shapes (TRD 5.2) ---------------------------------------------------
@@ -431,7 +439,21 @@ func (h *Handlers) client(w http.ResponseWriter, r *http.Request) signup.Client 
 func (h *Handlers) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var policy *identity.PolicyError
 	var limited *otp.RateLimitedError
+	var reset *learning.ResetError
+	var capacity *learning.CapacityError
 	switch {
+	case errors.Is(err, learning.ErrClosed):
+		w.Header().Set("Retry-After", "60")
+		httpx.WriteProblem(w, http.StatusServiceUnavailable, httpx.CodeSyncUnavailable)
+	case errors.As(err, &reset):
+		httpx.WriteProblem(w, http.StatusGone, httpx.CodeSyncResetRequired, map[string]any{"reason": reset.Reason, "epoch": reset.Epoch})
+	case errors.Is(err, learning.ErrSequenceGap):
+		httpx.WriteProblem(w, http.StatusConflict, httpx.CodeSequenceGap)
+	case errors.As(err, &capacity):
+		httpx.WriteProblem(w, http.StatusConflict, httpx.CodeCapacityChanged, map[string]any{
+			"live_words": capacity.LiveWords, "content_bytes": capacity.ContentBytes, "last_seq": capacity.LastSeq})
+	case errors.Is(err, httpx.ErrPayloadTooLarge):
+		httpx.WriteProblem(w, http.StatusRequestEntityTooLarge, httpx.CodePayloadTooLarge)
 	case errors.Is(err, lifecycle.ErrNotFound):
 		httpx.WriteProblem(w, 404, httpx.CodeNotFound)
 	case errors.Is(err, lifecycle.ErrConflict):

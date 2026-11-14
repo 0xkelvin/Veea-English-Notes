@@ -16,6 +16,7 @@ import (
 
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/app"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/learning"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/lifecycle"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/maintenance"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/notify"
@@ -76,7 +77,7 @@ func run() error {
 		return err
 	}
 	rightsJobs := lifecycle.New(maintenancePool, nil, keys, digests, m, nil)
-	cleanup, err := maintenance.New(maintenance.Config{Pool: maintenancePool, Logger: log.With("component", "cleanup"), AccountJob: rightsJobs.RunBatch})
+	cleanup, err := maintenance.New(maintenance.Config{Pool: maintenancePool, Logger: log.With("component", "cleanup"), AccountJob: rightsJobs.RunBatch, LearningJob: learning.Cleanup})
 	if err != nil {
 		return err
 	}

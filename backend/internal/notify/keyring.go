@@ -86,6 +86,34 @@ func (k *Keyring) Seal(rowID uuid.UUID, plaintext []byte) ([]byte, int16, error)
 	return aead.Seal(nonce, nonce, plaintext, rowID[:]), k.current, nil
 }
 
+// SealAD encrypts plaintext with the current key and explicit associated data, for artifacts
+// that bind more than a row id (TRD 05 §11.1 export chunks). The result is nonce || ciphertext
+// || tag, 28 bytes longer than plaintext.
+func (k *Keyring) SealAD(ad, plaintext []byte) ([]byte, int16, error) {
+	aead := k.aeads[k.current]
+	nonce := make([]byte, aead.NonceSize(), aead.NonceSize()+len(plaintext)+aead.Overhead())
+	if _, err := io.ReadFull(k.rand, nonce); err != nil {
+		return nil, 0, errors.New("notify: read randomness for nonce")
+	}
+	return aead.Seal(nonce, nonce, plaintext, ad), k.current, nil
+}
+
+// OpenAD decrypts a payload sealed by SealAD with the same associated data.
+func (k *Keyring) OpenAD(keyID int16, ad, sealed []byte) ([]byte, error) {
+	aead, ok := k.aeads[keyID]
+	if !ok {
+		return nil, ErrUnknownKey
+	}
+	if len(sealed) < aead.NonceSize()+aead.Overhead() {
+		return nil, ErrDecrypt
+	}
+	plain, err := aead.Open(nil, sealed[:aead.NonceSize()], sealed[aead.NonceSize():], ad)
+	if err != nil {
+		return nil, ErrDecrypt
+	}
+	return plain, nil
+}
+
 // Open decrypts a payload sealed for rowID with keyID.
 func (k *Keyring) Open(rowID uuid.UUID, keyID int16, sealed []byte) ([]byte, error) {
 	aead, ok := k.aeads[keyID]

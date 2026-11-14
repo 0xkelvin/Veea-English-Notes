@@ -81,3 +81,8 @@ WHERE ctid = ANY (ARRAY(
     ORDER BY e.expires_at
     LIMIT @batch_size
 )) AND expires_at < now() - interval '24 hours';
+
+-- name: LockUserForKeyShare :one
+-- Lock level L3 in its weakest mode (TRD 05 §14): learning writes only need the account to stay
+-- active and present; it is compatible with every other L3 mode except the final erase.
+SELECT * FROM users WHERE id = @id FOR KEY SHARE;

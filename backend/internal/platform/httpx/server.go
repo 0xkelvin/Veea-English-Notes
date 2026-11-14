@@ -190,6 +190,11 @@ const (
 	CodeExportNotReady           = "export_not_ready"
 	CodeOperationCanceled        = "operation_canceled"
 	CodeExportExpired            = "export_expired"
+	CodeSyncUnavailable          = "sync_unavailable"
+	CodeSyncResetRequired        = "sync_reset_required"
+	CodeSequenceGap              = "sequence_gap"
+	CodeCapacityChanged          = "capacity_changed"
+	CodePayloadTooLarge          = "payload_too_large"
 	CodeInternal                 = "internal_error"
 	CodeNotReady                 = "not_ready"
 	CodeNotFound                 = "not_found"
@@ -199,6 +204,11 @@ const (
 )
 
 var titles = map[string]string{
+	CodeSyncUnavailable:          "Sync is not available right now.",
+	CodeSyncResetRequired:        "This device must download a new snapshot before syncing.",
+	CodeSequenceGap:              "A change is missing before this request.",
+	CodeCapacityChanged:          "The account's capacity changed. Confirm the import again.",
+	CodePayloadTooLarge:          "The request is too large.",
 	CodeLifecycleConflict:        "The account state changed. Request a new proof.",
 	CodeExportNotReady:           "The export is not ready.",
 	CodeOperationCanceled:        "This operation was canceled.",
@@ -264,6 +274,9 @@ const MaxBodyBytes = 16 << 10
 // the expected shape. It deliberately carries no detail, so no part of the body is echoed.
 var ErrBadRequest = errors.New("httpx: malformed request body")
 
+// ErrPayloadTooLarge is returned by DecodeJSONLimit for a body over its limit: 413.
+var ErrPayloadTooLarge = errors.New("httpx: payload too large")
+
 // ErrUnsupportedMediaType is returned by DecodeJSON when Content-Type is missing or is not
 // application/json. Handlers answer 415 unsupported_media_type.
 var ErrUnsupportedMediaType = errors.New("httpx: unsupported media type")
@@ -284,6 +297,29 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 	if err != nil {
 		return ErrBadRequest
 	}
+	return DecodeObject(body, dst)
+}
+
+// DecodeJSONLimit is DecodeJSON with a larger body limit for the documented bulk routes. A body
+// over limit is ErrPayloadTooLarge rather than ErrBadRequest.
+func DecodeJSONLimit(w http.ResponseWriter, r *http.Request, dst any, limit int64) error {
+	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+		return ErrUnsupportedMediaType
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
+	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			return ErrPayloadTooLarge
+		}
+		return ErrBadRequest
+	}
+	return DecodeObject(body, dst)
+}
+
+// DecodeObject applies DecodeJSON's strict object rules to raw bytes already read, for nested
+// objects whose shape depends on a discriminator.
+func DecodeObject(body []byte, dst any) error {
 	t := reflect.TypeOf(dst)
 	if t == nil || t.Kind() != reflect.Pointer || t.Elem().Kind() != reflect.Struct {
 		return errors.New("httpx: DecodeJSON needs a pointer to a struct")

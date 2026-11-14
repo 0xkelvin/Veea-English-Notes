@@ -11,6 +11,14 @@ import (
 	"github.com/google/uuid"
 )
 
+type AccountExportChunk struct {
+	OperationID uuid.UUID
+	Seq         int32
+	Final       bool
+	KeyID       int16
+	Sealed      []byte
+}
+
 type AccountOperation struct {
 	ID                 uuid.UUID
 	TokenHash          []byte
@@ -31,6 +39,8 @@ type AccountOperation struct {
 	ArtifactKeyID      *int16
 	PurgeStep          int32
 	EmailDigests       [][]byte
+	SchemaVersion      *int16
+	ArtifactPlainBytes *int64
 }
 
 type AuditEvent struct {
@@ -95,6 +105,41 @@ type ErasedAddress struct {
 	EmailHmac []byte
 	Cutoff    time.Time
 	ExpiresAt *time.Time
+}
+
+type LearningMutation struct {
+	UserID      uuid.UUID
+	WriterID    uuid.UUID
+	Seq         int64
+	RequestHash []byte
+	Result      []byte
+	CreatedAt   time.Time
+}
+
+type LearningSyncControl struct {
+	ID        int16
+	Open      bool
+	ChangedAt time.Time
+}
+
+type LearningSyncHead struct {
+	UserID           uuid.UUID
+	Epoch            uuid.UUID
+	Revision         int64
+	TombstoneHorizon int64
+	LiveWords        int32
+	ContentBytes     int64
+	CreatedAt        time.Time
+}
+
+type LearningSyncWriter struct {
+	UserID     uuid.UUID
+	WriterID   uuid.UUID
+	Epoch      uuid.UUID
+	LastSeq    int64
+	CreatedAt  time.Time
+	LastUsedAt time.Time
+	RetiredAt  *time.Time
 }
 
 type OtpChallenge struct {
@@ -181,4 +226,26 @@ type User struct {
 	EmailRevision     int64
 	LifecycleRevision int64
 	StateChangedAt    *time.Time
+}
+
+type VocabularyItem struct {
+	UserID          uuid.UUID
+	ID              uuid.UUID
+	Word            *string
+	Meaning         *string
+	Pronunciation   *string
+	PartOfSpeech    *string
+	Source          *string
+	Examples        []string
+	Tags            []string
+	CaptureDay      *time.Time
+	ClientCreatedAt *time.Time
+	ContentBytes    int32
+	Revision        int64
+	CreatedRevision int64
+	FieldRevisions  []byte
+	DeletedAt       *time.Time
+	DeletedRevision *int64
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }

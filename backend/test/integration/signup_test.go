@@ -97,6 +97,7 @@ type signupEnv struct {
 	retries  atomic.Int64
 	contract *contract
 	metrics  *metrics.Metrics
+	handler  http.Handler // the real router, unwrapped, for bulk bodies the contract checker need not parse
 
 	mu          sync.Mutex
 	secrets     []string // codes, tokens and passwords, for the hygiene check
@@ -131,6 +132,7 @@ func newSignupEnv(t *testing.T, rules *ratelimit.Rules) *signupEnv {
 	}
 	// Every exchange is checked against api/openapi.yaml (contract_test.go).
 	env.contract = newContract(t)
+	env.handler = handler
 	env.srv = httptest.NewServer(env.contract.wrap(handler))
 	t.Cleanup(env.srv.Close)
 	keys, _ := notify.NewKeyring(outboxKeys...)

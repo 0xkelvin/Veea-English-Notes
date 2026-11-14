@@ -40,6 +40,9 @@ type Metrics struct {
 	argon2Wait      prometheus.Histogram
 	lifecycle       *prometheus.CounterVec
 	accountJobs     *prometheus.CounterVec
+	learningPush    *prometheus.CounterVec
+	learningItems   *prometheus.CounterVec
+	learningReset   *prometheus.CounterVec
 }
 
 // New registers every TRD 11.3 metric plus the Go runtime and process collectors.
@@ -84,6 +87,15 @@ func New() *Metrics {
 	m.accountJobs = f(prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "account_jobs_total", Help: "Durable export/deletion job transactions, by job and result (TRD 04)."},
 		[]string{"job", "result"})).(*prometheus.CounterVec)
+	m.learningPush = f(prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "learning_sync_push_total", Help: "Vocabulary push and import requests that reached the owner lock, by route and result (TRD 05)."},
+		[]string{"route", "result"})).(*prometheus.CounterVec)
+	m.learningItems = f(prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "learning_sync_items_total", Help: "Committed vocabulary mutation results, by op and outcome (TRD 05)."},
+		[]string{"op", "outcome"})).(*prometheus.CounterVec)
+	m.learningReset = f(prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "learning_sync_reset_total", Help: "410 sync_reset_required answers, by reason (TRD 05)."},
+		[]string{"reason"})).(*prometheus.CounterVec)
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	return m
 }
@@ -250,4 +262,25 @@ func (m *Metrics) RegisterDeletionBacklog(age func(ctx context.Context) (float64
 			return v
 		}))
 	})
+}
+
+// LearningPush counts one push or import that committed or was refused under the owner lock.
+func (m *Metrics) LearningPush(route, result string) {
+	if m != nil {
+		m.learningPush.WithLabelValues(label(route), label(result)).Inc()
+	}
+}
+
+// LearningItem counts one committed mutation result.
+func (m *Metrics) LearningItem(op, outcome string) {
+	if m != nil {
+		m.learningItems.WithLabelValues(label(op), label(outcome)).Inc()
+	}
+}
+
+// LearningReset counts one 410 sync_reset_required.
+func (m *Metrics) LearningReset(reason string) {
+	if m != nil {
+		m.learningReset.WithLabelValues(label(reason)).Inc()
+	}
 }

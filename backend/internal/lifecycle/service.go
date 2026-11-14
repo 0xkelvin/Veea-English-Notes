@@ -42,6 +42,8 @@ type Service struct {
 	email   *identity.EmailHMAC
 	metrics *metrics.Metrics
 	limiter *ratelimit.Limiter
+	// exportTimeout bounds one export generation; zero means DefaultExportTimeout.
+	exportTimeout time.Duration
 }
 
 func New(pool *pgxpool.Pool, o *otp.Service, keys *notify.Keyring, email *identity.EmailHMAC, m *metrics.Metrics, onRetry func(string)) *Service {
@@ -288,6 +290,9 @@ func cancelExports(ctx context.Context, tx pgx.Tx, c session.Client, user uuid.U
 	if err != nil {
 		return err
 	}
+	if err := sqlc.New(tx).DeleteExportChunks(ctx, ids); err != nil {
+		return err
+	}
 	for _, id := range ids {
 		if err := audit.Record(ctx, tx, evidence(c, &user, "account.export.cancel", map[string]string{"operation_id": id.String()})); err != nil {
 			return err
@@ -343,14 +348,17 @@ func (s *Service) Deactivate(ctx context.Context, p session.Principal, revision 
 	return err
 }
 
-func (s *Service) Download(ctx context.Context, op sqlc.AccountOperation, c session.Client) ([]byte, error) {
+// Download authorizes and audits one download of a published version-2 export. The caller
+// then streams it with StreamArtifact; the audit event records the authorized initiation, not
+// that bytes reached the client.
+func (s *Service) Download(ctx context.Context, op sqlc.AccountOperation, c session.Client) (Artifact, error) {
 	if op.AcceptedAt == nil {
-		return nil, ErrNotReady
+		return Artifact{}, ErrNotReady
 	}
 	if op.Action != "export" || op.UserID == nil {
-		return nil, ErrNotFound
+		return Artifact{}, ErrNotFound
 	}
-	var data []byte
+	var a Artifact
 	err := s.tx.Run(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		u, ok, err := accounts.LockForNoKeyUpdate(ctx, tx, *op.UserID)
 		if err != nil {
@@ -376,20 +384,13 @@ func (s *Service) Download(ctx context.Context, op sqlc.AccountOperation, c sess
 		if current.State != "ready" {
 			return ErrNotReady
 		}
-		if current.ArtifactKeyID == nil {
-			return errors.New("rights: artifact key absent")
+		if current.SchemaVersion == nil || *current.SchemaVersion != 2 || current.ArtifactPlainBytes == nil {
+			return ErrExpired // version-1 artifacts were ended by migration 00011
 		}
-		data, err = s.keys.Open(current.ArtifactID, *current.ArtifactKeyID, current.ArtifactCiphertext)
-		if err != nil {
-			return err
-		}
+		a = Artifact{Operation: op.ID, ID: current.ArtifactID, Size: *current.ArtifactPlainBytes}
 		return audit.Record(ctx, tx, evidence(c, op.UserID, "account.export.download", map[string]string{"operation_id": op.ID.String()}))
 	})
-	if err != nil {
-		clear(data)
-		data = nil
-	}
-	return data, err
+	return a, err
 }
 
 func requestIP(c session.Client) clientip.Result {

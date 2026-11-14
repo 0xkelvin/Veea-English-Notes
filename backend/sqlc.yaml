@@ -28,6 +28,13 @@ sql:
             go_type:
               type: time.Time
               pointer: true
+          - db_type: date
+            go_type: time.Time
+          - db_type: date
+            nullable: true
+            go_type:
+              type: time.Time
+              pointer: true
           - db_type: inet
             go_type: net/netip.Addr
           - db_type: inet
@@ -40,6 +47,11 @@ sql:
             nullable: true
             go_type:
               type: string
+              pointer: true
+          - db_type: pg_catalog.int8
+            nullable: true
+            go_type:
+              type: int64
               pointer: true
           - db_type: pg_catalog.int2
             nullable: true

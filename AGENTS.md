@@ -48,6 +48,11 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
   never a bearer, and must never yield a `Principal`. Address advisory locks (`otp.LockAddresses`, L0)
   precede every cooldown, challenge and user lock. A new user-owned table must be removed by the purge
   in `lifecycle/jobs.go` and, if it is product data, added to the export.
+  Vocabulary sync (TRD 05) is `backend/internal/learning/`: every owner-scoped write holds the
+  sync head (L4c, after L3 `KEY SHARE` and the acting session). Multi-row learning tables are
+  `ON DELETE RESTRICT` and are drained in bounded batches by `learning.PurgeBatch`. Sync ships
+  closed (`learning_sync_control.open = false`): do not open it before the Flutter checks in TRD 05
+  §15.2 pass. `learning.AppendCanonical` is the only encoder for quota and export sizes.
   The HTTP contract is `backend/api/openapi.yaml`; a new or changed route updates it in the same
   change (`go test ./api` fails when the router and the spec disagree, and router tests fail on
   any response the spec does not describe).

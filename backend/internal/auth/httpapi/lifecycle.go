@@ -6,6 +6,7 @@ import (
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/httpx"
 	"github.com/google/uuid"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -152,15 +153,19 @@ func (h *Handlers) rightsStatus(w http.ResponseWriter, r *http.Request, op sqlc.
 	httpx.WriteJSON(w, 200, operationBody(op))
 }
 func (h *Handlers) rightsDownload(w http.ResponseWriter, r *http.Request, op sqlc.AccountOperation) {
-	data, err := h.Lifecycle.Download(r.Context(), op, h.sessionClient(w, r))
+	a, err := h.Lifecycle.Download(r.Context(), op, h.sessionClient(w, r))
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
-	defer clear(data)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", `attachment; filename="veea-account.json"`)
 	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Length", strconv.FormatInt(a.Size, 10))
 	w.WriteHeader(200)
-	_, _ = w.Write(data)
+	if err := h.Lifecycle.StreamArtifact(r.Context(), a, w); err != nil {
+		// Headers are sent: abort the connection short of Content-Length rather than end cleanly.
+		h.Log.Error("export download aborted", "request_id", httpx.RequestID(w), "error", err)
+		panic(http.ErrAbortHandler)
+	}
 }

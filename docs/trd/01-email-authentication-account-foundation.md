@@ -1625,6 +1625,7 @@ This is the price of having no grace window. It is accepted in exchange for stri
 | Database | `db_tx_retries_total{reason}` (deadlock or serialization retries, §7.1 rule 7) |
 | Argon2 | `argon2_wait_seconds` |
 | Account lifecycle (TRD 04) | `account_lifecycle_accepted_total{action}` (`deactivate`, `reactivate`, `export`, `delete`), `account_jobs_total{job,result}` (`ready`, `canceled`, `expired`, `completed`, `error`), `account_deletion_oldest_pending_seconds` |
+| Learning sync (TRD 05) | `learning_sync_push_total{route,result}` (`push`, `import`; `ok`, `reset`, `capacity_changed`, `sequence_gap`), `learning_sync_items_total{op,outcome}`, `learning_sync_reset_total{reason}` |
 
 **Implementation notes** (`internal/platform/metrics`, release hardening)
 - **Where they are served.** `GET /metrics` on `VEEA_METRICS_ADDR`, a listener separate from the API, with its own registry. The Go runtime and process collectors are included. Alerting is Phase 5.

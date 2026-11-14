@@ -104,10 +104,12 @@ type Result struct {
 type Config struct {
 	Pool       *pgxpool.Pool
 	AccountJob func(context.Context, *pgxpool.Conn, int32) (int64, error)
-	Interval   time.Duration // zero means DefaultInterval
-	BatchSize  int32         // zero means DefaultBatchSize
-	MaxBatches int           // zero means DefaultMaxBatches
-	Logger     *slog.Logger
+	// LearningJob is TRD 05 cleanup (tombstone compaction, record expiry, writer retirement).
+	LearningJob func(context.Context, *pgxpool.Conn, int32) (int64, error)
+	Interval    time.Duration // zero means DefaultInterval
+	BatchSize   int32         // zero means DefaultBatchSize
+	MaxBatches  int           // zero means DefaultMaxBatches
+	Logger      *slog.Logger
 	// OnResult, when set, is called with every job result (metrics, tests).
 	OnResult func(Result)
 }
@@ -142,6 +144,9 @@ func New(cfg Config) (*Runner, error) {
 	jobs := Jobs()
 	if cfg.AccountJob != nil {
 		jobs = append(jobs, Job{Name: "account_lifecycle", LockKey: lockBase + 9, custom: cfg.AccountJob})
+	}
+	if cfg.LearningJob != nil {
+		jobs = append(jobs, Job{Name: "learning_sync", LockKey: lockBase + 10, Batched: true, custom: cfg.LearningJob})
 	}
 	return &Runner{cfg: cfg, jobs: jobs}, nil
 }

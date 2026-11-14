@@ -32,6 +32,7 @@ internal/auth/password/  Flows E, F and G: first-password set, change and reset
 internal/identity/accounts/  the only writer of users (database side of identity)
 internal/maintenance/    TRD 6.10 cleanup jobs, run by cmd/api every 5 minutes under per-job advisory locks
 internal/lifecycle/      TRD 04 deactivation, mailbox-proven export/deletion/reactivation, durable export and purge jobs
+internal/learning/       TRD 05 vocabulary sync: writers, push/import, feed, snapshot, canonical encoder, purge and cleanup (ships closed)
 internal/platform/metrics/  TRD 11.3 Prometheus metrics, served on VEEA_METRICS_ADDR
 internal/auth/otp/       OTP challenge core: start (cooldown, supersede, challenge, email) and verify (procedure V, committed failures)
 internal/audit/          append-only audit writer; refuses secret-looking metadata, redacts client text

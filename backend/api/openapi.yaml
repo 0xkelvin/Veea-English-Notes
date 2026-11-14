@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Veea English Notes — Accounts API
-  version: 1.3.0-trd04
+  version: 1.4.0-trd05
   description: |
     Email authentication and account foundation (TRD 01 §5), plus session management (TRD 02). This document is normative for the
     Go service in `backend/`: every route the router registers is listed here, and the
@@ -9,7 +9,8 @@ info:
 
     Conventions (TRD 01 §5.1):
     - JSON bodies require `Content-Type: application/json`; a missing or other content type is
-      `415 unsupported_media_type`. The body is then decoded strictly: one object, at most 16 KiB,
+      `415 unsupported_media_type`. The body is then decoded strictly: one object, at most 16 KiB
+      (2 MiB for the vocabulary push and import, over which the answer is `413 payload_too_large`),
       keys spelled exactly as documented, no duplicate or unknown keys, every field present, no
       trailing data. Anything else is `400 invalid_request`.
     - A path that is not listed gets `404 not_found`, and a listed path with another method gets
@@ -29,6 +30,7 @@ tags:
   - name: password
   - name: account
   - name: session
+  - name: learning
 
 paths:
   /healthz:
@@ -732,6 +734,186 @@ paths:
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "500": { $ref: "#/components/responses/InternalError" }
 
+  /v1/learning/sync/state:
+    get:
+      tags: [learning]
+      operationId: getLearningSyncState
+      summary: The owner's sync head and, with writer_id, that writer's high-water mark.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: writer_id
+          required: false
+          description: Optional writer UUID; another owner's or an unknown writer reads as null.
+          schema: { type: string }
+      x-error-codes: [invalid_request, unauthorized, rate_limited, sync_unavailable, internal_error]
+      responses:
+        "200":
+          description: Successful operation.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LearningState" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/SyncUnavailable" }
+  /v1/learning/sync/writers:
+    post:
+      tags: [learning]
+      operationId: registerLearningWriter
+      summary: Issue a server-generated writer; with 20 active writers the least recently used one is retired.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unsupported_media_type, unauthorized, rate_limited, sync_unavailable, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmptyRequest" }
+      responses:
+        "201":
+          description: Successful operation.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LearningWriter" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/SyncUnavailable" }
+  /v1/learning/sync/push:
+    post:
+      tags: [learning]
+      operationId: pushLearningMutations
+      summary: Apply a writer's contiguous mutations; already-processed seq values are only resolved, never applied again.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unsupported_media_type, unauthorized, payload_too_large, sequence_gap, sync_reset_required, rate_limited, sync_unavailable, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LearningPushRequest" }
+      responses:
+        "200":
+          description: Successful operation.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LearningPushResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410": { $ref: "#/components/responses/SyncReset" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/SyncUnavailable" }
+  /v1/learning/sync/import:
+    post:
+      tags: [learning]
+      operationId: importLearningWords
+      summary: Import guest words (creates only); the new suffix is admitted atomically against capacity_basis.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unsupported_media_type, unauthorized, payload_too_large, sequence_gap, capacity_changed, sync_reset_required, rate_limited, sync_unavailable, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LearningImportRequest" }
+      responses:
+        "200":
+          description: Successful operation.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LearningPushResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410": { $ref: "#/components/responses/SyncReset" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/SyncUnavailable" }
+  /v1/learning/sync/changes:
+    get:
+      tags: [learning]
+      operationId: getLearningChanges
+      summary: Changes after a feed cursor, in revision order, at most 500 changes or 4 MiB of content per page.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: cursor
+          required: true
+          description: A feed cursor (c1.…), from a previous page or a snapshot's catch_up_cursor.
+          schema: { type: string }
+        - in: query
+          name: limit
+          required: false
+          description: 1-500, default 500.
+          schema: { type: string }
+      x-error-codes: [invalid_request, unauthorized, sync_reset_required, rate_limited, sync_unavailable, internal_error]
+      responses:
+        "200":
+          description: Successful operation.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LearningChanges" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "410": { $ref: "#/components/responses/SyncReset" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/SyncUnavailable" }
+  /v1/learning/sync/snapshot:
+    get:
+      tags: [learning]
+      operationId: getLearningSnapshot
+      summary: Live words as of a captured head revision H, in id order; catch up from catch_up_cursor afterwards.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: page_token
+          required: false
+          description: A snapshot page token (s1.…); absent starts a new snapshot.
+          schema: { type: string }
+        - in: query
+          name: limit
+          required: false
+          description: 1-500, default 500.
+          schema: { type: string }
+      x-error-codes: [invalid_request, unauthorized, sync_reset_required, rate_limited, sync_unavailable, internal_error]
+      responses:
+        "200":
+          description: Successful operation.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LearningSnapshot" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "410": { $ref: "#/components/responses/SyncReset" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/SyncUnavailable" }
 components:
   securitySchemes:
     rightsAuth:
@@ -796,6 +978,34 @@ components:
               new_password: { type: string }
 
   responses:
+    SyncUnavailable:
+      description: "`sync_unavailable`: learning sync is closed (TRD 05 §8.2, §15.2). Retry later."
+      x-codes: [sync_unavailable]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Retry-After: { $ref: "#/components/headers/Retry-After" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    SyncReset:
+      description: "`sync_reset_required`, with `reason` and the current `epoch`. Nothing was applied."
+      x-codes: [sync_reset_required]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Problem" }
+              - { type: object, required: [reason, epoch] }
+    PayloadTooLarge:
+      description: "`payload_too_large`: over 2 MiB or 200 mutations."
+      x-codes: [payload_too_large]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
     ExportExpired:
       description: The export download expired.
       x-codes: [export_expired]
@@ -908,7 +1118,7 @@ components:
           schema: { $ref: "#/components/schemas/Problem" }
     Conflict:
       description: "`signup_unavailable`, `password_already_set`, `password_not_set` or `current_session_not_allowed`."
-      x-codes: [signup_unavailable, password_already_set, password_not_set, current_session_not_allowed, profile_conflict, email_unchanged, email_unavailable, lifecycle_conflict, export_not_ready, operation_canceled]
+      x-codes: [signup_unavailable, password_already_set, password_not_set, current_session_not_allowed, profile_conflict, email_unchanged, email_unavailable, lifecycle_conflict, export_not_ready, operation_canceled, sequence_gap, capacity_changed]
       headers:
         X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
       content:
@@ -1096,6 +1306,11 @@ components:
     ErrorCode:
       type: string
       enum:
+        - sync_unavailable
+        - sync_reset_required
+        - sequence_gap
+        - capacity_changed
+        - payload_too_large
         - lifecycle_conflict
         - export_not_ready
         - operation_canceled
@@ -1138,6 +1353,11 @@ components:
           type: array
           minItems: 1
           items: { type: string, enum: [too_short, too_long, too_common, contains_email] }
+        reason: { type: string, enum: [epoch_changed, writer_unknown, cursor_compacted, cursor_ahead], description: sync_reset_required only. }
+        epoch: { type: string, format: uuid, description: "sync_reset_required only: the owner's current epoch." }
+        live_words: { type: integer, description: capacity_changed only. }
+        content_bytes: { type: integer, description: capacity_changed only. }
+        last_seq: { type: integer, description: "capacity_changed only: the writer's high-water mark, unchanged." }
 
     DeactivateRequest:
       type: object
@@ -1194,10 +1414,11 @@ components:
     AccountExport:
       type: object
       additionalProperties: false
-      required: [schema_version, snapshot_at, account]
+      required: [schema_version, snapshot_at, snapshot_revision, account, vocabulary]
       properties:
-        schema_version: { type: integer, enum: [1] }
+        schema_version: { type: integer, enum: [2] }
         snapshot_at: { $ref: "#/components/schemas/Timestamp" }
+        snapshot_revision: { type: integer, minimum: 0 }
         account:
           type: object
           additionalProperties: false
@@ -1211,3 +1432,168 @@ components:
             preferred_language: { type: string, enum: [en, vi] }
             time_zone: { type: string }
             daily_goal: { type: integer }
+        vocabulary:
+          type: array
+          maxItems: 50000
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, revision, capture_day, client_created_at, created_at, updated_at, content]
+            properties:
+              id: { type: string, format: uuid }
+              revision: { type: integer, minimum: 1 }
+              capture_day: { type: string, format: date }
+              client_created_at: { $ref: "#/components/schemas/Timestamp" }
+              created_at: { $ref: "#/components/schemas/Timestamp" }
+              updated_at: { $ref: "#/components/schemas/Timestamp" }
+              content: { $ref: "#/components/schemas/VocabularyContent" }
+    EmptyRequest:
+      type: object
+      additionalProperties: false
+      maxProperties: 0
+    VocabularyContent:
+      type: object
+      additionalProperties: false
+      required: [word, meaning, pronunciation, part_of_speech, source, examples, tags]
+      properties:
+        word: { type: string }
+        meaning: { type: string }
+        pronunciation: { type: string, nullable: true }
+        part_of_speech: { type: string, nullable: true, enum: [n, v, adj, adv, phr, idm, etc, null] }
+        source: { type: string, nullable: true }
+        examples: { type: array, maxItems: 20, items: { type: string } }
+        tags: { type: array, maxItems: 30, items: { type: string } }
+    VocabularyRecord:
+      type: object
+      additionalProperties: false
+      required: [entity_id, revision, deleted, content, capture_day, client_created_at, updated_at]
+      description: The canonical server state of one word. A tombstone (deleted) has null content and dates.
+      properties:
+        entity_id: { type: string, format: uuid }
+        revision: { type: integer, minimum: 1 }
+        deleted: { type: boolean }
+        content:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/VocabularyContent" }]
+        capture_day: { type: string, format: date, nullable: true }
+        client_created_at: { type: string, format: date-time, nullable: true }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+    LearningWriterState:
+      type: object
+      nullable: true
+      additionalProperties: false
+      required: [writer_id, last_seq, active]
+      properties:
+        writer_id: { type: string, format: uuid }
+        last_seq: { type: integer, minimum: 0, description: "High-water mark. It proves processing, not that an edit applied." }
+        active: { type: boolean }
+    LearningState:
+      type: object
+      additionalProperties: false
+      required: [epoch, head_revision, tombstone_horizon, live_words, word_limit, content_bytes, content_byte_limit, writer]
+      properties:
+        epoch: { type: string, format: uuid }
+        head_revision: { type: integer, minimum: 0 }
+        tombstone_horizon: { type: integer, minimum: 0 }
+        live_words: { type: integer, minimum: 0 }
+        word_limit: { type: integer, enum: [50000] }
+        content_bytes: { type: integer, minimum: 0 }
+        content_byte_limit: { type: integer, enum: [67108864] }
+        writer: { $ref: "#/components/schemas/LearningWriterState" }
+    LearningWriter:
+      type: object
+      additionalProperties: false
+      required: [writer_id, last_seq, epoch]
+      properties:
+        writer_id: { type: string, format: uuid }
+        last_seq: { type: integer, enum: [0] }
+        epoch: { type: string, format: uuid }
+    LearningMutation:
+      type: object
+      description: |
+        One queued change (TRD 05 §5.3). The fields present depend on op: create {seq, op, entity_id, data};
+        update {seq, op, entity_id, base_revision, changed_fields, data with exactly those fields};
+        delete {seq, op, entity_id, base_revision}; restore {seq, op, entity_id, base_revision, data}.
+        A full data object holds every VocabularyContent field plus capture_day (YYYY-MM-DD) and
+        client_created_at (RFC 3339). The deduplication hash covers the exact bytes of this object.
+      required: [seq, op, entity_id]
+      properties:
+        seq: { type: integer, minimum: 1 }
+        op: { type: string, enum: [create, update, delete, restore] }
+        entity_id: { type: string, format: uuid }
+        base_revision: { type: integer, minimum: 0 }
+        changed_fields:
+          type: array
+          minItems: 1
+          items: { type: string, enum: [word, meaning, pronunciation, part_of_speech, source, examples, tags, capture_day] }
+        data: { type: object }
+    LearningPushRequest:
+      type: object
+      additionalProperties: false
+      required: [epoch, writer_id, mutations]
+      properties:
+        epoch: { type: string, format: uuid }
+        writer_id: { type: string, format: uuid }
+        mutations: { type: array, minItems: 1, maxItems: 200, items: { $ref: "#/components/schemas/LearningMutation" } }
+    LearningImportRequest:
+      type: object
+      additionalProperties: false
+      required: [epoch, writer_id, capacity_basis, mutations]
+      properties:
+        epoch: { type: string, format: uuid }
+        writer_id: { type: string, format: uuid }
+        capacity_basis:
+          type: object
+          additionalProperties: false
+          required: [live_words, content_bytes]
+          properties:
+            live_words: { type: integer, minimum: 0 }
+            content_bytes: { type: integer, minimum: 0 }
+        mutations: { type: array, minItems: 1, maxItems: 200, items: { $ref: "#/components/schemas/LearningMutation" } }
+    LearningItemResult:
+      type: object
+      additionalProperties: false
+      required: [seq, entity_id, outcome, record]
+      properties:
+        seq: { type: integer, minimum: 1 }
+        entity_id: { type: string, format: uuid }
+        outcome: { type: string, enum: [applied, merged, no_op, duplicate, rejected] }
+        original_outcome: { type: string, enum: [applied, merged, no_op, rejected], description: duplicate only. }
+        code: { type: string, enum: [invalid_item, mutation_reused, mutation_expired, stale_base, unknown_item, deleted_on_server, quota_exceeded, id_in_use] }
+        detail: { type: string, enum: [invalid_utf8, control_character, invalid_part_of_speech, invalid_date, field_empty, too_many_entries, field_too_long, item_too_large] }
+        field: { type: string, enum: [word, meaning, pronunciation, part_of_speech, source, examples, tags] }
+        limit: { type: string, enum: [words, bytes] }
+        conflicted_fields: { type: array, items: { type: string } }
+        revision: { type: integer, minimum: 1 }
+        record:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/VocabularyRecord" }]
+    LearningPushResult:
+      type: object
+      additionalProperties: false
+      required: [results, head_revision, live_words, content_bytes, last_seq]
+      properties:
+        results: { type: array, items: { $ref: "#/components/schemas/LearningItemResult" } }
+        head_revision: { type: integer, minimum: 0 }
+        live_words: { type: integer, minimum: 0 }
+        content_bytes: { type: integer, minimum: 0 }
+        last_seq: { type: integer, minimum: 0 }
+    LearningChanges:
+      type: object
+      additionalProperties: false
+      required: [epoch, changes, cursor, has_more]
+      properties:
+        epoch: { type: string, format: uuid }
+        changes: { type: array, maxItems: 500, items: { $ref: "#/components/schemas/VocabularyRecord" } }
+        cursor: { type: string, pattern: '^c1\.[A-Za-z0-9_-]{32}$' }
+        has_more: { type: boolean }
+    LearningSnapshot:
+      type: object
+      additionalProperties: false
+      required: [epoch, snapshot_revision, items, next_page_token, catch_up_cursor]
+      properties:
+        epoch: { type: string, format: uuid }
+        snapshot_revision: { type: integer, minimum: 0 }
+        items: { type: array, maxItems: 500, items: { $ref: "#/components/schemas/VocabularyRecord" } }
+        next_page_token: { type: string, nullable: true, pattern: '^s1\.[A-Za-z0-9_-]{54}$' }
+        catch_up_cursor: { type: string, pattern: '^c1\.[A-Za-z0-9_-]{32}$' }

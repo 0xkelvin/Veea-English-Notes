@@ -331,6 +331,38 @@ func (q *Queries) LockUserForEmailChange(ctx context.Context, id uuid.UUID) (Use
 	return i, err
 }
 
+const lockUserForKeyShare = `-- name: LockUserForKeyShare :one
+SELECT id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at, display_name, preferred_language, time_zone, daily_goal, profile_revision, email_revision, lifecycle_revision, state_changed_at FROM users WHERE id = $1 FOR KEY SHARE
+`
+
+// Lock level L3 in its weakest mode (TRD 05 §14): learning writes only need the account to stay
+// active and present; it is compatible with every other L3 mode except the final erase.
+func (q *Queries) LockUserForKeyShare(ctx context.Context, id uuid.UUID) (User, error) {
+	row := q.db.QueryRow(ctx, lockUserForKeyShare, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.EmailNormalized,
+		&i.EmailVerifiedAt,
+		&i.PasswordHash,
+		&i.PasswordChangedAt,
+		&i.Status,
+		&i.Role,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DisplayName,
+		&i.PreferredLanguage,
+		&i.TimeZone,
+		&i.DailyGoal,
+		&i.ProfileRevision,
+		&i.EmailRevision,
+		&i.LifecycleRevision,
+		&i.StateChangedAt,
+	)
+	return i, err
+}
+
 const lockUserForNoKeyUpdate = `-- name: LockUserForNoKeyUpdate :one
 SELECT id, email, email_normalized, email_verified_at, password_hash, password_changed_at, status, role, created_at, updated_at, display_name, preferred_language, time_zone, daily_goal, profile_revision, email_revision, lifecycle_revision, state_changed_at FROM users WHERE id = $1 FOR NO KEY UPDATE
 `

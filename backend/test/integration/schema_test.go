@@ -19,21 +19,22 @@ import (
 )
 
 var expectedTables = []string{
-	"account_operations", "audit_events", "deletion_ledger", "email_changes", "email_outbox", "erased_addresses", "otp_challenges", "otp_cooldowns",
-	"rate_limit_counters", "refresh_tokens_consumed", "sessions", "users",
+	"account_export_chunks", "account_operations", "audit_events", "deletion_ledger", "email_changes", "email_outbox", "erased_addresses",
+	"learning_mutations", "learning_sync_control", "learning_sync_heads", "learning_sync_writers", "otp_challenges", "otp_cooldowns",
+	"rate_limit_counters", "refresh_tokens_consumed", "sessions", "users", "vocabulary_items",
 }
 
 var expectedIndexes = []string{ // sorted, as publicNames returns them; 00007 added the cleanup indexes
 	"account_operations_expires", "account_operations_jobs", "account_operations_one_delete", "account_operations_owner", "account_operations_token_hash_key", "audit_events_action", "audit_events_retention", "audit_events_target", "deletion_ledger_retain", "deletion_ledger_user_id_key", "email_changes_expires", "email_changes_one_pending", "email_outbox_challenge",
-	"email_outbox_due", "email_outbox_finished", "erased_addresses_expires", "otp_challenges_change", "otp_challenges_change_open", "otp_challenges_expires",
+	"email_outbox_due", "email_outbox_finished", "erased_addresses_expires", "learning_mutations_expiry", "learning_sync_writers_lru", "learning_sync_writers_retired", "otp_challenges_change", "otp_challenges_change_open", "otp_challenges_expires",
 	"otp_challenges_one_open", "otp_challenges_token_hash_key", "otp_challenges_user", "otp_cooldowns_last_issued",
 	"rate_limit_counters_window", "refresh_tokens_consumed_retain", "refresh_tokens_consumed_session",
 	"sessions_absolute_expires", "sessions_access_token_hash_key", "sessions_refresh_token_hash_key",
-	"sessions_revoked_at", "sessions_user_active", "users_email_normalized_key",
+	"sessions_revoked_at", "sessions_user_active", "users_email_normalized_key", "vocabulary_items_feed", "vocabulary_items_tombstones",
 }
 
 // latestVersion is the number of the newest migration file.
-const latestVersion = 10
+const latestVersion = 11
 
 func publicNames(t *testing.T, d *pgtest.DB, query string) []string {
 	t.Helper()
@@ -134,7 +135,7 @@ func TestMigrations_AreUpOnlyAndOrdered(t *testing.T) {
 	files, _ := fs.Glob(migrations.FS, "*.sql")
 	want := []string{"00001_users.sql", "00002_otp.sql", "00003_sessions.sql",
 		"00004_email_outbox.sql", "00005_audit_events.sql", "00006_rate_limit_counters.sql",
-		"00007_cleanup_indexes.sql", "00008_session_management.sql", "00009_account_profile_email_change.sql", "00010_account_lifecycle.sql"}
+		"00007_cleanup_indexes.sql", "00008_session_management.sql", "00009_account_profile_email_change.sql", "00010_account_lifecycle.sql", "00011_learning_sync.sql"}
 	requireNames(t, files, want)
 	for _, f := range files {
 		raw, _ := fs.ReadFile(migrations.FS, f)

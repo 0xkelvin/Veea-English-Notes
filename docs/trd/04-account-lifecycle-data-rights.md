@@ -146,7 +146,7 @@ The old address becomes available **only after that final user-delete commit**, 
 
 Every old access/refresh token fails after acceptance, even if an offline device returns only after physical deletion or a new signup at the same email. No request may infer ownership from email or replace its stored user ID with a new one. A receipt capability can only read its own limited deletion status, not the new account.
 
-Flutter follow-up: on a definitive inactive/unauthorized account response, clear secure auth tokens and stop cloud retries/uploads. Distinguish “unknown deletion result” from a generic `401`; use the saved receipt to resolve the former. The server cannot erase an offline notebook or a file already exported. Offer an explicit local-copy choice; do not silently upload an old account's cached notebook into a later account. Partition sync queues/cursors by UUID, quarantine the deleted account's queued changes, and require explicit user consent for any local-only import into a newly created account. Future sync must reject deleted/non-active owners server-side even when the device has stale local entitlement/session state. Remote device wipe is not promised.
+Flutter follow-up: on a definitive inactive/unauthorized account response, clear secure auth tokens and stop cloud retries/uploads. Distinguish “unknown deletion result” from a generic `401`; use the saved receipt to resolve the former. The server cannot erase an offline notebook or a file already exported. Partition local caches, sync queues, cursors and sync writers by UUID. **Amended 2026-11-14 by [TRD 05](05-learning-data-sync.md) §9:** once deletion is confirmed (this device's accepted deletion response, or a receipt read with the saved capability), the client clears that account's local cache, queue, cursor, writer and restore-review set; it keeps no local copy. A deleted account's cache is never imported into any account, including a later account registered with the same email, and backups tagged with another `user_id` are refused. This replaces the earlier proposal to offer a local-copy choice and a consented import into a newly created account. Future sync must reject deleted/non-active owners server-side even when the device has stale local entitlement/session state. Remote device wipe is not promised.
 
 ## 7. Proposed erasure and retention policy
 
@@ -360,7 +360,7 @@ Before a restored database takes traffic:
 5. Start the cleanup runner alone and wait for `account_deletion_oldest_pending_seconds` to return to 0.
 6. Only then admit traffic.
 
-The ledger is kept 90 days, longer than the 30-day backup window, so any restorable backup is covered. No restore tool exists yet: steps 3 and 4 are a manual SQL runbook to write and drill before release. Router tests do not prove any of this.
+[TRD 05](05-learning-data-sync.md) §8.2 adds the vocabulary steps: close `learning_sync_control` first, let the purge drain learning rows, rotate every sync epoch and retire every writer before reopening sync. The ledger is kept 90 days, longer than the 30-day backup window, so any restorable backup is covered. No restore tool exists yet: steps 3 and 4 are a manual SQL runbook to write and drill before release. Router tests do not prove any of this.
 
 ### 12.6 Provider retention verification
 

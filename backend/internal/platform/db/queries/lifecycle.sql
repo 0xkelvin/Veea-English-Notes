@@ -28,9 +28,11 @@ SELECT EXISTS(SELECT 1 FROM account_operations WHERE user_id= @user_id AND actio
 UPDATE account_operations SET state='canceled',artifact_ciphertext=NULL,artifact_key_id=NULL,completed_at=clock_timestamp()
 WHERE user_id= @user_id AND action='export' AND state IN ('pending','ready')
 RETURNING id;
--- name: PublishAccountExport :exec
-UPDATE account_operations SET state='ready',artifact_ciphertext= @artifact_ciphertext,artifact_key_id= @artifact_key_id,
- download_expires_at=clock_timestamp()+interval '24 hours',completed_at=clock_timestamp() WHERE id= @id;
+-- name: PublishAccountExport :execrows
+-- Schema version 2: the sealed chunks are already inserted in the same transaction (TRD 05 §11.1).
+UPDATE account_operations SET state='ready',schema_version=2,artifact_plain_bytes= @artifact_plain_bytes,
+ artifact_key_id= @artifact_key_id,download_expires_at=clock_timestamp()+interval '24 hours',completed_at=clock_timestamp()
+WHERE id= @id AND state='pending';
 -- name: ListAccountJobs :many
 SELECT id FROM account_operations WHERE state='pending' ORDER BY created_at,id LIMIT @batch_size;
 -- name: AdvanceAccountPurge :exec
