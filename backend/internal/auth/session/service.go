@@ -384,3 +384,45 @@ func addrPtr(a netip.Addr) *netip.Addr {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// --- primitives for password mutations (TRD 7.5) ---------------------------------------------
+
+// LockActing locks and re-validates the acting session at level L4a: it must belong to user,
+// not be revoked, and have neither its access nor its absolute expiry passed. ok is false when
+// it fails any of these, for example after a logout, a revocation or a reset that committed
+// after the request was authenticated. The caller must already hold the user at L3.
+func LockActing(ctx context.Context, tx pgx.Tx, user, sessionID uuid.UUID) (sqlc.Session, bool, error) {
+	s, err := sqlc.New(tx).LockActingSessionForUpdate(ctx, sqlc.LockActingSessionForUpdateParams{ID: sessionID, UserID: user})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return sqlc.Session{}, false, nil
+	}
+	if err != nil {
+		return sqlc.Session{}, false, fmt.Errorf("session: lock acting session: %w", err)
+	}
+	return s, true, nil
+}
+
+// RevokeOthers revokes every active session of user except keep (L4b) and records the
+// revocation. Set and change use it (AC-11, AC-28).
+func RevokeOthers(ctx context.Context, tx pgx.Tx, user, keep uuid.UUID, reason string, c Client) (int64, error) {
+	n, err := sqlc.New(tx).RevokeOtherSessionsForUser(ctx, sqlc.RevokeOtherSessionsForUserParams{
+		Reason: ptr(reason), UserID: user, KeepSessionID: keep})
+	if err != nil {
+		return 0, fmt.Errorf("session: revoke others: %w", err)
+	}
+	return n, recordRevoke(ctx, tx, user, keep, reason, n, c)
+}
+
+// RevokeAll revokes every active session of user (L4b) and records it. Reset uses it (AC-13).
+func RevokeAll(ctx context.Context, tx pgx.Tx, user uuid.UUID, reason string, c Client) (int64, error) {
+	n, err := sqlc.New(tx).RevokeAllSessionsForUser(ctx, sqlc.RevokeAllSessionsForUserParams{Reason: ptr(reason), UserID: user})
+	if err != nil {
+		return 0, fmt.Errorf("session: revoke all: %w", err)
+	}
+	if n == 0 {
+		return 0, nil
+	}
+	return n, audit.Record(ctx, tx, audit.Event{Action: "auth.session.revoke", Outcome: audit.Success,
+		TargetUserID: &user, IP: c.IP, UserAgent: c.UserAgent, RequestID: c.RequestID,
+		Metadata: map[string]string{"reason": reason, "count": strconv.FormatInt(n, 10)}})
+}

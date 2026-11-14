@@ -15,7 +15,9 @@ import (
 
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/httpapi"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/otp"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/password"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/session"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/signin"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/signup"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/notify"
@@ -34,8 +36,9 @@ type Options struct {
 	OutboxKeys     []notify.Key
 	TrustedProxies []netip.Prefix
 
-	// Hasher hashes signup passwords. Nil means an identity.Hasher with the approved parameters.
-	Hasher signup.PasswordHasher
+	// Hasher hashes and verifies passwords. Nil means an identity.Hasher with the approved
+	// parameters. Tests wrap the real hasher to count Argon2id runs.
+	Hasher signin.Verifier
 	// Policy is the password policy. Nil means the embedded blocklist.
 	Policy *identity.Policy
 	// Rules overrides the TRD 10 limits. Nil means the defaults.
@@ -92,13 +95,28 @@ func New(o Options) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	signinSvc, err := signin.New(signin.Config{
+		Pool: o.Pool, OTP: otpSvc, Hasher: o.Hasher, EmailHMAC: emailHMAC, Rules: o.Rules, Random: o.Random,
+		Logger: o.Logger.With("component", "signin"), OnTxRetry: o.OnTxRetry,
+	})
+	if err != nil {
+		return nil, err
+	}
+	outbox := notify.NewOutbox(keyring)
+	passwordSvc, err := password.New(password.Config{
+		Pool: o.Pool, OTP: otpSvc, Outbox: outbox, Hasher: o.Hasher, Policy: o.Policy, Rules: o.Rules,
+		Logger: o.Logger.With("component", "password"), OnTxRetry: o.OnTxRetry,
+	})
+	if err != nil {
+		return nil, err
+	}
 	sessions, err := session.NewService(session.Config{
 		Pool: o.Pool, Rules: o.Rules, Random: o.Random, Logger: o.Logger.With("component", "session"), OnTxRetry: o.OnTxRetry,
 	})
 	if err != nil {
 		return nil, err
 	}
-	auth := &httpapi.Handlers{Signup: signupSvc, Sessions: sessions, IPs: clientip.New(o.TrustedProxies),
+	auth := &httpapi.Handlers{Signup: signupSvc, Signin: signinSvc, Password: passwordSvc, Sessions: sessions, IPs: clientip.New(o.TrustedProxies),
 		Log: o.Logger.With("component", "http")}
 	return httpx.NewHandler(o.Pool, o.ReadyTimeout, auth.Mount), nil
 }

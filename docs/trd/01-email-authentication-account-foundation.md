@@ -927,6 +927,23 @@ V touches only L2. The flow then continues **in the same transaction** with L3, 
    - Confirm that `password_hash` is byte-equal to the hash verified in step 1. If it changed (a concurrent change or reset), return `401 invalid_credentials` without a session.
    - Check active; optionally rehash (same lock, no upgrade); enforce the session cap (L4b); insert the session and the audit event; commit.
 
+**Implementation notes** (Ticket 09: `internal/auth/signin`). These fill gaps in §5.3 endpoints 4 to 6, §7.3 and §7.4; none changes an approved decision.
+- **Order in password login.**
+  1. Validate the email and device. A malformed request gives `400 invalid_request`: §5.3 lists no `invalid_email` here, and a malformed address is not a credential. Nothing is counted.
+  2. Count the per-IP login limit, then peek at the per-email failure counter. Either refusal is `429` before any Argon2id work.
+  3. Read the account unlocked and run exactly one Argon2id: against the stored hash, or `VerifyDummy` for an unknown email, a passwordless account or a pending registration. The test hasher counts runs, so every failure path is shown to cost one, but there is no wall-clock timing test.
+  4. Then the success transaction, or the failure accounting below.
+- **Failure accounting.** §7.4 step 2 says "a short transaction with the failure counters and the audit event". Following §7.1 rule 6, the counter is an autocommit increment and the audit event an autocommit insert, so neither can be rolled back. Ten failures are allowed; the eleventh request is refused until the 15-minute window ends (fixed windows, §10).
+- **Lockout scope.** The lockout counter (`login_fail_email_15m`) is read only by password login. OTP sign-in and reset keep working during it (`TestPasswordLogin_LockoutStillAllowsOTPSignin`).
+- **Rehash outside the transaction.** When `Verify` reports outdated parameters, the new hash is computed right after it, still outside any transaction. The success transaction stores it with a compare-and-set on the hash that verified, under the L3 lock already held. `password_changed_at` is not touched.
+- **Re-checks under L3.**
+  - A hash that changed between verification and the lock gives `401 invalid_credentials` and no session. It is audited as `password_changed_concurrently` and not counted as a wrong guess.
+  - "Active" also requires a verified email. Either failing gives `403 account_unavailable`, only after the password verified; a wrong password on such an account still gets the generic `401`.
+- **OTP sign-in.**
+  - Eligibility is §3.3 (active and verified), and the code goes to the stored `users.email`, not the typed spelling.
+  - At verify, the account is locked (L3) and re-checked. If it fails, everything rolls back, the code stays usable, the T-fail event records `account_unavailable`, and the response is `invalid_code`.
+  - Otherwise the consumption, the session (cap, L4b; insert, L5), the cancellation of the challenge's pending email and `auth.otp.verify` commit together.
+
 ### 7.5 Password set, change and reset
 
 **[Proposed]**
@@ -966,6 +983,22 @@ These checks run on the locked rows, not on what the auth middleware saw.
 | Change: wrong `current_password` | Before T-main (argon2id) | No T-main. T-fail with audit, and C on the per-user wrong-current-password counter | `403 invalid_current_password` |
 
 A rollback after V accepted the code leaves the challenge unconsumed. The user can retry with the same code once the condition is fixed, within its lifetime and attempt limit.
+
+**Implementation notes** (Ticket 10: `internal/auth/password`). These fill gaps in §5.3 endpoints 7, 8 and 12 to 14 and in §7.5. Item 1 resolves a conflict between two TRD rows; the rest change no approved decision.
+1. **Reset on an account that left good standing.** The table above says "Reset: `invalid_code`, with the attempt committed", but the failure-accounting table says "Roll back T-main (undoing any consumption)". The code follows the rollback: the code was correct, so no attempt is charged; nothing changes; T-fail records `account_unavailable`; the response is `invalid_code`. This matches OTP sign-in (§7.3).
+2. **Verify limits before Argon2id.** Set and reset must hash the new password before the code is looked at, but the verify limits (per IP, and P per email) are part of `otp.Verify`. `otp.Service.CheckVerifyLimits` runs them first, and `VerifyRequest.Prechecked` stops `Verify` from counting the IP twice. So a limited request costs no Argon2id (`TestPasswordCodes_VerifyLimitsRunBeforeArgon2id`).
+3. **The `contains_email` rule on reset.** The reset request carries no email, so the challenge's `email_normalized` is read by token hash (unlocked) before the policy check. For an unknown token the rule is checked without an email, and V then rejects it. A policy answer that depends on the email reveals nothing to a third party, because only the token holder can ask.
+4. **Order in change.** Policy (`422`), then `password_not_set` (`409`), then a peek at the wrong-current-password limit (`429`), then `current_password` verified against H0, then the new password hashed. All of it runs before the transaction.
+   - A wrong current password increments the per-user counter and writes the failure event in autocommit statements, so neither can roll back.
+   - Under L3, a hash that is no longer H0 gives `403` with `stale_current_password`, not counted.
+5. **Set start.**
+   - Besides `409 password_already_set`, an account that is no longer in good standing gets `401`.
+   - The password state is checked again inside the start transaction, where a refusal also releases the cooldown claim.
+6. **Notifications.** `password_added` and `password_changed` name the acting session's device. `password_reset_done` is not tied to a session and says "Reset with an emailed code". Device names are cut to 64 bytes at a character boundary, because session names allow 64 characters, which can be more bytes.
+7. **Audit.** Each success event carries `metadata.revoked_sessions`, and each revocation also writes `auth.session.revoke`. T-fail reasons:
+   - Set: `account_unavailable`, `password_already_set`, `session_invalid`.
+   - Change: the same, plus `password_not_set` and `stale_current_password`.
+8. **Races covered** (§12.3): refresh against change, refresh against reset, and logout against change on the acting session. The logout-versus-change test forces each interleaving, including one where the change waits on the acting session row (L4a) while holding L3 and logout queues behind it. In every run both orders occurred, with no deadlock.
 
 **Concurrent mutations of the same user**
 - They serialize on L3.

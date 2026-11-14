@@ -14,7 +14,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/otp"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/password"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/session"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/signin"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/signup"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/clientip"
@@ -25,16 +27,26 @@ import (
 // Handlers serves the auth endpoints.
 type Handlers struct {
 	Signup   *signup.Service
+	Signin   *signin.Service
+	Password *password.Service
 	Sessions *session.Service
 	IPs      *clientip.Resolver
 	Log      *slog.Logger
 }
 
-// Mount registers the routes (TRD 5.3, endpoints 1 to 3 and 9 to 11).
+// Mount registers the routes (TRD 5.3, endpoints 1 to 14).
 func (h *Handlers) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/auth/signup/otp/start", h.signupOTPStart)
 	mux.HandleFunc("POST /v1/auth/signup/password/start", h.signupPasswordStart)
 	mux.HandleFunc("POST /v1/auth/signup/verify", h.signupVerify)
+	mux.HandleFunc("POST /v1/auth/otp/start", h.otpStart)
+	mux.HandleFunc("POST /v1/auth/otp/verify", h.otpVerify)
+	mux.HandleFunc("POST /v1/auth/password/login", h.passwordLogin)
+	mux.HandleFunc("POST /v1/auth/password/reset/start", h.resetStart)
+	mux.HandleFunc("POST /v1/auth/password/reset/complete", h.resetComplete)
+	mux.HandleFunc("POST /v1/me/password/set/start", h.authenticated(h.setStart))
+	mux.HandleFunc("POST /v1/me/password/set", h.authenticated(h.setPassword))
+	mux.HandleFunc("PUT /v1/me/password", h.authenticated(h.changePassword))
 	mux.HandleFunc("POST /v1/auth/token/refresh", h.refresh)
 	mux.HandleFunc("POST /v1/auth/logout", h.authenticated(h.logout))
 	mux.HandleFunc("GET /v1/me", h.authenticated(h.me))
@@ -55,6 +67,23 @@ type verifyRequest struct {
 	ChallengeToken string          `json:"challenge_token"`
 	Code           string          `json:"code"`
 	Device         *session.Device `json:"device"`
+}
+
+type passwordLoginRequest struct {
+	Email    string          `json:"email"`
+	Password string          `json:"password"`
+	Device   *session.Device `json:"device"`
+}
+
+type codePasswordRequest struct {
+	ChallengeToken string `json:"challenge_token"`
+	Code           string `json:"code"`
+	NewPassword    string `json:"new_password"`
+}
+
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
 }
 
 type refreshRequest struct {
@@ -162,6 +191,139 @@ func (h *Handlers) signupVerify(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, tokenBody(res.Session, res.User))
 }
 
+// otpStart is endpoint 4: the same 202 for every email; only an account in good standing gets
+// the login_code email.
+func (h *Handlers) otpStart(w http.ResponseWriter, r *http.Request) {
+	var req emailRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		h.fail(w, err)
+		return
+	}
+	ack, err := h.Signin.StartOTP(r.Context(), req.Email, h.signinClient(w, r))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusAccepted, ackBody(ack))
+}
+
+// otpVerify is endpoint 5: 200 TokenResponse after the commit.
+func (h *Handlers) otpVerify(w http.ResponseWriter, r *http.Request) {
+	var req verifyRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		h.fail(w, err)
+		return
+	}
+	if req.Device == nil {
+		h.fail(w, session.ErrInvalidDevice)
+		return
+	}
+	res, err := h.Signin.VerifyOTP(r.Context(), req.ChallengeToken, req.Code, *req.Device, h.signinClient(w, r))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, tokenBody(res.Session, res.User))
+}
+
+// passwordLogin is endpoint 6. A malformed email is a malformed request here (TRD 5.3 lists no
+// invalid_email for this endpoint); every credential failure is the same 401.
+func (h *Handlers) passwordLogin(w http.ResponseWriter, r *http.Request) {
+	var req passwordLoginRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		h.fail(w, err)
+		return
+	}
+	if req.Device == nil {
+		h.fail(w, session.ErrInvalidDevice)
+		return
+	}
+	res, err := h.Signin.PasswordLogin(r.Context(), req.Email, req.Password, *req.Device, h.signinClient(w, r))
+	if errors.Is(err, identity.ErrInvalidEmail) {
+		err = httpx.ErrBadRequest
+	}
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, tokenBody(res.Session, res.User))
+}
+
+func (h *Handlers) signinClient(w http.ResponseWriter, r *http.Request) signin.Client {
+	return signin.Client{IP: h.IPs.ResolveRequest(r), UserAgent: UserAgent(r), RequestID: httpx.RequestID(w)}
+}
+
+// resetStart is endpoint 7: the same 202 for every email.
+func (h *Handlers) resetStart(w http.ResponseWriter, r *http.Request) {
+	var req emailRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		h.fail(w, err)
+		return
+	}
+	ack, err := h.Password.StartReset(r.Context(), req.Email, h.passwordClient(w, r))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusAccepted, ackBody(ack))
+}
+
+// resetComplete is endpoint 8: 204 and no session (R7, AC-13).
+func (h *Handlers) resetComplete(w http.ResponseWriter, r *http.Request) {
+	var req codePasswordRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		h.fail(w, err)
+		return
+	}
+	err := h.Password.CompleteReset(r.Context(), req.ChallengeToken, req.Code, req.NewPassword, h.passwordClient(w, r))
+	h.noContent(w, err)
+}
+
+// setStart is endpoint 12. It takes no body; any body is ignored.
+func (h *Handlers) setStart(w http.ResponseWriter, r *http.Request, p session.Principal) {
+	ack, err := h.Password.StartSet(r.Context(), p, h.passwordClient(w, r))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusAccepted, ackBody(ack))
+}
+
+// setPassword is endpoint 13.
+func (h *Handlers) setPassword(w http.ResponseWriter, r *http.Request, p session.Principal) {
+	var req codePasswordRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		h.fail(w, err)
+		return
+	}
+	err := h.Password.Set(r.Context(), p, req.ChallengeToken, req.Code, req.NewPassword, h.passwordClient(w, r))
+	h.noContent(w, err)
+}
+
+// changePassword is endpoint 14.
+func (h *Handlers) changePassword(w http.ResponseWriter, r *http.Request, p session.Principal) {
+	var req changePasswordRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		h.fail(w, err)
+		return
+	}
+	err := h.Password.Change(r.Context(), p, req.CurrentPassword, req.NewPassword, h.passwordClient(w, r))
+	h.noContent(w, err)
+}
+
+func (h *Handlers) noContent(w http.ResponseWriter, err error) {
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handlers) passwordClient(w http.ResponseWriter, r *http.Request) password.Client {
+	return password.Client{IP: h.IPs.ResolveRequest(r), UserAgent: UserAgent(r), RequestID: httpx.RequestID(w)}
+}
+
 // refresh is endpoint 9 (TRD 8.4). Every refused token gets the same 401.
 func (h *Handlers) refresh(w http.ResponseWriter, r *http.Request) {
 	var req refreshRequest
@@ -265,6 +427,16 @@ func (h *Handlers) fail(w http.ResponseWriter, err error) {
 		httpx.WriteProblem(w, http.StatusBadRequest, httpx.CodeInvalidCode)
 	case errors.Is(err, otp.ErrAttemptsExceeded):
 		httpx.WriteProblem(w, http.StatusBadRequest, httpx.CodeCodeAttemptsExceeded)
+	case errors.Is(err, signin.ErrInvalidCredentials):
+		httpx.WriteProblem(w, http.StatusUnauthorized, httpx.CodeInvalidCredentials)
+	case errors.Is(err, signin.ErrAccountUnavailable):
+		httpx.WriteProblem(w, http.StatusForbidden, httpx.CodeAccountUnavailable)
+	case errors.Is(err, password.ErrPasswordAlreadySet):
+		httpx.WriteProblem(w, http.StatusConflict, httpx.CodePasswordAlreadySet)
+	case errors.Is(err, password.ErrPasswordNotSet):
+		httpx.WriteProblem(w, http.StatusConflict, httpx.CodePasswordNotSet)
+	case errors.Is(err, password.ErrInvalidCurrentPassword):
+		httpx.WriteProblem(w, http.StatusForbidden, httpx.CodeInvalidCurrentPassword)
 	case errors.Is(err, signup.ErrSignupUnavailable):
 		httpx.WriteProblem(w, http.StatusConflict, httpx.CodeSignupUnavailable)
 	case errors.Is(err, identity.ErrBusy):

@@ -27,6 +27,8 @@ internal/app/            wires every module into the router; used by cmd/api and
 internal/auth/httpapi/   auth HTTP handlers and the TRD 5.3 error mapping
 internal/auth/session/   session issuance in the caller's transaction (tokens, cap), bearer authentication, refresh rotation, logout
 internal/auth/signup/    Flows A and B: signup start (OTP, password) and verify
+internal/auth/signin/    Flows C and D: OTP sign-in and password sign-in
+internal/auth/password/  Flows E, F and G: first-password set, change and reset
 internal/identity/accounts/  the only writer of users (database side of identity)
 internal/auth/otp/       OTP challenge core: start (cooldown, supersede, challenge, email) and verify (procedure V, committed failures)
 internal/audit/          append-only audit writer; refuses secret-looking metadata
@@ -72,6 +74,23 @@ Generate throwaway keys for local runs with `openssl rand -hex 32` (`VEEA_EMAIL_
 - `POST /v1/auth/signup/verify` `{challenge_token, code, device: {name, platform}}`: `201` with the
   session tokens and the user, `409 signup_unavailable` if the email gained an account meanwhile.
 
+- `POST /v1/auth/otp/start` `{email}`: `202`, the same for every email. Only an active, verified
+  account gets a `login_code` email; sign-in never creates an account.
+- `POST /v1/auth/otp/verify` `{challenge_token, code, device}`: `200` with session tokens.
+- `POST /v1/auth/password/login` `{email, password, device}`: `200` with session tokens. Unknown
+  email, wrong password and passwordless account all get `401 invalid_credentials`; a correct
+  password on an inactive account gets `403 account_unavailable`. After 10 failures in 15 minutes
+  password login is refused (`429`) while OTP sign-in keeps working.
+- `POST /v1/auth/password/reset/start` `{email}`: `202`, the same for every email.
+- `POST /v1/auth/password/reset/complete` `{challenge_token, code, new_password}`: `204`. Sets the
+  password (also a first one on a passwordless account) and signs out every session.
+- `POST /v1/me/password/set/start` (bearer): `202` and a code email, for a passwordless account;
+  `409 password_already_set` otherwise.
+- `POST /v1/me/password/set` (bearer) `{challenge_token, code, new_password}`: `204`. The code is
+  bound to this session; the current session stays signed in and every other one is revoked.
+- `PUT /v1/me/password` (bearer) `{current_password, new_password}`: `204`, keeps the current
+  session and revokes the others. A resend after a lost response gets `403
+  invalid_current_password`, and the confirmation email is the user's proof (TRD 01 §5.4).
 - `POST /v1/auth/token/refresh` `{refresh_token}`: `200` with a new pair, rotated atomically
   with no grace window. A reused token (for example a retry after a lost response) revokes that
   session. Every refused token gets the same `401 unauthorized`.

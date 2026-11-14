@@ -39,7 +39,9 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
   `backend/internal/app/`, which builds the router for both `cmd/api` and the integration tests.
   Token refresh authenticates by its body token; logout and `GET /v1/me` sit behind the bearer
   middleware in `backend/internal/auth/httpapi/`. Every protected Go route must be wrapped with
-  `authenticated`. Sign-in, password and device-management flows are not built yet.
+  `authenticated`. OTP and password sign-in are in `backend/internal/auth/signin/`; password
+  set, change and reset are in `backend/internal/auth/password/`. Device management is not
+  built yet. Password mutations hash before their transaction and follow TRD 01 §7.5 lock order.
 - After changing a query or migration run `make sqlc` and `make sqlc-verify` (from `backend/`)
   and commit the generated code with it.
 - Migrations run through `cmd/migrate` before a deploy, never on API startup.

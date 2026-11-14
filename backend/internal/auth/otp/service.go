@@ -424,6 +424,10 @@ type VerifyRequest struct {
 	IP        clientip.Result
 	UserAgent string
 	RequestID string
+	// Prechecked means the caller already ran CheckVerifyLimits for this request, for example
+	// before an Argon2id run it must not spend on a limited request. Verify then skips them, so
+	// the per-IP counter moves once per request.
+	Prechecked bool
 }
 
 // Accepted describes a challenge that procedure V just consumed. It is handed to the flow's
@@ -489,8 +493,10 @@ func (s *Service) Verify(ctx context.Context, req VerifyRequest, then AfterAccep
 		return errors.New("otp: set_password verification needs the caller's user and session, other purposes none")
 	}
 	tokenHash := HashToken(req.Token)
-	if err := s.checkVerifyLimits(ctx, req, tokenHash); err != nil {
-		return err
+	if !req.Prechecked {
+		if err := s.checkVerifyLimits(ctx, req, tokenHash); err != nil {
+			return err
+		}
 	}
 
 	var out outcome
@@ -499,6 +505,13 @@ func (s *Service) Verify(ctx context.Context, req VerifyRequest, then AfterAccep
 		return s.redeem(ctx, tx, info, req, tokenHash, then, &out)
 	})
 	return s.settle(ctx, info, req, &out, err)
+}
+
+// CheckVerifyLimits runs Verify's pre-transaction limits on their own: the per-IP verify limit
+// (counted) and the per-email failure limit P (peeked). Call it before expensive work, then pass
+// Prechecked to Verify. Errors: *RateLimitedError or an internal error.
+func (s *Service) CheckVerifyLimits(ctx context.Context, req VerifyRequest) error {
+	return s.checkVerifyLimits(ctx, req, HashToken(req.Token))
 }
 
 // checkVerifyLimits runs before any transaction: the per-IP verify limit is counted, then P

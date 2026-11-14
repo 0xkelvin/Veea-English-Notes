@@ -32,15 +32,43 @@ import (
 )
 
 // countingHasher is a real Argon2id hasher (cheap test parameters) that counts its calls, so
-// tests can prove when hashing happens relative to the limits.
+// tests can prove when Argon2id runs relative to the limits. n counts Hash, verifies counts
+// Verify and VerifyDummy.
 type countingHasher struct {
-	h *identity.Hasher
-	n atomic.Int32
+	h        *identity.Hasher
+	n        atomic.Int32
+	verifies atomic.Int32
+	dummies  atomic.Int32
+	// afterVerify, when set to a func(), runs after each Verify: the window between Argon2id
+	// and the sign-in transaction.
+	afterVerify atomic.Value
+	// afterHash, when set to a func(), runs after each Hash: the window between Argon2id and a
+	// password mutation's transaction.
+	afterHash atomic.Value
 }
 
 func (c *countingHasher) Hash(ctx context.Context, password string) (string, error) {
 	c.n.Add(1)
-	return c.h.Hash(ctx, password)
+	h, err := c.h.Hash(ctx, password)
+	if hook, _ := c.afterHash.Load().(func()); hook != nil {
+		hook()
+	}
+	return h, err
+}
+
+func (c *countingHasher) Verify(ctx context.Context, encoded, password string) (identity.VerifyResult, error) {
+	c.verifies.Add(1)
+	v, err := c.h.Verify(ctx, encoded, password)
+	if hook, _ := c.afterVerify.Load().(func()); hook != nil {
+		hook()
+	}
+	return v, err
+}
+
+func (c *countingHasher) VerifyDummy(ctx context.Context, password string) error {
+	c.verifies.Add(1)
+	c.dummies.Add(1)
+	return c.h.VerifyDummy(ctx, password)
 }
 
 type signupEnv struct {
@@ -119,6 +147,11 @@ func (r response) str(key string) string {
 
 func (e *signupEnv) post(t *testing.T, path string, body any, headers ...string) response {
 	t.Helper()
+	return e.send(t, http.MethodPost, path, body, headers...)
+}
+
+func (e *signupEnv) send(t *testing.T, method, path string, body any, headers ...string) response {
+	t.Helper()
 	var payload []byte
 	switch b := body.(type) {
 	case string:
@@ -129,7 +162,7 @@ func (e *signupEnv) post(t *testing.T, path string, body any, headers ...string)
 			t.Fatal(err)
 		}
 	}
-	req, err := http.NewRequest(http.MethodPost, e.srv.URL+path, bytes.NewReader(payload))
+	req, err := http.NewRequest(method, e.srv.URL+path, bytes.NewReader(payload))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -120,6 +120,11 @@ const (
 	CodeSignupUnavailable       = "signup_unavailable"
 	CodeRateLimited             = "rate_limited"
 	CodeUnauthorized            = "unauthorized"
+	CodeInvalidCredentials      = "invalid_credentials"
+	CodeAccountUnavailable      = "account_unavailable"
+	CodePasswordAlreadySet      = "password_already_set"
+	CodePasswordNotSet          = "password_not_set"
+	CodeInvalidCurrentPassword  = "invalid_current_password"
 	CodeBusy                    = "busy"
 	CodeInternal                = "internal_error"
 	CodeNotReady                = "not_ready"
@@ -134,6 +139,11 @@ var titles = map[string]string{
 	CodeSignupUnavailable:       "This email cannot be used for a new account. Sign in instead.",
 	CodeRateLimited:             "Too many requests. Try again later.",
 	CodeUnauthorized:            "Authentication is required.",
+	CodeInvalidCredentials:      "The email or password is not correct.",
+	CodeAccountUnavailable:      "This account cannot sign in.",
+	CodePasswordAlreadySet:      "This account already has a password.",
+	CodePasswordNotSet:          "This account has no password yet. Set one first.",
+	CodeInvalidCurrentPassword:  "The current password was not accepted.",
 	CodeBusy:                    "The service is busy. Try again shortly.",
 	CodeInternal:                "Something went wrong.",
 	CodeNotReady:                "Not ready",
