@@ -424,6 +424,8 @@ func TestRefresh_RefusedForRevokedExpiredOrInactiveSessions(t *testing.T) {
 		{"idle expired", `UPDATE sessions SET refresh_expires_at = now() - interval '1 second' WHERE id = $1`, "session_expired", ""},
 		{"absolute expired", `UPDATE sessions SET absolute_expires_at = now() - interval '1 second' WHERE id = $1`, "session_expired", ""},
 		{"account suspended", `UPDATE users SET status = 'suspended' WHERE id = (SELECT user_id FROM sessions WHERE id = $1)`, "account_inactive", "account_inactive"},
+		// AC-4: an account without a verified email cannot refresh either.
+		{"email unverified", `UPDATE users SET email_verified_at = NULL WHERE id = (SELECT user_id FROM sessions WHERE id = $1)`, "account_inactive", "account_inactive"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

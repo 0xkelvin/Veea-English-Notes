@@ -319,6 +319,15 @@ delivery = 'none': open ─(every verify is a failure)─▶ exhausted | superse
 - RFC 9457 `application/problem+json` with a stable `code` and `request_id`.
 - `429 rate_limited` carries `Retry-After` in seconds.
 
+**Implementation notes** (Tickets 07 and 12)
+- **Strict request bodies.** A body must be:
+  - sent with `Content-Type: application/json`;
+  - exactly one JSON object;
+  - spelled with exactly the documented keys: no other case, no duplicates, no unknown keys;
+  - complete: every field present, including inside `device`.
+  Anything else is `400 invalid_request`, so `{}` sent to refresh is a malformed request, not an unknown token.
+- **Unmatched requests are problem documents too.** An unknown path gets `404 not_found`, and a known path with another method gets `405 method_not_allowed` with `Allow`. `HEAD` is refused with `405`, because `http.ServeMux` would otherwise serve `HEAD` for every `GET` route, and the contract does not list it.
+
 **Responses**
 - Every response has `X-Request-Id`. Timestamps are RFC 3339 UTC.
 - No response contains a password, code, password hash or token hash.
@@ -1486,6 +1495,39 @@ This is the price of having no grace window. It is accepted in exchange for stri
 - Unknown-email events carry only `email_hmac`.
 - `metadata` must never contain a password, code, token, token hash or ciphertext.
 
+**Implementation notes** (Ticket 11). These fill gaps; none changes an approved decision.
+
+*Coverage.* Every event below is asserted per request (by `X-Request-Id`) in `TestAudit_Matrix` or `TestAudit_RateLimitedIsRecordedOncePerWindow`: action, outcome, reason, actor, target and session, with no missing or duplicate rows.
+
+| Action | Outcomes and reasons | Producer | Transaction |
+|---|---|---|---|
+| `auth.signup.start`, `auth.otp.start`, `auth.password.reset.start` | success (`metadata.delivery`; signup also `method`) | `otp.Service.Start` | Start transaction |
+| `auth.password.set.start` | success; failure `password_already_set` | `otp.Service.Start`; `password.StartSet` | Start transaction; autocommit |
+| `auth.signup.verify` | success (`method`); failure `invalid_code`, `attempts_exceeded`, `account_exists` | `signup.complete`; OTP core V; `CommitFailure` | T-main |
+| `auth.otp.verify` | success; failure `invalid_code`, `attempts_exceeded`, `account_unavailable` | `signin.VerifyOTP`; OTP core | T-main; T-fail |
+| `auth.password.login` | success; failure `invalid_credentials`, `account_unavailable`, `password_changed_concurrently` | `signin` | Success transaction; autocommit for credential failures |
+| `auth.password.set` | success (`revoked_sessions`); failure `invalid_code`, `attempts_exceeded`, `account_unavailable`, `session_invalid`, `password_already_set` | `password.Set`; OTP core | T-main; T-fail |
+| `auth.password.change` | success; failure `invalid_current_password`, `password_not_set`, `stale_current_password`, `account_unavailable`, `session_invalid` | `password.Change` | Success transaction; autocommit for failures |
+| `auth.password.reset.complete` | success; failure `invalid_code`, `attempts_exceeded`, `account_unavailable` | `password.CompleteReset`; OTP core | T-main; T-fail |
+| `auth.session.refresh` | failure `refresh_reuse`, `session_revoked`, `session_expired`, `account_inactive`. No event for a success or an unknown token | `session.Service.Refresh` | Refresh transaction |
+| `auth.session.revoke` | success (`metadata.reason`, `metadata.count`) for `logout`, `refresh_reuse`, `account_inactive`, `session_limit`, `password_set`, `password_change`, `password_reset` | `session` | Same transaction as the revocation |
+| `auth.logout` | success | `session.Service.Logout` | Logout transaction |
+| `auth.rate_limited` | failure, reason = the rule (`metadata.rule`, `metadata.subject`) | `ratelimit.Limiter.RecordDenial`, called by the HTTP error mapper for every `429` | Autocommit, after the refusal |
+
+*Decisions.*
+- **`auth.rate_limited` is written once per rule, scope, subject and window.** Every refusal is still refused, but a flood against one limit adds one row per window, not one per request. This is the same reasoning that keeps unknown refresh tokens out of the log (§8.4).
+  - The deduplication is a limit of 1 on a companion counter (`<rule>[_<scope>]_audit`) in the same fixed window.
+  - The counter increment and the audit row commit in one short transaction, so a failed insert gives the slot back.
+  - It runs detached from the request's cancellation, with a 2 s timeout, so a client that disconnects right after the `429` cannot suppress the record (Ticket 12 review).
+  - The cooldown is per purpose, so its record is scoped by purpose (`metadata.scope`).
+  - The subject is stored as `email_hmac`, `target_user_id` or `session_id`; an IP subject is the event's `ip`.
+  - The rule carries its subject and window on `ratelimit.Error`, so the HTTP layer can record it without knowing which flow refused.
+- **Input-validation refusals are not audited:** `400 invalid_request`, `400 invalid_email` and `422 password_policy_violation`. They happen before any account is considered and say nothing about one.
+- **A retried transaction cannot duplicate events.** Events written inside a transaction roll back with a failed attempt, so a retry (§7.1 rule 7) commits each one once (`TestAudit_RetriedTransactionsDoNotDuplicateEvents`, which forces a `40001` on the first attempt of a start and of a signup verify).
+- **Client-supplied text.**
+  - The HTTP layer drops a token-shaped or oversized `User-Agent` (at most 256 characters are kept) and replaces a token-shaped or malformed `X-Request-Id`.
+  - The audit writer redacts any that remain instead of refusing the event, so hostile metadata never turns a valid request into a `500` (`TestAudit_HostileClientMetadataIsHarmless`, `TestAudit_WriterRedactsClientTextInsteadOfFailing`).
+
 ### 11.2 Log hygiene (AC-22)
 
 **[Proposed]**
@@ -1501,6 +1543,17 @@ This is the price of having no grace window. It is accepted in exchange for stri
 **Errors and emails**
 - Client error messages come from a fixed table keyed by `code`. Internal errors return `500 internal_error`, and details are logged only by `request_id`.
 - Emails are logged as `email_hmac`.
+
+**Implementation notes** (Ticket 11: `internal/platform/logging`)
+- **The redacting handler wraps every logger:** `cmd/api` and the router tests.
+  - It drops the value, or the whole group, of any attribute whose name:
+    - contains `password`, `token`, `secret`, `payload` or `ciphertext`;
+    - ends in `_hash`, `_code`, `_key` or `_email`;
+    - or is `code`, `hash`, `key`, `email`, `to`, `authorization`, `cookie` or `set-cookie`.
+    Emails are logged only as `email_hmac`.
+  - It replaces every `vct_`/`vat_`/`vrt_` token, whatever its case, in the message, in string values, in errors and Stringers, inside groups, and in values produced by `slog.LogValuer`.
+  - Any other structured value (map, slice, struct, `http.Header`) is rendered to a string and scanned. Raw `[]byte` values are dropped entirely. A typed-nil error renders as `<nil>` instead of panicking.
+- **It is a backstop, not the mechanism.** Handlers never log bodies, and the integration hygiene check scans logs, audit rows, challenge, session and outbox text columns and every error response body for each code, token and password a test issued.
 
 ### 11.3 Metrics
 
@@ -1581,6 +1634,54 @@ This is the price of having no grace window. It is accepted in exchange for stri
 | AC-26 | `TestPasswordSignup_NoSessionOrCredentialBeforeVerify` | After start: no `users` row; password login gives `invalid_credentials`; no token. After a wrong code: still none. After expiry: `pending_password_hash` NULL |
 | AC-27 | `TestAck_UniformPerFlow` (signup OTP, signup password, OTP start, reset start × eligible/ineligible), `TestDuplicateSignup_NoChangeNoSession` | Same status and body shape per flow (only token and timestamps differ); fake sender has mail only for eligible requests. For an existing account, signup by either method leaves `users` unchanged (`password_hash`, `updated_at`), creates no session, sends no email, and verify of that token gives `invalid_code` even with the stored code, with attempts committed |
 | AC-28 | `TestSetFirstPassword_KeepsCurrentRevokesOthers` | Passwordless account with sessions A and B; set on A: A `200`, B `401`, B refresh `401` |
+
+**Evidence as implemented** (Ticket 12). The names above were the plan; these are the tests that carry each criterion. All run through the real router unless marked *(core)*, *(query)* or *(unit)*.
+
+| AC | Tests | Notes |
+|---|---|---|
+| AC-1 | `TestSignupOTP_CreatesVerifiedPasswordlessAccountAndSession` | Also checks `GET /v1/me` with the returned token |
+| AC-2 | `TestSignin_OTPSignupThenOTPLoginSameUserID` | |
+| AC-3 | `TestSignup_WrongOrExpiredCodeCreatesNothing` (both methods) | |
+| AC-4 | `TestSignupPassword_BindsTheHashToTheChallengeUntilVerified`, `TestAuth_ExpiryRevocationAndAccountStateAreChecked`, `TestPasswordLogin_NonActiveAccount`, `TestRefresh_RefusedForRevokedExpiredOrInactiveSessions` | An unverified row cannot use a token, sign in or refresh |
+| AC-5 | `TestSignupPassword_BindsTheHashToTheChallengeUntilVerified`, `TestSignin_PasswordAndOTPResolveToTheSameUser` | |
+| AC-6 | `TestOTPLogin_UnknownOrIneligibleEmailGetsTheSameAckAndNoEmail` | |
+| AC-7 | `TestPasswordLogin_GenericFailure` | Equal timing is shown by counting Argon2id runs (one each); there is no wall-clock test |
+| AC-8 | `TestSignin_PasswordAndOTPResolveToTheSameUser`, `TestSignup_DuplicateNeverChangesTheAccount`, `TestPasswordLogin_LockoutStillAllowsOTPSignin` | |
+| AC-9 | `TestPasswordLogin_NonActiveAccount`, `TestAuth_ExpiryRevocationAndAccountStateAreChecked`, `TestRefresh_RefusedForRevokedExpiredOrInactiveSessions` | |
+| AC-10 | `TestSetPassword_KeepsCurrentSessionAndRevokesOthers` | |
+| AC-11 | `TestChangePassword_KeepsCurrentSessionAndRevokesOthers` | |
+| AC-12 | `TestChangePassword_WrongCurrentChangesNothingAndIsLimited`, `TestChangePassword_StaleCurrentAfterConcurrentChange` | |
+| AC-13 | `TestReset_RevokesEverySessionAndIssuesNone` | |
+| AC-14 | `TestReset_BadCodeChangesNothing`, `TestReset_RevokesEverySessionAndIssuesNone` (used code) | |
+| AC-15 | `TestSignupPassword_IPLimitRunsBeforeHashing`, `TestSetPassword_PolicyAndBindingAreCheckedFirst`, `TestChangePassword_PolicyAndPasswordlessAccount`, `TestContract_RemainingValidationResponses`; *(unit)* `TestPolicy*` | Router tests use `too_short`; every rule is covered by the identity unit tests |
+| AC-16 | `TestChangePassword_KeepsCurrentSessionAndRevokesOthers`, `TestReset_RevokesEverySessionAndIssuesNone` | |
+| AC-17 | `TestSignin_PasswordAndOTPResolveToTheSameUser` | |
+| AC-18 | `TestLogout_EndsOnlyTheCurrentDevice` | |
+| AC-19 | `TestRefresh_RefusedForRevokedExpiredOrInactiveSessions`, `TestRefresh_LostResponseRetryRevokesOnlyThatSession`, `TestChangePassword_KeepsCurrentSessionAndRevokesOthers` | |
+| AC-20 | `TestSignup_RequestContract` (cooldown), `TestContract_RemainingRateLimitResponses`, `TestPasswordLogin_LockoutStillAllowsOTPSignin`, `TestChangePassword_WrongCurrentChangesNothingAndIsLimited`, `TestPasswordCodes_VerifyLimitsRunBeforeArgon2id`; *(core)* `TestOTP_VerifyFailureLimitIsCheckedBeforeTheTransaction`, `TestOTP_StartLimitsAreCountedBeforeTheTransaction` | |
+| AC-21 | `TestSignupOTP_CreatesVerifiedPasswordlessAccountAndSession` (reuse), *(core)* `TestOTP_ResendSupersedesAndOnlyTheNewCodeIsMailed`, `TestOTP_ExhaustedAfterFiveFailures` | |
+| AC-22 | The hygiene scan of every router test (logs, audit rows, challenge, session and outbox text, every error body), `TestAC22_ErrorBodiesNeverContainTheIssuedCode`, `TestAudit_HostileClientMetadataIsHarmless`; *(unit)* `TestRedactingHandlerRemovesSecrets` | The six-digit check is scoped to each code's own error responses, with the request id removed |
+| AC-23 | `TestAC23_SecurityNotificationsAreDeliveredToTheAccount`, `TestOutbox_DeliversThroughMailpit` | |
+| AC-24 | `TestAudit_Matrix`, `TestAudit_RateLimitedIsRecordedOncePerWindow`, `TestAudit_IPSubjectRateLimitedOncePerWindow` | |
+| AC-25 | `TestSignup_RequestContract`, `TestSignupOTP_CreatesVerifiedPasswordlessAccountAndSession`, `TestReset_RevokesEverySessionAndIssuesNone`, `TestChangePassword_LostResponseResend`, `TestChangePassword_FailedBeforeCommitThenResend`, `TestSetPassword_KeepsCurrentSessionAndRevokesOthers`, `TestRefresh_LostResponseRetryRevokesOnlyThatSession` | |
+| AC-26 | `TestSignupPassword_BindsTheHashToTheChallengeUntilVerified`, `TestPasswordLogin_GenericFailure` (pending registration); *(query)* `TestQuery_OTPCleanup` | **Gap:** "after expiry, `pending_password_hash` NULL" needs the §6.10 cleanup job, which exists as a tested query but is not scheduled at runtime |
+| AC-27 | `TestSignup_AcknowledgementIsUniform`, `TestOTPLogin_UnknownOrIneligibleEmailGetsTheSameAckAndNoEmail`, `TestReset_AcknowledgementIsUniform`, `TestSignup_DuplicateNeverChangesTheAccount` | |
+| AC-28 | `TestSetPassword_KeepsCurrentSessionAndRevokesOthers` | |
+
+**Contract verification** (Ticket 12: `backend/api/openapi.yaml`)
+- **What is checked without a database** (`go test ./api`, part of `make check`):
+  - the document is valid OpenAPI 3.0;
+  - its operations equal the patterns the real router registers (`httpx.Patterns`), in both directions;
+  - every operation lists its problem codes in `x-error-codes`.
+- **Every router test is a contract test.** The shared test server validates each exchange with kin-openapi:
+  - the status must be documented, and the body and headers must match the schema (`X-Request-Id`, `Cache-Control: no-store`, `Retry-After` on 429 and on `busy`, `WWW-Authenticate: Bearer` on `unauthorized`);
+  - the problem `code` must be listed both by the operation (`x-error-codes`) and by that status's response (`x-codes`), and the body's `status` must equal the HTTP status;
+  - protected operations count as authenticated only with a `Bearer` credential;
+  - a 2xx answer to a request the spec forbids also counts as a violation;
+  - requests outside every operation must get the 404/405 problem.
+  A violation fails the test that caused it. After a full run, `TestMain` fails if any documented operation, status or error code was never produced, unless it is listed with its other evidence in `notExercised`.
+- **Not exercised** through the router: `GET /readyz 503` (covered by the `httpx` unit tests) and `GET /v1/me 500`.
+- **Unmatched requests:** unknown paths, wrong methods and `HEAD` get problem documents (§5.1 implementation notes). They are not operations, so the info description documents them.
 
 ### 12.3 Additional tests (§7–§8)
 

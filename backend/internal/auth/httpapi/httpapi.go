@@ -22,6 +22,7 @@ import (
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/clientip"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db/sqlc"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/httpx"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/ratelimit"
 )
 
 // Handlers serves the auth endpoints.
@@ -30,12 +31,13 @@ type Handlers struct {
 	Signin   *signin.Service
 	Password *password.Service
 	Sessions *session.Service
+	Limiter  *ratelimit.Limiter // records auth.rate_limited
 	IPs      *clientip.Resolver
 	Log      *slog.Logger
 }
 
 // Mount registers the routes (TRD 5.3, endpoints 1 to 14).
-func (h *Handlers) Mount(mux *http.ServeMux) {
+func (h *Handlers) Mount(mux httpx.Router) {
 	mux.HandleFunc("POST /v1/auth/signup/otp/start", h.signupOTPStart)
 	mux.HandleFunc("POST /v1/auth/signup/password/start", h.signupPasswordStart)
 	mux.HandleFunc("POST /v1/auth/signup/verify", h.signupVerify)
@@ -147,12 +149,12 @@ func utc(t *time.Time) *time.Time {
 func (h *Handlers) signupOTPStart(w http.ResponseWriter, r *http.Request) {
 	var req emailRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	ack, err := h.Signup.StartOTP(r.Context(), req.Email, h.client(w, r))
 	if err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusAccepted, ackBody(ack))
@@ -161,12 +163,12 @@ func (h *Handlers) signupOTPStart(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) signupPasswordStart(w http.ResponseWriter, r *http.Request) {
 	var req passwordSignupRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	ack, err := h.Signup.StartPassword(r.Context(), req.Email, req.Password, h.client(w, r))
 	if err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusAccepted, ackBody(ack))
@@ -175,16 +177,16 @@ func (h *Handlers) signupPasswordStart(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) signupVerify(w http.ResponseWriter, r *http.Request) {
 	var req verifyRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	if req.Device == nil {
-		h.fail(w, session.ErrInvalidDevice)
+		h.fail(w, r, session.ErrInvalidDevice)
 		return
 	}
 	res, err := h.Signup.Verify(r.Context(), req.ChallengeToken, req.Code, *req.Device, h.client(w, r))
 	if err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	// The transaction has committed: only now do the tokens leave the server.
@@ -196,12 +198,12 @@ func (h *Handlers) signupVerify(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) otpStart(w http.ResponseWriter, r *http.Request) {
 	var req emailRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	ack, err := h.Signin.StartOTP(r.Context(), req.Email, h.signinClient(w, r))
 	if err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusAccepted, ackBody(ack))
@@ -211,16 +213,16 @@ func (h *Handlers) otpStart(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) otpVerify(w http.ResponseWriter, r *http.Request) {
 	var req verifyRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	if req.Device == nil {
-		h.fail(w, session.ErrInvalidDevice)
+		h.fail(w, r, session.ErrInvalidDevice)
 		return
 	}
 	res, err := h.Signin.VerifyOTP(r.Context(), req.ChallengeToken, req.Code, *req.Device, h.signinClient(w, r))
 	if err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, tokenBody(res.Session, res.User))
@@ -231,11 +233,11 @@ func (h *Handlers) otpVerify(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) passwordLogin(w http.ResponseWriter, r *http.Request) {
 	var req passwordLoginRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	if req.Device == nil {
-		h.fail(w, session.ErrInvalidDevice)
+		h.fail(w, r, session.ErrInvalidDevice)
 		return
 	}
 	res, err := h.Signin.PasswordLogin(r.Context(), req.Email, req.Password, *req.Device, h.signinClient(w, r))
@@ -243,7 +245,7 @@ func (h *Handlers) passwordLogin(w http.ResponseWriter, r *http.Request) {
 		err = httpx.ErrBadRequest
 	}
 	if err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, tokenBody(res.Session, res.User))
@@ -257,12 +259,12 @@ func (h *Handlers) signinClient(w http.ResponseWriter, r *http.Request) signin.C
 func (h *Handlers) resetStart(w http.ResponseWriter, r *http.Request) {
 	var req emailRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	ack, err := h.Password.StartReset(r.Context(), req.Email, h.passwordClient(w, r))
 	if err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusAccepted, ackBody(ack))
@@ -272,18 +274,18 @@ func (h *Handlers) resetStart(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) resetComplete(w http.ResponseWriter, r *http.Request) {
 	var req codePasswordRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	err := h.Password.CompleteReset(r.Context(), req.ChallengeToken, req.Code, req.NewPassword, h.passwordClient(w, r))
-	h.noContent(w, err)
+	h.noContent(w, r, err)
 }
 
 // setStart is endpoint 12. It takes no body; any body is ignored.
 func (h *Handlers) setStart(w http.ResponseWriter, r *http.Request, p session.Principal) {
 	ack, err := h.Password.StartSet(r.Context(), p, h.passwordClient(w, r))
 	if err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusAccepted, ackBody(ack))
@@ -293,27 +295,27 @@ func (h *Handlers) setStart(w http.ResponseWriter, r *http.Request, p session.Pr
 func (h *Handlers) setPassword(w http.ResponseWriter, r *http.Request, p session.Principal) {
 	var req codePasswordRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	err := h.Password.Set(r.Context(), p, req.ChallengeToken, req.Code, req.NewPassword, h.passwordClient(w, r))
-	h.noContent(w, err)
+	h.noContent(w, r, err)
 }
 
 // changePassword is endpoint 14.
 func (h *Handlers) changePassword(w http.ResponseWriter, r *http.Request, p session.Principal) {
 	var req changePasswordRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	err := h.Password.Change(r.Context(), p, req.CurrentPassword, req.NewPassword, h.passwordClient(w, r))
-	h.noContent(w, err)
+	h.noContent(w, r, err)
 }
 
-func (h *Handlers) noContent(w http.ResponseWriter, err error) {
+func (h *Handlers) noContent(w http.ResponseWriter, r *http.Request, err error) {
 	if err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -328,12 +330,12 @@ func (h *Handlers) passwordClient(w http.ResponseWriter, r *http.Request) passwo
 func (h *Handlers) refresh(w http.ResponseWriter, r *http.Request) {
 	var req refreshRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	res, err := h.Sessions.Refresh(r.Context(), req.RefreshToken, h.sessionClient(w, r))
 	if err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	// The rotation has committed: only now does the new pair leave the server.
@@ -343,7 +345,7 @@ func (h *Handlers) refresh(w http.ResponseWriter, r *http.Request) {
 // logout is endpoint 10 (TRD 7.7): the current session only. A retry gets 401.
 func (h *Handlers) logout(w http.ResponseWriter, r *http.Request, p session.Principal) {
 	if err := h.Sessions.Logout(r.Context(), p, h.sessionClient(w, r)); err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -354,7 +356,7 @@ func (h *Handlers) logout(w http.ResponseWriter, r *http.Request, p session.Prin
 func (h *Handlers) me(w http.ResponseWriter, r *http.Request, p session.Principal) {
 	u, err := h.Sessions.CurrentUser(r.Context(), p)
 	if err != nil {
-		h.fail(w, err)
+		h.fail(w, r, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, userBody(u))
@@ -366,12 +368,12 @@ func (h *Handlers) authenticated(next func(http.ResponseWriter, *http.Request, s
 	return func(w http.ResponseWriter, r *http.Request) {
 		token, ok := bearerToken(r)
 		if !ok {
-			h.fail(w, session.ErrUnauthorized)
+			h.fail(w, r, session.ErrUnauthorized)
 			return
 		}
 		p, err := h.Sessions.Authenticate(r.Context(), token, h.sessionClient(w, r))
 		if err != nil {
-			h.fail(w, err)
+			h.fail(w, r, err)
 			return
 		}
 		next(w, r, p)
@@ -402,7 +404,7 @@ func (h *Handlers) client(w http.ResponseWriter, r *http.Request) signup.Client 
 
 // fail maps a use-case error to the TRD 5.3 error contract. Only the fixed code and title are
 // returned; the error itself is logged for internal errors and never sent.
-func (h *Handlers) fail(w http.ResponseWriter, err error) {
+func (h *Handlers) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var policy *identity.PolicyError
 	var limited *otp.RateLimitedError
 	switch {
@@ -422,6 +424,11 @@ func (h *Handlers) fail(w http.ResponseWriter, err error) {
 		httpx.WriteProblem(w, http.StatusUnprocessableEntity, httpx.CodePasswordPolicyViolation,
 			map[string]any{"violations": violations})
 	case errors.As(err, &limited):
+		// auth.rate_limited, once per rule, subject and window. A failure to record never
+		// changes the 429.
+		if rerr := h.Limiter.RecordDenial(r.Context(), limited, h.IPs.ResolveRequest(r).Addr, UserAgent(r), httpx.RequestID(w)); rerr != nil {
+			h.Log.Error("rate-limit audit event not recorded", "request_id", httpx.RequestID(w), "error", rerr)
+		}
 		httpx.WriteRateLimited(w, limited.RetryAfter)
 	case errors.Is(err, otp.ErrInvalidCode):
 		httpx.WriteProblem(w, http.StatusBadRequest, httpx.CodeInvalidCode)
@@ -456,7 +463,7 @@ const maxUserAgentRunes = 256
 // client cannot plant a secret-looking string in stored rows.
 func UserAgent(r *http.Request) string {
 	ua := r.Header.Get("User-Agent")
-	if !utf8.ValidString(ua) || httpx.LooksLikeToken(ua) {
+	if !utf8.ValidString(ua) {
 		return ""
 	}
 	var b strings.Builder
@@ -471,5 +478,10 @@ func UserAgent(r *http.Request) string {
 		b.WriteRune(c)
 		n++
 	}
-	return strings.TrimSpace(b.String())
+	// Checked after stripping, so "v\x01at_..." cannot become "vat_..." once cleaned.
+	out := strings.TrimSpace(b.String())
+	if httpx.LooksLikeToken(out) {
+		return ""
+	}
+	return out
 }

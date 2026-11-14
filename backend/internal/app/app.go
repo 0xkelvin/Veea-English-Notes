@@ -116,7 +116,8 @@ func New(o Options) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	auth := &httpapi.Handlers{Signup: signupSvc, Signin: signinSvc, Password: passwordSvc, Sessions: sessions, IPs: clientip.New(o.TrustedProxies),
+	auth := &httpapi.Handlers{Signup: signupSvc, Signin: signinSvc, Password: passwordSvc, Sessions: sessions,
+		Limiter: ratelimit.NewLimiter(o.Pool), IPs: clientip.New(o.TrustedProxies),
 		Log: o.Logger.With("component", "http")}
 	return httpx.NewHandler(o.Pool, o.ReadyTimeout, auth.Mount), nil
 }

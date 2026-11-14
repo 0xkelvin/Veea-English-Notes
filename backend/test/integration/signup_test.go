@@ -27,6 +27,7 @@ import (
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/notify"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db/sqlc"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/logging"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/pgtest"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/ratelimit"
 )
@@ -45,9 +46,14 @@ type countingHasher struct {
 	// afterHash, when set to a func(), runs after each Hash: the window between Argon2id and a
 	// password mutation's transaction.
 	afterHash atomic.Value
+	// busy makes every call fail with identity.ErrBusy, as a saturated hasher does (TRD 9.2).
+	busy atomic.Bool
 }
 
 func (c *countingHasher) Hash(ctx context.Context, password string) (string, error) {
+	if c.busy.Load() {
+		return "", identity.ErrBusy
+	}
 	c.n.Add(1)
 	h, err := c.h.Hash(ctx, password)
 	if hook, _ := c.afterHash.Load().(func()); hook != nil {
@@ -57,6 +63,9 @@ func (c *countingHasher) Hash(ctx context.Context, password string) (string, err
 }
 
 func (c *countingHasher) Verify(ctx context.Context, encoded, password string) (identity.VerifyResult, error) {
+	if c.busy.Load() {
+		return identity.VerifyResult{}, identity.ErrBusy
+	}
 	c.verifies.Add(1)
 	v, err := c.h.Verify(ctx, encoded, password)
 	if hook, _ := c.afterVerify.Load().(func()); hook != nil {
@@ -66,25 +75,30 @@ func (c *countingHasher) Verify(ctx context.Context, encoded, password string) (
 }
 
 func (c *countingHasher) VerifyDummy(ctx context.Context, password string) error {
+	if c.busy.Load() {
+		return identity.ErrBusy
+	}
 	c.verifies.Add(1)
 	c.dummies.Add(1)
 	return c.h.VerifyDummy(ctx, password)
 }
 
 type signupEnv struct {
-	d       *pgtest.DB
-	q       *sqlc.Queries
-	srv     *httptest.Server
-	fake    *notify.FakeSender
-	worker  *notify.Worker
-	random  *codeRandom
-	hasher  *countingHasher
-	hmac    *identity.EmailHMAC
-	logs    *syncBuffer
-	retries atomic.Int64
+	d        *pgtest.DB
+	q        *sqlc.Queries
+	srv      *httptest.Server
+	fake     *notify.FakeSender
+	worker   *notify.Worker
+	random   *codeRandom
+	hasher   *countingHasher
+	hmac     *identity.EmailHMAC
+	logs     *syncBuffer
+	retries  atomic.Int64
+	contract *contract
 
-	mu      sync.Mutex
-	secrets []string // codes, tokens and passwords, for the hygiene check
+	mu          sync.Mutex
+	secrets     []string // codes, tokens and passwords, for the hygiene check
+	errorBodies []string // every 4xx and 5xx body, for the hygiene check
 }
 
 func newSignupEnv(t *testing.T, rules *ratelimit.Rules) *signupEnv {
@@ -100,7 +114,8 @@ func newSignupEnv(t *testing.T, rules *ratelimit.Rules) *signupEnv {
 	}
 	env := &signupEnv{d: d, q: q, fake: &notify.FakeSender{}, random: &codeRandom{}, hasher: &countingHasher{h: h},
 		hmac: testEmailHMAC(t), logs: &syncBuffer{}}
-	log := slog.New(slog.NewJSONHandler(env.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	// The same redacting handler as cmd/api, so the hygiene checks see production logging.
+	log := slog.New(logging.NewRedactingHandler(slog.NewJSONHandler(env.logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	outboxKeys := []notify.Key{{ID: 1, Key: outboxKey1}}
 	handler, err := app.New(app.Options{
 		Pool: d.Pool, ReadyTimeout: time.Second, Logger: log,
@@ -112,7 +127,9 @@ func newSignupEnv(t *testing.T, rules *ratelimit.Rules) *signupEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env.srv = httptest.NewServer(handler)
+	// Every exchange is checked against api/openapi.yaml (contract_test.go).
+	env.contract = newContract(t)
+	env.srv = httptest.NewServer(env.contract.wrap(handler))
 	t.Cleanup(env.srv.Close)
 	keys, _ := notify.NewKeyring(outboxKeys...)
 	if env.worker, err = notify.NewWorker(d.Pool, keys, env.fake, notify.WorkerConfig{Logger: log}); err != nil {
@@ -179,6 +196,11 @@ func (e *signupEnv) send(t *testing.T, method, path string, body any, headers ..
 	_, _ = buf.ReadFrom(res.Body)
 	out := response{status: res.StatusCode, header: res.Header, raw: buf.Bytes()}
 	_ = json.Unmarshal(out.raw, &out.body)
+	if out.status >= 400 {
+		e.mu.Lock()
+		e.errorBodies = append(e.errorBodies, string(out.raw))
+		e.mu.Unlock()
+	}
 	if tok := out.str("challenge_token"); tok != "" {
 		e.remember(tok)
 	}
@@ -297,16 +319,22 @@ func (e *signupEnv) assertNoSecrets(t *testing.T) {
 		}
 		rows.Close()
 	}
-	hay := b.String()
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	for _, body := range e.errorBodies {
+		b.WriteString("\n" + body) // error responses are held to the same rule (AC-22)
+	}
+	hay := b.String()
 	for _, s := range e.secrets {
 		if len(s) == 6 {
 			if regexp.MustCompile(`(^|` + nonWord + `)` + s + `(` + nonWord + `|$)`).MatchString(hay) {
 				t.Errorf("an OTP code appears in logs or stored rows")
 			}
-		} else if strings.Contains(hay, s) {
-			t.Errorf("a token or password appears in logs or stored rows")
+		} else if len(s) >= 12 && strings.Contains(hay, s) {
+			// Shorter strings are deliberately invalid test inputs such as "short", which a policy
+			// answer legitimately echoes as "too_short"; every real password here is 15+ characters
+			// and every token 47.
+			t.Errorf("a token or password appears in logs, stored rows or error responses")
 		}
 	}
 	for _, p := range []string{"vct_", "vat_", "vrt_"} {
@@ -382,6 +410,11 @@ func TestSignupOTP_CreatesVerifiedPasswordlessAccountAndSession(t *testing.T) {
 	if err != nil || row.UserID != stored.ID {
 		t.Fatalf("the issued access token must authenticate: %v", err)
 	}
+	// AC-1: GET /v1/me works with the returned token and shows a passwordless, verified account.
+	if me := env.me(t, access); me.status != http.StatusOK || me.str("id") != stored.ID.String() ||
+		me.body["has_password"] != false || me.body["email_verified_at"] == nil {
+		t.Fatalf("GET /v1/me with the signup token: %d %s", me.status, me.raw)
+	}
 	if _, consumed, _ := env.challengeByToken(t, ack.str("challenge_token")); !consumed {
 		t.Fatal("the challenge must be consumed")
 	}
@@ -440,6 +473,15 @@ func TestSignupPassword_BindsTheHashToTheChallengeUntilVerified(t *testing.T) {
 	}
 	if rowCount(t, env.d.Pool, `SELECT count(*) FROM sessions WHERE auth_method = 'signup_password' AND user_id = $1`, stored.ID) != 1 {
 		t.Fatal("expected one signup_password session")
+	}
+	// AC-5: an account from password signup signs in by password and by OTP as the same user.
+	pw := env.login(t, addr, password)
+	if pw.status != http.StatusOK || userID(pw) != stored.ID.String() {
+		t.Fatalf("password sign-in after password signup: %d %s", pw.status, pw.raw)
+	}
+	otpRes := env.otpLogin(t, addr, addr)
+	if otpRes.status != http.StatusOK || userID(otpRes) != stored.ID.String() || env.meID(t, otpRes.str("access_token")) != stored.ID.String() {
+		t.Fatalf("OTP sign-in after password signup: %d %s", otpRes.status, otpRes.raw)
 	}
 }
 
@@ -558,9 +600,20 @@ func TestSignup_CodeIsBoundToItsAttempt(t *testing.T) {
 
 // AC-3: wrong and expired codes create nothing; failed attempts are committed.
 func TestSignup_WrongOrExpiredCodeCreatesNothing(t *testing.T) {
+	for _, method := range []string{"otp", "password"} { // AC-3 covers both signup methods
+		t.Run(method, func(t *testing.T) { wrongOrExpiredSignupCode(t, method) })
+	}
+}
+
+func wrongOrExpiredSignupCode(t *testing.T, method string) {
 	env := newSignupEnv(t, nil)
 	addr := newAddress("late")
-	ack := env.startPassword(t, addr, newPassword())
+	var ack response
+	if method == "otp" {
+		ack = env.startOTP(t, addr)
+	} else {
+		ack = env.startPassword(t, addr, newPassword())
+	}
 	code := env.mailedCode(t, addr)
 
 	wantProblem(t, env.verify(t, ack.str("challenge_token"), wrongCode(code)), http.StatusBadRequest, "invalid_code")

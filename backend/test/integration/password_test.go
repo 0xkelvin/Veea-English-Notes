@@ -755,3 +755,41 @@ func TestPasswordCodes_VerifyLimitsRunBeforeArgon2id(t *testing.T) {
 		t.Fatal("a limited set must not hash the new password")
 	}
 }
+
+// AC-23: first-password set, change and reset each deliver a notification to the account address.
+func TestAC23_SecurityNotificationsAreDeliveredToTheAccount(t *testing.T) {
+	env := newSignupEnv(t, nil)
+	u := newUser(t, env.q)
+	a := env.issue(t, u, "Pixel 9")
+
+	code := env.queueCode()
+	ack := env.setStart(t, a.AccessToken)
+	first := newPassword()
+	want204(t, env.setPassword(t, a.AccessToken, ack.str("challenge_token"), code, first))
+	second := newPassword()
+	want204(t, env.change(t, a.AccessToken, first, second))
+	code = env.queueCode()
+	rack := env.resetStart(t, u.Email)
+	want204(t, env.resetComplete(t, rack.str("challenge_token"), code, newPassword()))
+
+	if _, err := env.worker.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var subjects []string
+	for _, e := range env.fake.Sent() {
+		if e.To != u.Email {
+			t.Fatalf("an email went to %q, not the account address", e.To)
+		}
+		if !codePattern.MatchString(e.Text) { // the notifications, not the code emails
+			subjects = append(subjects, e.Subject)
+		}
+	}
+	if len(subjects) != 3 {
+		t.Fatalf("want 3 notifications (added, changed, reset), got %d: %v", len(subjects), subjects)
+	}
+	for _, tmpl := range []string{"password_added", "password_changed", "password_reset_done"} {
+		if rowCount(t, env.d.Pool, `SELECT count(*) FROM email_outbox WHERE template = $1 AND status = 'sent' AND user_id = $2`, tmpl, u.ID) != 1 {
+			t.Fatalf("%s must be sent exactly once", tmpl)
+		}
+	}
+}

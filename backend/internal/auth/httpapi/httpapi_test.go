@@ -13,6 +13,8 @@ func TestUserAgentIsSanitized(t *testing.T) {
 		"tab\there":              "tabhere",
 		"client vct_secret":      "",
 		"Bearer VAT_x":           "",
+		"split v\x01at_token":    "",
+		"split v\tct_token":      "",
 		strings.Repeat("a", 300): strings.Repeat("a", 256),
 		"bad \xff utf8":          "",
 	}

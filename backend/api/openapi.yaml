@@ -1,0 +1,585 @@
+openapi: 3.0.3
+info:
+  title: Veea English Notes — Accounts API
+  version: 1.0.0-trd01
+  description: |
+    Email authentication and account foundation (TRD 01 §5). This document is normative for the
+    Go service in `backend/`: every route the router registers is listed here, and the
+    integration suite validates every response it receives against it.
+
+    Conventions (TRD 01 §5.1):
+    - JSON bodies are decoded strictly: `Content-Type: application/json`, one object, at most
+      16 KiB, keys spelled exactly as documented, no duplicate or unknown keys, every field
+      present, no trailing data. Anything else is `400 invalid_request`.
+    - A path that is not listed gets `404 not_found`, and a listed path with another method gets
+      `405 method_not_allowed` with `Allow`, both as problem documents. `HEAD` is not served.
+    - Every response carries `X-Request-Id`. JSON and 204 responses carry `Cache-Control: no-store`.
+    - Errors are RFC 9457 `application/problem+json` with a stable `code` and the `request_id`.
+      Each operation lists the codes it can return in `x-error-codes`.
+    - Timestamps are RFC 3339 in UTC.
+    - Tokens: challenge `vct_…`, access `vat_…`, refresh `vrt_…`, each followed by 43 base64url
+      characters. Only the responses below ever contain them.
+servers:
+  - url: /
+tags:
+  - name: health
+  - name: signup
+  - name: signin
+  - name: password
+  - name: session
+
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      operationId: healthz
+      summary: Liveness. Ignores the database.
+      x-error-codes: []
+      responses:
+        "200": { $ref: "#/components/responses/Health" }
+  /readyz:
+    get:
+      tags: [health]
+      operationId: readyz
+      summary: Readiness. Checks the database within VEEA_READY_TIMEOUT.
+      x-error-codes: [not_ready]
+      responses:
+        "200": { $ref: "#/components/responses/Health" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /v1/auth/signup/otp/start:
+    post:
+      tags: [signup]
+      operationId: signupOtpStart
+      summary: Endpoint 1. Start an OTP signup (Flow A).
+      description: |
+        Same 202 for new and existing emails (AC-27). Only a new email gets a `signup_code` email.
+        An existing account is never changed.
+      x-error-codes: [invalid_request, invalid_email, rate_limited, internal_error]
+      requestBody: { $ref: "#/components/requestBodies/Email" }
+      responses:
+        "202": { $ref: "#/components/responses/Acknowledgement" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/auth/signup/password/start:
+    post:
+      tags: [signup]
+      operationId: signupPasswordStart
+      summary: Endpoint 2. Start a password signup (Flow B).
+      description: |
+        The password policy is checked first (422 before anything else), then the per-IP limit,
+        then Argon2id, then the start. Same 202 for new and existing emails; the pending hash is
+        bound to the new challenge only for a new email.
+      x-error-codes: [invalid_request, invalid_email, password_policy_violation, rate_limited, busy, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, password]
+              properties:
+                email: { $ref: "#/components/schemas/EmailInput" }
+                password: { type: string }
+      responses:
+        "202": { $ref: "#/components/responses/Acknowledgement" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/PolicyViolation" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/Busy" }
+  /v1/auth/signup/verify:
+    post:
+      tags: [signup]
+      operationId: signupVerify
+      summary: Endpoint 3. Verify a signup and create the account and its first session.
+      description: |
+        `409 signup_unavailable` when the email gained an account after the attempt started:
+        the code is consumed, nothing about the account changes and no session is issued (R5).
+      x-error-codes: [invalid_request, invalid_code, code_attempts_exceeded, signup_unavailable, rate_limited, internal_error]
+      requestBody: { $ref: "#/components/requestBodies/CodeWithDevice" }
+      responses:
+        "201": { $ref: "#/components/responses/Tokens" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/auth/otp/start:
+    post:
+      tags: [signin]
+      operationId: otpStart
+      summary: Endpoint 4. Start an OTP sign-in (Flow C).
+      description: Same 202 for every email. Only an active, verified account gets a `login_code` email.
+      x-error-codes: [invalid_request, invalid_email, rate_limited, internal_error]
+      requestBody: { $ref: "#/components/requestBodies/Email" }
+      responses:
+        "202": { $ref: "#/components/responses/Acknowledgement" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/auth/otp/verify:
+    post:
+      tags: [signin]
+      operationId: otpVerify
+      summary: Endpoint 5. Verify an OTP sign-in and create a session.
+      x-error-codes: [invalid_request, invalid_code, code_attempts_exceeded, rate_limited, internal_error]
+      requestBody: { $ref: "#/components/requestBodies/CodeWithDevice" }
+      responses:
+        "200": { $ref: "#/components/responses/Tokens" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/auth/password/login:
+    post:
+      tags: [signin]
+      operationId: passwordLogin
+      summary: Endpoint 6. Password sign-in (Flow D).
+      description: |
+        Unknown email, wrong password, passwordless account and pending registration all get the
+        same `401 invalid_credentials` (AC-7). `403 account_unavailable` only after the password
+        verified. A malformed email is `400 invalid_request` here.
+      x-error-codes: [invalid_request, invalid_credentials, account_unavailable, rate_limited, busy, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, password, device]
+              properties:
+                email: { $ref: "#/components/schemas/EmailInput" }
+                password: { type: string }
+                device: { $ref: "#/components/schemas/Device" }
+      responses:
+        "200": { $ref: "#/components/responses/Tokens" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/InvalidCredentials" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/Busy" }
+
+  /v1/auth/password/reset/start:
+    post:
+      tags: [password]
+      operationId: passwordResetStart
+      summary: Endpoint 7. Start a password reset (Flow G).
+      description: Same 202 for every email. Only an active, verified account gets a `reset_code` email.
+      x-error-codes: [invalid_request, invalid_email, rate_limited, internal_error]
+      requestBody: { $ref: "#/components/requestBodies/Email" }
+      responses:
+        "202": { $ref: "#/components/responses/Acknowledgement" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/auth/password/reset/complete:
+    post:
+      tags: [password]
+      operationId: passwordResetComplete
+      summary: Endpoint 8. Complete a reset. Revokes every session and issues none.
+      description: Also sets a first password on a passwordless account (R7).
+      x-error-codes: [invalid_request, invalid_code, code_attempts_exceeded, password_policy_violation, rate_limited, busy, internal_error]
+      requestBody: { $ref: "#/components/requestBodies/CodeWithPassword" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/PolicyViolation" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/Busy" }
+
+  /v1/auth/token/refresh:
+    post:
+      tags: [session]
+      operationId: tokenRefresh
+      summary: Endpoint 9. Rotate a refresh token, with no grace window (R2).
+      description: |
+        Every refused token gets the same `401 unauthorized`. A reused token within retention
+        revokes its session (R4); a client must single-flight refresh per session.
+      x-error-codes: [invalid_request, unauthorized, rate_limited, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Tokens" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/auth/logout:
+    post:
+      tags: [session]
+      operationId: logout
+      summary: Endpoint 10. Revoke the current session only. No body.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [unauthorized, rate_limited, internal_error]
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/me:
+    get:
+      tags: [session]
+      operationId: me
+      summary: Endpoint 11. The authenticated account.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [unauthorized, rate_limited, internal_error]
+      responses:
+        "200":
+          description: The account.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/me/password/set/start:
+    post:
+      tags: [password]
+      operationId: passwordSetStart
+      summary: Endpoint 12. Start a first-password set (Flow E). No body.
+      description: The challenge is bound to the caller's user and session (R6).
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [unauthorized, password_already_set, rate_limited, internal_error]
+      responses:
+        "202": { $ref: "#/components/responses/Acknowledgement" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/me/password/set:
+    post:
+      tags: [password]
+      operationId: passwordSet
+      summary: Endpoint 13. Set a first password. Keeps this session, revokes all others (AC-28).
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, invalid_code, code_attempts_exceeded, unauthorized, password_already_set, password_policy_violation, rate_limited, busy, internal_error]
+      requestBody: { $ref: "#/components/requestBodies/CodeWithPassword" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/PolicyViolation" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/Busy" }
+  /v1/me/password:
+    put:
+      tags: [password]
+      operationId: passwordChange
+      summary: Endpoint 14. Change the password. Keeps this session, revokes all others (AC-11).
+      description: |
+        No retry exception: a resend after a lost response is evaluated like any other request
+        and normally gets `403 invalid_current_password` (TRD 5.4, R10).
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unauthorized, invalid_current_password, password_not_set, password_policy_violation, rate_limited, busy, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string }
+                new_password: { type: string }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/PolicyViolation" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/Busy" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: "`Authorization: Bearer vat_…`, exactly one header. Checked in PostgreSQL on every request (TRD 8.1)."
+
+  headers:
+    X-Request-Id:
+      description: Echoes a well-formed inbound id (8 to 64 of `[A-Za-z0-9_-]`, no token prefix) or a generated one.
+      required: true
+      schema: { type: string, pattern: "^[A-Za-z0-9_-]{8,64}$" }
+    Cache-Control:
+      required: true
+      schema: { type: string, enum: [no-store] }
+    Retry-After:
+      description: Whole seconds until the refusing limit's window ends, at least 1.
+      required: true
+      schema: { type: integer, minimum: 1 }
+    WWW-Authenticate:
+      required: true
+      schema: { type: string, enum: [Bearer] }
+
+  requestBodies:
+    Email:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [email]
+            properties:
+              email: { $ref: "#/components/schemas/EmailInput" }
+    CodeWithDevice:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [challenge_token, code, device]
+            properties:
+              challenge_token: { type: string }
+              code: { type: string, description: The 6-digit code. Any other string is a wrong code. }
+              device: { $ref: "#/components/schemas/Device" }
+    CodeWithPassword:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [challenge_token, code, new_password]
+            properties:
+              challenge_token: { type: string }
+              code: { type: string }
+              new_password: { type: string }
+
+  responses:
+    Health:
+      description: Healthy.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [status]
+            properties:
+              status: { type: string, enum: [ok] }
+    Acknowledgement:
+      description: Accepted. The same body for eligible and ineligible requests, apart from token and timestamps.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Acknowledgement" }
+    Tokens:
+      description: A new session. Sent only after the transaction that created it committed.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/TokenResponse" }
+    NoContent:
+      description: Done. No body.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+    BadRequest:
+      description: "`invalid_request`, `invalid_email`, `invalid_code` or `code_attempts_exceeded`."
+      x-codes: [invalid_request, invalid_email, invalid_code, code_attempts_exceeded]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Unauthorized:
+      description: "`unauthorized`: the token does not authenticate. Never says why."
+      x-codes: [unauthorized]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        WWW-Authenticate: { $ref: "#/components/headers/WWW-Authenticate" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    InvalidCredentials:
+      description: "`invalid_credentials`, the same for every credential failure (AC-7)."
+      x-codes: [invalid_credentials]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Forbidden:
+      description: "`account_unavailable` or `invalid_current_password`."
+      x-codes: [account_unavailable, invalid_current_password]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Conflict:
+      description: "`signup_unavailable`, `password_already_set` or `password_not_set`."
+      x-codes: [signup_unavailable, password_already_set, password_not_set]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    PolicyViolation:
+      description: "`password_policy_violation`, with every violated rule in `violations`."
+      x-codes: [password_policy_violation]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Problem" }
+              - { type: object, required: [violations] }
+    TooManyRequests:
+      description: "`rate_limited`. The same for every eligibility (AC-27)."
+      x-codes: [rate_limited]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Retry-After: { $ref: "#/components/headers/Retry-After" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    InternalError:
+      description: "`internal_error`. Details are logged by request id only."
+      x-codes: [internal_error]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ServiceUnavailable:
+      description: "`not_ready`: the database did not answer in time."
+      x-codes: [not_ready]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Busy:
+      description: "`busy`: password hashing is saturated (TRD 9.2). Retry after a second."
+      x-codes: [busy]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Retry-After: { $ref: "#/components/headers/Retry-After" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+
+  schemas:
+    EmailInput:
+      type: string
+      description: Trimmed, then parsed and normalized as TRD 3.2. Compared case-insensitively (AC-8).
+    Timestamp:
+      type: string
+      format: date-time
+      description: RFC 3339 in UTC.
+    Token:
+      type: string
+      pattern: "^v(ct|at|rt)_[A-Za-z0-9_-]{43}$"
+    Device:
+      type: object
+      additionalProperties: false
+      required: [name, platform]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64, description: "Not blank, no control characters." }
+        platform: { type: string, enum: [ios, android, web, other] }
+    Acknowledgement:
+      type: object
+      additionalProperties: false
+      required: [challenge_token, expires_at, resend_after]
+      properties:
+        challenge_token:
+          allOf: [{ $ref: "#/components/schemas/Token" }, { pattern: "^vct_" }]
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+        resend_after: { $ref: "#/components/schemas/Timestamp" }
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, email, email_verified_at, has_password, password_changed_at, status, role, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, description: As entered at signup. }
+        email_verified_at: { type: string, format: date-time, nullable: true }
+        has_password: { type: boolean }
+        password_changed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Informational only; never proof that a particular request succeeded (TRD 5.2).
+        status: { type: string, enum: [active, suspended, deactivated, pending_deletion] }
+        role: { type: string, enum: [user, admin, super_admin] }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+    TokenResponse:
+      type: object
+      additionalProperties: false
+      required: [session_id, access_token, access_expires_at, refresh_token, refresh_expires_at, user]
+      properties:
+        session_id: { type: string, format: uuid }
+        access_token:
+          allOf: [{ $ref: "#/components/schemas/Token" }, { pattern: "^vat_" }]
+        access_expires_at: { $ref: "#/components/schemas/Timestamp" }
+        refresh_token:
+          allOf: [{ $ref: "#/components/schemas/Token" }, { pattern: "^vrt_" }]
+        refresh_expires_at: { $ref: "#/components/schemas/Timestamp" }
+        user: { $ref: "#/components/schemas/User" }
+    ErrorCode:
+      type: string
+      enum:
+        - invalid_request
+        - invalid_email
+        - password_policy_violation
+        - invalid_code
+        - code_attempts_exceeded
+        - signup_unavailable
+        - rate_limited
+        - unauthorized
+        - invalid_credentials
+        - account_unavailable
+        - password_already_set
+        - password_not_set
+        - invalid_current_password
+        - busy
+        - internal_error
+        - not_ready
+        - not_found
+        - method_not_allowed
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, request_id]
+      properties:
+        type: { type: string, enum: [about:blank] }
+        title: { type: string, description: From a fixed table keyed by code; never derived from an error value. }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        code: { $ref: "#/components/schemas/ErrorCode" }
+        request_id: { type: string, pattern: "^[A-Za-z0-9_-]{8,64}$" }
+        violations:
+          type: array
+          minItems: 1
+          items: { type: string, enum: [too_short, too_long, too_common, contains_email] }

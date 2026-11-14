@@ -119,6 +119,13 @@ func NewService(cfg Config) (*Service, error) {
 	return s, nil
 }
 
+// cooldownError is the 429 of an active cooldown. The cooldown is per purpose and email, so the
+// purpose scopes its audit record.
+func (s *Service) cooldownError(purpose Purpose, e identity.Email, retryAfter int) error {
+	return &RateLimitedError{Rule: RuleCooldown, RetryAfter: retryAfter, Scope: string(purpose),
+		Window: time.Duration(s.cooldownSeconds()) * time.Second, Subject: ratelimit.EmailSubject(s.emailHMAC, e)}
+}
+
 func (s *Service) cooldownSeconds() int {
 	if s.cooldown.Seconds > 0 {
 		return s.cooldown.Seconds
@@ -223,7 +230,7 @@ func (s *Service) checkStartLimits(ctx context.Context, req StartRequest) error 
 		return err
 	}
 	if !d.Allowed {
-		return &RateLimitedError{Rule: d.Rule.Name, RetryAfter: d.RetryAfterSeconds()}
+		return d.Err()
 	}
 	return nil
 }
@@ -267,7 +274,7 @@ func (s *Service) issue(ctx context.Context, tx pgx.Tx, p startPlan) (Acknowledg
 		return Acknowledgement{}, err
 	}
 	if !claim.Granted {
-		return Acknowledgement{}, &RateLimitedError{Rule: RuleCooldown, RetryAfter: claim.RetryAfterSeconds()}
+		return Acknowledgement{}, s.cooldownError(p.req.Purpose, p.req.Email, claim.RetryAfterSeconds())
 	}
 	now, err := q.DatabaseNow(ctx)
 	if err != nil {
@@ -326,7 +333,7 @@ func (s *Service) replaceChallenge(ctx context.Context, q *sqlc.Queries, p start
 	if _, err := q.InsertOTPChallenge(ctx, row); err != nil {
 		if isUniqueViolation(err, "otp_challenges_one_open") {
 			// The backstop index (TRD 7.2 step 5). Unreachable after the cooldown claim.
-			return nil, &RateLimitedError{Rule: RuleCooldown, RetryAfter: s.cooldownSeconds()}
+			return nil, s.cooldownError(p.req.Purpose, p.req.Email, s.cooldownSeconds())
 		}
 		return nil, fmt.Errorf("otp: insert challenge: %w", err)
 	}
@@ -522,7 +529,7 @@ func (s *Service) checkVerifyLimits(ctx context.Context, req VerifyRequest, toke
 		return err
 	}
 	if !d.Allowed {
-		return &RateLimitedError{Rule: d.Rule.Name, RetryAfter: d.RetryAfterSeconds()}
+		return d.Err()
 	}
 	normalized, err := sqlc.New(s.pool).GetOTPChallengeEmailByTokenHash(ctx, tokenHash)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -537,7 +544,7 @@ func (s *Service) checkVerifyLimits(ctx context.Context, req VerifyRequest, toke
 		return err
 	}
 	if !pd.Allowed {
-		return &RateLimitedError{Rule: pd.Rule.Name, RetryAfter: pd.RetryAfterSeconds()}
+		return pd.Err()
 	}
 	return nil
 }

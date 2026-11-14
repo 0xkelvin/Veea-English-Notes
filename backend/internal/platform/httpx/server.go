@@ -10,7 +10,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -24,13 +26,68 @@ type Pinger interface {
 // HeaderRequestID carries the request id on every response.
 const HeaderRequestID = "X-Request-Id"
 
+// Router is what a module registers its routes on. *http.ServeMux satisfies it; tests use a
+// recorder to list every registered pattern.
+type Router interface {
+	HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request))
+}
+
 // Mount registers a module's routes on the router.
-type Mount func(mux *http.ServeMux)
+type Mount func(r Router)
 
 // NewHandler returns the router with the liveness and readiness endpoints plus every mounted
 // module's routes, all behind the request-id middleware.
 func NewHandler(db Pinger, readyTimeout time.Duration, mounts ...Mount) http.Handler {
 	mux := http.NewServeMux()
+	registerAll(mux, db, readyTimeout, mounts)
+	return requestID(problemFallback(mux))
+}
+
+// probeMethods are tried to tell a wrong method (405) from an unknown path (404).
+var probeMethods = []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete}
+
+// problemFallback answers what no route serves with a problem document instead of the standard
+// library's plain-text 404 and 405 (TRD 5.1: every error is application/problem+json). HEAD is
+// refused too: http.ServeMux would otherwise serve HEAD for every GET route, which the contract
+// does not list.
+func problemFallback(mux *http.ServeMux) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, pattern := mux.Handler(r); pattern != "" && r.Method != http.MethodHead {
+			mux.ServeHTTP(w, r)
+			return
+		}
+		var allowed []string
+		for _, m := range probeMethods {
+			probe := r.Clone(r.Context())
+			probe.Method = m
+			if _, pattern := mux.Handler(probe); pattern != "" {
+				allowed = append(allowed, m)
+			}
+		}
+		if len(allowed) == 0 {
+			WriteProblem(w, http.StatusNotFound, CodeNotFound)
+			return
+		}
+		w.Header().Set("Allow", strings.Join(allowed, ", "))
+		WriteProblem(w, http.StatusMethodNotAllowed, CodeMethodNotAllowed)
+	})
+}
+
+// Patterns lists every "METHOD /path" pattern NewHandler would register for mounts, in
+// registration order. The contract test compares it with api/openapi.yaml.
+func Patterns(mounts ...Mount) []string {
+	var rec patternRecorder
+	registerAll(&rec, nil, 0, mounts)
+	return rec
+}
+
+type patternRecorder []string
+
+func (p *patternRecorder) HandleFunc(pattern string, _ func(http.ResponseWriter, *http.Request)) {
+	*p = append(*p, pattern)
+}
+
+func registerAll(mux Router, db Pinger, readyTimeout time.Duration, mounts []Mount) {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
@@ -47,7 +104,6 @@ func NewHandler(db Pinger, readyTimeout time.Duration, mounts ...Mount) http.Han
 	for _, m := range mounts {
 		m(mux)
 	}
-	return requestID(mux)
 }
 
 // requestID sets X-Request-Id on every response, reusing a well-formed inbound value.
@@ -128,6 +184,8 @@ const (
 	CodeBusy                    = "busy"
 	CodeInternal                = "internal_error"
 	CodeNotReady                = "not_ready"
+	CodeNotFound                = "not_found"
+	CodeMethodNotAllowed        = "method_not_allowed"
 )
 
 var titles = map[string]string{
@@ -147,6 +205,8 @@ var titles = map[string]string{
 	CodeBusy:                    "The service is busy. Try again shortly.",
 	CodeInternal:                "Something went wrong.",
 	CodeNotReady:                "Not ready",
+	CodeNotFound:                "No such resource.",
+	CodeMethodNotAllowed:        "This method is not allowed here.",
 }
 
 // WriteProblem writes an RFC 9457 problem document with a stable code and the request id.
@@ -184,11 +244,26 @@ const MaxBodyBytes = 16 << 10
 // the expected shape. It deliberately carries no detail, so no part of the body is echoed.
 var ErrBadRequest = errors.New("httpx: malformed request body")
 
-// DecodeJSON decodes the body into dst strictly: at most MaxBodyBytes, a single JSON object,
-// no unknown fields, no trailing data.
+// DecodeJSON decodes the body into dst, a pointer to a struct, as strictly as api/openapi.yaml
+// describes request bodies:
+//   - Content-Type application/json (parameters such as charset allowed);
+//   - at most MaxBodyBytes, exactly one JSON object, no trailing data;
+//   - keys spelled exactly as the struct's json tags (encoding/json alone would also accept
+//     "EMAIL" for "email"), no duplicate keys at any depth, no unknown keys;
+//   - every tagged field present (all request fields are required), also in nested objects.
 func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
+	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+		return ErrBadRequest
+	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxBodyBytes))
 	if err != nil {
+		return ErrBadRequest
+	}
+	t := reflect.TypeOf(dst)
+	if t == nil || t.Kind() != reflect.Pointer || t.Elem().Kind() != reflect.Struct {
+		return errors.New("httpx: DecodeJSON needs a pointer to a struct")
+	}
+	if err := checkObject(body, t.Elem()); err != nil {
 		return ErrBadRequest
 	}
 	dec := json.NewDecoder(bytes.NewReader(body))
@@ -201,6 +276,54 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return ErrBadRequest
+	}
+	return nil
+}
+
+// checkObject verifies that raw is one JSON object whose keys are exactly the json tags of t:
+// each present once, none missing, none extra, with nested struct fields checked the same way.
+func checkObject(raw []byte, t reflect.Type) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return ErrBadRequest
+	}
+	fields := map[string]reflect.Type{}
+	for i := range t.NumField() {
+		f := t.Field(i)
+		name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+		if name == "" || name == "-" {
+			continue
+		}
+		ft := f.Type
+		if ft.Kind() == reflect.Pointer {
+			ft = ft.Elem()
+		}
+		fields[name] = ft
+	}
+	seen := map[string]bool{}
+	for dec.More() {
+		tok, err := dec.Token()
+		key, ok := tok.(string)
+		if err != nil || !ok || seen[key] {
+			return ErrBadRequest // malformed, or a duplicate key
+		}
+		seen[key] = true
+		ft, known := fields[key]
+		if !known {
+			return ErrBadRequest // unknown, or spelled with another case
+		}
+		var value json.RawMessage
+		if err := dec.Decode(&value); err != nil {
+			return ErrBadRequest
+		}
+		if ft.Kind() == reflect.Struct && len(value) > 0 && value[0] == '{' {
+			if err := checkObject(value, ft); err != nil {
+				return err
+			}
+		}
+	}
+	if len(seen) != len(fields) {
+		return ErrBadRequest // a required field is missing
 	}
 	return nil
 }

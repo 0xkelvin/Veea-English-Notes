@@ -77,6 +77,29 @@ func TestRequestID(t *testing.T) {
 	}
 }
 
+func TestUnmatchedRequestsGetProblemDocuments(t *testing.T) {
+	h := NewHandler(fakePinger{}, time.Second)
+	for _, c := range []struct {
+		method, path, code, allow string
+		status                    int
+	}{
+		{http.MethodGet, "/nope", "not_found", "", http.StatusNotFound},
+		{http.MethodPost, "/healthz", "method_not_allowed", "GET", http.StatusMethodNotAllowed},
+		{http.MethodHead, "/healthz", "method_not_allowed", "GET", http.StatusMethodNotAllowed},
+		{http.MethodHead, "/nope", "not_found", "", http.StatusNotFound},
+	} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(c.method, c.path, nil))
+		if rec.Code != c.status || rec.Header().Get("Content-Type") != "application/problem+json" ||
+			rec.Header().Get("Allow") != c.allow || rec.Header().Get("X-Request-Id") == "" {
+			t.Fatalf("%s %s: %d %q allow %q", c.method, c.path, rec.Code, rec.Header().Get("Content-Type"), rec.Header().Get("Allow"))
+		}
+		if c.method != http.MethodHead && !strings.Contains(rec.Body.String(), `"code":"`+c.code+`"`) {
+			t.Fatalf("%s %s: body %s", c.method, c.path, rec.Body)
+		}
+	}
+}
+
 func TestUnknownRouteAndMethod(t *testing.T) {
 	h := NewHandler(fakePinger{}, time.Second)
 	if rec := get(h, "/nope"); rec.Code != http.StatusNotFound {
@@ -100,7 +123,7 @@ func TestTokenShapedRequestIDIsReplaced(t *testing.T) {
 }
 
 func TestMountedRoutesShareTheMiddleware(t *testing.T) {
-	h := NewHandler(fakePinger{}, time.Second, func(mux *http.ServeMux) {
+	h := NewHandler(fakePinger{}, time.Second, func(mux Router) {
 		mux.HandleFunc("GET /v1/x", func(w http.ResponseWriter, _ *http.Request) {
 			WriteProblem(w, http.StatusConflict, CodeSignupUnavailable, map[string]any{"violations": []string{"a"}, "code": "overridden"})
 		})
@@ -130,6 +153,47 @@ func TestWriteRateLimitedSetsRetryAfter(t *testing.T) {
 	}
 }
 
+func TestDecodeJSONEnforcesTheSpecShape(t *testing.T) {
+	type device struct {
+		Name     string `json:"name"`
+		Platform string `json:"platform"`
+	}
+	type body struct {
+		Email  string  `json:"email"`
+		Device *device `json:"device"`
+	}
+	ok := `{"email":"a@example.test","device":{"name":"x","platform":"ios"}}`
+	cases := []struct {
+		name, ct, raw string
+		want          bool
+	}{
+		{"valid", "application/json", ok, true},
+		{"charset", "application/json; charset=utf-8", ok, true},
+		{"no content type", "", ok, false},
+		{"form content type", "application/x-www-form-urlencoded", ok, false},
+		{"text content type", "text/plain", ok, false},
+		{"other key case", "application/json", `{"EMAIL":"a@example.test","device":{"name":"x","platform":"ios"}}`, false},
+		{"duplicate key", "application/json", `{"email":"a","email":"b","device":{"name":"x","platform":"ios"}}`, false},
+		{"nested duplicate", "application/json", `{"email":"a","device":{"name":"x","name":"y","platform":"ios"}}`, false},
+		{"missing field", "application/json", `{"device":{"name":"x","platform":"ios"}}`, false},
+		{"missing nested field", "application/json", `{"email":"a","device":{"name":"x"}}`, false},
+		{"nested unknown", "application/json", `{"email":"a","device":{"name":"x","platform":"ios","os":"18"}}`, false},
+		{"null body", "application/json", `null`, false},
+		{"array body", "application/json", `[{"email":"a"}]`, false},
+		{"empty object", "application/json", `{}`, false},
+	}
+	for _, c := range cases {
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(c.raw))
+		if c.ct != "" {
+			req.Header.Set("Content-Type", c.ct)
+		}
+		var b body
+		if err := DecodeJSON(httptest.NewRecorder(), req, &b); (err == nil) != c.want {
+			t.Errorf("%s: err = %v, want ok=%v", c.name, err, c.want)
+		}
+	}
+}
+
 func TestDecodeJSONIsStrict(t *testing.T) {
 	type body struct {
 		Email string `json:"email"`
@@ -146,6 +210,7 @@ func TestDecodeJSONIsStrict(t *testing.T) {
 	}
 	for raw, ok := range cases {
 		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(raw))
+		req.Header.Set("Content-Type", "application/json")
 		var b body
 		err := DecodeJSON(httptest.NewRecorder(), req, &b)
 		if (err == nil) != ok {

@@ -18,6 +18,7 @@ import (
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/config"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/httpx"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/logging"
 )
 
 func main() {
@@ -32,7 +33,8 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("configuration:\n%w", err)
 	}
-	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	// Every log line passes the redacting handler (TRD 11.2).
+	log := slog.New(logging.NewRedactingHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel})))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

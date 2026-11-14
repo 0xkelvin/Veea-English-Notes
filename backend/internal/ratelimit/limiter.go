@@ -42,6 +42,12 @@ func SessionSubject(id uuid.UUID) Subject { return Subject{kind: "session", valu
 // value is an HMAC, an IP bucket or an id, never a raw email, so it is safe to log.
 func (s Subject) String() string { return s.kind + ":" + s.value }
 
+// Kind is "email", "ip", "user" or "session"; empty for the zero Subject.
+func (s Subject) Kind() string { return s.kind }
+
+// Value is the email HMAC in hex, the IP bucket, or the user or session id.
+func (s Subject) Value() string { return s.value }
+
 // Check is one rule applied to one subject.
 type Check struct {
 	Rule    Rule
@@ -63,6 +69,8 @@ type Decision struct {
 	Count int
 	// ResetsIn is how long until Rule's window ends and its counter starts over.
 	ResetsIn time.Duration
+	// Subject is who Rule was applied to.
+	Subject Subject
 }
 
 // RetryAfterSeconds is the value for a Retry-After header: whole seconds until the window
@@ -79,6 +87,13 @@ func (d Decision) RetryAfterSeconds() int {
 type Error struct {
 	Rule       string
 	RetryAfter int
+	// Window and Subject identify the limit that refused, so the refusal can be audited once
+	// per window and subject (TRD 11.1 auth.rate_limited). Both are set by Decision.Err.
+	Window  time.Duration
+	Subject Subject
+	// Scope narrows the audit deduplication when one rule covers several independent limits,
+	// for example the cooldown, which is per purpose and email. Optional.
+	Scope string
 }
 
 func (e *Error) Error() string {
@@ -90,7 +105,7 @@ func (d Decision) Err() error {
 	if d.Allowed {
 		return nil
 	}
-	return &Error{Rule: d.Rule.Name, RetryAfter: d.RetryAfterSeconds()}
+	return &Error{Rule: d.Rule.Name, RetryAfter: d.RetryAfterSeconds(), Window: d.Rule.Window, Subject: d.Subject}
 }
 
 // Limiter counts events in fixed windows stored in PostgreSQL. It is safe for concurrent use.
@@ -99,11 +114,12 @@ func (d Decision) Err() error {
 // separate autocommit statements, so they survive whatever happens to the caller's business
 // transaction, and they never hold locks the business transaction could wait on (TRD 7.1 rule 6).
 type Limiter struct {
-	q *sqlc.Queries
+	q    *sqlc.Queries
+	pool *pgxpool.Pool
 }
 
 // NewLimiter returns a Limiter on pool.
-func NewLimiter(pool *pgxpool.Pool) *Limiter { return &Limiter{q: sqlc.New(pool)} }
+func NewLimiter(pool *pgxpool.Pool) *Limiter { return &Limiter{q: sqlc.New(pool), pool: pool} }
 
 // Allow records one event for every check and decides.
 //
@@ -135,6 +151,7 @@ func (l *Limiter) Allow(ctx context.Context, checks ...Check) (Decision, error) 
 			return Decision{}, fmt.Errorf("ratelimit: increment %s: %w", c.Rule.Name, err)
 		}
 		d := decide(c.Rule, int(row.Count), row.WindowStart, row.DbNow)
+		d.Subject = c.Subject
 		last = d
 		if !d.Allowed && (denied == nil || d.ResetsIn > denied.ResetsIn) {
 			dd := d
@@ -160,6 +177,7 @@ func (l *Limiter) Peek(ctx context.Context, c Check) (Decision, error) {
 		return Decision{}, fmt.Errorf("ratelimit: peek %s: %w", c.Rule.Name, err)
 	}
 	d := decide(c.Rule, int(row.Count), row.WindowStart, row.DbNow)
+	d.Subject = c.Subject
 	d.Allowed = int(row.Count) < c.Rule.Limit
 	return d, nil
 }

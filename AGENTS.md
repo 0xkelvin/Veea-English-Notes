@@ -42,6 +42,11 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
   `authenticated`. OTP and password sign-in are in `backend/internal/auth/signin/`; password
   set, change and reset are in `backend/internal/auth/password/`. Device management is not
   built yet. Password mutations hash before their transaction and follow TRD 01 §7.5 lock order.
+  The HTTP contract is `backend/api/openapi.yaml`; a new or changed route updates it in the same
+  change (`go test ./api` fails when the router and the spec disagree, and router tests fail on
+  any response the spec does not describe).
+  Audit events are mapped to producers and tests in TRD 01 §11.1; a new flow adds its rows there
+  and to `TestAudit_Matrix`. Loggers go through `internal/platform/logging`'s redacting handler.
 - After changing a query or migration run `make sqlc` and `make sqlc-verify` (from `backend/`)
   and commit the generated code with it.
 - Migrations run through `cmd/migrate` before a deploy, never on API startup.

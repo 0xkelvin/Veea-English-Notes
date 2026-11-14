@@ -153,10 +153,11 @@ func (s *Service) StartSet(ctx context.Context, p session.Principal, c Client) (
 		return otp.Acknowledgement{}, session.ErrUnauthorized
 	}
 	if u.PasswordHash != nil {
+		s.recordFailure(ctx, "auth.password.set.start", p, reasonAlreadySet, c)
 		return otp.Acknowledgement{}, ErrPasswordAlreadySet
 	}
 	e := identity.Email{Display: u.Email, Normalized: u.EmailNormalized}
-	return s.otp.Start(ctx, otp.StartRequest{
+	ack, err := s.otp.Start(ctx, otp.StartRequest{
 		Purpose: otp.PurposeSetPassword, Email: e, IP: c.IP, UserAgent: c.UserAgent, RequestID: c.RequestID,
 		Check: func(ctx context.Context, tx pgx.Tx) (otp.Target, error) {
 			// Re-read inside the start transaction: a password set meanwhile ends the start, and
@@ -173,6 +174,11 @@ func (s *Service) StartSet(ctx context.Context, p session.Principal, c Client) (
 			return otp.Target{Eligible: true, UserID: &cur.ID, SessionID: &p.SessionID, To: cur.Email}, nil
 		},
 	})
+	if errors.Is(err, ErrPasswordAlreadySet) {
+		// Set between the read above and the start transaction, which rolled back.
+		s.recordFailure(ctx, "auth.password.set.start", p, reasonAlreadySet, c)
+	}
+	return ack, err
 }
 
 // Set is endpoint 13 (TRD 7.5 "Set (E)"). The policy is checked and the hash computed before
@@ -258,6 +264,7 @@ func (s *Service) Change(ctx context.Context, p session.Principal, current, newP
 		return err
 	}
 	if u.PasswordHash == nil {
+		s.recordFailure(ctx, "auth.password.change", p, reasonNotSet, c)
 		return ErrPasswordNotSet
 	}
 	h0 := *u.PasswordHash

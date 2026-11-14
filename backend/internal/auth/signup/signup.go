@@ -124,7 +124,7 @@ func (s *Service) StartPassword(ctx context.Context, rawEmail, password string, 
 		return otp.Acknowledgement{}, err
 	}
 	if !d.Allowed {
-		return otp.Acknowledgement{}, &otp.RateLimitedError{Rule: d.Rule.Name, RetryAfter: d.RetryAfterSeconds()}
+		return otp.Acknowledgement{}, d.Err()
 	}
 	hash, err := s.hasher.Hash(ctx, normalized)
 	if err != nil {
