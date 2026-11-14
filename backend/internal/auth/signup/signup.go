@@ -25,6 +25,7 @@ import (
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity/accounts"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/clientip"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db/sqlc"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/metrics"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/ratelimit"
 )
 
@@ -49,6 +50,8 @@ type Config struct {
 	Rules *ratelimit.Rules
 	// Random is the source for session tokens. Nil means crypto/rand.
 	Random io.Reader
+	// Metrics, when set, receives auth_signup_completed_total and cap evictions.
+	Metrics *metrics.Metrics
 }
 
 // Service runs the signup use cases. It is safe for concurrent use.
@@ -59,6 +62,7 @@ type Service struct {
 	limiter *ratelimit.Limiter
 	rule    ratelimit.Rule
 	random  io.Reader
+	metrics *metrics.Metrics
 }
 
 // New validates cfg and returns a Service.
@@ -74,7 +78,7 @@ func New(cfg Config) (*Service, error) {
 		return nil, err
 	}
 	return &Service{otp: cfg.OTP, hasher: cfg.Hasher, policy: cfg.Policy,
-		limiter: ratelimit.NewLimiter(cfg.Pool), rule: rules.PasswordSignupStartIP, random: cfg.Random}, nil
+		limiter: ratelimit.NewLimiter(cfg.Pool), rule: rules.PasswordSignupStartIP, random: cfg.Random, metrics: cfg.Metrics}, nil
 }
 
 // Client is what the HTTP layer knows about the caller.
@@ -196,6 +200,13 @@ func (s *Service) Verify(ctx context.Context, token, code string, device session
 	if err != nil {
 		return Result{}, err
 	}
+	// After the commit.
+	method := string(otp.SignupOTP)
+	if res.Session.AuthMethod() == session.MethodSignupPassword {
+		method = string(otp.SignupPassword)
+	}
+	s.metrics.SignupCompleted(method)
+	s.metrics.SessionsRevoked("session_limit", res.Session.Evicted)
 	return res, nil
 }
 

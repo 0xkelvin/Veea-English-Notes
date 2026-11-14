@@ -186,6 +186,7 @@ const (
 	CodeNotReady                = "not_ready"
 	CodeNotFound                = "not_found"
 	CodeMethodNotAllowed        = "method_not_allowed"
+	CodeUnsupportedMediaType    = "unsupported_media_type"
 )
 
 var titles = map[string]string{
@@ -207,6 +208,7 @@ var titles = map[string]string{
 	CodeNotReady:                "Not ready",
 	CodeNotFound:                "No such resource.",
 	CodeMethodNotAllowed:        "This method is not allowed here.",
+	CodeUnsupportedMediaType:    "Send the request body as application/json.",
 }
 
 // WriteProblem writes an RFC 9457 problem document with a stable code and the request id.
@@ -244,16 +246,21 @@ const MaxBodyBytes = 16 << 10
 // the expected shape. It deliberately carries no detail, so no part of the body is echoed.
 var ErrBadRequest = errors.New("httpx: malformed request body")
 
+// ErrUnsupportedMediaType is returned by DecodeJSON when Content-Type is missing or is not
+// application/json. Handlers answer 415 unsupported_media_type.
+var ErrUnsupportedMediaType = errors.New("httpx: unsupported media type")
+
 // DecodeJSON decodes the body into dst, a pointer to a struct, as strictly as api/openapi.yaml
 // describes request bodies:
-//   - Content-Type application/json (parameters such as charset allowed);
+//   - Content-Type application/json (parameters such as charset allowed), else
+//     ErrUnsupportedMediaType; every other failure is ErrBadRequest;
 //   - at most MaxBodyBytes, exactly one JSON object, no trailing data;
 //   - keys spelled exactly as the struct's json tags (encoding/json alone would also accept
 //     "EMAIL" for "email"), no duplicate keys at any depth, no unknown keys;
 //   - every tagged field present (all request fields are required), also in nested objects.
 func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
-		return ErrBadRequest
+		return ErrUnsupportedMediaType
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxBodyBytes))
 	if err != nil {

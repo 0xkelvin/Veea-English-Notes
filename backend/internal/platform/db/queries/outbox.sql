@@ -107,3 +107,7 @@ WHERE id IN (
     WHERE status <> 'pending' AND finished_at < now() - interval '7 days'
     LIMIT @batch_size
 );
+
+-- name: CountPendingOutbox :one
+-- email_outbox_pending (TRD 11.3), read when metrics are scraped. Uses the partial index.
+SELECT count(*) FROM email_outbox WHERE status = 'pending';

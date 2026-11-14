@@ -265,3 +265,50 @@ func TestEmailSenderSettings(t *testing.T) {
 		}
 	}
 }
+
+func TestMetricsAddr(t *testing.T) {
+	cfg, err := Load(with(nil))
+	if err != nil || cfg.MetricsAddr != "127.0.0.1:9090" {
+		t.Fatalf("default metrics address %q, %v", cfg.MetricsAddr, err)
+	}
+	if cfg, err := Load(with(map[string]string{EnvMetricsAddr: ":9100"})); err != nil || cfg.MetricsAddr != ":9100" {
+		t.Fatalf("all-interfaces form must be accepted: %v", err)
+	}
+	for _, bad := range []string{"9090", "metrics.internal:9090", "127.0.0.1:", ":18386", "127.0.0.1:18386",
+		"127.0.0.1:0", "127.0.0.1:99999", "127.0.0.1:http"} {
+		if _, err := Load(with(map[string]string{EnvMetricsAddr: bad})); err == nil || !strings.Contains(err.Error(), EnvMetricsAddr) {
+			t.Errorf("%q: expected an error naming %s, got %v", bad, EnvMetricsAddr, err)
+		}
+	}
+}
+
+func TestArgon2Settings(t *testing.T) {
+	cfg, err := Load(with(nil))
+	if err != nil || cfg.Argon2.MemoryKiB != 19456 || cfg.Argon2.Time != 2 || cfg.Argon2.Threads != 1 ||
+		cfg.Argon2.SaltLen != 16 || cfg.Argon2.KeyLen != 32 {
+		t.Fatalf("defaults %+v, %v", cfg.Argon2, err)
+	}
+	cfg, err = Load(with(map[string]string{EnvArgon2Memory: "65536", EnvArgon2Time: "3", EnvArgon2Threads: "2"}))
+	if err != nil || cfg.Argon2.MemoryKiB != 65536 || cfg.Argon2.Time != 3 || cfg.Argon2.Threads != 2 {
+		t.Fatalf("tuned up %+v, %v", cfg.Argon2, err)
+	}
+	// Equal cost with less memory and more passes is allowed (19456 × 2 = 9728 × 4).
+	if _, err := Load(with(map[string]string{EnvArgon2Memory: "9728", EnvArgon2Time: "4"})); err != nil {
+		t.Fatalf("an equal-cost trade must be accepted: %v", err)
+	}
+	for name, env := range map[string]map[string]string{
+		"below the floor":   {EnvArgon2Memory: "8192"},
+		"one pass":          {EnvArgon2Time: "1"},
+		"not a number":      {EnvArgon2Memory: "lots"},
+		"negative":          {EnvArgon2Time: "-1"},
+		"zero threads":      {EnvArgon2Threads: "0"},
+		"too many threads":  {EnvArgon2Threads: "300"},
+		"memory over bound": {EnvArgon2Memory: "1048576"},
+		// Equal cost on paper (2432 × 16 = 19456 × 2) but barely memory-hard.
+		"too little memory": {EnvArgon2Memory: "2432", EnvArgon2Time: "16"},
+	} {
+		if _, err := Load(with(env)); err == nil || !strings.Contains(err.Error(), "VEEA_ARGON2") {
+			t.Errorf("%s: expected a VEEA_ARGON2 error, got %v", name, err)
+		}
+	}
+}

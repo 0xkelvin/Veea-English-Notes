@@ -22,7 +22,9 @@ import (
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/notify"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/clientip"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db/sqlc"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/httpx"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/metrics"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/ratelimit"
 )
 
@@ -47,6 +49,11 @@ type Options struct {
 	Random io.Reader
 	// OnTxRetry is called when a transaction is retried after a deadlock (tests assert none).
 	OnTxRetry func(sqlstate string)
+	// Metrics receives the TRD 11.3 metrics. Nil disables them.
+	Metrics *metrics.Metrics
+	// Argon2 are the hash parameters for the default Hasher (VEEA_ARGON2_*). The zero value
+	// means identity.DefaultParams. Ignored when Hasher is set.
+	Argon2 identity.Params
 }
 
 // New builds the router with every Phase 1 route implemented so far.
@@ -56,6 +63,17 @@ func New(o Options) (http.Handler, error) {
 	}
 	if o.Logger == nil {
 		o.Logger = slog.New(slog.DiscardHandler)
+	}
+	m := o.Metrics
+	userRetry := o.OnTxRetry
+	o.OnTxRetry = func(code string) {
+		m.TxRetry(code)
+		if userRetry != nil {
+			userRetry(code)
+		}
+	}
+	if o.Argon2 == (identity.Params{}) {
+		o.Argon2 = identity.DefaultParams
 	}
 	emailHMAC, err := identity.NewEmailHMAC(o.EmailHMACKeys...)
 	if err != nil {
@@ -70,7 +88,7 @@ func New(o Options) (http.Handler, error) {
 		return nil, err
 	}
 	if o.Hasher == nil {
-		if o.Hasher, err = identity.NewHasher(identity.HasherConfig{Params: identity.DefaultParams}); err != nil {
+		if o.Hasher, err = identity.NewHasher(identity.HasherConfig{Params: o.Argon2, ObserveWait: m.Argon2Wait}); err != nil {
 			return nil, err
 		}
 	}
@@ -84,20 +102,20 @@ func New(o Options) (http.Handler, error) {
 
 	otpSvc, err := otp.NewService(otp.Config{
 		Pool: o.Pool, Codes: codes, EmailHMAC: emailHMAC, Outbox: notify.NewOutbox(keyring), Rules: o.Rules,
-		Random: o.Random, Logger: o.Logger.With("component", "otp"), OnTxRetry: o.OnTxRetry,
+		Random: o.Random, Logger: o.Logger.With("component", "otp"), OnTxRetry: o.OnTxRetry, Metrics: m,
 	})
 	if err != nil {
 		return nil, err
 	}
 	signupSvc, err := signup.New(signup.Config{
-		Pool: o.Pool, OTP: otpSvc, Hasher: o.Hasher, Policy: o.Policy, Rules: o.Rules, Random: o.Random,
+		Pool: o.Pool, OTP: otpSvc, Hasher: o.Hasher, Policy: o.Policy, Rules: o.Rules, Random: o.Random, Metrics: m,
 	})
 	if err != nil {
 		return nil, err
 	}
 	signinSvc, err := signin.New(signin.Config{
 		Pool: o.Pool, OTP: otpSvc, Hasher: o.Hasher, EmailHMAC: emailHMAC, Rules: o.Rules, Random: o.Random,
-		Logger: o.Logger.With("component", "signin"), OnTxRetry: o.OnTxRetry,
+		Logger: o.Logger.With("component", "signin"), OnTxRetry: o.OnTxRetry, Metrics: m,
 	})
 	if err != nil {
 		return nil, err
@@ -105,19 +123,21 @@ func New(o Options) (http.Handler, error) {
 	outbox := notify.NewOutbox(keyring)
 	passwordSvc, err := password.New(password.Config{
 		Pool: o.Pool, OTP: otpSvc, Outbox: outbox, Hasher: o.Hasher, Policy: o.Policy, Rules: o.Rules,
-		Logger: o.Logger.With("component", "password"), OnTxRetry: o.OnTxRetry,
+		Logger: o.Logger.With("component", "password"), OnTxRetry: o.OnTxRetry, Metrics: m,
 	})
 	if err != nil {
 		return nil, err
 	}
 	sessions, err := session.NewService(session.Config{
 		Pool: o.Pool, Rules: o.Rules, Random: o.Random, Logger: o.Logger.With("component", "session"), OnTxRetry: o.OnTxRetry,
+		Metrics: m,
 	})
 	if err != nil {
 		return nil, err
 	}
 	auth := &httpapi.Handlers{Signup: signupSvc, Signin: signinSvc, Password: passwordSvc, Sessions: sessions,
-		Limiter: ratelimit.NewLimiter(o.Pool), IPs: clientip.New(o.TrustedProxies),
+		Limiter: ratelimit.NewLimiter(o.Pool), Metrics: m, IPs: clientip.New(o.TrustedProxies),
 		Log: o.Logger.With("component", "http")}
+	m.RegisterOutboxPending(sqlc.New(o.Pool).CountPendingOutbox)
 	return httpx.NewHandler(o.Pool, o.ReadyTimeout, auth.Mount), nil
 }

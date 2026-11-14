@@ -320,12 +320,11 @@ delivery = 'none': open ─(every verify is a failure)─▶ exhausted | superse
 - `429 rate_limited` carries `Retry-After` in seconds.
 
 **Implementation notes** (Tickets 07 and 12)
-- **Strict request bodies.** A body must be:
-  - sent with `Content-Type: application/json`;
+- **Strict request bodies.** A JSON endpoint first requires `Content-Type: application/json` (parameters such as `charset` allowed). A missing or other content type is `415 unsupported_media_type`, before the body is read. The body must then be:
   - exactly one JSON object;
   - spelled with exactly the documented keys: no other case, no duplicates, no unknown keys;
   - complete: every field present, including inside `device`.
-  Anything else is `400 invalid_request`, so `{}` sent to refresh is a malformed request, not an unknown token.
+  Anything else is `400 invalid_request`, so `{}` sent to refresh is a malformed request, not an unknown token. Bearer-protected endpoints authenticate first, so a request without a valid token gets `401` whatever its content type.
 - **Unmatched requests are problem documents too.** An unknown path gets `404 not_found`, and a known path with another method gets `405 method_not_allowed` with `Allow`. `HEAD` is refused with `405`, because `http.ServeMux` would otherwise serve `HEAD` for every `GET` route, and the contract does not list it.
 
 **Responses**
@@ -768,6 +767,20 @@ CREATE TABLE IF NOT EXISTS rate_limit_counters (
 | `sessions` | Delete 30 days after revocation or absolute expiry. Cascades to consumed tokens |
 | `rate_limit_counters` | Delete windows older than 48 h |
 | `audit_events` | Not deleted in Phase 1 (Q-L3) |
+
+**Implementation notes** (`internal/maintenance`, release hardening)
+- **The runner lives in the API process.** `cmd/api` runs every job once at start and then every 5 minutes. On shutdown it is stopped before the pool closes; a job in progress is interrupted.
+- **One advisory lock per job.** The keys are `0x5645_4541_434c_0000` plus the job's index. Each job takes its lock with `pg_try_advisory_lock` on one dedicated connection, and every statement of the job runs on that same connection, so the lock is held for the whole job. Another session holding the lock means the job is skipped this time (`Result.Ran = false`).
+- **Release is verified.** `pg_advisory_unlock` must return true. If the release fails or returns false, or a batch failed, the connection is taken out of the pool and closed, which ends its session and every lock with it. A lock can therefore never leak into the pool, also after a cancellation mid-statement.
+- **Bounded batches.** Deletes run 1,000 rows per statement and at most 100 statements per job per run; the next run continues.
+- **Two unbatched statements.** The pending-hash scrub and the outbox reaper backstop are single `UPDATE`s. Both touch only rows that became eligible since the last run, so they stay small.
+- **Order.** The pending-hash scrub (AC-26) runs before challenge deletion, and session deletion runs before consumed-token deletion so the cascade does most of that work.
+- **Tests.** `TestCleanup_*` run the real runner against PostgreSQL:
+  - AC-26 end to end through the router;
+  - every retention threshold, a minute on either side;
+  - the batch bound;
+  - a held lock skips the job, and of four simultaneous runners exactly one runs it;
+  - the lock is released after a failed batch and after a cancellation mid-statement.
 
 ---
 
@@ -1346,7 +1359,7 @@ This is the price of having no grace window. It is accepted in exchange for stri
 - **`password_changed_at` on password signup.** It is set to the verification time, because the account has a password from creation (§5.2: null until a password is first set). OTP signups leave it null.
 - **Order in password signup start.** Email validation, then the password policy (`422`), then the per-IP password-signup limit, then argon2id, then the OTP start. The OTP start's own per-email and per-IP limits run after hashing, so a request refused by those limits still costs one hash. The per-IP password-signup rule bounds that cost.
 - **Request contract details §5 leaves open.**
-  - Bodies are decoded strictly: at most 16 KiB, one JSON object, no unknown fields, no trailing data. Anything else is `400 invalid_request`.
+  - Bodies are decoded strictly (§5.1 implementation notes): a missing or other `Content-Type` is `415 unsupported_media_type`; a malformed body or a missing field is `400 invalid_request`.
   - A missing or invalid `device` on verify is also `400 invalid_request`, before the challenge is touched.
   - `503 busy` (hasher saturated) carries `Retry-After: 1`.
   - Timestamps are RFC 3339 in UTC with sub-second precision.
@@ -1355,9 +1368,7 @@ This is the price of having no grace window. It is accepted in exchange for stri
   - The stored `User-Agent` is limited to 256 characters without control characters, and dropped entirely if it contains `vct_`, `vat_` or `vrt_`.
   - An inbound `X-Request-Id` containing a token prefix is replaced.
   - The audit writer redacts such values in `user_agent` and `request_id` instead of refusing the event. Before this change, a client could turn every audited request into a `500` with a header like `User-Agent: vct_x`.
-- **Not done yet.**
-  - `VEEA_ARGON2_*` (§13) is not read; the approved defaults are used.
-  - `api/openapi.yaml` and contract validation are Ticket 12.
+- **Done since:** `VEEA_ARGON2_*` is read and validated (§13), and `api/openapi.yaml` with contract validation exists (§12.2 notes).
 
 ### 8.7 Automatic revocation summary
 
@@ -1571,6 +1582,18 @@ This is the price of having no grace window. It is accepted in exchange for stri
 | Database | `db_tx_retries_total{reason}` (deadlock or serialization retries, §7.1 rule 7) |
 | Argon2 | `argon2_wait_seconds` |
 
+**Implementation notes** (`internal/platform/metrics`, release hardening)
+- **Where they are served.** `GET /metrics` on `VEEA_METRICS_ADDR`, a listener separate from the API, with its own registry. The Go runtime and process collectors are included. Alerting is Phase 5.
+- **Counted only after the commit.** A rolled-back transaction never moves a counter. Results:
+  - `auth_otp_verified_total{result}`: `success`, `invalid_code`, `attempts_exceeded`, `rejected` (the code was right but the flow refused, for example `409` or an account no longer active), `rate_limited`, `error`. A transaction whose commit failed is `error`, whatever its closure had prepared. A database failure while checking the verify limits is `error`, not `rate_limited`. Set and reset check those limits before Argon2id (`Prechecked`), and their refusals are counted there.
+  - `auth_password_login_total{result}`: `success`, `invalid_credentials`, `account_unavailable`, `rate_limited`, `busy`, `invalid_request`, `error`.
+  - `email_send_total{result}`: `sent`, `permanent`, `retryable`, `ambiguous`, one per provider call.
+  - `auth_sessions_revoked_total{reason}`: the `sessions.revoked_reason` values, added by count.
+  - `db_tx_retries_total{reason}`: `deadlock` or `serialization`.
+- **Label hygiene.** Every label value passes a filter that keeps only `[a-z0-9_]{1,40}` and turns anything else into `other`. An email, an IP address or a token cannot become a label even by mistake (`TestLabelsCannotCarryPersonalDataOrTokens`, and a scan of the scraped output in `TestMetrics_RecordedThroughTheRouter`).
+- **`email_outbox_pending`** is read with a count query when scraped, with a 1 s timeout. A failed read reports `-1`, not a silent `0`. At most two scrapes run at once, each bounded to 5 s, so scraping cannot tie up the API pool. The gauge registers once per `Metrics`, so building a second handler with the same instance does not panic.
+- **Hooks reused.** `OnTxRetry`, the hasher's `ObserveWait` and the worker's new `OnSend` and `OnStale` hooks feed the collectors; `notify` and `db` do not import the metrics package.
+
 ---
 
 ## 12. Testing
@@ -1664,7 +1687,7 @@ This is the price of having no grace window. It is accepted in exchange for stri
 | AC-23 | `TestAC23_SecurityNotificationsAreDeliveredToTheAccount`, `TestOutbox_DeliversThroughMailpit` | |
 | AC-24 | `TestAudit_Matrix`, `TestAudit_RateLimitedIsRecordedOncePerWindow`, `TestAudit_IPSubjectRateLimitedOncePerWindow` | |
 | AC-25 | `TestSignup_RequestContract`, `TestSignupOTP_CreatesVerifiedPasswordlessAccountAndSession`, `TestReset_RevokesEverySessionAndIssuesNone`, `TestChangePassword_LostResponseResend`, `TestChangePassword_FailedBeforeCommitThenResend`, `TestSetPassword_KeepsCurrentSessionAndRevokesOthers`, `TestRefresh_LostResponseRetryRevokesOnlyThatSession` | |
-| AC-26 | `TestSignupPassword_BindsTheHashToTheChallengeUntilVerified`, `TestPasswordLogin_GenericFailure` (pending registration); *(query)* `TestQuery_OTPCleanup` | **Gap:** "after expiry, `pending_password_hash` NULL" needs the §6.10 cleanup job, which exists as a tested query but is not scheduled at runtime |
+| AC-26 | `TestSignupPassword_BindsTheHashToTheChallengeUntilVerified`, `TestPasswordLogin_GenericFailure` (pending registration), `TestCleanup_AC26_ScrubsTheExpiredPendingPasswordHash` | The cleanup runner scrubs an expired challenge's hash at run time, and deletes the challenge and its email 24 h later |
 | AC-27 | `TestSignup_AcknowledgementIsUniform`, `TestOTPLogin_UnknownOrIneligibleEmailGetsTheSameAckAndNoEmail`, `TestReset_AcknowledgementIsUniform`, `TestSignup_DuplicateNeverChangesTheAccount` | |
 | AC-28 | `TestSetPassword_KeepsCurrentSessionAndRevokesOthers` | |
 
@@ -1780,6 +1803,32 @@ This is the price of having no grace window. It is accepted in exchange for stri
 
 Run unit, integration and contract tests locally against docker-compose Postgres and Mailpit. Record results in the ticket that closes TRD 01. Never run tests or scripts against a deployed server.
 
+**Recorded evidence** (release hardening, 2026-11-14)
+- **Code:** branch `feat/go-email-auth-account-foundation`, commit `cf62771` plus the uncommitted release-hardening changes (cleanup runner, metrics, 415, `VEEA_ARGON2_*`).
+- **Environment:** local only, on Go 1.26.2 (darwin/arm64).
+  - PostgreSQL 17.11 (`postgres:17-alpine`) from `scripts/test-postgres.sh` at `127.0.0.1:54329`.
+  - Mailpit v1.33.1 from `scripts/test-mailpit.sh` (SMTP `127.0.0.1:1025`, API `127.0.0.1:8025`).
+  - These scripts stand in for the docker-compose services this section names. The Go backend has no compose file of its own.
+- **Commands and results** (from `backend/`):
+
+| Command | Result |
+|---|---|
+| `make check` (gofmt, vet with and without the integration tag, unit tests) | Pass, 15 packages |
+| `make build` | Pass (`bin/api`, `bin/migrate`) |
+| `make sqlc-verify` | "sqlc output is up to date and reproducible" |
+| `VEEA_TEST_DATABASE_URL=… VEEA_TEST_SMTP_ADDR=127.0.0.1:1025 VEEA_TEST_MAILPIT_API=http://127.0.0.1:8025 go test -race -tags=integration -count=1 -v ./...` | 16 packages ok; 757 passed (331 top-level), 0 failed, 0 skipped; `TestOutbox_DeliversThroughMailpit` ran and passed |
+| The same run's contract checker | 0 violations across 99 operation/status/code combinations. Only `GET /readyz 503` (covered by `httpx` unit tests) and `GET /v1/me 500` are not produced through the router |
+| `-count=3`, three times, on `TestCleanup_`, `TestMetrics_`, `TestContract_`, `TestAudit_`, `TestConcurrent_`, `TestRefresh_Concurrent` | Pass every time |
+| `bin/api` smoke test on a throwaway local database | `415` for a form-encoded body, `400` for a missing field, `202` for valid JSON. `/metrics` on `VEEA_METRICS_ADDR` only (`404` on the API port). The cleanup runner ran at start and deleted a 3-day-old counter. Clean `SIGTERM` exit with 0 advisory locks left. No token-shaped strings in the log |
+
+- **AC-26 at run time:** `TestCleanup_AC26_ScrubsTheExpiredPendingPasswordHash`. A password signup's pending hash is cleared by the real runner once its challenge expires; the open challenge keeps its hash; verify gives `invalid_code`; no account or session exists; the challenge and its email are deleted 24 h after expiry.
+- **AC-7, stated precisely:** what is verified is *equal Argon2id work*. Every credential failure (wrong password, unknown email, passwordless account, pending registration) performs exactly one Argon2id computation with the current parameters, the dummy where there is no hash, and returns a byte-identical `401` (`TestPasswordLogin_GenericFailure` counts the runs). **No wall-clock timing claim is made:** response times were not measured, and differences from the database read or the audit insert are not bounded by any test.
+- **Production gates still open:**
+  - R12, the production email provider (only the fake sender and Mailpit exist);
+  - the Phase 5 alert rules on these metrics, including `db_tx_retries_total`;
+  - indexes supporting the cleanup deletes (`sessions` revocation and absolute expiry, `rate_limit_counters.window_start`, `otp_cooldowns.last_issued_at`, `email_outbox.finished_at`). Each batch is a sequential scan until a migration adds them;
+  - recording these results in the ticket that closes TRD 01.
+
 ---
 
 ## 13. Configuration
@@ -1789,7 +1838,7 @@ Run unit, integration and contract tests locally against docker-compose Postgres
 | Variable | Purpose | Local default |
 |---|---|---|
 | `VEEA_HTTP_ADDR` | Listen address | `:18386` |
-| `VEEA_METRICS_ADDR` | Internal metrics listener | `127.0.0.1:9090` |
+| `VEEA_METRICS_ADDR` | Internal metrics listener (`GET /metrics`): `host:port` with an IP address or `localhost`, or `:port`; port 1 to 65535, not shared with `VEEA_HTTP_ADDR` on an overlapping host | `127.0.0.1:9090` |
 | `VEEA_DATABASE_URL` | Postgres DSN | docker-compose value |
 | `VEEA_OTP_KEY` | HMAC key for stored code hashes (§4.2): hex, at least 32 bytes (64 hex characters), as `current` or `current,previous`. New hashes use the current key; verification tries both | Generated by `make backend-env` |
 | `VEEA_EMAIL_HMAC_KEY` | HMAC key for email in cooldown, rate-limit and audit keys: hex, at least 32 bytes (64 hex characters), as `current` or `current,previous` | Generated |
@@ -1797,7 +1846,7 @@ Run unit, integration and contract tests locally against docker-compose Postgres
 | `VEEA_TRUSTED_PROXIES` | Comma-separated CIDRs or bare IPs trusted for `X-Forwarded-For`. Empty means the header is ignored | Empty |
 | `VEEA_EMAIL_SENDER` | `smtp` (Mailpit), `fake` (tests), or the production provider once chosen (R12) | `smtp` |
 | `VEEA_SMTP_ADDR`, `VEEA_EMAIL_FROM` | Mail settings. The SMTP host must be loopback; the sender must be a bare address | `localhost:1025`, `no-reply@veea.local` |
-| `VEEA_ARGON2_MEMORY_KIB`, `_TIME`, `_THREADS` | Hash parameters | `19456`, `2`, `1` |
+| `VEEA_ARGON2_MEMORY_KIB`, `VEEA_ARGON2_TIME`, `VEEA_ARGON2_THREADS` | Hash parameters (§9.2). They must pass the hasher's bounds; memory × time must be at least 19456 KiB × 2; and memory must be at least 7168 KiB, the smallest in the OWASP equivalent-cost table. So the cost can be tuned up or traded between memory and passes, but never below the approved floor or into a setting that is barely memory-hard | `19456`, `2`, `1` |
 
 - Startup fails if any key is missing or shorter than 32 bytes.
 - **Key rotation:** keys accept a current and a previous value. Verification tries both, and writes use the current key. `VEEA_EMAIL_HMAC_KEY` is the exception: new digests always use the current key, and counters are keyed by it only (§10).

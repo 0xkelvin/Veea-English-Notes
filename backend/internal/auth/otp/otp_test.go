@@ -304,3 +304,32 @@ func TestFlowOutcomesUnwrap(t *testing.T) {
 type cryptoReader struct{}
 
 func (cryptoReader) Read(p []byte) (int, error) { return io.ReadFull(rand.Reader, p) }
+
+// Review finding 1 and 2 (release hardening): a failed commit is an error, never the result the
+// rolled-back closure prepared, and a database failure while checking limits is not rate limiting.
+func TestVerifyMetricResults(t *testing.T) {
+	commitFailed := errors.New("commit: connection reset")
+	cases := []struct {
+		name          string
+		out           outcome
+		txErr, result error
+		want          string
+	}{
+		{"success", outcome{}, nil, nil, "success"},
+		{"invalid code", outcome{reject: ErrInvalidCode}, nil, ErrInvalidCode, "invalid_code"},
+		{"attempts", outcome{reject: ErrAttemptsExceeded}, nil, ErrAttemptsExceeded, "attempts_exceeded"},
+		{"commit failed after a rejection", outcome{reject: ErrInvalidCode}, commitFailed, commitFailed, "error"},
+		{"commit failed after CommitFailure", outcome{flowFail: &flowFailure{commit: true, err: errors.New("x")}}, commitFailed, commitFailed, "error"},
+		{"CommitFailure committed", outcome{flowFail: &flowFailure{commit: true, err: errors.New("x")}}, nil, errors.New("x"), "rejected"},
+		{"Rollback", outcome{}, Rollback("account_unavailable", ErrInvalidCode), ErrInvalidCode, "rejected"},
+	}
+	for _, c := range cases {
+		out := c.out
+		if got := verifyResult(&out, c.txErr, c.result); got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
+		}
+	}
+	if limitResult(&RateLimitedError{Rule: "x", RetryAfter: 1}) != "rate_limited" || limitResult(errors.New("db down")) != "error" {
+		t.Fatal("limit refusals and database errors must be told apart")
+	}
+}

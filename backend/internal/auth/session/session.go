@@ -155,7 +155,11 @@ type Issued struct {
 	AbsoluteExpiresAt time.Time
 	// Evicted is how many older sessions the cap revoked.
 	Evicted int64
+	method  Method
 }
+
+// AuthMethod is how the session was obtained (empty for a rotated pair).
+func (i Issued) AuthMethod() Method { return i.method }
 
 // Issue inserts a session for req.UserID on tx (TRD 8.6).
 //
@@ -200,7 +204,7 @@ func Issue(ctx context.Context, tx pgx.Tx, p Pending, req Request) (Issued, erro
 		SessionID: p.id, AccessToken: p.access, RefreshToken: p.refresh,
 		// refresh_expires_at = least(now + 30 days, absolute_expires_at) (TRD 8.5).
 		AccessExpiresAt: now.Add(AccessTTL), RefreshExpiresAt: earliest(now.Add(RefreshIdleTTL), now.Add(AbsoluteTTL)),
-		AbsoluteExpiresAt: now.Add(AbsoluteTTL), Evicted: evicted,
+		AbsoluteExpiresAt: now.Add(AbsoluteTTL), Evicted: evicted, method: req.Method,
 	}
 	params := sqlc.InsertSessionParams{
 		ID: p.id, UserID: req.UserID, AuthMethod: string(req.Method),

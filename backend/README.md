@@ -32,6 +32,8 @@ internal/auth/signup/    Flows A and B: signup start (OTP, password) and verify
 internal/auth/signin/    Flows C and D: OTP sign-in and password sign-in
 internal/auth/password/  Flows E, F and G: first-password set, change and reset
 internal/identity/accounts/  the only writer of users (database side of identity)
+internal/maintenance/    TRD 6.10 cleanup jobs, run by cmd/api every 5 minutes under per-job advisory locks
+internal/platform/metrics/  TRD 11.3 Prometheus metrics, served on VEEA_METRICS_ADDR
 internal/auth/otp/       OTP challenge core: start (cooldown, supersede, challenge, email) and verify (procedure V, committed failures)
 internal/audit/          append-only audit writer; refuses secret-looking metadata, redacts client text
 internal/notify/         email outbox: encrypted enqueue (on the caller's tx), leased worker, templates, fake and SMTP senders
@@ -60,6 +62,8 @@ scripts/test-postgres.sh disposable local PostgreSQL in Docker
 | `VEEA_OUTBOX_KEY` | yes | | email payload keys, `id:hexkey[,id:hexkey]`, current first, each key 32 bytes. Never logged |
 | `VEEA_EMAIL_SENDER` | no | `smtp` | `smtp` (local Mailpit) or `fake` (in memory, nothing delivered). Production provider not chosen yet (TRD R12) |
 | `VEEA_SMTP_ADDR` | no | `localhost:1025` | Mailpit SMTP address. Loopback hosts only |
+| `VEEA_METRICS_ADDR` | no | `127.0.0.1:9090` | internal Prometheus listener, `GET /metrics` (TRD 01 §11.3) |
+| `VEEA_ARGON2_MEMORY_KIB`, `VEEA_ARGON2_TIME`, `VEEA_ARGON2_THREADS` | no | `19456`, `2`, `1` | password hash cost; memory × time may not go below the default's |
 | `VEEA_EMAIL_FROM` | no | `no-reply@veea.local` | sender address |
 
 Startup fails with every problem listed. The database URL and keys are never printed.
@@ -103,7 +107,8 @@ Protected routes need `Authorization: Bearer vat_...`; the session, its expiry a
 status and verified email are checked on every request.
 
 Request bodies must be sent with `Content-Type: application/json` (with curl, add
-`-H 'Content-Type: application/json'`; `-d` alone sends a form type, which gets `400`).
+`-H 'Content-Type: application/json'`; `-d` alone sends a form type, which gets
+`415 unsupported_media_type`). A malformed body or a missing field is `400 invalid_request`.
 
 The full contract is [`api/openapi.yaml`](api/openapi.yaml). Every integration test that goes
 through the router validates each response against it, and a full run prints the documented

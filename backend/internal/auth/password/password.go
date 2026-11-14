@@ -29,6 +29,7 @@ import (
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/clientip"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db/sqlc"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/metrics"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/ratelimit"
 )
 
@@ -77,6 +78,8 @@ type Config struct {
 	Rules     *ratelimit.Rules
 	Logger    *slog.Logger
 	OnTxRetry func(sqlstate string)
+	// Metrics, when set, receives revocation counters (TRD 11.3).
+	Metrics *metrics.Metrics
 }
 
 // Service runs the password flows. It is safe for concurrent use.
@@ -90,6 +93,7 @@ type Service struct {
 	limiter *ratelimit.Limiter
 	rule    ratelimit.Rule
 	log     *slog.Logger
+	metrics *metrics.Metrics
 }
 
 // New validates cfg and returns a Service.
@@ -105,7 +109,7 @@ func New(cfg Config) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{pool: cfg.Pool, otp: cfg.OTP, outbox: cfg.Outbox, hasher: cfg.Hasher, policy: cfg.Policy,
-		limiter: ratelimit.NewLimiter(cfg.Pool), rule: rules.WrongCurrentPasswordUser, log: cfg.Logger}
+		limiter: ratelimit.NewLimiter(cfg.Pool), rule: rules.WrongCurrentPasswordUser, log: cfg.Logger, metrics: cfg.Metrics}
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
 	}
@@ -206,7 +210,8 @@ func (s *Service) Set(ctx context.Context, p session.Principal, token, code, new
 		return err
 	}
 	req.Prechecked = true
-	return s.otp.Verify(ctx, req, func(ctx context.Context, tx pgx.Tx, a otp.Accepted) error {
+	var revoked int64
+	err = s.otp.Verify(ctx, req, func(ctx context.Context, tx pgx.Tx, a otp.Accepted) error {
 		// L3.
 		locked, ok, err := accounts.LockForNoKeyUpdate(ctx, tx, p.UserID)
 		if err != nil {
@@ -227,10 +232,14 @@ func (s *Service) Set(ctx context.Context, p session.Principal, token, code, new
 			return otp.Rollback(reasonSessionInvalid, session.ErrUnauthorized)
 		}
 		return s.commitMutation(ctx, tx, mutation{
-			user: locked, hash: hash, keep: &acting, revokeReason: reasonSet,
+			user: locked, hash: hash, keep: &acting, revokeReason: reasonSet, revoked: &revoked,
 			template: notify.TemplatePasswordAdded, action: "auth.password.set", emailHMAC: a.EmailHMAC,
 		}, c)
 	})
+	if err == nil {
+		s.metrics.SessionsRevoked(reasonSet, revoked) // after the commit
+	}
+	return err
 }
 
 // --- Flow F: change --------------------------------------------------------------------------
@@ -296,6 +305,7 @@ func (s *Service) Change(ctx context.Context, p session.Principal, current, newP
 
 	var refusal error
 	var reason string
+	var revoked int64
 	err = s.tx.Run(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		refusal, reason = nil, ""
 		locked, ok, err := accounts.LockForNoKeyUpdate(ctx, tx, p.UserID) // L3
@@ -322,7 +332,7 @@ func (s *Service) Change(ctx context.Context, p session.Principal, current, newP
 			return refusal
 		}
 		return s.commitMutation(ctx, tx, mutation{
-			user: locked, hash: hash, keep: &acting, revokeReason: reasonChange,
+			user: locked, hash: hash, keep: &acting, revokeReason: reasonChange, revoked: &revoked,
 			template: notify.TemplatePasswordChanged, action: "auth.password.change",
 			emailHMAC: nil,
 		}, c)
@@ -331,6 +341,9 @@ func (s *Service) Change(ctx context.Context, p session.Principal, current, newP
 		// T-fail: the transaction rolled back; record why on its own (TRD 7.5).
 		s.recordFailure(ctx, "auth.password.change", p, reason, c)
 		return refusal
+	}
+	if err == nil {
+		s.metrics.SessionsRevoked(reasonChange, revoked)
 	}
 	return err
 }
@@ -378,7 +391,8 @@ func (s *Service) CompleteReset(ctx context.Context, token, code, newPassword st
 		return err
 	}
 	req.Prechecked = true
-	return s.otp.Verify(ctx, req, func(ctx context.Context, tx pgx.Tx, a otp.Accepted) error {
+	var revoked int64
+	err = s.otp.Verify(ctx, req, func(ctx context.Context, tx pgx.Tx, a otp.Accepted) error {
 		if a.UserID == nil {
 			return errors.New("password: reset challenge without an account")
 		}
@@ -390,10 +404,14 @@ func (s *Service) CompleteReset(ctx context.Context, token, code, newPassword st
 			return otp.Rollback(reasonAccountUnavailable, otp.ErrInvalidCode)
 		}
 		return s.commitMutation(ctx, tx, mutation{
-			user: locked, hash: hash, revokeReason: reasonReset,
+			user: locked, hash: hash, revokeReason: reasonReset, revoked: &revoked,
 			template: notify.TemplatePasswordReset, action: "auth.password.reset.complete", emailHMAC: a.EmailHMAC,
 		}, c)
 	})
+	if err == nil {
+		s.metrics.SessionsRevoked(reasonReset, revoked)
+	}
+	return err
 }
 
 // --- shared steps ----------------------------------------------------------------------------
@@ -416,6 +434,7 @@ type mutation struct {
 	hash         string
 	keep         *sqlc.Session // the acting session (set, change); nil revokes all (reset)
 	revokeReason string
+	revoked      *int64 // set to the number of sessions revoked, read after the commit
 	template     notify.Template
 	action       string
 	emailHMAC    []byte
@@ -439,6 +458,9 @@ func (s *Service) commitMutation(ctx context.Context, tx pgx.Tx, m mutation, c C
 	}
 	if err != nil {
 		return err
+	}
+	if m.revoked != nil {
+		*m.revoked = revoked
 	}
 	now, err := sqlc.New(tx).DatabaseNow(ctx)
 	if err != nil {

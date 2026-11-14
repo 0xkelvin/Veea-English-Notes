@@ -38,6 +38,13 @@ type WorkerConfig struct {
 	Backoff []time.Duration
 	// Logger receives row ids and outcome classes only. Default slog.Default().
 	Logger *slog.Logger
+	// OnSend, when set, is called after every provider call with the row's template and the
+	// result: "sent", or the error class ("permanent", "retryable", "ambiguous"). It is the hook
+	// for email_send_total (TRD 11.3).
+	OnSend func(template, result string)
+	// OnStale, when set, is called for every result write discarded because the lease was gone
+	// (email_outbox_stale_result_total).
+	OnStale func()
 }
 
 func (c WorkerConfig) withDefaults() WorkerConfig {
@@ -222,6 +229,7 @@ func (w *Worker) process(ctx context.Context, dbctx func() (context.Context, con
 			ID: row.ID, LeaseToken: lease, Status: status, LastError: le})
 		if err != nil || n == 0 {
 			s.StaleResults++
+			w.stale()
 			log.Warn("outbox result discarded: lease no longer held")
 			return false
 		}
@@ -284,6 +292,7 @@ func (w *Worker) process(ctx context.Context, dbctx func() (context.Context, con
 	sendCtx, cancelSend := context.WithTimeout(context.WithoutCancel(ctx), w.cfg.SendTimeout)
 	providerID, sendErr := w.sender.Send(sendCtx, email)
 	cancelSend()
+	w.sent(row.Template, sendErr)
 
 	// Step 6: record under the lease guard.
 	if sendErr == nil {
@@ -293,6 +302,7 @@ func (w *Worker) process(ctx context.Context, dbctx func() (context.Context, con
 			ID: row.ID, LeaseToken: lease, Status: "sent", ProviderMessageID: nonEmpty(safeProviderID(providerID))})
 		if err != nil || n == 0 {
 			s.StaleResults++
+			w.stale()
 			log.Warn("outbox result discarded: lease no longer held")
 			return s
 		}
@@ -318,6 +328,7 @@ func (w *Worker) process(ctx context.Context, dbctx func() (context.Context, con
 			ID: row.ID, LeaseToken: lease, BackoffSeconds: w.backoff(int(sends)).Seconds(), LastError: &le})
 		if err != nil || n == 0 {
 			s.StaleResults++
+			w.stale()
 			log.Warn("outbox result discarded: lease no longer held")
 			return s
 		}
@@ -399,4 +410,22 @@ func errorClass(err error) string {
 	default:
 		return "database"
 	}
+}
+
+func (w *Worker) stale() {
+	if w.cfg.OnStale != nil {
+		w.cfg.OnStale()
+	}
+}
+
+func (w *Worker) sent(template string, err error) {
+	if w.cfg.OnSend == nil {
+		return
+	}
+	result := "sent"
+	if err != nil {
+		class, _ := classify(err)
+		result = string(class)
+	}
+	w.cfg.OnSend(template, result)
 }

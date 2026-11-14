@@ -19,6 +19,7 @@ import (
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity/accounts"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db/sqlc"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/metrics"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/ratelimit"
 )
 
@@ -59,6 +60,8 @@ type Config struct {
 	Random    io.Reader
 	Logger    *slog.Logger
 	OnTxRetry func(sqlstate string)
+	// Metrics, when set, receives revocation and reuse counters (TRD 11.3).
+	Metrics *metrics.Metrics
 }
 
 // Service authenticates access tokens, rotates refresh tokens and logs out (TRD 7.6, 7.7, 8.1,
@@ -70,6 +73,15 @@ type Service struct {
 	rules   ratelimit.Rules
 	random  io.Reader
 	log     *slog.Logger
+	metrics *metrics.Metrics
+}
+
+// revocation carries what a transaction revoked out of its closure, so it is counted only
+// after the commit.
+type revocation struct {
+	reason string
+	n      int64
+	reuse  bool
 }
 
 // NewService validates cfg and returns a Service.
@@ -84,7 +96,8 @@ func NewService(cfg Config) (*Service, error) {
 	if err := errors.Join(rules.RefreshSession.Validate(), rules.RequestSession.Validate()); err != nil {
 		return nil, err
 	}
-	s := &Service{pool: cfg.Pool, limiter: ratelimit.NewLimiter(cfg.Pool), rules: rules, random: cfg.Random, log: cfg.Logger}
+	s := &Service{pool: cfg.Pool, limiter: ratelimit.NewLimiter(cfg.Pool), rules: rules, random: cfg.Random, log: cfg.Logger,
+		metrics: cfg.Metrics}
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
 	}
@@ -143,17 +156,22 @@ func (s *Service) revokeIfAccountInactive(ctx context.Context, hash []byte, c Cl
 	if err != nil || owner.RevokedAt != nil || (owner.Status == accounts.StatusActive && owner.EmailVerifiedAt != nil) {
 		return // unknown token, already revoked, or simply expired
 	}
+	var revoked int64
 	err = s.tx.Run(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		revoked = 0
 		n, err := sqlc.New(tx).RevokeSession(ctx, sqlc.RevokeSessionParams{
 			Reason: ptr(ReasonAccountInactive), ID: owner.SessionID, UserID: owner.UserID})
 		if err != nil || n == 0 {
 			return err
 		}
+		revoked = n
 		return recordRevoke(ctx, tx, owner.UserID, owner.SessionID, ReasonAccountInactive, n, c)
 	})
 	if err != nil {
 		s.log.Error("session: account_inactive revocation failed", "error", err)
+		return
 	}
+	s.metrics.SessionsRevoked(ReasonAccountInactive, revoked)
 }
 
 // CurrentUser reads the caller's account for GET /v1/me.
@@ -226,15 +244,20 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string, c Client) (R
 
 	var out Refreshed
 	var refused bool
+	var rev revocation
 	err = s.tx.Run(ctx, func(ctx context.Context, tx pgx.Tx) error {
-		out, refused = Refreshed{}, false
+		out, refused, rev = Refreshed{}, false, revocation{}
 		var err error
-		out, refused, err = s.rotate(ctx, tx, hash, next, c)
+		out, refused, err = s.rotate(ctx, tx, hash, next, c, &rev)
 		return err
 	})
 	if err != nil {
 		return Refreshed{}, err
 	}
+	if rev.reuse {
+		s.metrics.RefreshReuse()
+	}
+	s.metrics.SessionsRevoked(rev.reason, rev.n)
 	if refused {
 		return Refreshed{}, ErrUnauthorized
 	}
@@ -243,7 +266,7 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string, c Client) (R
 
 // rotate is the refresh transaction. refused means the caller answers 401 after the commit of
 // whatever this transaction recorded (a revocation, an audit event).
-func (s *Service) rotate(ctx context.Context, tx pgx.Tx, hash []byte, next Pending, c Client) (Refreshed, bool, error) {
+func (s *Service) rotate(ctx context.Context, tx pgx.Tx, hash []byte, next Pending, c Client, rev *revocation) (Refreshed, bool, error) {
 	q := sqlc.New(tx)
 	now, err := q.DatabaseNow(ctx)
 	if err != nil {
@@ -252,7 +275,7 @@ func (s *Service) rotate(ctx context.Context, tx pgx.Tx, hash []byte, next Pendi
 	// Step 1, L4a.
 	row, err := q.LockSessionByRefreshTokenHash(ctx, hash)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Refreshed{}, true, s.reuse(ctx, tx, hash, c) // step 3
+		return Refreshed{}, true, s.reuse(ctx, tx, hash, c, rev) // step 3
 	}
 	if err != nil {
 		return Refreshed{}, false, fmt.Errorf("session: lock session: %w", err)
@@ -267,6 +290,7 @@ func (s *Service) rotate(ctx context.Context, tx pgx.Tx, hash []byte, next Pendi
 			if err := recordRevoke(ctx, tx, row.UserID, row.ID, ReasonAccountInactive, n, c); err != nil {
 				return Refreshed{}, false, err
 			}
+			*rev = revocation{reason: ReasonAccountInactive, n: n}
 		}
 		return Refreshed{}, true, recordRefreshFailure(ctx, tx, row.UserID, row.ID, reason, c)
 	}
@@ -312,7 +336,7 @@ func refreshRefusal(row sqlc.LockSessionByRefreshTokenHashRow, now time.Time) st
 
 // reuse is TRD 8.4 step 3: the token is no longer current. Within retention, revoke the session
 // it belonged to (L4a) and record it (L5). Past retention, nothing happens.
-func (s *Service) reuse(ctx context.Context, tx pgx.Tx, hash []byte, c Client) error {
+func (s *Service) reuse(ctx context.Context, tx pgx.Tx, hash []byte, c Client, rev *revocation) error {
 	q := sqlc.New(tx)
 	r, err := q.FindReusedRefreshToken(ctx, hash)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -328,6 +352,7 @@ func (s *Service) reuse(ctx context.Context, tx pgx.Tx, hash []byte, c Client) e
 	if err := recordRefreshFailure(ctx, tx, r.UserID, r.SessionID, ReasonRefreshReuse, c); err != nil {
 		return err
 	}
+	*rev = revocation{reason: ReasonRefreshReuse, n: n, reuse: true}
 	return recordRevoke(ctx, tx, r.UserID, r.SessionID, ReasonRefreshReuse, n, c)
 }
 
@@ -336,6 +361,14 @@ func (s *Service) reuse(ctx context.Context, tx pgx.Tx, hash []byte, c Client) e
 // Logout revokes the caller's current session only (AC-18). If the session was revoked between
 // authentication and this transaction, it returns ErrUnauthorized and writes nothing.
 func (s *Service) Logout(ctx context.Context, p Principal, c Client) error {
+	err := s.logout(ctx, p, c)
+	if err == nil {
+		s.metrics.SessionsRevoked(ReasonLogout, 1)
+	}
+	return err
+}
+
+func (s *Service) logout(ctx context.Context, p Principal, c Client) error {
 	return s.tx.Run(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		n, err := sqlc.New(tx).RevokeSession(ctx, sqlc.RevokeSessionParams{Reason: ptr(ReasonLogout), ID: p.SessionID, UserID: p.UserID})
 		if err != nil {

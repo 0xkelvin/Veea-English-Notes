@@ -310,8 +310,12 @@ func TestContract_UnmatchedRequestsAndStrictBodies(t *testing.T) {
 				t.Fatal(err)
 			}
 			res.Body.Close()
-			if res.StatusCode != http.StatusBadRequest {
-				t.Fatalf("got %d, want 400 invalid_request", res.StatusCode)
+			want := http.StatusBadRequest // malformed payload
+			if strings.Contains(name, "content type") {
+				want = http.StatusUnsupportedMediaType
+			}
+			if res.StatusCode != want {
+				t.Fatalf("got %d, want %d", res.StatusCode, want)
 			}
 		})
 	}
@@ -352,5 +356,42 @@ func TestAudit_CooldownRecordIsScopedByPurpose(t *testing.T) {
 		wantProblem(t, env.call(t, "POST", c.path, map[string]string{"email": u.Email}, rid), http.StatusTooManyRequests, "rate_limited")
 		env.wantEvents(t, rid, ev{action: "auth.rate_limited", outcome: "failure", reason: "otp_start_cooldown", email: true,
 			meta: map[string]string{"scope": c.scope}})
+	}
+}
+
+// Every operation with a JSON body answers 415 unsupported_media_type to a missing or other
+// Content-Type, before looking at the body (spec-driven, so new operations are covered).
+func TestContract_JSONOperationsRequireTheJSONMediaType(t *testing.T) {
+	env := newSignupEnv(t, nil)
+	s := env.issue(t, newUser(t, env.q), "Phone")
+	doc, _, err := loadContract()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, item := range doc.Paths.Map() {
+		for method, op := range item.Operations() {
+			if op.RequestBody == nil {
+				continue
+			}
+			for _, ct := range []string{"", "text/plain", "application/x-www-form-urlencoded"} {
+				t.Run(method+" "+path+" "+ct, func(t *testing.T) {
+					req, _ := http.NewRequest(method, env.srv.URL+path, strings.NewReader(`{}`))
+					if ct != "" {
+						req.Header.Set("Content-Type", ct)
+					}
+					if op.Security != nil && len(*op.Security) > 0 {
+						req.Header.Set("Authorization", "Bearer "+s.AccessToken)
+					}
+					res, err := http.DefaultClient.Do(req)
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer res.Body.Close()
+					if res.StatusCode != http.StatusUnsupportedMediaType || res.Header.Get("Content-Type") != "application/problem+json" {
+						t.Fatalf("got %d %s", res.StatusCode, res.Header.Get("Content-Type"))
+					}
+				})
+			}
+		}
 	}
 }

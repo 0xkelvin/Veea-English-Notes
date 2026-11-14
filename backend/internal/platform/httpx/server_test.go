@@ -188,8 +188,13 @@ func TestDecodeJSONEnforcesTheSpecShape(t *testing.T) {
 			req.Header.Set("Content-Type", c.ct)
 		}
 		var b body
-		if err := DecodeJSON(httptest.NewRecorder(), req, &b); (err == nil) != c.want {
+		err := DecodeJSON(httptest.NewRecorder(), req, &b)
+		if (err == nil) != c.want {
 			t.Errorf("%s: err = %v, want ok=%v", c.name, err, c.want)
+		}
+		mediaCase := strings.Contains(c.name, "content type")
+		if err != nil && errors.Is(err, ErrUnsupportedMediaType) != mediaCase {
+			t.Errorf("%s: %v; a content-type failure is ErrUnsupportedMediaType (415), everything else ErrBadRequest (400)", c.name, err)
 		}
 	}
 }

@@ -92,6 +92,18 @@ func (q *Queries) ClaimOutboxBatch(ctx context.Context, arg ClaimOutboxBatchPara
 	return items, nil
 }
 
+const countPendingOutbox = `-- name: CountPendingOutbox :one
+SELECT count(*) FROM email_outbox WHERE status = 'pending'
+`
+
+// email_outbox_pending (TRD 11.3), read when metrics are scraped. Uses the partial index.
+func (q *Queries) CountPendingOutbox(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countPendingOutbox)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteFinishedOutbox = `-- name: DeleteFinishedOutbox :execrows
 DELETE FROM email_outbox
 WHERE id IN (

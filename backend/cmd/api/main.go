@@ -1,4 +1,5 @@
-// Command api runs the Veea HTTP service.
+// Command api runs the Veea HTTP service, its email outbox worker, the TRD 6.10 cleanup jobs and
+// the internal metrics listener.
 package main
 
 import (
@@ -14,11 +15,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/app"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/maintenance"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/notify"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/config"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/httpx"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/logging"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/metrics"
 )
 
 func main() {
@@ -43,54 +46,77 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer pool.Close()
+	defer pool.Close() // last: every background task below stops first
 
-	worker, err := newOutboxWorker(cfg, pool, log)
+	m := metrics.New()
+
+	// Background tasks. Each stops on every exit path before the pool closes: the worker lets
+	// reserved sends finish and record; the cleanup runner interrupts a running job and releases
+	// its advisory lock.
+	worker, err := newOutboxWorker(cfg, pool, log, m)
 	if err != nil {
 		return err
 	}
-	workerCtx, stopWorker := context.WithCancel(ctx)
-	workerDone := make(chan struct{})
-	go func() {
-		defer close(workerDone)
-		_ = worker.Run(workerCtx)
-	}()
-	// On every exit path: stop claiming, let reserved sends finish and record, then return.
+	cleanup, err := maintenance.New(maintenance.Config{Pool: pool, Logger: log.With("component", "cleanup")})
+	if err != nil {
+		return err
+	}
+	bgCtx, stopBackground := context.WithCancel(ctx)
+	defer stopBackground()
+	waitWorker := background(func() { _ = worker.Run(bgCtx) })
+	waitCleanup := background(func() { _ = cleanup.Run(bgCtx) })
 	defer func() {
-		stopWorker()
-		<-workerDone
+		stopBackground()
+		waitCleanup()
+		waitWorker()
 	}()
 
 	handler, err := app.New(app.Options{
 		Pool: pool, ReadyTimeout: cfg.ReadyTimeout, Logger: log,
 		EmailHMACKeys: cfg.EmailHMACKeys, OTPKeys: cfg.OTPKeys, OutboxKeys: cfg.OutboxKeys,
-		TrustedProxies: cfg.TrustedProxies,
+		TrustedProxies: cfg.TrustedProxies, Metrics: m, Argon2: cfg.Argon2,
 	})
 	if err != nil {
 		return err
 	}
 	srv := httpx.NewServer(cfg.HTTPAddr, handler)
-	errCh := make(chan error, 1)
+	metricsSrv := httpx.NewServer(cfg.MetricsAddr, m.Handler())
+	errCh := make(chan error, 2)
 	go func() { errCh <- srv.ListenAndServe() }()
+	go func() { errCh <- fmt.Errorf("metrics listener: %w", metricsSrv.ListenAndServe()) }()
 	log.Info("api started", "config", cfg)
 
+	var runErr error
 	select {
 	case err := <-errCh:
 		if !errors.Is(err, http.ErrServerClosed) {
-			return err
+			runErr = err
 		}
-		return nil
 	case <-ctx.Done():
 	}
 
 	log.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
-	return srv.Shutdown(shutdownCtx)
+	if err := srv.Shutdown(shutdownCtx); err != nil && runErr == nil {
+		runErr = err
+	}
+	_ = metricsSrv.Shutdown(shutdownCtx)
+	return runErr
+}
+
+// background runs fn in a goroutine and returns a function that waits for it to finish.
+func background(fn func()) (wait func()) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		fn()
+	}()
+	return func() { <-done }
 }
 
 // newOutboxWorker builds the email outbox worker (TRD 8.3) for the configured sender.
-func newOutboxWorker(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*notify.Worker, error) {
+func newOutboxWorker(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger, m *metrics.Metrics) (*notify.Worker, error) {
 	keys, err := notify.NewKeyring(cfg.OutboxKeys...)
 	if err != nil {
 		return nil, err
@@ -107,5 +133,7 @@ func newOutboxWorker(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*
 	default:
 		return nil, fmt.Errorf("unsupported email sender %q", cfg.EmailSender)
 	}
-	return notify.NewWorker(pool, keys, sender, notify.WorkerConfig{Logger: log.With("component", "outbox")})
+	return notify.NewWorker(pool, keys, sender, notify.WorkerConfig{
+		Logger: log.With("component", "outbox"), OnSend: m.EmailSend, OnStale: m.StaleResult,
+	})
 }

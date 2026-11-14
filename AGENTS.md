@@ -45,6 +45,9 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
   The HTTP contract is `backend/api/openapi.yaml`; a new or changed route updates it in the same
   change (`go test ./api` fails when the router and the spec disagree, and router tests fail on
   any response the spec does not describe).
+  `cmd/api` also runs the §6.10 cleanup jobs (`backend/internal/maintenance/`) and serves
+  Prometheus metrics on `VEEA_METRICS_ADDR` (`backend/internal/platform/metrics/`); count a
+  metric only after its transaction commits, and use fixed codes as label values.
   Audit events are mapped to producers and tests in TRD 01 §11.1; a new flow adds its rows there
   and to `TestAudit_Matrix`. Loggers go through `internal/platform/logging`'s redacting handler.
 - After changing a query or migration run `make sqlc` and `make sqlc-verify` (from `backend/`)

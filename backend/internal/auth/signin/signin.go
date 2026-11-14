@@ -25,6 +25,7 @@ import (
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/clientip"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db/sqlc"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/metrics"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/ratelimit"
 )
 
@@ -66,6 +67,8 @@ type Config struct {
 	Random    io.Reader
 	Logger    *slog.Logger
 	OnTxRetry func(sqlstate string)
+	// Metrics, when set, receives auth_password_login_total and cap evictions.
+	Metrics *metrics.Metrics
 }
 
 // Service runs the sign-in use cases. It is safe for concurrent use.
@@ -79,6 +82,7 @@ type Service struct {
 	rules     ratelimit.Rules
 	random    io.Reader
 	log       *slog.Logger
+	metrics   *metrics.Metrics
 }
 
 // New validates cfg and returns a Service.
@@ -94,7 +98,7 @@ func New(cfg Config) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{pool: cfg.Pool, otp: cfg.OTP, hasher: cfg.Hasher, emailHMAC: cfg.EmailHMAC,
-		limiter: ratelimit.NewLimiter(cfg.Pool), rules: rules, random: cfg.Random, log: cfg.Logger}
+		limiter: ratelimit.NewLimiter(cfg.Pool), rules: rules, random: cfg.Random, log: cfg.Logger, metrics: cfg.Metrics}
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
 	}
@@ -187,6 +191,7 @@ func (s *Service) VerifyOTP(ctx context.Context, token, code string, device sess
 	if err != nil {
 		return Result{}, err
 	}
+	s.metrics.SessionsRevoked("session_limit", res.Session.Evicted) // after the commit
 	return res, nil
 }
 
@@ -210,6 +215,35 @@ func (s *Service) VerifyOTP(ctx context.Context, token, code string, device sess
 // Errors: identity.ErrInvalidEmail, session.ErrInvalidDevice, ErrInvalidCredentials,
 // ErrAccountUnavailable, *ratelimit.Error, identity.ErrBusy, or an internal error.
 func (s *Service) PasswordLogin(ctx context.Context, rawEmail, password string, device session.Device, c Client) (Result, error) {
+	res, err := s.passwordLogin(ctx, rawEmail, password, device, c)
+	s.metrics.PasswordLogin(loginResult(err))
+	if err == nil {
+		s.metrics.SessionsRevoked("session_limit", res.Session.Evicted)
+	}
+	return res, err
+}
+
+// loginResult is the auth_password_login_total result label.
+func loginResult(err error) string {
+	var limited *ratelimit.Error
+	switch {
+	case err == nil:
+		return "success"
+	case errors.Is(err, ErrInvalidCredentials):
+		return "invalid_credentials"
+	case errors.Is(err, ErrAccountUnavailable):
+		return "account_unavailable"
+	case errors.As(err, &limited):
+		return "rate_limited"
+	case errors.Is(err, identity.ErrBusy):
+		return "busy"
+	case errors.Is(err, identity.ErrInvalidEmail), errors.Is(err, session.ErrInvalidDevice):
+		return "invalid_request"
+	}
+	return "error"
+}
+
+func (s *Service) passwordLogin(ctx context.Context, rawEmail, password string, device session.Device, c Client) (Result, error) {
 	e, err := identity.NormalizeEmail(rawEmail)
 	if err != nil {
 		return Result{}, err

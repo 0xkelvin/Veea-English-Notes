@@ -22,6 +22,7 @@ import (
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/clientip"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db/sqlc"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/httpx"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/metrics"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/ratelimit"
 )
 
@@ -32,6 +33,7 @@ type Handlers struct {
 	Password *password.Service
 	Sessions *session.Service
 	Limiter  *ratelimit.Limiter // records auth.rate_limited
+	Metrics  *metrics.Metrics   // auth_rate_limited_total; nil disables
 	IPs      *clientip.Resolver
 	Log      *slog.Logger
 }
@@ -411,6 +413,8 @@ func (h *Handlers) fail(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, session.ErrUnauthorized):
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		httpx.WriteProblem(w, http.StatusUnauthorized, httpx.CodeUnauthorized)
+	case errors.Is(err, httpx.ErrUnsupportedMediaType):
+		httpx.WriteProblem(w, http.StatusUnsupportedMediaType, httpx.CodeUnsupportedMediaType)
 	case errors.Is(err, httpx.ErrBadRequest), errors.Is(err, session.ErrInvalidDevice),
 		errors.Is(err, identity.ErrInvalidPasswordEncoding):
 		httpx.WriteProblem(w, http.StatusBadRequest, httpx.CodeInvalidRequest)
@@ -429,6 +433,7 @@ func (h *Handlers) fail(w http.ResponseWriter, r *http.Request, err error) {
 		if rerr := h.Limiter.RecordDenial(r.Context(), limited, h.IPs.ResolveRequest(r).Addr, UserAgent(r), httpx.RequestID(w)); rerr != nil {
 			h.Log.Error("rate-limit audit event not recorded", "request_id", httpx.RequestID(w), "error", rerr)
 		}
+		h.Metrics.RateLimited(limited.Rule)
 		httpx.WriteRateLimited(w, limited.RetryAfter)
 	case errors.Is(err, otp.ErrInvalidCode):
 		httpx.WriteProblem(w, http.StatusBadRequest, httpx.CodeInvalidCode)

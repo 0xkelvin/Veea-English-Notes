@@ -35,6 +35,7 @@ import (
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/clientip"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db/sqlc"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/metrics"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/ratelimit"
 )
 
@@ -67,6 +68,8 @@ type Config struct {
 	// OnTxRetry is called before a transaction is retried after a deadlock or serialization
 	// failure. With the TRD 7.1 lock order this never happens; tests assert it.
 	OnTxRetry func(sqlstate string)
+	// Metrics, when set, receives the TRD 11.3 OTP counters. Nil disables them.
+	Metrics *metrics.Metrics
 }
 
 // Service issues and redeems OTP challenges. It is safe for concurrent use.
@@ -81,6 +84,7 @@ type Service struct {
 	cooldown  ratelimit.Cooldown
 	random    io.Reader
 	log       *slog.Logger
+	metrics   *metrics.Metrics
 }
 
 // NewService validates cfg and returns a Service.
@@ -102,7 +106,7 @@ func NewService(cfg Config) (*Service, error) {
 		pool: cfg.Pool, codes: cfg.Codes, emailHMAC: cfg.EmailHMAC, outbox: cfg.Outbox,
 		limiter: ratelimit.NewLimiter(cfg.Pool), rules: rules,
 		cooldown: ratelimit.Cooldown{Seconds: cfg.CooldownSeconds, Email: cfg.EmailHMAC},
-		random:   cfg.Random, log: cfg.Logger,
+		random:   cfg.Random, log: cfg.Logger, metrics: cfg.Metrics,
 	}
 	if s.random == nil {
 		s.random = rand.Reader
@@ -171,6 +175,8 @@ type Acknowledgement struct {
 	ChallengeToken string
 	ExpiresAt      time.Time
 	ResendAfter    time.Time
+	// delivery is "code" or "none", for metrics only. It is never part of a response.
+	delivery string
 }
 
 // Start issues a challenge (TRD 7.2).
@@ -214,6 +220,7 @@ func (s *Service) Start(ctx context.Context, req StartRequest) (Acknowledgement,
 	if err != nil {
 		return Acknowledgement{}, err
 	}
+	s.metrics.OTPStarted(string(req.Purpose), ack.delivery) // after the commit
 	return ack, nil
 }
 
@@ -306,7 +313,7 @@ func (s *Service) issue(ctx context.Context, tx pgx.Tx, p startPlan) (Acknowledg
 		return Acknowledgement{}, err
 	}
 	return Acknowledgement{ChallengeToken: p.token, ExpiresAt: expires,
-		ResendAfter: now.Add(time.Duration(s.cooldownSeconds()) * time.Second)}, nil
+		ResendAfter: now.Add(time.Duration(s.cooldownSeconds()) * time.Second), delivery: delivery(target)}, nil
 }
 
 // replaceChallenge supersedes the open challenge for (purpose, email) and inserts the new one.
@@ -502,6 +509,7 @@ func (s *Service) Verify(ctx context.Context, req VerifyRequest, then AfterAccep
 	tokenHash := HashToken(req.Token)
 	if !req.Prechecked {
 		if err := s.checkVerifyLimits(ctx, req, tokenHash); err != nil {
+			s.metrics.OTPVerified(string(req.Purpose), limitResult(err))
 			return err
 		}
 	}
@@ -518,7 +526,12 @@ func (s *Service) Verify(ctx context.Context, req VerifyRequest, then AfterAccep
 // (counted) and the per-email failure limit P (peeked). Call it before expensive work, then pass
 // Prechecked to Verify. Errors: *RateLimitedError or an internal error.
 func (s *Service) CheckVerifyLimits(ctx context.Context, req VerifyRequest) error {
-	return s.checkVerifyLimits(ctx, req, HashToken(req.Token))
+	err := s.checkVerifyLimits(ctx, req, HashToken(req.Token))
+	if err != nil {
+		// Counted here, because Verify skips its own check for a Prechecked request.
+		s.metrics.OTPVerified(string(req.Purpose), limitResult(err))
+	}
+	return err
 }
 
 // checkVerifyLimits runs before any transaction: the per-IP verify limit is counted, then P
@@ -551,6 +564,46 @@ func (s *Service) checkVerifyLimits(ctx context.Context, req VerifyRequest, toke
 
 // settle turns the result of T-main into Verify's result, running T-fail or C where needed.
 func (s *Service) settle(ctx context.Context, info purposeInfo, req VerifyRequest, out *outcome, err error) error {
+	result := s.decide(ctx, info, req, out, err)
+	s.metrics.OTPVerified(string(req.Purpose), verifyResult(out, err, result))
+	return result
+}
+
+// verifyResult is the auth_otp_verified_total result label: success, invalid_code,
+// attempts_exceeded, rejected (the code was right but the flow refused, for example the account
+// is gone or no longer active), or error.
+// A transaction error is classified first: outcome fields set inside a closure whose commit
+// then failed describe work that rolled back, and must not be counted as results.
+func verifyResult(out *outcome, txErr, result error) string {
+	var ff *flowFailure
+	switch {
+	case txErr != nil && errors.As(txErr, &ff):
+		return "rejected" // the flow asked for Rollback; T-fail recorded it
+	case txErr != nil:
+		return "error"
+	case result == nil:
+		return "success"
+	case out.reject != nil && errors.Is(out.reject, ErrAttemptsExceeded):
+		return "attempts_exceeded"
+	case out.reject != nil:
+		return "invalid_code"
+	case out.flowFail != nil:
+		return "rejected"
+	}
+	return "error"
+}
+
+// limitResult labels a refusal by the verify limits: rate_limited, or error for a database
+// failure while checking them.
+func limitResult(err error) string {
+	var limited *RateLimitedError
+	if errors.As(err, &limited) {
+		return "rate_limited"
+	}
+	return "error"
+}
+
+func (s *Service) decide(ctx context.Context, info purposeInfo, req VerifyRequest, out *outcome, err error) error {
 	var ff *flowFailure
 	switch {
 	case err != nil && errors.As(err, &ff) && !ff.commit:

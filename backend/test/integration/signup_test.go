@@ -28,6 +28,7 @@ import (
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/notify"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db/sqlc"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/logging"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/metrics"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/pgtest"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/ratelimit"
 )
@@ -95,6 +96,7 @@ type signupEnv struct {
 	logs     *syncBuffer
 	retries  atomic.Int64
 	contract *contract
+	metrics  *metrics.Metrics
 
 	mu          sync.Mutex
 	secrets     []string // codes, tokens and passwords, for the hygiene check
@@ -113,7 +115,7 @@ func newSignupEnv(t *testing.T, rules *ratelimit.Rules) *signupEnv {
 		rules.PasswordSignupStartIP.Limit = 10_000
 	}
 	env := &signupEnv{d: d, q: q, fake: &notify.FakeSender{}, random: &codeRandom{}, hasher: &countingHasher{h: h},
-		hmac: testEmailHMAC(t), logs: &syncBuffer{}}
+		hmac: testEmailHMAC(t), logs: &syncBuffer{}, metrics: metrics.New()}
 	// The same redacting handler as cmd/api, so the hygiene checks see production logging.
 	log := slog.New(logging.NewRedactingHandler(slog.NewJSONHandler(env.logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	outboxKeys := []notify.Key{{ID: 1, Key: outboxKey1}}
@@ -122,7 +124,7 @@ func newSignupEnv(t *testing.T, rules *ratelimit.Rules) *signupEnv {
 		EmailHMACKeys: [][]byte{bytes.Repeat([]byte{0x42}, 32)}, // same key as testEmailHMAC
 		OTPKeys:       [][]byte{otpTestKey}, OutboxKeys: outboxKeys,
 		Hasher: env.hasher, Rules: rules, Random: env.random,
-		OnTxRetry: func(string) { env.retries.Add(1) },
+		OnTxRetry: func(string) { env.retries.Add(1) }, Metrics: env.metrics,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +134,8 @@ func newSignupEnv(t *testing.T, rules *ratelimit.Rules) *signupEnv {
 	env.srv = httptest.NewServer(env.contract.wrap(handler))
 	t.Cleanup(env.srv.Close)
 	keys, _ := notify.NewKeyring(outboxKeys...)
-	if env.worker, err = notify.NewWorker(d.Pool, keys, env.fake, notify.WorkerConfig{Logger: log}); err != nil {
+	if env.worker, err = notify.NewWorker(d.Pool, keys, env.fake, notify.WorkerConfig{Logger: log,
+		OnSend: env.metrics.EmailSend, OnStale: env.metrics.StaleResult}); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {

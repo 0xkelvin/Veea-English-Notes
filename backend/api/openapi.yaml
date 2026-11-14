@@ -8,9 +8,10 @@ info:
     integration suite validates every response it receives against it.
 
     Conventions (TRD 01 §5.1):
-    - JSON bodies are decoded strictly: `Content-Type: application/json`, one object, at most
-      16 KiB, keys spelled exactly as documented, no duplicate or unknown keys, every field
-      present, no trailing data. Anything else is `400 invalid_request`.
+    - JSON bodies require `Content-Type: application/json`; a missing or other content type is
+      `415 unsupported_media_type`. The body is then decoded strictly: one object, at most 16 KiB,
+      keys spelled exactly as documented, no duplicate or unknown keys, every field present, no
+      trailing data. Anything else is `400 invalid_request`.
     - A path that is not listed gets `404 not_found`, and a listed path with another method gets
       `405 method_not_allowed` with `Allow`, both as problem documents. `HEAD` is not served.
     - Every response carries `X-Request-Id`. JSON and 204 responses carry `Cache-Control: no-store`.
@@ -55,11 +56,12 @@ paths:
       description: |
         Same 202 for new and existing emails (AC-27). Only a new email gets a `signup_code` email.
         An existing account is never changed.
-      x-error-codes: [invalid_request, invalid_email, rate_limited, internal_error]
+      x-error-codes: [invalid_request, invalid_email, unsupported_media_type, rate_limited, internal_error]
       requestBody: { $ref: "#/components/requestBodies/Email" }
       responses:
         "202": { $ref: "#/components/responses/Acknowledgement" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "500": { $ref: "#/components/responses/InternalError" }
   /v1/auth/signup/password/start:
@@ -71,7 +73,7 @@ paths:
         The password policy is checked first (422 before anything else), then the per-IP limit,
         then Argon2id, then the start. Same 202 for new and existing emails; the pending hash is
         bound to the new challenge only for a new email.
-      x-error-codes: [invalid_request, invalid_email, password_policy_violation, rate_limited, busy, internal_error]
+      x-error-codes: [invalid_request, invalid_email, password_policy_violation, unsupported_media_type, rate_limited, busy, internal_error]
       requestBody:
         required: true
         content:
@@ -86,6 +88,7 @@ paths:
       responses:
         "202": { $ref: "#/components/responses/Acknowledgement" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "422": { $ref: "#/components/responses/PolicyViolation" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "500": { $ref: "#/components/responses/InternalError" }
@@ -98,11 +101,12 @@ paths:
       description: |
         `409 signup_unavailable` when the email gained an account after the attempt started:
         the code is consumed, nothing about the account changes and no session is issued (R5).
-      x-error-codes: [invalid_request, invalid_code, code_attempts_exceeded, signup_unavailable, rate_limited, internal_error]
+      x-error-codes: [invalid_request, invalid_code, code_attempts_exceeded, signup_unavailable, unsupported_media_type, rate_limited, internal_error]
       requestBody: { $ref: "#/components/requestBodies/CodeWithDevice" }
       responses:
         "201": { $ref: "#/components/responses/Tokens" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "409": { $ref: "#/components/responses/Conflict" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "500": { $ref: "#/components/responses/InternalError" }
@@ -113,11 +117,12 @@ paths:
       operationId: otpStart
       summary: Endpoint 4. Start an OTP sign-in (Flow C).
       description: Same 202 for every email. Only an active, verified account gets a `login_code` email.
-      x-error-codes: [invalid_request, invalid_email, rate_limited, internal_error]
+      x-error-codes: [invalid_request, invalid_email, unsupported_media_type, rate_limited, internal_error]
       requestBody: { $ref: "#/components/requestBodies/Email" }
       responses:
         "202": { $ref: "#/components/responses/Acknowledgement" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "500": { $ref: "#/components/responses/InternalError" }
   /v1/auth/otp/verify:
@@ -125,11 +130,12 @@ paths:
       tags: [signin]
       operationId: otpVerify
       summary: Endpoint 5. Verify an OTP sign-in and create a session.
-      x-error-codes: [invalid_request, invalid_code, code_attempts_exceeded, rate_limited, internal_error]
+      x-error-codes: [invalid_request, invalid_code, code_attempts_exceeded, unsupported_media_type, rate_limited, internal_error]
       requestBody: { $ref: "#/components/requestBodies/CodeWithDevice" }
       responses:
         "200": { $ref: "#/components/responses/Tokens" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "500": { $ref: "#/components/responses/InternalError" }
   /v1/auth/password/login:
@@ -141,7 +147,7 @@ paths:
         Unknown email, wrong password, passwordless account and pending registration all get the
         same `401 invalid_credentials` (AC-7). `403 account_unavailable` only after the password
         verified. A malformed email is `400 invalid_request` here.
-      x-error-codes: [invalid_request, invalid_credentials, account_unavailable, rate_limited, busy, internal_error]
+      x-error-codes: [invalid_request, invalid_credentials, account_unavailable, unsupported_media_type, rate_limited, busy, internal_error]
       requestBody:
         required: true
         content:
@@ -157,6 +163,7 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Tokens" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "401": { $ref: "#/components/responses/InvalidCredentials" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
@@ -169,11 +176,12 @@ paths:
       operationId: passwordResetStart
       summary: Endpoint 7. Start a password reset (Flow G).
       description: Same 202 for every email. Only an active, verified account gets a `reset_code` email.
-      x-error-codes: [invalid_request, invalid_email, rate_limited, internal_error]
+      x-error-codes: [invalid_request, invalid_email, unsupported_media_type, rate_limited, internal_error]
       requestBody: { $ref: "#/components/requestBodies/Email" }
       responses:
         "202": { $ref: "#/components/responses/Acknowledgement" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "500": { $ref: "#/components/responses/InternalError" }
   /v1/auth/password/reset/complete:
@@ -182,11 +190,12 @@ paths:
       operationId: passwordResetComplete
       summary: Endpoint 8. Complete a reset. Revokes every session and issues none.
       description: Also sets a first password on a passwordless account (R7).
-      x-error-codes: [invalid_request, invalid_code, code_attempts_exceeded, password_policy_violation, rate_limited, busy, internal_error]
+      x-error-codes: [invalid_request, invalid_code, code_attempts_exceeded, password_policy_violation, unsupported_media_type, rate_limited, busy, internal_error]
       requestBody: { $ref: "#/components/requestBodies/CodeWithPassword" }
       responses:
         "204": { $ref: "#/components/responses/NoContent" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "422": { $ref: "#/components/responses/PolicyViolation" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "500": { $ref: "#/components/responses/InternalError" }
@@ -200,7 +209,7 @@ paths:
       description: |
         Every refused token gets the same `401 unauthorized`. A reused token within retention
         revokes its session (R4); a client must single-flight refresh per session.
-      x-error-codes: [invalid_request, unauthorized, rate_limited, internal_error]
+      x-error-codes: [invalid_request, unauthorized, unsupported_media_type, rate_limited, internal_error]
       requestBody:
         required: true
         content:
@@ -214,6 +223,7 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Tokens" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "500": { $ref: "#/components/responses/InternalError" }
@@ -268,11 +278,12 @@ paths:
       operationId: passwordSet
       summary: Endpoint 13. Set a first password. Keeps this session, revokes all others (AC-28).
       security: [{ bearerAuth: [] }]
-      x-error-codes: [invalid_request, invalid_code, code_attempts_exceeded, unauthorized, password_already_set, password_policy_violation, rate_limited, busy, internal_error]
+      x-error-codes: [invalid_request, invalid_code, code_attempts_exceeded, unauthorized, password_already_set, password_policy_violation, unsupported_media_type, rate_limited, busy, internal_error]
       requestBody: { $ref: "#/components/requestBodies/CodeWithPassword" }
       responses:
         "204": { $ref: "#/components/responses/NoContent" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/PolicyViolation" }
@@ -288,7 +299,7 @@ paths:
         No retry exception: a resend after a lost response is evaluated like any other request
         and normally gets `403 invalid_current_password` (TRD 5.4, R10).
       security: [{ bearerAuth: [] }]
-      x-error-codes: [invalid_request, unauthorized, invalid_current_password, password_not_set, password_policy_violation, rate_limited, busy, internal_error]
+      x-error-codes: [invalid_request, unauthorized, invalid_current_password, password_not_set, password_policy_violation, unsupported_media_type, rate_limited, busy, internal_error]
       requestBody:
         required: true
         content:
@@ -303,6 +314,7 @@ paths:
       responses:
         "204": { $ref: "#/components/responses/NoContent" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
@@ -445,6 +457,14 @@ components:
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
+    UnsupportedMediaType:
+      description: "`unsupported_media_type`: Content-Type is missing or is not application/json."
+      x-codes: [unsupported_media_type]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
     PolicyViolation:
       description: "`password_policy_violation`, with every violated rule in `violations`."
       x-codes: [password_policy_violation]
@@ -569,6 +589,7 @@ components:
         - not_ready
         - not_found
         - method_not_allowed
+        - unsupported_media_type
     Problem:
       type: object
       additionalProperties: false

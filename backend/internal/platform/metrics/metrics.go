@@ -1,0 +1,209 @@
+// Package metrics exposes the runtime metrics of TRD 01 §11.3 for Prometheus, on the internal
+// listener VEEA_METRICS_ADDR. Alerting on them is Phase 5.
+//
+// Label hygiene (AC-22): every label value goes through label(), which keeps only short
+// lowercase codes ([a-z0-9_], at most 40 characters) and turns anything else into "other". An
+// email, an IP address, a token or a free-form error string can therefore never become a label,
+// even by mistake. Callers pass fixed codes: purposes, deliveries, methods, results, rule names,
+// revocation reasons, templates.
+//
+// Every method is safe on a nil *Metrics, so services work unchanged without metrics.
+package metrics
+
+import (
+	"context"
+	"net/http"
+	"sync"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+)
+
+// Metrics holds the collectors on a private registry.
+type Metrics struct {
+	reg         *prometheus.Registry
+	pendingOnce sync.Once
+
+	otpStarted      *prometheus.CounterVec
+	otpVerified     *prometheus.CounterVec
+	signupCompleted *prometheus.CounterVec
+	passwordLogin   *prometheus.CounterVec
+	rateLimited     *prometheus.CounterVec
+	sessionsRevoked *prometheus.CounterVec
+	refreshReuse    prometheus.Counter
+	emailSend       *prometheus.CounterVec
+	staleResults    prometheus.Counter
+	txRetries       *prometheus.CounterVec
+	argon2Wait      prometheus.Histogram
+}
+
+// New registers every TRD 11.3 metric plus the Go runtime and process collectors.
+func New() *Metrics {
+	reg := prometheus.NewRegistry()
+	f := func(c prometheus.Collector) prometheus.Collector { reg.MustRegister(c); return c }
+	m := &Metrics{reg: reg}
+	m.otpStarted = f(prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "auth_otp_started_total", Help: "OTP starts that issued a challenge, by purpose and delivery (code or none)."},
+		[]string{"purpose", "delivery"})).(*prometheus.CounterVec)
+	m.otpVerified = f(prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "auth_otp_verified_total", Help: "OTP redemptions by purpose and result."},
+		[]string{"purpose", "result"})).(*prometheus.CounterVec)
+	m.signupCompleted = f(prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "auth_signup_completed_total", Help: "Accounts created by a verified signup, by method."},
+		[]string{"method"})).(*prometheus.CounterVec)
+	m.passwordLogin = f(prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "auth_password_login_total", Help: "Password sign-in attempts by result."},
+		[]string{"result"})).(*prometheus.CounterVec)
+	m.rateLimited = f(prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "auth_rate_limited_total", Help: "Requests refused with 429, by rule."},
+		[]string{"rule"})).(*prometheus.CounterVec)
+	m.sessionsRevoked = f(prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "auth_sessions_revoked_total", Help: "Sessions revoked, by reason."},
+		[]string{"reason"})).(*prometheus.CounterVec)
+	m.refreshReuse = f(prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "auth_refresh_reuse_total", Help: "Refresh tokens presented again within retention (TRD 8.4)."})).(prometheus.Counter)
+	m.emailSend = f(prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "email_send_total", Help: "Provider send calls by template and result (sent, permanent, retryable, ambiguous)."},
+		[]string{"template", "result"})).(*prometheus.CounterVec)
+	m.staleResults = f(prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "email_outbox_stale_result_total", Help: "Outbox result writes discarded because the lease was gone (TRD 8.3)."})).(prometheus.Counter)
+	m.txRetries = f(prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "db_tx_retries_total", Help: "Transactions retried after a deadlock or serialization failure (TRD 7.1 rule 7)."},
+		[]string{"reason"})).(*prometheus.CounterVec)
+	m.argon2Wait = f(prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name: "argon2_wait_seconds", Help: "Time spent waiting for an Argon2id slot (TRD 9.2).",
+		Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2}})).(prometheus.Histogram)
+	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	return m
+}
+
+// Handler serves the registry in the Prometheus text format.
+func (m *Metrics) Handler() http.Handler {
+	mux := http.NewServeMux()
+	// At most two scrapes at once, each bounded: email_outbox_pending runs a query on the API pool.
+	mux.Handle("GET /metrics", promhttp.HandlerFor(m.reg, promhttp.HandlerOpts{MaxRequestsInFlight: 2, Timeout: 5 * time.Second}))
+	return mux
+}
+
+// RegisterOutboxPending exports email_outbox_pending, read with count when scraped. Only the
+// first call registers; later calls (a second app.New with the same Metrics) are no-ops rather
+// than a duplicate-registration panic.
+func (m *Metrics) RegisterOutboxPending(count func(ctx context.Context) (int64, error)) {
+	if m == nil || count == nil {
+		return
+	}
+	m.pendingOnce.Do(func() { m.registerPending(count) })
+}
+
+func (m *Metrics) registerPending(count func(ctx context.Context) (int64, error)) {
+	m.reg.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "email_outbox_pending", Help: "Outbox rows still pending."}, func() float64 {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		n, err := count(ctx)
+		if err != nil {
+			return -1 // visible as an impossible value rather than a silent zero
+		}
+		return float64(n)
+	}))
+}
+
+// label keeps a value only if it is a short lowercase code.
+func label(v string) string {
+	if v == "" || len(v) > 40 {
+		return "other"
+	}
+	for _, r := range v {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' {
+			return "other"
+		}
+	}
+	return v
+}
+
+// OTPStarted counts a committed start.
+func (m *Metrics) OTPStarted(purpose, delivery string) {
+	if m != nil {
+		m.otpStarted.WithLabelValues(label(purpose), label(delivery)).Inc()
+	}
+}
+
+// OTPVerified counts a redemption by result.
+func (m *Metrics) OTPVerified(purpose, result string) {
+	if m != nil {
+		m.otpVerified.WithLabelValues(label(purpose), label(result)).Inc()
+	}
+}
+
+// SignupCompleted counts a created account.
+func (m *Metrics) SignupCompleted(method string) {
+	if m != nil {
+		m.signupCompleted.WithLabelValues(label(method)).Inc()
+	}
+}
+
+// PasswordLogin counts a password sign-in attempt.
+func (m *Metrics) PasswordLogin(result string) {
+	if m != nil {
+		m.passwordLogin.WithLabelValues(label(result)).Inc()
+	}
+}
+
+// RateLimited counts a 429.
+func (m *Metrics) RateLimited(rule string) {
+	if m != nil {
+		m.rateLimited.WithLabelValues(label(rule)).Inc()
+	}
+}
+
+// SessionsRevoked adds n committed revocations.
+func (m *Metrics) SessionsRevoked(reason string, n int64) {
+	if m != nil && n > 0 {
+		m.sessionsRevoked.WithLabelValues(label(reason)).Add(float64(n))
+	}
+}
+
+// RefreshReuse counts a detected reuse.
+func (m *Metrics) RefreshReuse() {
+	if m != nil {
+		m.refreshReuse.Inc()
+	}
+}
+
+// EmailSend counts one provider call.
+func (m *Metrics) EmailSend(template, result string) {
+	if m != nil {
+		m.emailSend.WithLabelValues(label(template), label(result)).Inc()
+	}
+}
+
+// StaleResult counts a discarded outbox result write.
+func (m *Metrics) StaleResult() {
+	if m != nil {
+		m.staleResults.Inc()
+	}
+}
+
+// TxRetry counts a retried transaction by SQLSTATE.
+func (m *Metrics) TxRetry(sqlstate string) {
+	if m == nil {
+		return
+	}
+	reason := "other"
+	switch sqlstate {
+	case "40P01":
+		reason = "deadlock"
+	case "40001":
+		reason = "serialization"
+	}
+	m.txRetries.WithLabelValues(reason).Inc()
+}
+
+// Argon2Wait observes a hashing-slot wait.
+func (m *Metrics) Argon2Wait(d time.Duration) {
+	if m != nil {
+		m.argon2Wait.Observe(d.Seconds())
+	}
+}

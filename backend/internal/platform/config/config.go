@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/netip"
 	"net/url"
 	"strconv"
@@ -44,6 +45,11 @@ type Config struct {
 	EmailSender string
 	SMTPAddr    string
 	EmailFrom   string
+
+	// MetricsAddr is the internal Prometheus listener (TRD 11.3, 13).
+	MetricsAddr string
+	// Argon2 are the password hash parameters (TRD 9.2, 13).
+	Argon2 identity.Params
 }
 
 // Defaults for optional settings.
@@ -55,6 +61,9 @@ const (
 	DefaultEmailSender     = "smtp"
 	DefaultSMTPAddr        = "localhost:1025"
 	DefaultEmailFrom       = "no-reply@veea.local"
+	DefaultMetricsAddr     = "127.0.0.1:9090"
+	// MinArgon2MemoryKiB is the least memory accepted for Argon2id (7 MiB).
+	MinArgon2MemoryKiB = 7 * 1024
 )
 
 // Environment variable names.
@@ -72,6 +81,10 @@ const (
 	EnvEmailSender     = "VEEA_EMAIL_SENDER"
 	EnvSMTPAddr        = "VEEA_SMTP_ADDR"
 	EnvEmailFrom       = "VEEA_EMAIL_FROM"
+	EnvMetricsAddr     = "VEEA_METRICS_ADDR"
+	EnvArgon2Memory    = "VEEA_ARGON2_MEMORY_KIB"
+	EnvArgon2Time      = "VEEA_ARGON2_TIME"
+	EnvArgon2Threads   = "VEEA_ARGON2_THREADS"
 )
 
 // Load reads configuration through lookup (os.LookupEnv in production) and
@@ -141,10 +154,80 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		errs = append(errs, fmt.Errorf("%s must be smtp or fake (the production provider is not chosen yet)", EnvEmailSender))
 	}
 
+	cfg.MetricsAddr = get(EnvMetricsAddr, DefaultMetricsAddr)
+	if err := validateMetricsAddr(cfg.MetricsAddr, cfg.HTTPAddr); err != nil {
+		errs = append(errs, fmt.Errorf("%s: %w", EnvMetricsAddr, err))
+	}
+
+	var aerr error
+	if cfg.Argon2, aerr = parseArgon2(get); aerr != nil {
+		errs = append(errs, aerr)
+	}
+
 	if len(errs) > 0 {
 		return Config{}, errors.Join(errs...)
 	}
 	return cfg, nil
+}
+
+// validateMetricsAddr requires host:port with an IP address, localhost or an empty host (all
+// interfaces), a port from 1 to 65535, and no overlap with the API listener.
+func validateMetricsAddr(addr, httpAddr string) error {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil || (host != "" && host != "localhost" && net.ParseIP(host) == nil) {
+		return errors.New("must be host:port with an IP address or localhost, such as 127.0.0.1:9090")
+	}
+	p, err := strconv.ParseUint(port, 10, 16)
+	if err != nil || p == 0 {
+		return errors.New("port must be 1 to 65535")
+	}
+	if hh, hp, err := net.SplitHostPort(httpAddr); err == nil && hp == port && hostsOverlap(host, hh) {
+		return fmt.Errorf("must not share a port with %s", EnvHTTPAddr)
+	}
+	return nil
+}
+
+// hostsOverlap reports whether two listen hosts could bind the same interface.
+func hostsOverlap(a, b string) bool {
+	wildcard := func(h string) bool { return h == "" || h == "0.0.0.0" || h == "::" }
+	return a == b || wildcard(a) || wildcard(b)
+}
+
+// parseArgon2 reads VEEA_ARGON2_MEMORY_KIB, _TIME and _THREADS (defaults 19456, 2, 1). The
+// parameters must pass identity.Params.Validate; memory × time must be at least the approved
+// default's (19456 KiB × 2); and memory must be at least MinArgon2MemoryKiB, the smallest
+// memory in the OWASP equivalent-cost table (7 MiB with t = 5). So the cost can be tuned up or
+// traded between memory and passes, but never below the approved floor or into a setting that
+// is barely memory-hard (TRD 9.2).
+func parseArgon2(get func(key, def string) string) (identity.Params, error) {
+	p := identity.DefaultParams
+	var errs []error
+	read := func(env string, def uint64, bits int) uint64 {
+		v, err := strconv.ParseUint(get(env, strconv.FormatUint(def, 10)), 10, bits)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s must be a positive integer", env))
+			return def
+		}
+		return v
+	}
+	p.MemoryKiB = uint32(read(EnvArgon2Memory, uint64(p.MemoryKiB), 32))
+	p.Time = uint32(read(EnvArgon2Time, uint64(p.Time), 32))
+	p.Threads = uint8(read(EnvArgon2Threads, uint64(p.Threads), 8))
+	if len(errs) > 0 {
+		return identity.Params{}, errors.Join(errs...)
+	}
+	if err := p.Validate(); err != nil {
+		return identity.Params{}, fmt.Errorf("VEEA_ARGON2_*: %w", err)
+	}
+	if p.MemoryKiB < MinArgon2MemoryKiB {
+		return identity.Params{}, fmt.Errorf("VEEA_ARGON2_MEMORY_KIB must be at least %d", MinArgon2MemoryKiB)
+	}
+	floor := uint64(identity.DefaultParams.MemoryKiB) * uint64(identity.DefaultParams.Time)
+	if uint64(p.MemoryKiB)*uint64(p.Time) < floor {
+		return identity.Params{}, fmt.Errorf("VEEA_ARGON2_*: memory × time must be at least %d KiB × %d (the approved cost)",
+			identity.DefaultParams.MemoryKiB, identity.DefaultParams.Time)
+	}
+	return p, nil
 }
 
 func parseDuration(s string, def time.Duration) (time.Duration, error) {
@@ -242,5 +325,8 @@ func (c Config) LogValue() slog.Value {
 		slog.String("email_sender", c.EmailSender),
 		slog.String("smtp_addr", c.SMTPAddr),
 		slog.String("email_from", c.EmailFrom),
+		slog.String("metrics_addr", c.MetricsAddr),
+		slog.Group("argon2", slog.Uint64("memory_kib", uint64(c.Argon2.MemoryKiB)),
+			slog.Uint64("time", uint64(c.Argon2.Time)), slog.Uint64("threads", uint64(c.Argon2.Threads))),
 	)
 }
