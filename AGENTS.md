@@ -110,6 +110,14 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
 source of truth; do not duplicate it here. Where it disagrees with the code, trust the code
 (for example it describes `jwt_auth`/`role_guard` middleware that `router.rs` does not mount).
 
+## Staging readiness
+
+The consolidated checklist through TRD 10 is `docs/staging-verification.md`. Local-only
+checks run through `backend/scripts/verify-staging-local.sh`; the separately tagged synthetic
+`pg_dump`/`pg_restore` drill is `backend/scripts/test-restore-drill.sh`. Operator-only isolated
+restore SQL is in `backend/ops/restore/`; it never opens sync. Staging/provider/device gates
+and cartridge review-resolution limitations remain explicit in the checklist.
+
 ## Commands
 
 Run from the repo root for Flutter and from `cloud/` for Rust (`make -C cloud <target>` also works).

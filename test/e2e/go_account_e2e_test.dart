@@ -32,10 +32,11 @@ class FaultClient extends http.BaseClient {
       loseInstall = false;
   final refreshCommitted = Completer<void>(),
       releaseRefresh = Completer<void>();
-  int refreshes = 0;
+  int refreshes = 0, installRequests = 0;
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     final path = request.url.path;
+    if (path.endsWith('/install')) installRequests++;
     if (blockReceipt && path.startsWith('/v1/account-rights/deletions/')) {
       throw http.ClientException('synthetic unavailable receipt');
     }
@@ -641,6 +642,109 @@ void main() {
       words = await app.repo.exportAll();
       expect(words, hasLength(2));
       expect(words.singleWhere((w) => w.id == edited.id).meaning, 'owner edit');
+    },
+    skip: !configured,
+  );
+  test(
+    'pre-restore cartridge attempt stays exact while gate closed and is durably blocked after epoch refusal',
+    () async {
+      final address = email(), secret = password();
+      await signup(app, address, secret);
+      await command('/open-fixture-sync');
+      final owner = app.auth.accountId!;
+      await command('/cartridge-plan', {'user_id': owner, 'premium': true});
+      final secure = app.secure;
+      await app.close();
+      final fault = FaultClient()..loseInstall = true;
+      app = GoAccountStack(
+        await SqliteVocabularyRepository.open(
+          path: '${dir.path}/notebook.sqlite',
+        ),
+        secure,
+        base!,
+        network: fault,
+      );
+      await app.auth.restore();
+      var packs = CartridgeProvider(
+        repository: app.repo,
+        api: GoCartridgeApi(app.client),
+        sync: app.sync,
+      );
+      await packs.refreshCatalog();
+      final pack = packs.catalog.singleWhere((p) => p.id == 'e2e_premium');
+      await expectLater(
+        packs.installServer(pack),
+        throwsA(isA<ApiException>()),
+      );
+      final original = (await packs.pending(pack.id))!['pending_body'];
+      await command('/restore-fixture-fence', {'user_id': owner});
+      expect(
+        await app.auth.signIn(identifier: address, password: secret),
+        isTrue,
+      );
+      await expectLater(
+        packs.installServer(pack),
+        throwsA(
+          isA<ApiException>().having(
+            (e) => e.code,
+            'closed gate',
+            'sync_unavailable',
+          ),
+        ),
+      );
+      expect((await packs.pending(pack.id))!['pending_body'], original);
+      expect((await packs.pending(pack.id))!['pending_unknown'], 1);
+      // Only this disposable pgtest clone is opened to exercise the epoch refusal.
+      await command('/open-fixture-sync');
+      await expectLater(
+        packs.installServer(pack),
+        throwsA(
+          isA<ApiException>().having(
+            (e) => e.code,
+            'epoch refusal',
+            'sync_reset_required',
+          ),
+        ),
+      );
+      expect((await packs.pending(pack.id))!['blocked'], 1);
+      expect((await packs.pending(pack.id))!['pending_body'], original);
+      packs.dispose();
+      await app.close();
+      final afterRestart = FaultClient();
+      app = GoAccountStack(
+        await SqliteVocabularyRepository.open(
+          path: '${dir.path}/notebook.sqlite',
+        ),
+        secure,
+        base,
+        network: afterRestart,
+      );
+      await app.auth.restore();
+      packs = CartridgeProvider(
+        repository: app.repo,
+        api: GoCartridgeApi(app.client),
+        sync: app.sync,
+      );
+      await expectLater(
+        packs.installServer(pack),
+        throwsA(
+          isA<ApiException>().having(
+            (e) => e.message,
+            'review required',
+            contains('needs review'),
+          ),
+        ),
+      );
+      expect(
+        afterRestart.installRequests,
+        0,
+        reason: 'blocked installation never adopts the new epoch or replays',
+      );
+      expect((await packs.pending(pack.id))!['pending_body'], original);
+      packs.dispose();
+      await command('/restore-fixture-fence', {
+        'user_id': owner,
+      }); // leave fixture closed too
     },
     skip: !configured,
   );

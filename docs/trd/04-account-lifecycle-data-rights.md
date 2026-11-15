@@ -376,7 +376,7 @@ Before a restored database takes traffic:
 5. Start the cleanup runner alone and wait for `account_deletion_oldest_pending_seconds` to return to 0.
 6. Only then admit traffic.
 
-[TRD 05](05-learning-data-sync.md) §8.2 adds the vocabulary steps: close `learning_sync_control` first, let the purge drain learning rows, rotate every sync epoch and retire every writer before reopening sync. The ledger is kept 90 days, longer than the 30-day backup window, so any restorable backup is covered. No restore tool exists yet: steps 3 and 4 are a manual SQL runbook to write and drill before release. Router tests do not prove any of this.
+[TRD 05](05-learning-data-sync.md) §8.2 adds the vocabulary steps: close `learning_sync_control` first, let the purge drain learning rows, rotate every sync epoch and retire every writer before reopening sync. The ledger is kept 90 days, longer than the 30-day backup window, so any restorable backup is covered. Executable isolated restore SQL and a synthetic logical dump/restore drill are now in [the consolidated staging checklist §6](../staging-verification.md#6-isolated-restore-sequence-for-g9-nin). The real provider backup/PITR drill, independent authoritative-ledger custody and operator cutover remain release gates. Router/local restore tests do not prove those deployment properties.
 
 ### 12.6 Provider retention verification
 

@@ -6,6 +6,10 @@ refresh rotation, first-password set, change and reset, the encrypted email outb
 audit events, rate limits, the cleanup jobs, the metrics listener, TRD 02 session management and TRD 03 profile/email change. The schema is
 migrations 00001 to 00009. Resend is selected for production email (TRD 01 R12); Mailpit remains the local default.
 
+Staging readiness through migration **00015**: [`docs/staging-verification.md`](../docs/staging-verification.md).
+Local evidence runner: `scripts/verify-staging-local.sh`; isolated logical restore drill: `scripts/test-restore-drill.sh`.
+These do not deploy or open sync.
+
 Design: [`docs/trd/01-email-authentication-account-foundation.md`](../docs/trd/01-email-authentication-account-foundation.md).
 
 ## Layout

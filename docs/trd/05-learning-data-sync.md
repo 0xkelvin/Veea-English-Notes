@@ -320,7 +320,7 @@ The distinction matters because a sent edit may already be on the server. Changi
    - a verification query finds no `vocabulary_items`, `learning_sync_writers` or `learning_sync_heads` rows for any ledger `user_id`.
 4. For every remaining head, set `epoch = gen_random_uuid()`. Retire every writer logically (`UPDATE learning_sync_writers SET retired_at = now() WHERE retired_at IS NULL`). The restored `last_seq` values are rewound and must not judge any device's queue; retirement makes every old writer's push `writer_unknown` at once. The cleanup job then deletes their records and rows in bounded batches (§5.2); it need not finish before reopening.
 5. Delete restored export chunks and artifacts (TRD 04 step 4).
-6. Set `learning_sync_control.open = true`.
+6. Only after the independent operator release decision may `learning_sync_control.open = true` be set. The current [staging preparation](../staging-verification.md) leaves it **false**.
 
 **Client behavior on `epoch_changed` for its own account.** The account is the same `user_id` as the partition, so this is a restore:
 1. Stop syncing for that account. Move the old queue, old `writer_id`, old cursor, and every local record that is dirty or differs from the server into that account's **review set**. That set is never sent.
@@ -741,7 +741,7 @@ opening sync still requires the recorded device/deployment checks and operator d
 
 1. **The rebuilt Flutter client and §15.2.** The local SQLite/HTTP/widget checks now pass ([verification](05-flutter-verification.md)). Production Flutter auth/refresh/deletion adapters now use the Go contract and pass local Go/PostgreSQL/Mailpit end-to-end tests; real-device and deployment checks remain release gates. Sync stays closed (`learning_sync_control.open = false`); opening it is a deliberate operator action after those gates are met.
 2. **Shared encoder vectors for Dart.** The Go encoder and its tests exist. The vectors (escaping, emoji, combining marks, the 8,192/8,193-byte boundary) still have to be exported to the Flutter test suite.
-3. **Restore tooling and drill.** TRD 04 §12.5 and §12.7 have no restore tool yet. The §8.2 sync steps are SQL in this TRD, exercised by `TestLearningSync_RestoreRunbook`, but not drilled against a real backup.
+3. **Restore tooling and drill.** TRD 04 §12.5 and this section now have executable isolated SQL and a local synthetic pg_dump/pg_restore drill ([staging checklist](../staging-verification.md) §6–7). Hosted backup/PITR, disaster-time authoritative-ledger custody and operator cutover have not been drilled; they remain release gates.
 4. **Release order.** Migration 00011 runs through `cmd/migrate` before the binaries. It ends any ready version-1 export and adds a trigger on `users`. Every instance must run the new binaries before sync opens.
 5. **Not covered by a test.** A forced `40001` retry of a push is not exercised: the suite fails on any counted retry. The atomicity it relies on is the existing `db.Tx` behaviour, tested in TRD 01.
 

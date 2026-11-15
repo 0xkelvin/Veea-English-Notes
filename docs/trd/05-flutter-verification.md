@@ -141,3 +141,6 @@ The fault client intercepts selected responses **after** the real server has com
 **Keep `learning_sync_control.open = false`.** Only the disposable E2E database opens its gate temporarily; its initial closed state is asserted, it is closed again on exit (including failure), and the database is dropped. No deployed database or rollout control was changed.
 
 Before release, Nin still owns the explicit gate/deployment decision, real-device Keychain/Keystore and background/restart smoke checks, the verified Resend sending domain and real email delivery check, AC-7 timing measurement, and the previously recorded retention/restore/operational configuration checks. These local results do not prove those deployment properties or expand Phase 5 alerting. No staging deployment, staging command, commit or push was performed.
+
+
+**Staging preparation through TRD 10 (2026-11-15):** the remaining deployment/provider/device/restore checks are consolidated in [the executable staging checklist](../staging-verification.md). Its §7 records the new local run, including the real synthetic dump/restore drill and the cartridge closed-gate/epoch/restart block test. Historical verification totals above are unchanged; no staging gate is closed by local evidence.

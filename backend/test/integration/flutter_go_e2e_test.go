@@ -104,6 +104,40 @@ func TestFlutterGo_EndToEnd(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"rotation": rotation, "revoked_reason": revoked})
 	})
+	// This restore fence exists only in the tagged, loopback fixture. No production route.
+	mux.HandleFunc("POST /restore-fixture-fence", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			UserID uuid.UUID `json:"user_id"`
+		}
+		if json.NewDecoder(r.Body).Decode(&body) != nil || body.UserID == uuid.Nil {
+			w.WriteHeader(400)
+			return
+		}
+		tx, err := e.d.Pool.Begin(r.Context())
+		if err != nil {
+			w.WriteHeader(500)
+			return
+		}
+		defer tx.Rollback(r.Context())
+		for _, stmt := range []string{`UPDATE learning_sync_control SET open=false,changed_at=clock_timestamp()`,
+			`UPDATE learning_sync_heads SET epoch=gen_random_uuid() WHERE user_id=$1`,
+			`UPDATE learning_sync_writers SET retired_at=clock_timestamp() WHERE user_id=$1`,
+			`UPDATE sessions SET revoked_at=clock_timestamp(),revoked_reason='account_inactive' WHERE user_id=$1`} {
+			args := []any{}
+			if strings.Contains(stmt, "$1") {
+				args = append(args, body.UserID)
+			}
+			if _, err = tx.Exec(r.Context(), stmt, args...); err != nil {
+				w.WriteHeader(500)
+				return
+			}
+		}
+		if err = tx.Commit(r.Context()); err != nil {
+			w.WriteHeader(500)
+			return
+		}
+		w.WriteHeader(200)
+	})
 	mux.HandleFunc("POST /open-fixture-sync", func(w http.ResponseWriter, r *http.Request) {
 		// This database is owned by pgtest.New(t), not any running service.
 		_, err := e.d.Pool.Exec(r.Context(), `UPDATE learning_sync_control SET open=true, changed_at=now()`)

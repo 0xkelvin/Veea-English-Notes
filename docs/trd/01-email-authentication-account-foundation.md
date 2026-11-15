@@ -1999,3 +1999,6 @@ R1–R11 and R13–R15 were **approved on 2026-11-13** together with TRD v0.4 an
 3. Tickets.
 4. Implementation.
 5. Verification (§12.4).
+
+
+**Staging preparation through TRD 10 (2026-11-15):** the remaining deployment/provider/device/restore checks are consolidated in [the executable staging checklist](../staging-verification.md). Its §7 records the new local run, including the real synthetic dump/restore drill and the cartridge closed-gate/epoch/restart block test. Historical verification totals above are unchanged; no staging gate is closed by local evidence.

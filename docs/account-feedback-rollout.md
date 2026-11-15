@@ -1,5 +1,8 @@
 # Account, notebook and feedback rollout
 
+> Current Go staging checklist through TRD 10: [staging-verification.md](staging-verification.md).
+> It supersedes deployment instructions in this legacy Rust/phone runbook; sync remains closed.
+>
 > Go integration update (2026-11-15): the runbook below is the legacy Rust
 > phone/account deployment. Production Flutter now uses Go email sign-in,
 > opaque session rotation, operation-capability deletion receipts and TRD 05

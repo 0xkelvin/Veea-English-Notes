@@ -266,3 +266,6 @@ Four new local-Go cases cover grant and revoke with retained sessions and exact 
 4. **Premium plan management — delivered 2026-11-15:** existing TRD 09 decisions implemented in §5b; no new backend contract or permission rule.
 
 Staging, commits and pushes are left to Nin.
+
+
+**Staging preparation through TRD 10 (2026-11-15):** the remaining deployment/provider/device/restore checks are consolidated in [the executable staging checklist](../staging-verification.md). Its §7 records the new local run, including the real synthetic dump/restore drill and the cartridge closed-gate/epoch/restart block test. Historical verification totals above are unchanged; no staging gate is closed by local evidence.

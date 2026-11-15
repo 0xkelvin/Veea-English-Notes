@@ -263,3 +263,6 @@ Run from `backend/`, against loopback-only disposable PostgreSQL and Mailpit. Th
 **Validated locally:** all 11 rules for syntax, firing, recovery and silence on representative samples (§6), including bootstrap, low traffic and missing series; the gauges and marker against PostgreSQL; and the metric names against the real registry.
 
 **Needs shared infrastructure** (§8): the scrape job and target wiring, Alertmanager routing, evaluation on live series at the deployed Prometheus version, and failure drills on staging.
+
+
+**Staging preparation through TRD 10 (2026-11-15):** the remaining deployment/provider/device/restore checks are consolidated in [the executable staging checklist](../staging-verification.md). Its §7 records the new local run, including the real synthetic dump/restore drill and the cartridge closed-gate/epoch/restart block test. Historical verification totals above are unchanged; no staging gate is closed by local evidence.
