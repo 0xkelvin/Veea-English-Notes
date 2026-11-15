@@ -1,0 +1,89 @@
+name: veea-go
+
+x-backend: &backend
+  image: ${COMPOSE_PROJECT_NAME:-veea-go}-backend:local
+  build:
+    context: .
+    dockerfile: Dockerfile
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop: [ ALL ]
+  security_opt: [ no-new-privileges:true ]
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: veea
+      POSTGRES_USER: veea
+      POSTGRES_PASSWORD: ${VEEA_LOCAL_DB_PASSWORD:?Generate a local hex database password in .env}
+    ports:
+      - "127.0.0.1:${VEEA_GO_DB_PORT:-54328}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ CMD-SHELL, 'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"' ]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  mailpit:
+    image: axllent/mailpit:v1.33.1
+    # API shares this network namespace so SMTP remains genuinely loopback-only.
+    # Its HTTP/metrics ports must therefore be published here, not on the API service.
+    ports:
+      - "127.0.0.1:${VEEA_GO_HTTP_PORT:-18386}:18386"
+      - "127.0.0.1:${VEEA_GO_METRICS_PORT:-19090}:9090"
+      - "127.0.0.1:${VEEA_GO_SMTP_PORT:-1026}:1025"
+      - "127.0.0.1:${VEEA_GO_MAILPIT_PORT:-8026}:8025"
+    healthcheck:
+      test: [ CMD, /mailpit, readyz ]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    <<: *backend
+    entrypoint: [ /app/bin/migrate ]
+    command: [ up ]
+    restart: "no"
+    environment:
+      VEEA_DATABASE_URL: postgres://veea:${VEEA_LOCAL_DB_PASSWORD:?Generate a local hex database password in .env}@postgres:5432/veea?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *backend
+    command: [ /app/bin/api ]
+    network_mode: service:mailpit
+    environment:
+      VEEA_DATABASE_URL: postgres://veea:${VEEA_LOCAL_DB_PASSWORD:?Generate a local hex database password in .env}@postgres:5432/veea?sslmode=disable
+      VEEA_HTTP_ADDR: :18386
+      VEEA_METRICS_ADDR: :9090
+      VEEA_EMAIL_SENDER: resend
+      VEEA_SMTP_ADDR: 127.0.0.1:1025
+      VEEA_EMAIL_FROM: ${VEEA_EMAIL_FROM:?Set a local email sender in .env}
+      VEEA_RESEND_API_KEY: ${VEEA_RESEND_API_KEY:?Set a local Resend API key in .env}
+      VEEA_EMAIL_HMAC_KEY: ${VEEA_EMAIL_HMAC_KEY:?Generate a local email HMAC key in .env}
+      VEEA_OTP_KEY: ${VEEA_OTP_KEY:?Generate a local OTP key in .env}
+      VEEA_OUTBOX_KEY: ${VEEA_OUTBOX_KEY:?Generate a local outbox key in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    stop_grace_period: 45s
+    healthcheck:
+      test: [ CMD, wget, -q, -O, /dev/null, http://127.0.0.1:18386/readyz ]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+volumes:
+  postgres_data:

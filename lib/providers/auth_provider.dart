@@ -51,6 +51,7 @@ class AuthProvider extends ChangeNotifier {
        _now = now ?? DateTime.now {
     // The transport signals when a refresh token is finally rejected.
     client.onSessionExpired = _handleSessionExpired;
+    _sync.onSessionExpired = _handleSessionExpired;
   }
 
   final AuthApi _authApi;
@@ -125,13 +126,26 @@ class AuthProvider extends ChangeNotifier {
     _state = await _tokens.hasSession
         ? AuthState.signedIn
         : AuthState.signedOut;
+    if (_sync.learningEngine != null &&
+        !RegExp(
+          r'^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$',
+        ).hasMatch(_accountId ?? '')) {
+      _accountId = null;
+    }
     if (isSignedIn) {
-      final owner = _accountId ?? _identifier?.trim().toLowerCase();
+      final owner = _sync.learningEngine == null
+          ? _accountId ?? _identifier?.trim().toLowerCase()
+          : _accountId;
       if (owner != null) {
         _accountId = owner;
         await _repository.activateNotebook(owner);
         if (_pendingDeletion == null) _sync.resumeForAccount(owner);
       }
+    }
+    if (!isSignedIn || (_sync.learningEngine != null && _accountId == null)) {
+      await _tokens.clear();
+      await _repository.activateNotebook(null);
+      _clearSession();
     }
     notifyListeners();
   }
@@ -174,6 +188,7 @@ class AuthProvider extends ChangeNotifier {
     String? switchedFrom;
     var switched = false;
     try {
+      await notebookSettled;
       await _sync.suspend();
       // An unresolved deletion pins this device to the deleted account's
       // notebook; switching first would strand that notebook in an archive.
@@ -184,6 +199,14 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
       final session = await request();
+      if (_sync.learningEngine != null &&
+          !RegExp(
+            r'^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$',
+          ).hasMatch(session.accountId)) {
+        throw const ApiException(
+          'This account needs the Go sign-in flow before cloud sync can be enabled.',
+        );
+      }
       switchedFrom = await _repository.activateNotebook(session.accountId);
       switched = true;
       await _tokens.saveLastAccount(session.accountId);
@@ -234,8 +257,13 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    await notebookSettled;
     await _sync.suspend();
     await _authApi.logout();
+    // TRD 05 §9.1 (D3): sign-out opens the guest notebook and closes the
+    // account cache. Its unsent changes stay with that account, unsent, until
+    // it signs in again; nothing written while signed out joins them.
+    await _repository.activateNotebook(null);
     _clearSession();
     notifyListeners();
   }
@@ -321,6 +349,7 @@ class AuthProvider extends ChangeNotifier {
           'Could not change your number. Your account and notebook are unchanged.';
       return false;
     } finally {
+      await notebookSettled;
       if (isSignedIn && _accountId != null && !hasPendingDeletion) {
         _sync.resumeForAccount(_accountId!);
       }
@@ -351,6 +380,9 @@ class AuthProvider extends ChangeNotifier {
 
   /// A deletion was sent but its outcome is not yet known.
   bool get hasPendingDeletion => _pendingDeletion != null;
+
+  /// Whether unresolved deletion should stop this notebook from syncing.
+  bool get blocksCloudSync => hasPendingDeletion;
 
   /// Deletes the phone account with a fresh code.
   ///
@@ -429,6 +461,7 @@ class AuthProvider extends ChangeNotifier {
           'Could not delete your account. Your notebook is still on this device.';
       return false;
     } finally {
+      await notebookSettled;
       if (isSignedIn && _accountId != null && !hasPendingDeletion) {
         _sync.resumeForAccount(_accountId!);
       }
@@ -447,6 +480,7 @@ class AuthProvider extends ChangeNotifier {
       await _sync.suspend();
       return await _resolvePendingDeletion();
     } finally {
+      await notebookSettled;
       if (isSignedIn && _accountId != null && !hasPendingDeletion) {
         _sync.resumeForAccount(_accountId!);
       }
@@ -493,7 +527,10 @@ class AuthProvider extends ChangeNotifier {
   /// Wipes the deleted account's active notebook and its archive, restoring
   /// an empty guest workspace. Other accounts' archived notebooks are kept.
   Future<void> _finishDeletedAccount() async {
-    await _repository.deleteAll();
+    await notebookSettled;
+    await _repository.deleteAll(
+      accountId: _pendingDeletion?.accountId ?? _accountId,
+    );
     await _sync.resetCursor();
     await _tokens.clear();
     await _tokens.clearLastAccount();
@@ -517,6 +554,7 @@ class AuthProvider extends ChangeNotifier {
       _identifier = _profile!.primary;
       notifyListeners();
     } on ApiException catch (error) {
+      await notebookSettled;
       debugPrint('Could not load profile: ${error.message}');
     }
   }
@@ -530,7 +568,7 @@ class AuthProvider extends ChangeNotifier {
     return _run(
       () => _authApi.deleteAccount(password: password),
       onSuccess: () async {
-        await _repository.deleteAll();
+        await _repository.deleteAll(accountId: _accountId);
         await _sync.resetCursor();
         await _tokens.clearLastAccount();
         _clearSession();
@@ -655,9 +693,18 @@ class AuthProvider extends ChangeNotifier {
 
   /// The refresh token was rejected: the session is over and cannot be
   /// recovered without the user signing in again.
+  Future<void> _notebookTransition = Future.value();
+  Future<void> get notebookSettled => _notebookTransition;
+
+  Future<void> _closeExpiredNotebook() async {
+    await _sync.suspend();
+    await _tokens.clear();
+    await _repository.activateNotebook(null);
+  }
+
   void _handleSessionExpired() {
     if (_state != AuthState.signedIn) return;
-    unawaited(_sync.suspend());
+    _notebookTransition = _closeExpiredNotebook();
     _clearSession();
     _lastError = 'Your session expired — sign in again to keep syncing';
     notifyListeners();

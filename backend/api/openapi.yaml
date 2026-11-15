@@ -1,0 +1,2264 @@
+openapi: 3.0.3
+info:
+  title: Veea English Notes — Accounts API
+  version: 1.8.0-trd10
+  description: |
+    Email authentication and account foundation (TRD 01 §5), plus session management (TRD 02), account lifecycle (TRD 04),
+    vocabulary sync (TRD 05), RBAC user administration (TRD 06) Free/Premium plans (TRD 09) and server-delivered cartridges (TRD 10). This document is normative for the
+    Go service in `backend/`: every route the router registers is listed here, and the
+    integration suite validates every response it receives against it.
+
+    Conventions (TRD 01 §5.1):
+    - JSON bodies require `Content-Type: application/json`; a missing or other content type is
+      `415 unsupported_media_type`. The body is then decoded strictly: one object, at most 16 KiB
+      (2 MiB for the vocabulary push and import, over which the answer is `413 payload_too_large`),
+      keys spelled exactly as documented, no duplicate or unknown keys, every field present, no
+      trailing data. Anything else is `400 invalid_request`.
+    - A path that is not listed gets `404 not_found`, and a listed path with another method gets
+      `405 method_not_allowed` with `Allow`, both as problem documents. `HEAD` is not served.
+    - Every response carries `X-Request-Id`. JSON and 204 responses carry `Cache-Control: no-store`.
+    - Errors are RFC 9457 `application/problem+json` with a stable `code` and the `request_id`.
+      Each operation lists the codes it can return in `x-error-codes`.
+    - Timestamps are RFC 3339 in UTC.
+    - Tokens: challenge `vct_…`, access `vat_…`, refresh `vrt_…`, each followed by 43 base64url
+      characters. Only the responses below ever contain them.
+servers:
+  - url: /
+tags:
+  - name: health
+  - name: signup
+  - name: signin
+  - name: password
+  - name: account
+  - name: session
+  - name: learning
+  - name: admin
+
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      operationId: healthz
+      summary: Liveness. Ignores the database.
+      x-error-codes: []
+      responses:
+        "200": { $ref: "#/components/responses/Health" }
+  /readyz:
+    get:
+      tags: [health]
+      operationId: readyz
+      summary: Readiness. Checks the database within VEEA_READY_TIMEOUT.
+      x-error-codes: [not_ready]
+      responses:
+        "200": { $ref: "#/components/responses/Health" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /v1/auth/signup/otp/start:
+    post:
+      tags: [signup]
+      operationId: signupOtpStart
+      summary: Endpoint 1. Start an OTP signup (Flow A).
+      description: |
+        Same 202 for new and existing emails (AC-27). Only a new email gets a `signup_code` email.
+        An existing account is never changed.
+      x-error-codes: [invalid_request, invalid_email, unsupported_media_type, rate_limited, internal_error]
+      requestBody: { $ref: "#/components/requestBodies/Email" }
+      responses:
+        "202": { $ref: "#/components/responses/Acknowledgement" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/auth/signup/password/start:
+    post:
+      tags: [signup]
+      operationId: signupPasswordStart
+      summary: Endpoint 2. Start a password signup (Flow B).
+      description: |
+        The password policy is checked first (422 before anything else), then the per-IP limit,
+        then Argon2id, then the start. Same 202 for new and existing emails; the pending hash is
+        bound to the new challenge only for a new email.
+      x-error-codes: [invalid_request, invalid_email, password_policy_violation, unsupported_media_type, rate_limited, busy, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, password]
+              properties:
+                email: { $ref: "#/components/schemas/EmailInput" }
+                password: { type: string }
+      responses:
+        "202": { $ref: "#/components/responses/Acknowledgement" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "422": { $ref: "#/components/responses/PolicyViolation" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/Busy" }
+  /v1/auth/signup/verify:
+    post:
+      tags: [signup]
+      operationId: signupVerify
+      summary: Endpoint 3. Verify a signup and create the account and its first session.
+      description: |
+        `409 signup_unavailable` when the email gained an account after the attempt started:
+        the code is consumed, nothing about the account changes and no session is issued (R5).
+      x-error-codes: [invalid_request, invalid_code, code_attempts_exceeded, signup_unavailable, unsupported_media_type, rate_limited, internal_error]
+      requestBody: { $ref: "#/components/requestBodies/CodeWithDevice" }
+      responses:
+        "201": { $ref: "#/components/responses/Tokens" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/auth/otp/start:
+    post:
+      tags: [signin]
+      operationId: otpStart
+      summary: Endpoint 4. Start an OTP sign-in (Flow C).
+      description: Same 202 for every email. Only an active, verified account gets a `login_code` email.
+      x-error-codes: [invalid_request, invalid_email, unsupported_media_type, rate_limited, internal_error]
+      requestBody: { $ref: "#/components/requestBodies/Email" }
+      responses:
+        "202": { $ref: "#/components/responses/Acknowledgement" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/auth/otp/verify:
+    post:
+      tags: [signin]
+      operationId: otpVerify
+      summary: Endpoint 5. Verify an OTP sign-in and create a session.
+      x-error-codes: [invalid_request, invalid_code, code_attempts_exceeded, unsupported_media_type, rate_limited, internal_error]
+      requestBody: { $ref: "#/components/requestBodies/CodeWithDevice" }
+      responses:
+        "200": { $ref: "#/components/responses/Tokens" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/auth/password/login:
+    post:
+      tags: [signin]
+      operationId: passwordLogin
+      summary: Endpoint 6. Password sign-in (Flow D).
+      description: |
+        Unknown email, wrong password, passwordless account and pending registration all get the
+        same `401 invalid_credentials` (AC-7). `403 account_unavailable` only after the password
+        verified. A malformed email is `400 invalid_request` here.
+      x-error-codes: [invalid_request, invalid_credentials, account_unavailable, unsupported_media_type, rate_limited, busy, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, password, device]
+              properties:
+                email: { $ref: "#/components/schemas/EmailInput" }
+                password: { type: string }
+                device: { $ref: "#/components/schemas/Device" }
+      responses:
+        "200": { $ref: "#/components/responses/Tokens" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "401": { $ref: "#/components/responses/InvalidCredentials" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/Busy" }
+
+  /v1/auth/password/reset/start:
+    post:
+      tags: [password]
+      operationId: passwordResetStart
+      summary: Endpoint 7. Start a password reset (Flow G).
+      description: Same 202 for every email. Only an active, verified account gets a `reset_code` email.
+      x-error-codes: [invalid_request, invalid_email, unsupported_media_type, rate_limited, internal_error]
+      requestBody: { $ref: "#/components/requestBodies/Email" }
+      responses:
+        "202": { $ref: "#/components/responses/Acknowledgement" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/auth/password/reset/complete:
+    post:
+      tags: [password]
+      operationId: passwordResetComplete
+      summary: Endpoint 8. Complete a reset. Revokes every session and issues none.
+      description: Also sets a first password on a passwordless account (R7).
+      x-error-codes: [invalid_request, invalid_code, code_attempts_exceeded, password_policy_violation, unsupported_media_type, rate_limited, busy, internal_error]
+      requestBody: { $ref: "#/components/requestBodies/CodeWithPassword" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "422": { $ref: "#/components/responses/PolicyViolation" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/Busy" }
+
+  /v1/auth/token/refresh:
+    post:
+      tags: [session]
+      operationId: tokenRefresh
+      summary: Endpoint 9. Rotate a refresh token, with no grace window (R2).
+      description: |
+        Every refused token gets the same `401 unauthorized`. A reused token within retention
+        revokes its session (R4); a client must single-flight refresh per session.
+      x-error-codes: [invalid_request, unauthorized, unsupported_media_type, rate_limited, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Tokens" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/auth/logout:
+    post:
+      tags: [session]
+      operationId: logout
+      summary: Endpoint 10. Revoke the current session only. No body.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [unauthorized, rate_limited, internal_error]
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/me:
+    get:
+      tags: [session]
+      operationId: me
+      summary: Endpoint 11. The authenticated account.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [unauthorized, rate_limited, internal_error]
+      responses:
+        "200":
+          description: The account.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/me/entitlements:
+    get:
+      tags: [account]
+      operationId: getMyEntitlements
+      summary: The caller's effective plan and limits (TRD 09 §6.1).
+      description: |
+        Evaluated at database time when read: Premium while a manual grant is active (until `plan_expires_at`,
+        exclusive), otherwise Free. Plans are separate from roles. Both plans have the same TRD 05 limits, and
+        no capability is gated by plan yet; export, deletion and reactivation never depend on the plan.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unauthorized, rate_limited, internal_error]
+      responses:
+        "200":
+          description: The effective plan.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Entitlements" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/me/profile:
+    put:
+      tags: [account]
+      operationId: updateProfile
+      summary: Replace the caller’s editable profile fields (TRD 03).
+      description: |
+        All four fields and expected_revision are required. No query parameters.
+        Stale revision conflicts; matching unchanged values are a no-op. No credential or session change.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unauthorized, unsupported_media_type, rate_limited, internal_error, invalid_profile, profile_conflict]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProfileRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/AccountUser" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/InvalidProfile" }
+  /v1/me/email-change/start:
+    post:
+      tags: [account]
+      operationId: emailChangeStart
+      summary: Issue current- and proposed-address OTP proofs (TRD 03).
+      description: |
+        Both proofs bind to one request, user and acting session. Both last ten minutes, five attempts each.
+        No query parameters. Starting again closes the old request and obeys existing cooldowns.
+        An occupied proposed address gets the same acknowledgement, but its challenge is inert and no email is sent.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unauthorized, unsupported_media_type, rate_limited, internal_error, invalid_email, email_unchanged]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailChangeStart" }
+      responses:
+        "202": { $ref: "#/components/responses/EmailChangeStarted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/me/email-change/{change_id}/complete:
+    post:
+      tags: [account]
+      operationId: emailChangeComplete
+      summary: Atomically replace verified email and revoke all sessions (TRD 03).
+      description: |
+        Consumes both distinct, caller-bound proofs in the cutover transaction; user_id and ownership stay fixed.
+        Old-address login/reset/set proofs become invalid. All sessions, including caller, lose both token types.
+        Old address is released after commit; old-inbox notice omits the new address. No query parameters.
+        Success returns 204. Retry normally returns 401; an already authenticated concurrent retry may get
+        400 invalid_code. No receipt endpoint. After a lost response, check confirmation mail or sign in
+        with the proposed new address; no error response alone proves whether the original request committed.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unauthorized, unsupported_media_type, rate_limited, internal_error, invalid_code, code_attempts_exceeded, not_found, email_unavailable]
+      parameters:
+        - in: path
+          name: change_id
+          required: true
+          schema: { type: string, format: uuid }
+          description: Nonzero, 36-character hyphenated owned request UUID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailChangeComplete" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "404": { $ref: "#/components/responses/OwnedRequestNotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/me/sessions:
+    get:
+      tags: [session]
+      operationId: listSessions
+      summary: List the caller's owned live sessions, including the current one (TRD 02).
+      description: |
+        One statement snapshot; unrevoked, absolute-valid sessions with usable access or refresh.
+        Current identity comes from the bearer principal. Sorted last_seen_at descending, id ascending.
+        Complete list, no pagination or query parameters. Request bodies are ignored.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unauthorized, rate_limited, internal_error]
+      responses:
+        "200":
+          description: Complete owned live session list. Device labels are client-supplied; last seen is approximate.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      tags: [session]
+      operationId: revokeAllSessions
+      summary: Sign out all devices, including the current session (TRD 02).
+      description: |
+        Valid bearer is sufficient; clients confirm this action with the user. No body or query parameters.
+        Bodies are ignored. Serializes with issuance on the user row; later valid sign-ins may create a
+        new session. All preceding unrevoked rows, including expired ones, transition atomically with audit.
+        A retry with the revoked bearer returns 401, which does not prove the earlier action committed.
+        No operation receipt or unauthenticated replay is provided; pending login proofs remain valid.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unauthorized, rate_limited, internal_error]
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/me/sessions/{session_id}:
+    delete:
+      tags: [session]
+      operationId: revokeSession
+      summary: Revoke one other owned session (TRD 02).
+      description: |
+        No query parameters; bodies are ignored. Unknown and foreign identifiers both return 404.
+        Retained already-revoked owned rows return 204 without a new event or timestamp/reason change.
+        After cleanup removes a target, a retry may return 404. Current session is refused with 409.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          description: Nonzero, 36-character hyphenated session UUID. Authentication precedes path validation.
+          schema: { type: string, format: uuid }
+      x-error-codes: [invalid_request, unauthorized, not_found, current_session_not_allowed, rate_limited, internal_error]
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/SessionNotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/me/password/set/start:
+    post:
+      tags: [password]
+      operationId: passwordSetStart
+      summary: Endpoint 12. Start a first-password set (Flow E). No body.
+      description: The challenge is bound to the caller's user and session (R6).
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [unauthorized, password_already_set, rate_limited, internal_error]
+      responses:
+        "202": { $ref: "#/components/responses/Acknowledgement" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/me/password/set:
+    post:
+      tags: [password]
+      operationId: passwordSet
+      summary: Endpoint 13. Set a first password. Keeps this session, revokes all others (AC-28).
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, invalid_code, code_attempts_exceeded, unauthorized, password_already_set, password_policy_violation, unsupported_media_type, rate_limited, busy, internal_error]
+      requestBody: { $ref: "#/components/requestBodies/CodeWithPassword" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/PolicyViolation" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/Busy" }
+  /v1/me/password:
+    put:
+      tags: [password]
+      operationId: passwordChange
+      summary: Endpoint 14. Change the password. Keeps this session, revokes all others (AC-11).
+      description: |
+        No retry exception: a resend after a lost response is evaluated like any other request
+        and normally gets `403 invalid_current_password` (TRD 5.4, R10).
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unauthorized, invalid_current_password, password_not_set, password_policy_violation, unsupported_media_type, rate_limited, busy, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string }
+                new_password: { type: string }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/PolicyViolation" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/Busy" }
+
+  /v1/me/deactivate:
+    post:
+      tags: [account]
+      operationId: deactivateAccount
+      summary: Deactivate and revoke all sessions; no retry receipt.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unsupported_media_type, rate_limited, internal_error, unauthorized, lifecycle_conflict, last_super_admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeactivateRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/account-rights/export/start:
+    post:
+      tags: [account]
+      operationId: startAccountExport
+      summary: Start an operation-bound mailbox proof; identical inert acknowledgement.
+      x-error-codes: [invalid_request, unsupported_media_type, rate_limited, internal_error, invalid_email]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailRightsRequest" }
+      responses:
+        "202":
+          description: Successful operation.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RightsStarted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/account-rights/export/{operation_id}/complete:
+    post:
+      tags: [account]
+      operationId: completeAccountExport
+      summary: Consume fresh proof atomically; accepted retries return the same operation.
+      security: [{ rightsAuth: [] }]
+      parameters:
+        - in: path
+          name: operation_id
+          required: true
+          schema: { type: string, format: uuid }
+      x-error-codes: [invalid_request, unsupported_media_type, rate_limited, internal_error, not_found, invalid_code, code_attempts_exceeded, lifecycle_conflict]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RightsProofRequest" }
+      responses:
+        "202":
+          description: Successful operation.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RightsOperation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/OwnedRequestNotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/account-rights/delete/start:
+    post:
+      tags: [account]
+      operationId: startAccountDelete
+      summary: Start an operation-bound mailbox proof; identical inert acknowledgement.
+      x-error-codes: [invalid_request, unsupported_media_type, rate_limited, internal_error, invalid_email]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailRightsRequest" }
+      responses:
+        "202":
+          description: Successful operation.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RightsStarted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/account-rights/delete/{operation_id}/complete:
+    post:
+      tags: [account]
+      operationId: completeAccountDelete
+      summary: Consume fresh proof atomically; accepted retries return the same operation.
+      description: The last active Super Admin is refused with `409 last_super_admin` and the proof stays usable (TRD 06 §4.4).
+      security: [{ rightsAuth: [] }]
+      parameters:
+        - in: path
+          name: operation_id
+          required: true
+          schema: { type: string, format: uuid }
+      x-error-codes: [invalid_request, unsupported_media_type, rate_limited, internal_error, not_found, invalid_code, code_attempts_exceeded, lifecycle_conflict, last_super_admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeleteProofRequest" }
+      responses:
+        "202":
+          description: Successful operation.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RightsOperation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/OwnedRequestNotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/account-rights/reactivate/start:
+    post:
+      tags: [account]
+      operationId: startAccountReactivate
+      summary: Start an operation-bound mailbox proof; identical inert acknowledgement.
+      x-error-codes: [invalid_request, unsupported_media_type, rate_limited, internal_error, invalid_email]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailRightsRequest" }
+      responses:
+        "202":
+          description: Successful operation.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RightsStarted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/account-rights/reactivate/{operation_id}/complete:
+    post:
+      tags: [account]
+      operationId: completeAccountReactivate
+      summary: Consume fresh proof atomically; accepted retries return the same operation.
+      security: [{ rightsAuth: [] }]
+      parameters:
+        - in: path
+          name: operation_id
+          required: true
+          schema: { type: string, format: uuid }
+      x-error-codes: [invalid_request, unsupported_media_type, rate_limited, internal_error, not_found, invalid_code, code_attempts_exceeded, lifecycle_conflict]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RightsProofRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/OwnedRequestNotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/account-rights/exports/{operation_id}:
+    get:
+      tags: [account]
+      operationId: getAccountExportOperation
+      summary: Read only the capability-owned operation status.
+      security: [{ rightsAuth: [] }]
+      parameters:
+        - in: path
+          name: operation_id
+          required: true
+          schema: { type: string, format: uuid }
+      x-error-codes: [invalid_request, not_found, rate_limited, internal_error]
+      responses:
+        "200":
+          description: Successful operation.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RightsOperation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/OwnedRequestNotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/account-rights/deletions/{operation_id}:
+    get:
+      tags: [account]
+      operationId: getAccountDeleteOperation
+      summary: Read only the capability-owned operation status.
+      security: [{ rightsAuth: [] }]
+      parameters:
+        - in: path
+          name: operation_id
+          required: true
+          schema: { type: string, format: uuid }
+      x-error-codes: [invalid_request, not_found, rate_limited, internal_error]
+      responses:
+        "200":
+          description: Successful operation.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RightsOperation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/OwnedRequestNotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/account-rights/exports/{operation_id}/download:
+    get:
+      tags: [account]
+      operationId: downloadAccountExport
+      summary: Download encrypted-at-rest product-data JSON; expires after 24h, deletion invalidates access.
+      security: [{ rightsAuth: [] }]
+      parameters:
+        - in: path
+          name: operation_id
+          required: true
+          schema: { type: string, format: uuid }
+      x-error-codes: [invalid_request, not_found, export_not_ready, operation_canceled, export_expired, rate_limited, internal_error]
+      responses:
+        "200":
+          description: Successful operation.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccountExport" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/OwnedRequestNotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410": { $ref: "#/components/responses/ExportExpired" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/learning/sync/state:
+    get:
+      tags: [learning]
+      operationId: getLearningSyncState
+      summary: The owner's sync head and, with writer_id, that writer's high-water mark.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: writer_id
+          required: false
+          description: Optional writer UUID; another owner's or an unknown writer reads as null.
+          schema: { type: string }
+      x-error-codes: [invalid_request, unauthorized, rate_limited, sync_unavailable, internal_error]
+      responses:
+        "200":
+          description: Successful operation.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LearningState" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/SyncUnavailable" }
+  /v1/learning/sync/writers:
+    post:
+      tags: [learning]
+      operationId: registerLearningWriter
+      summary: Issue a server-generated writer; with 20 active writers the least recently used one is retired.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unsupported_media_type, unauthorized, rate_limited, sync_unavailable, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmptyRequest" }
+      responses:
+        "201":
+          description: Successful operation.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LearningWriter" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/SyncUnavailable" }
+  /v1/learning/sync/push:
+    post:
+      tags: [learning]
+      operationId: pushLearningMutations
+      summary: Apply a writer's contiguous mutations; already-processed seq values are only resolved, never applied again.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unsupported_media_type, unauthorized, payload_too_large, sequence_gap, sync_reset_required, rate_limited, sync_unavailable, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LearningPushRequest" }
+      responses:
+        "200":
+          description: Successful operation.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LearningPushResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410": { $ref: "#/components/responses/SyncReset" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/SyncUnavailable" }
+  /v1/learning/sync/import:
+    post:
+      tags: [learning]
+      operationId: importLearningWords
+      summary: Import guest words (creates only); the new suffix is admitted atomically against capacity_basis.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unsupported_media_type, unauthorized, payload_too_large, sequence_gap, capacity_changed, sync_reset_required, rate_limited, sync_unavailable, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LearningImportRequest" }
+      responses:
+        "200":
+          description: Successful operation.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LearningPushResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410": { $ref: "#/components/responses/SyncReset" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/SyncUnavailable" }
+  /v1/learning/sync/changes:
+    get:
+      tags: [learning]
+      operationId: getLearningChanges
+      summary: Changes after a feed cursor, in revision order, at most 500 changes or 4 MiB of content per page.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: cursor
+          required: true
+          description: A feed cursor (c1.…), from a previous page or a snapshot's catch_up_cursor.
+          schema: { type: string }
+        - in: query
+          name: limit
+          required: false
+          description: 1-500, default 500.
+          schema: { type: string }
+      x-error-codes: [invalid_request, unauthorized, sync_reset_required, rate_limited, sync_unavailable, internal_error]
+      responses:
+        "200":
+          description: Successful operation.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LearningChanges" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "410": { $ref: "#/components/responses/SyncReset" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/SyncUnavailable" }
+  /v1/learning/sync/snapshot:
+    get:
+      tags: [learning]
+      operationId: getLearningSnapshot
+      summary: Live words as of a captured head revision H, in id order; catch up from catch_up_cursor afterwards.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: page_token
+          required: false
+          description: A snapshot page token (s1.…); absent starts a new snapshot.
+          schema: { type: string }
+        - in: query
+          name: limit
+          required: false
+          description: 1-500, default 500.
+          schema: { type: string }
+      x-error-codes: [invalid_request, unauthorized, sync_reset_required, rate_limited, sync_unavailable, internal_error]
+      responses:
+        "200":
+          description: Successful operation.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LearningSnapshot" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "410": { $ref: "#/components/responses/SyncReset" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/SyncUnavailable" }
+  /v1/admin/users:
+    get:
+      tags: [admin]
+      operationId: listAdminUsers
+      summary: List or search accounts the actor may view (TRD 06 §6.3).
+      description: |
+        Staff only. An Admin sees accounts with role `user` only; a role filter for another role is
+        `403 target_not_permitted`. Keyset pages in `created_at` descending, `id` descending order.
+        Pages are not a snapshot and there is no total. The page token is bound to the filters.
+        Each request writes `admin.user.search` with the filter names only, never the search text.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: email, required: false, description: Exact match after normalization. Not with email_prefix., schema: { type: string } }
+        - { in: query, name: email_prefix, required: false, description: "3 to 254 characters after NFC and lowercasing; LIKE wildcards are literal.", schema: { type: string, minLength: 3, maxLength: 254 } }
+        - { in: query, name: role, required: false, schema: { type: string, enum: [user, admin, super_admin] } }
+        - { in: query, name: status, required: false, schema: { type: string, enum: [active, deactivated, suspended, pending_deletion] } }
+        - { in: query, name: limit, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { in: query, name: page_token, required: false, schema: { type: string, pattern: '^a1\.[A-Za-z0-9_-]{43}$' } }
+      x-error-codes: [invalid_request, invalid_email, unauthorized, forbidden, target_not_permitted, rate_limited, internal_error]
+      responses:
+        "200":
+          description: One page.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminUserPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminForbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/admin/users/{user_id}:
+    get:
+      tags: [admin]
+      operationId: getAdminUser
+      summary: One account's administrative detail (TRD 06 §6.4).
+      description: |
+        Staff only, within the TRD 06 matrix. `allowed_actions` and `assignable_roles` are computed
+        for this actor at this snapshot; every mutation rechecks them. Writes `admin.user.view`.
+        Never contains hashes, tokens, IP addresses, user agents or learning content.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/AdminUserID" }
+      x-error-codes: [invalid_request, unauthorized, forbidden, target_not_permitted, not_found, rate_limited, internal_error]
+      responses:
+        "200": { $ref: "#/components/responses/AdminUser" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminForbidden" }
+        "404": { $ref: "#/components/responses/AdminNotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/admin/users/{user_id}/sessions:
+    get:
+      tags: [admin]
+      operationId: listAdminUserSessions
+      summary: The target's live sessions (TRD 06 §6.5).
+      description: TRD 02 live predicate and ordering, without is_current, IP addresses or user agents. Writes `admin.user.sessions.view`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/AdminUserID" }
+      x-error-codes: [invalid_request, unauthorized, forbidden, target_not_permitted, not_found, rate_limited, internal_error]
+      responses:
+        "200":
+          description: Complete live list; the session cap bounds it.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminSessionList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminForbidden" }
+        "404": { $ref: "#/components/responses/AdminNotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/admin/users/{user_id}/audit:
+    get:
+      tags: [admin]
+      operationId: listAdminUserAudit
+      summary: Administrative mutation history of one account (TRD 06 §9a).
+      description: |
+        Staff only, with the same target visibility as getAdminUser (an Admin sees User accounts only;
+        a Super Admin sees every account, including its own). Returns only suspension, reinstatement,
+        role change, role bootstrap and session revocation events, newest first by `occurred_at` with the
+        event identity as tie-breaker, and never events past the 180-day audit retention. Each item is
+        an explicit field allowlist. The page token is bound to this account. Writes `admin.user.audit.view`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/AdminUserID" }
+        - { in: query, name: limit, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { in: query, name: page_token, required: false, schema: { type: string, pattern: '^h1\.[A-Za-z0-9_-]{32}$' } }
+      x-error-codes: [invalid_request, unauthorized, forbidden, target_not_permitted, not_found, rate_limited, internal_error]
+      responses:
+        "200":
+          description: One page, newest first.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminAuditPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminForbidden" }
+        "404": { $ref: "#/components/responses/AdminNotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/admin/users/{user_id}/session-revocations:
+    post:
+      tags: [admin]
+      operationId: revokeAdminUserSessions
+      summary: Revoke one owned session of the target, or all of them (TRD 06 §6.5).
+      description: |
+        `session_id: null` revokes every unrevoked target session. Unknown and foreign session IDs are
+        the same `404`. A retained revoked row returns `revoked_sessions: 0` with no event. Revocation
+        does not block a later sign-in; use suspension for that.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/AdminUserID" }
+      x-error-codes: [invalid_request, unsupported_media_type, unauthorized, forbidden, target_not_permitted, not_found, rate_limited, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminSessionRevocationRequest" }
+      responses:
+        "200":
+          description: Rows that changed from unrevoked to revoked.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [revoked_sessions]
+                properties:
+                  revoked_sessions: { type: integer, minimum: 0 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminForbidden" }
+        "404": { $ref: "#/components/responses/AdminNotFound" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/admin/users/{user_id}/lifecycle-transitions:
+    post:
+      tags: [admin]
+      operationId: transitionAdminUser
+      summary: Suspend or reinstate the target (TRD 06 §5.2, §5.3).
+      description: |
+        Suspension saves the interrupted state, revokes every target session and cancels exports.
+        Reinstatement restores exactly that state without reviving sessions or proofs. If the
+        requested end state already holds the answer is 200 with no change and no event; otherwise
+        `expected_lifecycle_revision` must match. Pending-deletion targets are `409 status_conflict`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/AdminUserID" }
+      x-error-codes: [invalid_request, unsupported_media_type, unauthorized, forbidden, target_not_permitted, not_found, lifecycle_conflict, status_conflict, rate_limited, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminTransitionRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/AdminUser" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminForbidden" }
+        "404": { $ref: "#/components/responses/AdminNotFound" }
+        "409": { $ref: "#/components/responses/AdminConflict" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/admin/users/{user_id}/entitlement:
+    put:
+      tags: [admin]
+      operationId: changeAdminUserPlan
+      summary: Grant or revoke Premium manually (TRD 09 §6.2).
+      description: |
+        `plan: premium` with `ends_at` (after the database time of the change and at most 366 days later) starts a
+        new grant now and closes any open one; `plan: free` with `ends_at: null` revokes the active grant. A fixed
+        reason and a ticket reference are required. An Admin manages User accounts; a Super Admin every other
+        account; nobody their own. If the end state already holds the answer is 200 with no change and no event;
+        otherwise `expected_entitlement_revision` must match. Plans never change roles or sessions.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/AdminUserID" }
+      x-error-codes: [invalid_request, invalid_expiry, unsupported_media_type, unauthorized, forbidden, target_not_permitted, not_found, entitlement_conflict, status_conflict, rate_limited, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminPlanRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/AdminUser" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminForbidden" }
+        "404": { $ref: "#/components/responses/AdminNotFound" }
+        "409": { $ref: "#/components/responses/AdminConflict" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/admin/users/{user_id}/role:
+    put:
+      tags: [admin]
+      operationId: changeAdminUserRole
+      summary: Change the target's role; Super Admin only (TRD 06 §5.1).
+      description: |
+        Promotion revokes every target session and requires an active, verified target. Demotion keeps
+        sessions and applies on the next request. A Super Admin's only self change is stepping down to
+        `user` while another active Super Admin remains (`409 last_super_admin` otherwise). If the target
+        already has `role` the answer is 200 with no change; otherwise `expected_role_revision` must match.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/AdminUserID" }
+      x-error-codes: [invalid_request, unsupported_media_type, unauthorized, forbidden, target_not_permitted, not_found, role_conflict, status_conflict, last_super_admin, rate_limited, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminRoleRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/AdminUser" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminForbidden" }
+        "404": { $ref: "#/components/responses/AdminNotFound" }
+        "409": { $ref: "#/components/responses/AdminConflict" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/cartridges:
+    get:
+      tags: [learning]
+      operationId: cartridgeCatalog
+      summary: Latest Free and Premium metadata for the signed-in account (TRD 10).
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unauthorized, rate_limited, internal_error]
+      responses:
+        "200":
+          description: Metadata only, ordered by ID, no query parameters.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [cartridges]
+                properties:
+                  cartridges:
+                    type: array
+                    maxItems: 16
+                    items: { $ref: "#/components/schemas/CartridgeMetadata" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/cartridges/{cartridge_id}/versions/{version}/content:
+    get:
+      tags: [learning]
+      operationId: cartridgeContent
+      summary: Immutable content; Premium authorized at database time on every download.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: cartridge_id, in: path, required: true, schema: { type: string } }
+        - { name: version, in: path, required: true, schema: { type: string } }
+      x-error-codes: [invalid_request, unauthorized, plan_required, not_found, rate_limited, internal_error]
+      responses:
+        "200":
+          description: Exact published JSON, Cache-Control no-store.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CartridgeDocument" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/CartridgePlanRequired" }
+        "404": { $ref: "#/components/responses/AdminNotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/cartridges/{cartridge_id}/versions/{version}/install:
+    post:
+      tags: [learning]
+      operationId: cartridgeInstall
+      summary: Atomic quota-checked vocabulary import; durable per-account version watermark.
+      description: |
+        Explicit install/update creates only entries first appearing after installed_version.
+        Earlier edited/deleted entries remain untouched, including after compaction. A completed
+        retry returns the current watermark without a plan or capacity recheck and adds nothing.
+        New installs require download authorization. Epoch mismatch is never automatically replayed.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: cartridge_id, in: path, required: true, schema: { type: string } }
+        - { name: version, in: path, required: true, schema: { type: string } }
+      x-error-codes: [invalid_request, unauthorized, plan_required, not_found, capacity_changed, sync_reset_required, unsupported_media_type, payload_too_large, rate_limited, sync_unavailable, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [epoch, capacity_basis]
+              properties:
+                epoch: { type: string, format: uuid }
+                capacity_basis:
+                  type: object
+                  additionalProperties: false
+                  required: [live_words, content_bytes]
+                  properties:
+                    live_words: { type: integer, minimum: 0 }
+                    content_bytes: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: Current installation, including a completed retry.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [installed_version, added, head_revision]
+                properties:
+                  installed_version: { type: integer, minimum: 1 }
+                  added: { type: integer, minimum: 0, maximum: 200 }
+                  head_revision: { type: integer, minimum: 0 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/CartridgePlanRequired" }
+        "404": { $ref: "#/components/responses/AdminNotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410": { $ref: "#/components/responses/SyncReset" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/SyncUnavailable" }
+
+components:
+  securitySchemes:
+    rightsAuth:
+      type: http
+      scheme: Rights
+      description: One opaque vop_ capability, limited to its action and operation; never a session.
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: "`Authorization: Bearer vat_…`, exactly one header. Checked in PostgreSQL on every request (TRD 8.1)."
+
+  headers:
+    X-Request-Id:
+      description: Echoes a well-formed inbound id (8 to 64 of `[A-Za-z0-9_-]`, no token prefix) or a generated one.
+      required: true
+      schema: { type: string, pattern: "^[A-Za-z0-9_-]{8,64}$" }
+    Cache-Control:
+      required: true
+      schema: { type: string, enum: [no-store] }
+    Retry-After:
+      description: Whole seconds until the refusing limit's window ends, at least 1.
+      required: true
+      schema: { type: integer, minimum: 1 }
+    WWW-Authenticate:
+      required: true
+      schema: { type: string, enum: [Bearer] }
+
+  parameters:
+    AdminUserID:
+      in: path
+      name: user_id
+      required: true
+      description: Nonzero, 36-character hyphenated account UUID. Authentication and the staff check precede path validation.
+      schema: { type: string, format: uuid }
+
+  requestBodies:
+    Email:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [email]
+            properties:
+              email: { $ref: "#/components/schemas/EmailInput" }
+    CodeWithDevice:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [challenge_token, code, device]
+            properties:
+              challenge_token: { type: string }
+              code: { type: string, description: The 6-digit code. Any other string is a wrong code. }
+              device: { $ref: "#/components/schemas/Device" }
+    CodeWithPassword:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [challenge_token, code, new_password]
+            properties:
+              challenge_token: { type: string }
+              code: { type: string }
+              new_password: { type: string }
+
+  responses:
+    SyncUnavailable:
+      description: "`sync_unavailable`: learning sync is closed (TRD 05 §8.2, §15.2). Retry later."
+      x-codes: [sync_unavailable]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Retry-After: { $ref: "#/components/headers/Retry-After" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    SyncReset:
+      description: "`sync_reset_required`, with `reason` and the current `epoch`. Nothing was applied."
+      x-codes: [sync_reset_required]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Problem" }
+              - { type: object, required: [reason, epoch] }
+    PayloadTooLarge:
+      description: "`payload_too_large`: over 2 MiB or 200 mutations."
+      x-codes: [payload_too_large]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ExportExpired:
+      description: The export download expired.
+      x-codes: [export_expired]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Health:
+      description: Healthy.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [status]
+            properties:
+              status: { type: string, enum: [ok] }
+    Acknowledgement:
+      description: Accepted. The same body for eligible and ineligible requests, apart from token and timestamps.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Acknowledgement" }
+    Tokens:
+      description: A new session. Sent only after the transaction that created it committed.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/TokenResponse" }
+    AccountUser:
+      description: Current account and profile.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/User" }
+    EmailChangeStarted:
+      description: Both proof acknowledgements, regardless of destination eligibility.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [change_id, current_email, new_email]
+            properties:
+              change_id: { type: string, format: uuid }
+              current_email: { $ref: "#/components/schemas/Acknowledgement" }
+              new_email: { $ref: "#/components/schemas/Acknowledgement" }
+    InvalidProfile:
+      description: An editable profile value is invalid.
+      x-codes: [invalid_profile]
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    AdminUser:
+      description: The account's administrative view after the request.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AdminUser" }
+    AdminForbidden:
+      description: "`forbidden`: the actor is not staff. `target_not_permitted`: the TRD 06 matrix refuses this actor, target and action."
+      x-codes: [forbidden, target_not_permitted]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    AdminNotFound:
+      description: Unknown or purged account, or a session the target does not own.
+      x-codes: [not_found]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    AdminConflict:
+      description: "`lifecycle_conflict` or `role_conflict`: stale expected revision. `status_conflict` (with `account_status`): the target's status does not allow it. `last_super_admin`: no other active Super Admin would remain."
+      x-codes: [lifecycle_conflict, role_conflict, status_conflict, last_super_admin, entitlement_conflict]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    OwnedRequestNotFound:
+      description: Unknown or foreign request. No ownership disclosure.
+      x-codes: [not_found]
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    NoContent:
+      description: Done. No body.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+    BadRequest:
+      description: "`invalid_request`, `invalid_email`, `invalid_code` or `code_attempts_exceeded`."
+      x-codes: [invalid_request, invalid_email, invalid_code, code_attempts_exceeded, invalid_expiry]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Unauthorized:
+      description: "`unauthorized`: the token does not authenticate. Never says why."
+      x-codes: [unauthorized]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        WWW-Authenticate: { $ref: "#/components/headers/WWW-Authenticate" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    InvalidCredentials:
+      description: "`invalid_credentials`, the same for every credential failure (AC-7)."
+      x-codes: [invalid_credentials]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    CartridgePlanRequired:
+      description: Premium is required for this download or new install/update.
+      x-codes: [plan_required]
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Forbidden:
+      description: "`account_unavailable` or `invalid_current_password`."
+      x-codes: [account_unavailable, invalid_current_password]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Conflict:
+      description: "`signup_unavailable`, `password_already_set`, `password_not_set` or `current_session_not_allowed`."
+      x-codes: [signup_unavailable, password_already_set, password_not_set, current_session_not_allowed, profile_conflict, email_unchanged, email_unavailable, lifecycle_conflict, export_not_ready, operation_canceled, sequence_gap, capacity_changed, last_super_admin]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    SessionNotFound:
+      description: Unknown or foreign session; never discloses ownership.
+      x-codes: [not_found]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    UnsupportedMediaType:
+      description: "`unsupported_media_type`: Content-Type is missing or is not application/json."
+      x-codes: [unsupported_media_type]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    PolicyViolation:
+      description: "`password_policy_violation`, with every violated rule in `violations`."
+      x-codes: [password_policy_violation]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Problem" }
+              - { type: object, required: [violations] }
+    TooManyRequests:
+      description: "`rate_limited`. The same for every eligibility (AC-27)."
+      x-codes: [rate_limited]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Retry-After: { $ref: "#/components/headers/Retry-After" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    InternalError:
+      description: "`internal_error`. Details are logged by request id only."
+      x-codes: [internal_error]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ServiceUnavailable:
+      description: "`not_ready`: the database did not answer in time."
+      x-codes: [not_ready]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Busy:
+      description: "`busy`: password hashing is saturated (TRD 9.2). Retry after a second."
+      x-codes: [busy]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Retry-After: { $ref: "#/components/headers/Retry-After" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+
+  schemas:
+    CartridgeMetadata:
+      type: object
+      additionalProperties: false
+      required: [id, title, version, required_plan, word_count, sha256, installed_version]
+      properties:
+        id: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,47}$' }
+        title: { type: string, minLength: 1, maxLength: 100 }
+        version: { type: integer, minimum: 1, maximum: 2147483647 }
+        required_plan: { type: string, enum: [free, premium] }
+        word_count: { type: integer, minimum: 1, maximum: 200 }
+        sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        installed_version: { type: integer, minimum: 0, maximum: 2147483647 }
+    CartridgeDocument:
+      type: object
+      additionalProperties: false
+      required: [id, title, version, required_plan, entries]
+      properties:
+        id: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,47}$' }
+        title: { type: string, minLength: 1, maxLength: 100 }
+        version: { type: integer, minimum: 1, maximum: 2147483647 }
+        required_plan: { type: string, enum: [free, premium] }
+        entries:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: object
+            additionalProperties: false
+            required: [entry_id, content]
+            properties:
+              entry_id: { type: string, format: uuid }
+              content: { $ref: "#/components/schemas/VocabularyContent" }
+    EmailInput:
+      type: string
+      description: Trimmed, then parsed and normalized as TRD 3.2. Compared case-insensitively (AC-8).
+    Timestamp:
+      type: string
+      format: date-time
+      description: RFC 3339 in UTC.
+    Token:
+      type: string
+      pattern: "^v(ct|at|rt)_[A-Za-z0-9_-]{43}$"
+    Device:
+      type: object
+      additionalProperties: false
+      required: [name, platform]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64, description: "Not blank, no control characters." }
+        platform: { type: string, enum: [ios, android, web, other] }
+    Acknowledgement:
+      type: object
+      additionalProperties: false
+      required: [challenge_token, expires_at, resend_after]
+      properties:
+        challenge_token:
+          allOf: [{ $ref: "#/components/schemas/Token" }, { pattern: "^vct_" }]
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+        resend_after: { $ref: "#/components/schemas/Timestamp" }
+    Profile:
+      type: object
+      additionalProperties: false
+      required: [display_name, preferred_language, time_zone, daily_goal, revision]
+      properties:
+        display_name: { type: string, nullable: true, minLength: 1, maxLength: 64 }
+        preferred_language: { type: string, enum: [en, vi] }
+        time_zone: { type: string, minLength: 1 }
+        daily_goal: { type: integer, minimum: 1, maximum: 1000, description: "Target words reviewed per day; a preference, not progress." }
+        revision: { type: integer, minimum: 0 }
+    ProfileRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, display_name, preferred_language, time_zone, daily_goal]
+      properties:
+        expected_revision: { type: integer, minimum: 0 }
+        display_name: { type: string, nullable: true }
+        preferred_language: { type: string }
+        time_zone: { type: string }
+        daily_goal: { type: integer }
+    EmailChangeStart:
+      type: object
+      additionalProperties: false
+      required: [new_email]
+      properties:
+        new_email: { type: string }
+    EmailChangeComplete:
+      type: object
+      additionalProperties: false
+      required: [current_challenge_token, current_code, new_challenge_token, new_code]
+      properties:
+        current_challenge_token: { type: string }
+        current_code: { type: string }
+        new_challenge_token: { type: string }
+        new_code: { type: string }
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, email, email_verified_at, has_password, password_changed_at, status, role, created_at, profile, lifecycle_revision]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, description: Current verified sign-in address. }
+        lifecycle_revision: { type: integer, minimum: 0 }
+        profile: { $ref: "#/components/schemas/Profile" }
+        email_verified_at: { type: string, format: date-time, nullable: true }
+        has_password: { type: boolean }
+        password_changed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Informational only; never proof that a particular request succeeded (TRD 5.2).
+        status: { type: string, enum: [active, suspended, deactivated, pending_deletion] }
+        role: { type: string, enum: [user, admin, super_admin] }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+    SessionList:
+      type: object
+      additionalProperties: false
+      required: [current_session_id, sessions]
+      properties:
+        current_session_id: { type: string, format: uuid }
+        sessions:
+          type: array
+          items: { $ref: "#/components/schemas/SessionSummary" }
+    SessionSummary:
+      type: object
+      additionalProperties: false
+      required: [id, device_name, platform, created_at, last_seen_at, refresh_expires_at, absolute_expires_at, is_current]
+      properties:
+        id: { type: string, format: uuid }
+        device_name: { type: string, minLength: 1, maxLength: 64 }
+        platform: { type: string, enum: [ios, android, web, other] }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        last_seen_at: { $ref: "#/components/schemas/Timestamp" }
+        refresh_expires_at: { $ref: "#/components/schemas/Timestamp" }
+        absolute_expires_at: { $ref: "#/components/schemas/Timestamp" }
+        is_current: { type: boolean }
+    TokenResponse:
+      type: object
+      additionalProperties: false
+      required: [session_id, access_token, access_expires_at, refresh_token, refresh_expires_at, user]
+      properties:
+        session_id: { type: string, format: uuid }
+        access_token:
+          allOf: [{ $ref: "#/components/schemas/Token" }, { pattern: "^vat_" }]
+        access_expires_at: { $ref: "#/components/schemas/Timestamp" }
+        refresh_token:
+          allOf: [{ $ref: "#/components/schemas/Token" }, { pattern: "^vrt_" }]
+        refresh_expires_at: { $ref: "#/components/schemas/Timestamp" }
+        user: { $ref: "#/components/schemas/User" }
+    ErrorCode:
+      type: string
+      enum:
+        - plan_required
+        - sync_unavailable
+        - sync_reset_required
+        - sequence_gap
+        - capacity_changed
+        - payload_too_large
+        - lifecycle_conflict
+        - export_not_ready
+        - operation_canceled
+        - export_expired
+        - invalid_profile
+        - profile_conflict
+        - email_unchanged
+        - email_unavailable
+        - invalid_request
+        - invalid_email
+        - password_policy_violation
+        - invalid_code
+        - code_attempts_exceeded
+        - signup_unavailable
+        - rate_limited
+        - unauthorized
+        - invalid_credentials
+        - account_unavailable
+        - password_already_set
+        - password_not_set
+        - invalid_current_password
+        - busy
+        - internal_error
+        - not_ready
+        - current_session_not_allowed
+        - not_found
+        - method_not_allowed
+        - unsupported_media_type
+        - forbidden
+        - target_not_permitted
+        - role_conflict
+        - status_conflict
+        - last_super_admin
+        - entitlement_conflict
+        - invalid_expiry
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, request_id]
+      properties:
+        type: { type: string, enum: [about:blank] }
+        title: { type: string, description: From a fixed table keyed by code; never derived from an error value. }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        code: { $ref: "#/components/schemas/ErrorCode" }
+        request_id: { type: string, pattern: "^[A-Za-z0-9_-]{8,64}$" }
+        violations:
+          type: array
+          minItems: 1
+          items: { type: string, enum: [too_short, too_long, too_common, contains_email] }
+        reason: { type: string, enum: [epoch_changed, writer_unknown, cursor_compacted, cursor_ahead], description: sync_reset_required only. }
+        epoch: { type: string, format: uuid, description: "sync_reset_required only: the owner's current epoch." }
+        live_words: { type: integer, description: capacity_changed only. }
+        content_bytes: { type: integer, description: capacity_changed only. }
+        last_seq: { type: integer, description: "capacity_changed only: the writer's high-water mark, unchanged." }
+        account_status: { type: string, enum: [active, suspended, deactivated, pending_deletion], description: "status_conflict only: the target's current status." }
+
+    DeactivateRequest:
+      type: object
+      additionalProperties: false
+      required: [confirm, expected_revision]
+      properties:
+        confirm: { type: boolean, enum: [true] }
+        expected_revision: { type: integer, minimum: 0 }
+    EmailRightsRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email: { type: string }
+    RightsProofRequest:
+      type: object
+      additionalProperties: false
+      required: [challenge_token, code]
+      properties:
+        challenge_token: { type: string }
+        code: { type: string }
+    DeleteProofRequest:
+      type: object
+      additionalProperties: false
+      required: [challenge_token, code, confirm]
+      properties:
+        challenge_token: { type: string }
+        code: { type: string }
+        confirm: { type: string, enum: [delete_account] }
+    RightsStarted:
+      type: object
+      additionalProperties: false
+      required: [operation_id, operation_token, challenge_token, expires_at, resend_after]
+      properties:
+        operation_id: { type: string, format: uuid }
+        operation_token: { type: string, pattern: '^vop_[A-Za-z0-9_-]{43}$' }
+        challenge_token: { $ref: "#/components/schemas/Token" }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+        resend_after: { $ref: "#/components/schemas/Timestamp" }
+    RightsOperation:
+      type: object
+      additionalProperties: false
+      required: [operation_id, action, state, requested_at, accepted_at, completed_at, expires_at, download_expires_at, backup_expiry_due_at]
+      properties:
+        operation_id: { type: string, format: uuid }
+        action: { type: string, enum: [export, delete, reactivate] }
+        state: { type: string, enum: [awaiting_proof, pending, ready, completed, canceled, expired] }
+        requested_at: { $ref: "#/components/schemas/Timestamp" }
+        accepted_at: { type: string, format: date-time, nullable: true }
+        completed_at: { type: string, format: date-time, nullable: true }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+        download_expires_at: { type: string, format: date-time, nullable: true }
+        backup_expiry_due_at: { type: string, format: date-time, nullable: true }
+    AccountExport:
+      type: object
+      additionalProperties: false
+      required: [schema_version, snapshot_at, snapshot_revision, account, vocabulary]
+      properties:
+        schema_version: { type: integer, enum: [2, 3], description: 3 since TRD 09 (adds entitlements); exports published earlier keep 2. }
+        snapshot_at: { $ref: "#/components/schemas/Timestamp" }
+        snapshot_revision: { type: integer, minimum: 0 }
+        account:
+          type: object
+          additionalProperties: false
+          required: [user_id, email, email_verified_at, created_at, display_name, preferred_language, time_zone, daily_goal]
+          properties:
+            user_id: { type: string, format: uuid }
+            email: { type: string }
+            email_verified_at: { type: string, format: date-time, nullable: true }
+            created_at: { $ref: "#/components/schemas/Timestamp" }
+            display_name: { type: string, nullable: true }
+            preferred_language: { type: string, enum: [en, vi] }
+            time_zone: { type: string }
+            daily_goal: { type: integer }
+        cartridge_installations:
+          type: array
+          maxItems: 16
+          description: TRD 10 account installation watermarks; absent in older schema-3 artifacts.
+          items:
+            type: object
+            additionalProperties: false
+            required: [cartridge_id, installed_version]
+            properties:
+              cartridge_id: { type: string, maxLength: 48 }
+              installed_version: { type: integer, minimum: 1, maximum: 2147483647 }
+        entitlements:
+          type: object
+          additionalProperties: false
+          description: |
+            Schema 3 (TRD 09). The plan at snapshot_at and every retained grant period (at most 50, ended within
+            retention_days). Never staff identifiers, ticket references, reason codes or audit metadata.
+          required: [plan, plan_expires_at, retention_days, grants]
+          properties:
+            plan: { type: string, enum: [free, premium] }
+            plan_expires_at: { type: string, format: date-time, nullable: true }
+            retention_days: { type: integer, enum: [180] }
+            grants:
+              type: array
+              maxItems: 50
+              items:
+                type: object
+                additionalProperties: false
+                required: [starts_at, ends_at, ended_at, status, source]
+                properties:
+                  starts_at: { $ref: "#/components/schemas/Timestamp" }
+                  ends_at: { $ref: "#/components/schemas/Timestamp" }
+                  ended_at: { type: string, format: date-time, nullable: true }
+                  status: { type: string, enum: [active, expired, replaced, revoked] }
+                  source: { type: string, enum: [manual] }
+        vocabulary:
+          type: array
+          maxItems: 50000
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, revision, capture_day, client_created_at, created_at, updated_at, content]
+            properties:
+              id: { type: string, format: uuid }
+              revision: { type: integer, minimum: 1 }
+              capture_day: { type: string, format: date }
+              client_created_at: { $ref: "#/components/schemas/Timestamp" }
+              created_at: { $ref: "#/components/schemas/Timestamp" }
+              updated_at: { $ref: "#/components/schemas/Timestamp" }
+              content: { $ref: "#/components/schemas/VocabularyContent" }
+    EmptyRequest:
+      type: object
+      additionalProperties: false
+      maxProperties: 0
+    VocabularyContent:
+      type: object
+      additionalProperties: false
+      required: [word, meaning, pronunciation, part_of_speech, source, examples, tags]
+      properties:
+        word: { type: string }
+        meaning: { type: string }
+        pronunciation: { type: string, nullable: true }
+        part_of_speech: { type: string, nullable: true, enum: [n, v, adj, adv, phr, idm, etc, null] }
+        source: { type: string, nullable: true }
+        examples: { type: array, maxItems: 20, items: { type: string } }
+        tags: { type: array, maxItems: 30, items: { type: string } }
+    VocabularyRecord:
+      type: object
+      additionalProperties: false
+      required: [entity_id, revision, deleted, content, capture_day, client_created_at, updated_at]
+      description: The canonical server state of one word. A tombstone (deleted) has null content and dates.
+      properties:
+        entity_id: { type: string, format: uuid }
+        revision: { type: integer, minimum: 1 }
+        deleted: { type: boolean }
+        content:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/VocabularyContent" }]
+        capture_day: { type: string, format: date, nullable: true }
+        client_created_at: { type: string, format: date-time, nullable: true }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+    LearningWriterState:
+      type: object
+      nullable: true
+      additionalProperties: false
+      required: [writer_id, last_seq, active]
+      properties:
+        writer_id: { type: string, format: uuid }
+        last_seq: { type: integer, minimum: 0, description: "High-water mark. It proves processing, not that an edit applied." }
+        active: { type: boolean }
+    LearningState:
+      type: object
+      additionalProperties: false
+      required: [epoch, head_revision, tombstone_horizon, live_words, word_limit, content_bytes, content_byte_limit, writer]
+      properties:
+        epoch: { type: string, format: uuid }
+        head_revision: { type: integer, minimum: 0 }
+        tombstone_horizon: { type: integer, minimum: 0 }
+        live_words: { type: integer, minimum: 0 }
+        word_limit: { type: integer, enum: [50000] }
+        content_bytes: { type: integer, minimum: 0 }
+        content_byte_limit: { type: integer, enum: [67108864] }
+        writer: { $ref: "#/components/schemas/LearningWriterState" }
+    LearningWriter:
+      type: object
+      additionalProperties: false
+      required: [writer_id, last_seq, epoch]
+      properties:
+        writer_id: { type: string, format: uuid }
+        last_seq: { type: integer, enum: [0] }
+        epoch: { type: string, format: uuid }
+    LearningMutation:
+      type: object
+      description: |
+        One queued change (TRD 05 §5.3). The fields present depend on op: create {seq, op, entity_id, data};
+        update {seq, op, entity_id, base_revision, changed_fields, data with exactly those fields};
+        delete {seq, op, entity_id, base_revision}; restore {seq, op, entity_id, base_revision, data}.
+        A full data object holds every VocabularyContent field plus capture_day (YYYY-MM-DD) and
+        client_created_at (RFC 3339). The deduplication hash covers the exact bytes of this object.
+      required: [seq, op, entity_id]
+      properties:
+        seq: { type: integer, minimum: 1 }
+        op: { type: string, enum: [create, update, delete, restore] }
+        entity_id: { type: string, format: uuid }
+        base_revision: { type: integer, minimum: 0 }
+        changed_fields:
+          type: array
+          minItems: 1
+          items: { type: string, enum: [word, meaning, pronunciation, part_of_speech, source, examples, tags, capture_day] }
+        data: { type: object }
+    LearningPushRequest:
+      type: object
+      additionalProperties: false
+      required: [epoch, writer_id, mutations]
+      properties:
+        epoch: { type: string, format: uuid }
+        writer_id: { type: string, format: uuid }
+        mutations: { type: array, minItems: 1, maxItems: 200, items: { $ref: "#/components/schemas/LearningMutation" } }
+    LearningImportRequest:
+      type: object
+      additionalProperties: false
+      required: [epoch, writer_id, capacity_basis, mutations]
+      properties:
+        epoch: { type: string, format: uuid }
+        writer_id: { type: string, format: uuid }
+        capacity_basis:
+          type: object
+          additionalProperties: false
+          required: [live_words, content_bytes]
+          properties:
+            live_words: { type: integer, minimum: 0 }
+            content_bytes: { type: integer, minimum: 0 }
+        mutations: { type: array, minItems: 1, maxItems: 200, items: { $ref: "#/components/schemas/LearningMutation" } }
+    LearningItemResult:
+      type: object
+      additionalProperties: false
+      required: [seq, entity_id, outcome, record]
+      properties:
+        seq: { type: integer, minimum: 1 }
+        entity_id: { type: string, format: uuid }
+        outcome: { type: string, enum: [applied, merged, no_op, duplicate, rejected] }
+        original_outcome: { type: string, enum: [applied, merged, no_op, rejected], description: duplicate only. }
+        code: { type: string, enum: [invalid_item, mutation_reused, mutation_expired, stale_base, unknown_item, deleted_on_server, quota_exceeded, id_in_use] }
+        detail: { type: string, enum: [invalid_utf8, control_character, invalid_part_of_speech, invalid_date, field_empty, too_many_entries, field_too_long, item_too_large] }
+        field: { type: string, enum: [word, meaning, pronunciation, part_of_speech, source, examples, tags] }
+        limit: { type: string, enum: [words, bytes] }
+        conflicted_fields: { type: array, items: { type: string } }
+        revision: { type: integer, minimum: 1 }
+        record:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/VocabularyRecord" }]
+    LearningPushResult:
+      type: object
+      additionalProperties: false
+      required: [results, head_revision, live_words, content_bytes, last_seq]
+      properties:
+        results: { type: array, items: { $ref: "#/components/schemas/LearningItemResult" } }
+        head_revision: { type: integer, minimum: 0 }
+        live_words: { type: integer, minimum: 0 }
+        content_bytes: { type: integer, minimum: 0 }
+        last_seq: { type: integer, minimum: 0 }
+    LearningChanges:
+      type: object
+      additionalProperties: false
+      required: [epoch, changes, cursor, has_more]
+      properties:
+        epoch: { type: string, format: uuid }
+        changes: { type: array, maxItems: 500, items: { $ref: "#/components/schemas/VocabularyRecord" } }
+        cursor: { type: string, pattern: '^c1\.[A-Za-z0-9_-]{32}$' }
+        has_more: { type: boolean }
+    LearningSnapshot:
+      type: object
+      additionalProperties: false
+      required: [epoch, snapshot_revision, items, next_page_token, catch_up_cursor]
+      properties:
+        epoch: { type: string, format: uuid }
+        snapshot_revision: { type: integer, minimum: 0 }
+        items: { type: array, maxItems: 500, items: { $ref: "#/components/schemas/VocabularyRecord" } }
+        next_page_token: { type: string, nullable: true, pattern: '^s1\.[A-Za-z0-9_-]{54}$' }
+        catch_up_cursor: { type: string, pattern: '^c1\.[A-Za-z0-9_-]{32}$' }
+    AdminTicketRef:
+      type: string
+      nullable: true
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$'
+      description: Optional external ticket identifier. No spaces, no @, nothing token-shaped.
+    AdminListItem:
+      type: object
+      additionalProperties: false
+      required: [id, email, status, role, created_at, state_changed_at]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        status: { type: string, enum: [active, suspended, deactivated, pending_deletion] }
+        role: { type: string, enum: [user, admin, super_admin] }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        state_changed_at: { type: string, format: date-time, nullable: true }
+    AdminUserPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_page_token]
+      properties:
+        items: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/AdminListItem" } }
+        next_page_token: { type: string, nullable: true, pattern: '^a1\.[A-Za-z0-9_-]{43}$' }
+    AdminUser:
+      type: object
+      additionalProperties: false
+      required: [id, email, email_verified_at, has_password, password_changed_at, display_name, preferred_language, time_zone,
+        created_at, status, lifecycle_revision, state_changed_at, suspension, pending_deletion, role, role_revision,
+        plan, plan_expires_at, entitlement_revision,
+        role_changed_at, sessions, allowed_actions, assignable_roles]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        email_verified_at: { type: string, format: date-time, nullable: true }
+        has_password: { type: boolean }
+        password_changed_at: { type: string, format: date-time, nullable: true }
+        display_name: { type: string, nullable: true }
+        preferred_language: { type: string }
+        time_zone: { type: string }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        status: { type: string, enum: [active, suspended, deactivated, pending_deletion] }
+        lifecycle_revision: { type: integer, minimum: 0 }
+        state_changed_at: { type: string, format: date-time, nullable: true }
+        suspension:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [reason_code, ticket_ref, suspended_at, suspended_by_user_id, resume_status]
+          properties:
+            reason_code: { type: string }
+            ticket_ref: { $ref: "#/components/schemas/AdminTicketRef" }
+            suspended_at: { type: string, format: date-time, nullable: true }
+            suspended_by_user_id: { type: string, format: uuid, nullable: true }
+            resume_status: { type: string, enum: [active, deactivated] }
+        pending_deletion:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [accepted_at]
+          properties:
+            accepted_at: { type: string, format: date-time, nullable: true }
+        role: { type: string, enum: [user, admin, super_admin] }
+        role_revision: { type: integer, minimum: 0 }
+        role_changed_at: { type: string, format: date-time, nullable: true }
+        plan: { type: string, enum: [free, premium], description: Effective plan at database time (TRD 09). Separate from role. }
+        plan_expires_at: { type: string, format: date-time, nullable: true, description: End of the active Premium grant (exclusive). }
+        entitlement_revision: { type: integer, minimum: 0 }
+        sessions:
+          type: object
+          additionalProperties: false
+          required: [live_count, last_seen_at]
+          properties:
+            live_count: { type: integer, minimum: 0 }
+            last_seen_at: { type: string, format: date-time, nullable: true }
+        allowed_actions:
+          type: array
+          items: { type: string, enum: [suspend, reinstate, change_role, view_sessions, revoke_sessions, manage_plan] }
+        assignable_roles:
+          type: array
+          items: { type: string, enum: [user, admin, super_admin] }
+    AdminSessionList:
+      type: object
+      additionalProperties: false
+      required: [sessions]
+      properties:
+        sessions:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, device_name, platform, created_at, last_seen_at, refresh_expires_at, absolute_expires_at]
+            properties:
+              id: { type: string, format: uuid }
+              device_name: { type: string, minLength: 1, maxLength: 64 }
+              platform: { type: string, enum: [ios, android, web, other] }
+              created_at: { $ref: "#/components/schemas/Timestamp" }
+              last_seen_at: { $ref: "#/components/schemas/Timestamp" }
+              refresh_expires_at: { $ref: "#/components/schemas/Timestamp" }
+              absolute_expires_at: { $ref: "#/components/schemas/Timestamp" }
+    AdminSessionRevocationRequest:
+      type: object
+      additionalProperties: false
+      required: [session_id, reason_code, ticket_ref]
+      properties:
+        session_id: { type: string, format: uuid, nullable: true, description: null revokes every target session. }
+        reason_code: { type: string, enum: [account_compromise, owner_request, security_review, other] }
+        ticket_ref: { $ref: "#/components/schemas/AdminTicketRef" }
+    AdminTransitionRequest:
+      type: object
+      additionalProperties: false
+      required: [action, reason_code, ticket_ref, expected_lifecycle_revision]
+      properties:
+        action: { type: string, enum: [suspend, reinstate] }
+        reason_code:
+          type: string
+          description: "suspend: abuse, fraud, account_compromise, policy_violation, legal_request, owner_request, other. reinstate: appeal_upheld, issue_resolved, suspended_in_error, other."
+        ticket_ref: { $ref: "#/components/schemas/AdminTicketRef" }
+        expected_lifecycle_revision: { type: integer, minimum: 0 }
+    AdminRoleRequest:
+      type: object
+      additionalProperties: false
+      required: [role, reason_code, ticket_ref, expected_role_revision]
+      properties:
+        role: { type: string, enum: [user, admin, super_admin] }
+        reason_code: { type: string, enum: [staffing_change, access_review, account_compromise, other] }
+        ticket_ref: { $ref: "#/components/schemas/AdminTicketRef" }
+        expected_role_revision: { type: integer, minimum: 0 }
+    AdminAuditEntry:
+      type: object
+      additionalProperties: false
+      required: [occurred_at, action, outcome, actor_user_id, reason_code, ticket_ref]
+      properties:
+        occurred_at: { $ref: "#/components/schemas/Timestamp" }
+        action: { type: string, enum: [suspend, reinstate, role_change, role_bootstrap, sessions_revoke, premium_grant, premium_revoke] }
+        outcome: { type: string, enum: [success, failure] }
+        actor_user_id: { type: string, format: uuid, nullable: true, description: The acting staff account; null for the CLI bootstrap. }
+        reason_code: { type: string, nullable: true, description: The fixed TRD 06 reason code. }
+        ticket_ref: { $ref: "#/components/schemas/AdminTicketRef" }
+    AdminAuditPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_page_token]
+      properties:
+        items: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/AdminAuditEntry" } }
+        next_page_token: { type: string, nullable: true, pattern: '^h1\.[A-Za-z0-9_-]{32}$' }
+    Entitlements:
+      type: object
+      additionalProperties: false
+      required: [plan, plan_expires_at, limits, checked_at]
+      properties:
+        plan: { type: string, enum: [free, premium] }
+        plan_expires_at: { type: string, format: date-time, nullable: true }
+        limits:
+          type: object
+          additionalProperties: false
+          required: [live_words, content_bytes, writers]
+          properties:
+            live_words: { type: integer, enum: [50000] }
+            content_bytes: { type: integer, enum: [67108864] }
+            writers: { type: integer, enum: [20] }
+        checked_at: { $ref: "#/components/schemas/Timestamp" }
+    AdminPlanRequest:
+      type: object
+      additionalProperties: false
+      required: [plan, ends_at, reason_code, ticket_ref, expected_entitlement_revision]
+      properties:
+        plan: { type: string, enum: [premium, free] }
+        ends_at: { type: string, format: date-time, nullable: true, description: Required for premium (at most 366 days ahead); null for free. }
+        reason_code:
+          type: string
+          description: "premium: support_courtesy, beta_access, partner, promotion, other. free: granted_in_error, abuse, owner_request, ended_early, other."
+        ticket_ref: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$', description: "Required; no token prefix." }
+        expected_entitlement_revision: { type: integer, minimum: 0 }

@@ -178,7 +178,7 @@ void main() {
       flow.dispose();
     });
 
-    test('a guest notebook is adopted by the first sign-in', () async {
+    test('a guest notebook waits for explicit import after sign-in', () async {
       await seed('guest-word');
       server.on(
         '/otp/verify',
@@ -196,6 +196,8 @@ void main() {
         ),
         isTrue,
       );
+      expect(await wordIds(), isEmpty);
+      await repo.activateNotebook(null);
       expect(await wordIds(), ['guest-word']);
     });
 
@@ -682,7 +684,13 @@ void main() {
         ..on('/auth/refresh', (_) => fail(401, 'expired'))
         ..on('/deletion-receipt', (_) => ok({'deleted': false}));
       expect(await auth.deletePhoneAccount(c, '123456'), isFalse);
-      expect(await wordIds(), ['a-word'], reason: 'notebook kept');
+      await auth.notebookSettled;
+      expect(
+        await wordIds(),
+        isEmpty,
+        reason: 'account cache is closed, not deleted',
+      );
+      expect(await archives(), contains(accountA));
       expect(auth.isSignedIn, isFalse, reason: 'the session really ended');
       expect(auth.hasPendingDeletion, isTrue);
       expect(auth.lastError, contains('Still confirming'));
@@ -730,19 +738,26 @@ void main() {
   });
 
   group('session expiry and sign-out ownership', () {
-    test('generic session expiry never clears the notebook', () async {
-      final auth = await signedInAsA();
-      server
-        ..on('/users/me', (_) => fail(401, 'Authentication required'))
-        ..on('/auth/refresh', (_) => fail(401, 'expired'));
-      await auth.loadProfile();
-      expect(auth.isSignedIn, isFalse);
-      expect(await wordIds(), ['a-word']);
-      expect(tokens.pendingDeletion, isNull);
-    });
+    test(
+      'generic session expiry closes the cache and opens guest without deleting it',
+      () async {
+        final auth = await signedInAsA();
+        server
+          ..on('/users/me', (_) => fail(401, 'Authentication required'))
+          ..on('/auth/refresh', (_) => fail(401, 'expired'));
+        await auth.loadProfile();
+        await auth.notebookSettled;
+        expect(auth.isSignedIn, isFalse);
+        expect(await wordIds(), isEmpty);
+        expect(tokens.refreshToken, isNull);
+        await repo.activateNotebook(accountA);
+        expect(await wordIds(), ['a-word']);
+        expect(tokens.pendingDeletion, isNull);
+      },
+    );
 
     test(
-      'words added after sign-out stay with the signed-out account’s notebook',
+      'words added after sign-out stay in guest and never join an account cache',
       () async {
         final auth = await signedInAsA();
         server.on('/auth/logout', (_) => http.Response('', 204));
@@ -765,7 +780,9 @@ void main() {
         );
         expect(await wordIds(), isEmpty, reason: 'B gets its own notebook');
         await repo.activateNotebook(accountA);
-        expect((await wordIds()).toSet(), {'a-word', 'guest-after-signout'});
+        expect((await wordIds()).toSet(), {'a-word'});
+        await repo.activateNotebook(null);
+        expect(await wordIds(), ['guest-after-signout']);
       },
     );
   });

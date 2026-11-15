@@ -1,5 +1,23 @@
 # Account, notebook and feedback rollout
 
+> Current Go staging checklist through TRD 10: [staging-verification.md](staging-verification.md).
+> It supersedes deployment instructions in this legacy Rust/phone runbook; sync remains closed.
+>
+> Go integration update (2026-11-15): the runbook below is the legacy Rust
+> phone/account deployment. Production Flutter now uses Go email sign-in,
+> opaque session rotation, operation-capability deletion receipts and TRD 05
+> vocabulary sync. See [Flutter verification](trd/05-flutter-verification.md)
+> for local Go/PostgreSQL/Mailpit evidence and remaining release gates.
+> **Keep the Go rollout sync gate closed**; do not enable it through this legacy
+> rollout. Sign-out opens guest, and only confirmed deletion clears the recorded
+> account's cache and queue. Same-email re-registration opens a new UUID.
+>
+> Cartridge restore review (2026-11-15): the Go library now lists blocked installation
+> requests per account. Discard is local; Start a new install requires fresh server checks
+> and explicit confirmation. Opening, cancelling or restarting review sends no install POST.
+> See TRD 10 §4 and staging verification §9; the Go sync gate stays closed.
+
+
 Implementation updated 10 November 2026 for `feat/first-launch-native-accounts`. The existing server and OTP provider belong to the Veea team; Nin will supply their connection details. No production service, paid SMS subscription or Zalo group was created.
 
 ## Experience in the app
@@ -152,3 +170,14 @@ The new migration adds an account-binding constraint; check old non-signin OTP
 rows for null user IDs before applying it. Support/contact URLs and the privacy
 policy still need the team's real values. No public account launch has been
 performed by this branch.
+
+## TRD 10 cartridge rollout amendment (2026-11-15)
+
+The learner catalog now offers one bundled Free offline starter and signed-in server pack
+metadata. Synthetic Free/Premium fixtures are development-only pending Nin's real classification.
+Deploy migration 00015 and API/CLI before the Flutter client. Keep the vocabulary/install gate
+closed until TRD 05 device/deployment checks and the operator decision. Verify staging plan
+expiry/refusal, persistent retry after restart, offline installed words after downgrade and
+account isolation/deletion. Only then publish approved real content and remove Premium content
+from future bundles; historical public bundles and Git history remain public. TRD 10 §8 is the
+release checklist; payments are separate.

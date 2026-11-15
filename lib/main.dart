@@ -5,13 +5,16 @@ import 'package:provider/provider.dart';
 
 import 'core/config/app_config.dart';
 import 'data/local/legacy_import.dart';
+import 'data/cartridges/cartridge_api.dart';
 import 'data/feedback_repository.dart';
 import 'providers/feedback_provider.dart';
 import 'data/local/sqlite_vocabulary_repository.dart';
-import 'data/remote/api_client.dart';
-import 'data/remote/auth_api.dart';
-import 'data/remote/token_store.dart';
-import 'data/remote/vocabulary_api.dart';
+import 'data/remote/go/api_client.dart';
+import 'data/remote/go/auth_api.dart';
+import 'data/remote/go/session_store.dart';
+import 'providers/go_auth_provider.dart';
+import 'data/sync/learning_sync_api.dart';
+import 'data/sync/sync_engine.dart';
 import 'providers/app_gate_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/cartridge_provider.dart';
@@ -44,14 +47,21 @@ Future<void> main() async {
     final vocabulary = VocabularyProvider(repository);
     await vocabulary.init();
 
-    const tokens = TokenStore();
-    final apiClient = ApiClient(tokenStore: tokens);
+    final tokens = GoTokenStore();
+    final apiClient = GoApiClient(tokens: tokens);
     final sync = SyncService(
       repository: repository,
-      api: VocabularyApi(apiClient),
+      learningEngine: SyncEngine(
+        db: repository.database,
+        api: LearningSyncApi(
+          client: GoLearningHttpClient(apiClient),
+          baseUrl: AppConfig.apiBaseUrl,
+          accessToken: tokens.readAccessToken,
+        ),
+      ),
     );
-    final auth = AuthProvider(
-      authApi: AuthApi(client: apiClient, tokens: tokens),
+    final auth = GoAuthProvider(
+      authApi: GoAuthApi(client: apiClient, tokens: tokens),
       tokens: tokens,
       client: apiClient,
       // Deleting an account has to wipe this device too, so the provider needs
@@ -92,6 +102,11 @@ Future<void> main() async {
     runApp(
       VeeaEnglishApp(
         vocabulary: vocabulary,
+        cartridges: CartridgeProvider(
+          repository: repository,
+          api: GoCartridgeApi(apiClient),
+          sync: sync,
+        ),
         auth: auth,
         sync: sync,
         pronunciation: pronunciation,
@@ -151,6 +166,7 @@ class VeeaEnglishApp extends StatefulWidget {
     this.widgetProvider,
     this.appGateProvider,
     this.feedback,
+    this.cartridges,
   });
 
   final VocabularyProvider vocabulary;
@@ -161,6 +177,7 @@ class VeeaEnglishApp extends StatefulWidget {
   final WidgetProvider? widgetProvider;
   final AppGateProvider? appGateProvider;
   final FeedbackProvider? feedback;
+  final CartridgeProvider? cartridges;
 
   @override
   State<VeeaEnglishApp> createState() => _VeeaEnglishAppState();
@@ -189,6 +206,8 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
   }
 
   Future<void> _refreshNotebook(String? owner, int version) async {
+    await widget.auth.notebookSettled;
+    if (!mounted || version != _accountViewVersion) return;
     await widget.vocabulary.init();
     if (!mounted || version != _accountViewVersion) return;
     await _appGateProvider.init();
@@ -209,7 +228,7 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
   Future<void> _syncNotebook() async {
     if (!widget.auth.isSignedIn ||
         !AppConfig.isCloudEnabled ||
-        widget.auth.hasPendingDeletion) {
+        widget.auth.blocksCloudSync) {
       return;
     }
     if (await widget.sync.synchronise() && mounted) {
@@ -388,7 +407,16 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
           create: (_) => widget.widgetProvider ?? (WidgetProvider()..init()),
         ),
         ChangeNotifierProvider(create: (_) => PetProvider()..init()),
-        ChangeNotifierProvider(create: (_) => CartridgeProvider()),
+        ChangeNotifierProvider(
+          create: (_) =>
+              widget.cartridges ??
+              CartridgeProvider(
+                repository:
+                    widget.vocabulary.repository is SqliteVocabularyRepository
+                    ? widget.vocabulary.repository as SqliteVocabularyRepository
+                    : null,
+              ),
+        ),
         ChangeNotifierProvider(create: (_) => CommutePlaylistService()..init()),
         Provider<PronunciationService>.value(value: widget.pronunciation),
       ],

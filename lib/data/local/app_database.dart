@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:path/path.dart' show join;
 import 'package:sqflite/sqflite.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../models/text_normalizer.dart';
 
@@ -30,7 +31,7 @@ class AppDatabase {
   static const String gateProgressTable = 'gate_round_progress';
 
   /// Bump this and add a branch to [_upgrade] whenever the schema changes.
-  static const int version = 11;
+  static const int version = 14;
 
   /// Opens the database, creating or migrating the schema as needed.
   ///
@@ -65,6 +66,9 @@ class AppDatabase {
     await _createGateRotation(db);
     await _migrateWordSearch(db);
     await _createAccountWorkspaces(db);
+    await _createLearningSync(db);
+    await _createSyncRetryFences(db);
+    await _createCartridgeState(db);
   }
 
   static Future<void> _upgrade(Database db, int from, int to) async {
@@ -85,6 +89,178 @@ class AppDatabase {
     if (from < 9) await _createGateRotation(db);
     if (from < 10) await _migrateWordSearch(db);
     if (from < 11) await _createAccountWorkspaces(db);
+    if (from < 12) await _createLearningSync(db);
+    if (from < 13) await _createSyncRetryFences(db);
+    if (from < 14) await _createCartridgeState(db);
+  }
+
+  static Future<void> _createCartridgeState(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS cartridge_local_state (
+        owner_id TEXT NOT NULL, cartridge_id TEXT NOT NULL,
+        installed_version INTEGER NOT NULL DEFAULT 0,
+        pending_version INTEGER, pending_body TEXT,
+        pending_unknown INTEGER NOT NULL DEFAULT 0,
+        needs_confirmation INTEGER NOT NULL DEFAULT 0,
+        blocked INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (owner_id, cartridge_id)
+      )
+    ''');
+  }
+
+  /// Archive key of the guest notebook in `account_workspaces` (TRD 05 §9.1).
+  static const String guestWorkspace = '__guest__';
+
+  /// v12, TRD 05 learning sync (Go contract).
+  ///
+  /// - `words.provenance`: `guest_created`, `account` or `legacy_untagged`.
+  ///   Every pre-existing row, live or archived, is `legacy_untagged`: the old
+  ///   schema records no guest provenance, so none is positive (§9.6). That
+  ///   includes words imported from untagged backups and an account notebook
+  ///   whose owner marker was cleared at sign-out.
+  /// - A trigger stamps new rows `guest_created` or `account` from the owner
+  ///   marker at insert time, unless the writer chose a provenance.
+  /// - `server_revision` / `server_copy`: the last known server record, the
+  ///   base every never-sent edit is diffed against. `sync_hold` keeps a word
+  ///   local (`quota`, `invalid`); `sync_intent = 'restore'` marks an explicit
+  ///   undo of a synced delete.
+  /// - Partition, queue, review, staging and import-decision tables, keyed by
+  ///   partition (`guest` or `account:<user_id>`).
+  static Future<void> _createLearningSync(DatabaseExecutor db) async {
+    final cols = (await db.rawQuery(
+      'PRAGMA table_info($wordsTable)',
+    )).map((r) => r['name']).toSet();
+    for (final c in {
+      'provenance': 'TEXT',
+      'server_revision': 'INTEGER',
+      'server_copy': 'TEXT',
+      'sync_hold': 'TEXT',
+      'sync_intent': 'TEXT',
+    }.entries) {
+      if (!cols.contains(c.key)) {
+        await db.execute(
+          'ALTER TABLE $wordsTable ADD COLUMN ${c.key} ${c.value}',
+        );
+      }
+    }
+    await db.execute(
+      "UPDATE $wordsTable SET provenance = 'legacy_untagged' WHERE provenance IS NULL",
+    );
+    final archives = await db.query('account_workspaces');
+    for (final a in archives) {
+      final payload =
+          jsonDecode(a['payload']! as String) as Map<String, dynamic>;
+      final rows = (payload[wordsTable] as List?) ?? const [];
+      for (final row in rows.cast<Map<String, dynamic>>()) {
+        row['provenance'] ??= 'legacy_untagged';
+      }
+      // Pre-Go ownership cannot identify a Go account. Open archived
+      // vocabulary in the guest notebook too, preserving every version on ID
+      // collision. Keep its original local history in a legacy-only archive;
+      // it can never be restored as a Go account cache by matching an old ID.
+      for (final row in rows.cast<Map<String, dynamic>>()) {
+        final copy = Map<String, Object?>.from(row);
+        if ((await db.query(
+          wordsTable,
+          columns: ['id'],
+          where: 'id = ?',
+          whereArgs: [copy['id']],
+        )).isNotEmpty) {
+          copy['id'] = const Uuid().v4();
+        }
+        await db.insert(wordsTable, copy);
+      }
+      await db.delete(
+        'account_workspaces',
+        where: 'account_id = ?',
+        whereArgs: [a['account_id']],
+      );
+      await db.insert('account_workspaces', {
+        'account_id': '__legacy__:${a['account_id']}',
+        'payload': jsonEncode(payload),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+    await db.delete(
+      'app_metadata',
+      where: 'key = ?',
+      whereArgs: ['notebook_owner'],
+    );
+    await db.execute('''
+      CREATE TRIGGER IF NOT EXISTS words_provenance AFTER INSERT ON $wordsTable
+      WHEN NEW.provenance IS NULL
+      BEGIN
+        UPDATE $wordsTable SET provenance = CASE
+          WHEN EXISTS (SELECT 1 FROM app_metadata WHERE key = 'notebook_owner') THEN 'account'
+          ELSE 'guest_created' END
+        WHERE id = NEW.id;
+      END
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sync_partitions (
+        partition TEXT PRIMARY KEY,
+        writer_id TEXT, epoch TEXT, cursor TEXT,
+        next_seq INTEGER NOT NULL DEFAULT 0,
+        guest_dataset_id TEXT
+      )''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sync_queue (
+        partition TEXT NOT NULL, writer_id TEXT NOT NULL, seq INTEGER NOT NULL,
+        kind TEXT NOT NULL, entity_id TEXT NOT NULL, op TEXT NOT NULL,
+        payload BLOB NOT NULL, local_updated_at TEXT,
+        unknown INTEGER NOT NULL DEFAULT 0, basis TEXT,
+        PRIMARY KEY (partition, writer_id, seq)
+      )''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sync_review (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        partition TEXT NOT NULL, entity_id TEXT NOT NULL, op TEXT NOT NULL,
+        payload TEXT NOT NULL, content TEXT, reason TEXT NOT NULL,
+        server_record TEXT, created_at TEXT NOT NULL
+      )''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sync_staging (
+        partition TEXT NOT NULL, entity_id TEXT NOT NULL, record TEXT NOT NULL,
+        PRIMARY KEY (partition, entity_id)
+      )''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sync_import_decisions (
+        user_id TEXT NOT NULL, guest_dataset_id TEXT NOT NULL,
+        decision TEXT NOT NULL, decided_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, guest_dataset_id)
+      )''');
+  }
+
+  static Future<void> _createSyncRetryFences(DatabaseExecutor db) async {
+    final partitions = (await db.rawQuery(
+      'PRAGMA table_info(sync_partitions)',
+    )).map((r) => r['name']);
+    if (!partitions.contains('import_confirmation')) {
+      await db.execute(
+        'ALTER TABLE sync_partitions ADD COLUMN import_confirmation INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    final queue = (await db.rawQuery(
+      'PRAGMA table_info(sync_queue)',
+    )).map((r) => r['name']);
+    if (!queue.contains('request_id')) {
+      await db.execute('ALTER TABLE sync_queue ADD COLUMN request_id TEXT');
+    }
+    final review = (await db.rawQuery(
+      'PRAGMA table_info(sync_review)',
+    )).map((r) => r['name']).toSet();
+    for (final column in {
+      'writer_id': 'TEXT',
+      'seq': 'INTEGER',
+      'original_payload': 'BLOB',
+    }.entries) {
+      if (!review.contains(column.key)) {
+        await db.execute(
+          'ALTER TABLE sync_review ADD COLUMN ${column.key} ${column.value}',
+        );
+      }
+    }
+    // A pre-v13 queued request may already have reached the server.
+    await db.execute('UPDATE sync_queue SET unknown = 1');
   }
 
   static Future<void> _createAccountWorkspaces(DatabaseExecutor db) async {

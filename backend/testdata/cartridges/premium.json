@@ -1,0 +1,20 @@
+{
+  "id": "synthetic_premium",
+  "title": "Synthetic Premium Fixture",
+  "version": 1,
+  "required_plan": "premium",
+  "entries": [
+    {
+      "entry_id": "00000000-0000-4000-8000-000000000001",
+      "content": {
+        "word": "premium fixture",
+        "meaning": "Synthetic development content only",
+        "pronunciation": null,
+        "part_of_speech": "n",
+        "source": "Synthetic fixture",
+        "examples": [],
+        "tags": []
+      }
+    }
+  ]
+}

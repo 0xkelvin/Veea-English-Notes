@@ -4,6 +4,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
 
 import '../data/vocabulary_repository.dart';
+import '../data/local/sqlite_vocabulary_repository.dart';
 import '../models/part_of_speech.dart';
 import '../models/vocabulary_word.dart';
 import '../models/word_identity.dart';
@@ -60,16 +61,105 @@ class BackupPreviewResult {
 class BackupService {
   const BackupService();
 
+  static Future<Map<String, String>> _provenances(
+    VocabularyRepository repository,
+  ) async {
+    if (repository is! SqliteVocabularyRepository) return {};
+    return {
+      for (final row in await repository.database.query('words'))
+        row['id']! as String: row['provenance'] as String? ?? 'legacy_untagged',
+    };
+  }
+
+  static Future<String> exportNotebookJson(
+    VocabularyRepository repository,
+  ) async => exportToJson(
+    await repository.exportAll(),
+    userId: await repository.notebookOwner(),
+    provenances: await _provenances(repository),
+  );
+
+  static Future<String> exportNotebookCsv(
+    VocabularyRepository repository,
+  ) async {
+    final owner = await repository.notebookOwner();
+    final source = {
+      'source': {
+        'kind': owner == null ? 'guest' : 'account',
+        'user_id': ?owner,
+      },
+      'provenances': await _provenances(repository),
+    };
+    return '# veea-source=${base64Url.encode(utf8.encode(jsonEncode(source)))}\n${exportToCsv(await repository.exportAll())}';
+  }
+
+  static Map<String, dynamic>? _metadata(String text) {
+    if (text.startsWith('# veea-source=')) {
+      return (jsonDecode(
+            utf8.decode(base64Url.decode(text.split('\n').first.substring(14))),
+          ))
+          as Map<String, dynamic>;
+    }
+    if (text.startsWith('{')) return jsonDecode(text) as Map<String, dynamic>;
+    return null;
+  }
+
+  static Future<Map<String, String>> _checkSource(
+    String text,
+    VocabularyRepository repository,
+  ) async {
+    final metadata = _metadata(text);
+    final source = metadata?['source'];
+    final owner = await repository.notebookOwner();
+    if (source is Map && source['kind'] == 'account') {
+      if (owner == null || source['user_id'] != owner) {
+        throw const FormatException('This backup belongs to another account');
+      }
+      return {'*': 'account'};
+    }
+    if (owner != null) {
+      throw const FormatException(
+        'Sign out to open this backup in the guest notebook',
+      );
+    }
+    final provenance = <String, String>{'*': 'legacy_untagged'};
+    if (source is Map && source['kind'] == 'guest') {
+      for (final row in metadata?['words'] as List? ?? const []) {
+        if (row is Map && row['provenance'] == 'guest_created') {
+          provenance[row['id'].toString()] = 'guest_created';
+        }
+      }
+      final csv = metadata?['provenances'];
+      if (csv is Map) {
+        for (final entry in csv.entries) {
+          if (entry.value == 'guest_created') {
+            provenance[entry.key.toString()] = 'guest_created';
+          }
+        }
+      }
+    }
+    return provenance;
+  }
+
   /// Exports all [words] to pretty-printed JSON.
-  static String exportToJson(List<VocabularyWord> words) {
+  static String exportToJson(
+    List<VocabularyWord> words, {
+    String? userId,
+    Map<String, String> provenances = const {},
+  }) {
     final payload = {
-      'version': 1,
+      'version': 2,
+      'source': {
+        'kind': userId == null ? 'guest' : 'account',
+        'user_id': ?userId,
+      },
       'exportedAt': DateTime.now().toUtc().toIso8601String(),
       'appName': 'Veea English',
       'wordCount': words.length,
       'words': words.map((w) {
         return {
           'id': w.id,
+          'provenance': provenances[w.id] ?? 'legacy_untagged',
           'word': w.word,
           'meaning': w.meaning,
           'pronunciation': w.pronunciation,
@@ -91,7 +181,7 @@ class BackupService {
     final buffer = StringBuffer();
     // CSV Header
     buffer.writeln(
-      'Word,Meaning,Part of Speech,Pronunciation,Date,Examples,Tags,Source',
+      'Word,Meaning,Part of Speech,Pronunciation,Date,Examples,Tags,Source,Id',
     );
 
     for (final w in words) {
@@ -104,6 +194,7 @@ class BackupService {
         _escapeCsv(w.examples.join(' ; ')),
         _escapeCsv(w.tags.join(', ')),
         _escapeCsv(w.source ?? ''),
+        _escapeCsv(w.id),
       ];
       buffer.writeln(fields.join(','));
     }
@@ -162,6 +253,7 @@ class BackupService {
 
     List<_ParsedWordEntry> parsedEntries;
     try {
+      await _checkSource(text, repository);
       if (text.startsWith('{') || text.startsWith('[')) {
         parsedEntries = _parseJson(text);
       } else {
@@ -259,7 +351,9 @@ class BackupService {
     }
 
     List<_ParsedWordEntry> parsedEntries;
+    Map<String, String> provenance;
     try {
+      provenance = await _checkSource(text, repository);
       if (text.startsWith('{') || text.startsWith('[')) {
         parsedEntries = _parseJson(text);
       } else {
@@ -316,6 +410,12 @@ class BackupService {
 
       final existing = _matchingEntry(entry, existingByWord, existingById);
 
+      if (existing != null && provenance['*'] == 'account') {
+        // Same-account backups are explicit creates, never implicit edits to
+        // an already backed-up word. New candidates await capacity selection.
+        skipped++;
+        continue;
+      }
       if (existing != null) {
         final updatedWord = _mergeEntry(existing, entry, currentTime);
 
@@ -334,6 +434,9 @@ class BackupService {
           wordId = uuid.v4();
         }
         allocatedIds.add(wordId);
+        if (provenance[entry.id] == 'guest_created') {
+          provenance[wordId] = 'guest_created';
+        }
 
         final newWord = VocabularyWord.create(
           id: wordId,
@@ -355,7 +458,13 @@ class BackupService {
     }
 
     try {
-      await repository.bulkImport(toInsert: toInsert, toUpdate: toUpdate);
+      await repository.bulkImport(
+        toInsert: toInsert,
+        toUpdate: toUpdate,
+        provenance: provenance['*'],
+        provenances: provenance,
+        syncHold: provenance['*'] == 'account' ? 'backup' : null,
+      );
     } catch (e) {
       return BackupImportResult(
         totalParsed: parsedEntries.length,
@@ -446,7 +555,11 @@ class BackupService {
   }
 
   static List<_ParsedWordEntry> _parseCsv(String csvText) {
-    final rows = _splitCsvRows(csvText);
+    final rows = _splitCsvRows(
+      csvText.startsWith('# veea-source=')
+          ? csvText.substring(csvText.indexOf('\n') + 1)
+          : csvText,
+    );
     if (rows.isEmpty) return const [];
 
     // Check header
@@ -460,6 +573,7 @@ class BackupService {
     int examplesIdx = header.indexOf('examples');
     int tagsIdx = header.indexOf('tags');
     int sourceIdx = header.indexOf('source');
+    final idIdx = header.indexOf('id');
 
     int startRow = 1;
     if (wordIdx == -1) {
@@ -524,6 +638,7 @@ class BackupService {
 
       results.add(
         _ParsedWordEntry(
+          id: idIdx >= 0 && idIdx < row.length ? row[idIdx] : null,
           word: word,
           meaning: meaning,
           pronunciation: pronunciation?.isNotEmpty == true
@@ -594,7 +709,11 @@ class BackupService {
     if (known != null && WordIdentity.key(known.word) == key) return known;
     final candidates = byWord[key] ?? const <VocabularyWord>[];
     for (final saved in candidates) {
-      if (WordIdentity.sameDefinition(entry.meaning, entry.partOfSpeech, saved)) {
+      if (WordIdentity.sameDefinition(
+        entry.meaning,
+        entry.partOfSpeech,
+        saved,
+      )) {
         return saved;
       }
     }

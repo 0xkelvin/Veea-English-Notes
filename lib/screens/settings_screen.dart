@@ -1,3 +1,5 @@
+import '../providers/go_auth_provider.dart';
+import 'sync_review_screen.dart';
 import '../widgets/app_locks_settings_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -50,18 +52,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    _authForImport = context.read<AuthProvider>();
+    _authForImport!.addListener(_offerImport);
     // Refresh cloud session and sync status gracefully in the background.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (AppConfig.isCloudEnabled) {
         context.read<SyncService>().refreshPendingCount();
         context.read<AuthProvider>().loadProfile();
+        _offerImport();
       }
     });
   }
 
+  AuthProvider? _authForImport;
+  bool _offeringImport = false;
+
+  Future<void> _offerImport() async {
+    if (!mounted || _offeringImport || _authForImport?.isSignedIn != true) {
+      return;
+    }
+    if (_authForImport!.isBusy || _authForImport!.blocksCloudSync) return;
+    final owner = _authForImport!.accountId;
+    final engine = context.read<SyncService>().learningEngine;
+    if (engine == null) return;
+    _offeringImport = true;
+    try {
+      if (await engine.shouldPromptImport() &&
+          mounted &&
+          _authForImport?.accountId == owner) {
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SyncReviewScreen(engine: engine),
+          ),
+        );
+        if (mounted) await context.read<VocabularyProvider>().init();
+      }
+    } finally {
+      _offeringImport = false;
+    }
+  }
+
   @override
   void dispose() {
+    _authForImport?.removeListener(_offerImport);
     _identifier.dispose();
     _password.dispose();
     super.dispose();
@@ -95,7 +129,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _signOut() async {
     await context.read<AuthProvider>().signOut();
-    if (mounted) await context.read<SyncService>().refreshPendingCount();
+    if (mounted) {
+      await context.read<SyncService>().refreshPendingCount();
+      if (mounted) await context.read<VocabularyProvider>().init();
+    }
   }
 
   @override
@@ -197,7 +234,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         title: const Text('Account and backup'),
                         subtitle: Text(
                           AppConfig.isCloudEnabled
-                              ? 'Phone sign-in and your notebook'
+                              ? (context.read<AuthProvider>() is GoAuthProvider
+                                    ? 'Email sign-in and your notebook'
+                                    : 'Phone sign-in and your notebook')
                               : 'Coming soon · Your notebook stays on this device',
                         ),
                         trailing: const Icon(Icons.chevron_right),
@@ -217,7 +256,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         'Export a backup to keep a separate copy.',
                       ],
                     )
-                  else if (AppConfig.legacyPasswordAccounts) ...[
+                  else if (AppConfig.legacyPasswordAccounts &&
+                      context.read<AuthProvider>() is! GoAuthProvider) ...[
                     const _SyncStatus(),
                     const SizedBox(height: PixelMetrics.space5),
                     Consumer<AuthProvider>(
@@ -288,6 +328,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const _DailyReminderSection(),
                   const SizedBox(height: PixelMetrics.space5),
 
+                  if (context.watch<AuthProvider>().isSignedIn &&
+                      context.read<SyncService>().learningEngine != null)
+                    ListTile(
+                      title: const Text('Sync review and guest import'),
+                      onTap: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => SyncReviewScreen(
+                              engine: context
+                                  .read<SyncService>()
+                                  .learningEngine!,
+                            ),
+                          ),
+                        );
+                        if (context.mounted) {
+                          await context.read<VocabularyProvider>().init();
+                        }
+                      },
+                    ),
                   // 100% Offline Data Backup: Export & Import
                   const _DataBackupSection(),
                   const SizedBox(height: PixelMetrics.space5),
@@ -1291,7 +1350,7 @@ class _CartridgeLibrarySection extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'CAREER & TECH CARTRIDGES',
+                      'VOCABULARY CARTRIDGES',
                       style: theme.textTheme.labelSmall?.copyWith(
                         fontWeight: FontWeight.bold,
                         letterSpacing: 0.5,
@@ -1299,7 +1358,7 @@ class _CartridgeLibrarySection extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Curated vocabulary for PR reviews & FAANG standups',
+                      'Free offline starter and server-delivered packs',
                       style: TextStyle(fontSize: 11, color: palette.inkMuted),
                     ),
                   ],
@@ -1329,8 +1388,8 @@ class _CartridgeLibrarySection extends StatelessWidget {
           const SizedBox(height: PixelMetrics.space3),
           PixelButton(
             label: isInstalled
-                ? 'Manage Tech Cartridge'
-                : 'Explore Tech Cartridge',
+                ? 'Open Cartridge Library'
+                : 'Explore Cartridges',
             glyph: PixelGlyph.gamepad,
             filled: !isInstalled,
             expand: true,
@@ -1554,7 +1613,7 @@ class _DataBackupSection extends StatelessWidget {
         Text('Backup and restore', style: theme.textTheme.titleSmall),
         const SizedBox(height: PixelMetrics.space2),
         Text(
-          'Keep a copy of your words or bring back a previous backup. Existing words are checked for duplicates.',
+          'Keep a copy of your words or bring back a previous backup. Account backup words wait in Sync review for capacity selection and confirmation. Guest backups open only while signed out.',
           style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: PixelMetrics.space3),

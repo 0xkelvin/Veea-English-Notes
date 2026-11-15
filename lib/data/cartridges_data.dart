@@ -1,4 +1,5 @@
 import '../models/cartridge.dart';
+import 'starter_words_data.dart';
 import '../models/part_of_speech.dart';
 import '../widgets/pixel/pixel_icon.dart';
 
@@ -24,7 +25,39 @@ class CartridgesData {
     words: _techWords,
   );
 
-  static final List<Cartridge> allCartridges = [siliconValleyTech];
+  // Real pack classification is pending. Only this Free starter is offered offline.
+  // The previous technical pack remains reference source until rollout/content approval.
+  static final Cartridge starter = Cartridge(
+    id: 'free_starter',
+    title: 'FREE STARTER',
+    subtitle: 'Everyday English',
+    description:
+        'Five useful words, available without an account or connection.',
+    iconGlyph: PixelGlyph.gamepad,
+    priceLabel: 'FREE · OFFLINE',
+    badgeLabel: 'STARTER',
+    modules: const ['Starter'],
+    words: StarterWordsData.definitions
+        .asMap()
+        .entries
+        .map(
+          (e) => CartridgeWord(
+            id: 'starter_${e.key + 1}',
+            word: e.value.word,
+            pronunciation: e.value.pronunciation,
+            partOfSpeech: e.value.partOfSpeech,
+            meaning: e.value.meaning,
+            module: 'Starter',
+            prExample: e.value.example,
+            standupExample: e.value.example,
+            collocations: const [],
+            interviewNuance: '',
+            tags: e.value.tags,
+          ),
+        )
+        .toList(),
+  );
+  static final List<Cartridge> allCartridges = [starter];
 
   static const List<CartridgeWord> _techWords = [
     // --- MODULE 1: ARCHITECTURE & SYSTEM DESIGN ---

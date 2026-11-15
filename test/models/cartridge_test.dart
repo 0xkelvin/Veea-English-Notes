@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:uuid/uuid.dart';
 import 'package:veea_english_app/data/cartridges_data.dart';
 import 'package:veea_english_app/models/part_of_speech.dart';
 
@@ -37,7 +38,16 @@ void main() {
         cartridgeTitle: cartridge.title,
       );
 
-      expect(vocabWord.id, word.id);
+      expect(Uuid.isValidUUID(fromString: vocabWord.id), isTrue);
+      expect(
+        vocabWord.id,
+        word
+            .toVocabularyWord(
+              date: '2026-09-01',
+              now: now.add(const Duration(days: 3)),
+            )
+            .id,
+      );
       expect(vocabWord.word, word.word);
       expect(vocabWord.meaning, word.meaning);
       expect(vocabWord.source, cartridge.title);

@@ -313,14 +313,12 @@ class VocabularyProvider extends ChangeNotifier {
 
   /// Exports all saved words to formatted JSON string without truncation.
   Future<String> exportBackupJson() async {
-    final words = await _repository.exportAll();
-    return BackupService.exportToJson(words);
+    return BackupService.exportNotebookJson(_repository);
   }
 
   /// Exports all saved words to standard RFC 4180 CSV string without truncation.
   Future<String> exportBackupCsv() async {
-    final words = await _repository.exportAll();
-    return BackupService.exportToCsv(words);
+    return BackupService.exportNotebookCsv(_repository);
   }
 
   /// Previews changes that would be made by importing [text].

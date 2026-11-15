@@ -181,8 +181,8 @@ void main() {
   test(
     'switching notebooks restores words, dirty flags, review history and practice pool',
     () async {
-      await seed('private-A');
       await repo.activateNotebook('A');
+      await seed('private-A');
       await repo.database.update('gate_config', {
         'practice_word_ids_json': '["private-A"]',
         'words_per_unlock': 1,
