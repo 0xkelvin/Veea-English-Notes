@@ -144,3 +144,14 @@ Before release, Nin still owns the explicit gate/deployment decision, real-devic
 
 
 **Staging preparation through TRD 10 (2026-11-15):** the remaining deployment/provider/device/restore checks are consolidated in [the executable staging checklist](../staging-verification.md). Its §7 records the new local run, including the real synthetic dump/restore drill and the cartridge closed-gate/epoch/restart block test. Historical verification totals above are unchanged; no staging gate is closed by local evidence.
+
+**Cartridge restore review completed (2026-11-15):** the library now offers per-request Discard
+and Start a new install. Opening/restarting/cancelling review and local discard send no install
+POST; old bytes persist until explicit resolution. New install requires fresh owner/version/
+entitlement/capacity checks and explicit confirmation, with stale checks refused and a newly
+persisted request before dispatch. Account switches hide reviews and fence confirmation/HTTP
+dispatch. Flutter analysis passed; relevant Flutter regressions **122/0/0**, real Go/Mailpit
+E2E **8/0/0** (Go host **1/0/0**, `-race`), Go API/learning **31/0/0**, cartridge PostgreSQL
+router tests **11/0/0**, both `-race`. See [staging verification §9](../staging-verification.md#9-cartridge-restore-review-local-evidence)
+for exact commands, evidence and limits. The local cartridge review UX gap is closed; native
+storage/device and staging/operator gates remain open, with shared sync still closed.

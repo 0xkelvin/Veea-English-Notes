@@ -33,10 +33,14 @@ class FaultClient extends http.BaseClient {
   final refreshCommitted = Completer<void>(),
       releaseRefresh = Completer<void>();
   int refreshes = 0, installRequests = 0;
+  final installBodies = <String>[];
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     final path = request.url.path;
-    if (path.endsWith('/install')) installRequests++;
+    if (path.endsWith('/install')) {
+      installRequests++;
+      installBodies.add((request as http.Request).body);
+    }
     if (blockReceipt && path.startsWith('/v1/account-rights/deletions/')) {
       throw http.ClientException('synthetic unavailable receipt');
     }
@@ -646,7 +650,7 @@ void main() {
     skip: !configured,
   );
   test(
-    'pre-restore cartridge attempt stays exact while gate closed and is durably blocked after epoch refusal',
+    'pre-restore cartridge attempt stays blocked across restart until explicitly reviewed into a fresh install',
     () async {
       final address = email(), secret = password();
       await signup(app, address, secret);
@@ -741,6 +745,24 @@ void main() {
         reason: 'blocked installation never adopts the new epoch or replays',
       );
       expect((await packs.pending(pack.id))!['pending_body'], original);
+      await packs
+          .refreshCatalog(); // Opening review only reads; it cannot resolve the request.
+      expect(afterRestart.installRequests, 0);
+      final review = await packs.prepareNewInstall(
+        packs.blockedInstalls.single,
+      );
+      expect(afterRestart.installRequests, 0);
+      expect((await packs.pending(pack.id))!['pending_body'], original);
+      await packs.startNewInstall(
+        review,
+      ); // Explicit user confirmation boundary.
+      expect(afterRestart.installRequests, 1);
+      expect(afterRestart.installBodies.single, isNot(original));
+      expect(
+        jsonDecode(afterRestart.installBodies.single)['epoch'],
+        isNot(jsonDecode(original! as String)['epoch']),
+      );
+      expect(packs.blockedInstalls, isEmpty);
       packs.dispose();
       await command('/restore-fixture-fence', {
         'user_id': owner,

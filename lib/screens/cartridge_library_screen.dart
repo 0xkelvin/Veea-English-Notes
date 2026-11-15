@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../data/cartridges/cartridge_api.dart';
 import '../data/cartridges_data.dart';
+import '../data/remote/api_client.dart';
 import '../providers/auth_provider.dart';
 import '../providers/cartridge_provider.dart';
 import '../providers/vocabulary_provider.dart';
@@ -15,6 +16,7 @@ class CartridgeLibraryScreen extends StatefulWidget {
 
 class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
   String? _account;
+  bool _reviewing = false;
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -28,6 +30,7 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
   }
 
   Future<void> _install(CartridgeMetadata pack) async {
+    final owner = context.read<AuthProvider>().accountId;
     final provider = context.read<CartridgeProvider>();
     final pending = await provider.pending(pack.id);
     Map<String, Object?>? capacity;
@@ -74,12 +77,96 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
         ],
       ),
     );
-    if (confirm != true || !mounted) return;
+    if (confirm != true ||
+        !mounted ||
+        context.read<AuthProvider>().accountId != owner) {
+      return;
+    }
     try {
       await provider.installServer(pack, confirmedCapacity: capacity);
       if (mounted) await context.read<VocabularyProvider>().init();
     } on Object catch (_) {
       /* Fixed, secret-free message is owned by the provider. */
+    }
+  }
+
+  void _reviewError(Object error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          error is ApiException
+              ? error.message
+              : 'Connect and try reviewing this installation again.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _discard(BlockedCartridgeInstall request) async {
+    try {
+      await context.read<CartridgeProvider>().discardBlocked(request);
+    } on Object catch (e) {
+      _reviewError(e);
+    }
+  }
+
+  Future<void> _newInstall(BlockedCartridgeInstall request) async {
+    final provider = context.read<CartridgeProvider>();
+    setState(() => _reviewing = true);
+    try {
+      final review = await provider.prepareNewInstall(request);
+      if (!mounted || context.read<AuthProvider>().accountId != request.owner) {
+        return;
+      }
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => Consumer<AuthProvider>(
+          builder: (ctx, auth, _) {
+            if (!auth.isSignedIn || auth.accountId != request.owner) {
+              return AlertDialog(
+                title: const Text('Account changed'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Close'),
+                  ),
+                ],
+              );
+            }
+            return AlertDialog(
+              title: const Text('Start a new install?'),
+              content: Text(
+                'Discard the saved pre-restore request for ${request.id} v${request.version} and install ${review.pack.title} v${review.pack.version} for this account.\n'
+                'Currently used: ${review.capacity['live_words']} words, ${review.capacity['content_bytes']} bytes. Up to ${review.pack.wordCount} entries must fit the current quota.\n'
+                'This is a new request. Previously edited and deleted entries stay untouched.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  key: const Key('confirm-new-install'),
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Confirm new install'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+      if (confirmed != true ||
+          !mounted ||
+          context.read<AuthProvider>().accountId != request.owner) {
+        return;
+      }
+      await provider.startNewInstall(review);
+      if (mounted) await context.read<VocabularyProvider>().init();
+    } on Object catch (e) {
+      _reviewError(e);
+    } finally {
+      if (mounted) setState(() => _reviewing = false);
     }
   }
 
@@ -103,11 +190,57 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           if (p.busy) const LinearProgressIndicator(),
-          if (p.message != null)
+          if (p.message != null && p.loadedOwner == auth.accountId)
             Padding(
               padding: const EdgeInsets.all(8),
               child: Text(p.message!, key: const Key('cartridge-message')),
             ),
+          if (auth.isSignedIn &&
+              p.loadedOwner == auth.accountId &&
+              p.blockedInstalls.isNotEmpty) ...[
+            Text(
+              'Installations needing review',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const Text(
+              'These saved requests were blocked after a restore. They will stay here until you discard them or confirm a new installation.',
+            ),
+            for (final request in p.blockedInstalls)
+              Card(
+                key: Key('blocked-${request.id}'),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('${request.id} · saved version ${request.version}'),
+                      const Text(
+                        'Discard only removes this saved request. Your installed words stay in your notebook.',
+                      ),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          TextButton(
+                            key: Key('discard-${request.id}'),
+                            onPressed: p.busy || _reviewing
+                                ? null
+                                : () => _discard(request),
+                            child: const Text('Discard'),
+                          ),
+                          FilledButton(
+                            key: Key('new-install-${request.id}'),
+                            onPressed: p.busy || _reviewing
+                                ? null
+                                : () => _newInstall(request),
+                            child: const Text('Start a new install'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -154,9 +287,16 @@ class _CartridgeLibraryScreenState extends State<CartridgeLibraryScreen> {
                   ),
                   trailing: TextButton(
                     key: Key('install-${pack.id}'),
-                    onPressed: p.busy ? null : () => _install(pack),
+                    onPressed:
+                        p.busy ||
+                            _reviewing ||
+                            p.blockedInstalls.any((r) => r.id == pack.id)
+                        ? null
+                        : () => _install(pack),
                     child: Text(
-                      pack.installedVersion == 0
+                      p.blockedInstalls.any((r) => r.id == pack.id)
+                          ? 'Review required'
+                          : pack.installedVersion == 0
                           ? 'Install'
                           : pack.installedVersion < pack.version
                           ? 'Update'

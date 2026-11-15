@@ -13,6 +13,25 @@ import 'vocabulary_provider.dart';
 
 enum IngestMode { full, dailySprint }
 
+/// An immutable identity for the exact pre-restore request being reviewed.
+class BlockedCartridgeInstall {
+  BlockedCartridgeInstall._(this.owner, this.id, this.version, this.exactBody);
+  final String owner, id, exactBody;
+  final int version;
+}
+
+/// Read-only preflight shown before explicit confirmation. Rechecked before replacement.
+class CartridgeInstallReview {
+  CartridgeInstallReview._(
+    this.request,
+    this.pack,
+    Map<String, Object?> capacity,
+  ) : capacity = Map.unmodifiable(capacity);
+  final BlockedCartridgeInstall request;
+  final CartridgeMetadata pack;
+  final Map<String, Object?> capacity;
+}
+
 /// Bundled starter plus account-scoped, durable server installation attempts (TRD 10).
 class CartridgeProvider extends ChangeNotifier {
   CartridgeProvider({this.repository, this.api, this.sync}) {
@@ -24,6 +43,9 @@ class CartridgeProvider extends ChangeNotifier {
   final SyncService? sync;
   String? _owner;
   final Set<String> _installed = {};
+  List<BlockedCartridgeInstall> _blocked = [];
+  List<BlockedCartridgeInstall> get blockedInstalls =>
+      List.unmodifiable(_blocked);
   List<CartridgeMetadata> catalog = [];
   bool isInitialized = false, busy = false;
   String? message;
@@ -48,18 +70,35 @@ class CartridgeProvider extends ChangeNotifier {
     if (_owner != owner) {
       catalog = [];
       _installed.clear();
+      _blocked = [];
+      message = null;
       _owner = owner;
     }
     if (repository != null) {
       final rows = await repository!.database.query(
         'cartridge_local_state',
-        where: 'owner_id = ? AND installed_version > 0',
+        where: 'owner_id = ?',
         whereArgs: [owner],
       );
       if (await _current() != owner) return;
       _installed
         ..clear()
-        ..addAll(rows.map((r) => r['cartridge_id']! as String));
+        ..addAll(
+          rows
+              .where((r) => (r['installed_version']! as int) > 0)
+              .map((r) => r['cartridge_id']! as String),
+        );
+      _blocked = rows
+          .where((r) => r['blocked'] == 1)
+          .map(
+            (r) => BlockedCartridgeInstall._(
+              owner,
+              r['cartridge_id']! as String,
+              r['pending_version']! as int,
+              r['pending_body']! as String,
+            ),
+          )
+          .toList();
     }
     isInitialized = true;
     _changed();
@@ -75,6 +114,7 @@ class CartridgeProvider extends ChangeNotifier {
       if (await _current() != owner) return;
       catalog = rows;
     } on Object catch (_) {
+      if (await _current() != owner) return;
       message =
           'Catalog unavailable. Installed words and the Free starter work offline.';
     }
@@ -100,8 +140,9 @@ class CartridgeProvider extends ChangeNotifier {
   Future<void> _save(
     String owner,
     String id,
-    Map<String, Object?> values,
-  ) async {
+    Map<String, Object?> values, {
+    BlockedCartridgeInstall? resolving,
+  }) async {
     await repository!.database.transaction((tx) async {
       final rows = await tx.query(
         'app_metadata',
@@ -116,6 +157,21 @@ class CartridgeProvider extends ChangeNotifier {
           'The notebook changed. Open the library again.',
         );
       }
+      if (resolving != null) {
+        final changed = await tx.update(
+          'cartridge_local_state',
+          values,
+          where:
+              'owner_id = ? AND cartridge_id = ? AND blocked = 1 AND pending_version = ? AND pending_body = ?',
+          whereArgs: [owner, id, resolving.version, resolving.exactBody],
+        );
+        if (changed != 1) {
+          throw const ApiException(
+            'This review changed. Open the library again.',
+          );
+        }
+        return;
+      }
       await tx.insert('cartridge_local_state', {
         'owner_id': owner,
         'cartridge_id': id,
@@ -129,6 +185,65 @@ class CartridgeProvider extends ChangeNotifier {
     });
   }
 
+  Future<void> _reviewCurrent(BlockedCartridgeInstall request) async {
+    await _same(request.owner);
+    final row = await pending(request.id);
+    await _same(request.owner);
+    if (row?['blocked'] != 1 ||
+        row?['pending_version'] != request.version ||
+        row?['pending_body'] != request.exactBody) {
+      throw const ApiException('This review changed. Open the library again.');
+    }
+  }
+
+  /// Local resolution only: preserve the installed watermark and all owned vocabulary.
+  Future<void> discardBlocked(BlockedCartridgeInstall request) async {
+    if (busy) return;
+    await _reviewCurrent(request);
+    await _save(request.owner, request.id, {
+      'blocked': 0,
+      'pending_body': null,
+      'pending_version': null,
+      'pending_unknown': 0,
+      'needs_confirmation': 0,
+    }, resolving: request);
+    await refreshLocal();
+  }
+
+  Future<CartridgeInstallReview> prepareNewInstall(
+    BlockedCartridgeInstall request,
+  ) async {
+    await ready;
+    await _reviewCurrent(request);
+    final packs = await api!.catalog();
+    await _same(request.owner);
+    final matches = packs.where((p) => p.id == request.id);
+    if (matches.isEmpty) {
+      throw const ApiException(
+        'This pack is no longer available. You can discard the saved request.',
+      );
+    }
+    final pack = matches.single;
+    await api!.download(
+      pack.id,
+      pack.version,
+    ); // Current server entitlement, never client time.
+    await _same(request.owner);
+    if (sync != null && !await sync!.synchronise()) {
+      throw const ApiException(
+        'Sync is not ready. Settle pending vocabulary changes before installing.',
+      );
+    }
+    await _same(request.owner);
+    final capacity = await api!.capacity();
+    await _reviewCurrent(request);
+    return CartridgeInstallReview._(request, pack, capacity);
+  }
+
+  /// The caller must show this preflight and obtain explicit confirmation first.
+  Future<int> startNewInstall(CartridgeInstallReview confirmed) =>
+      _installServer(confirmed.pack, review: confirmed);
+
   Future<Map<String, Object?>> refreshCapacity() async {
     final owner = await _current();
     final result = await api!.capacity();
@@ -141,6 +256,12 @@ class CartridgeProvider extends ChangeNotifier {
   Future<int> installServer(
     CartridgeMetadata pack, {
     Map<String, Object?>? confirmedCapacity,
+  }) => _installServer(pack, confirmedCapacity: confirmedCapacity);
+
+  Future<int> _installServer(
+    CartridgeMetadata pack, {
+    Map<String, Object?>? confirmedCapacity,
+    CartridgeInstallReview? review,
   }) async {
     final confirmCapacity = confirmedCapacity != null;
     await ready;
@@ -154,6 +275,33 @@ class CartridgeProvider extends ChangeNotifier {
     message = null;
     _changed();
     try {
+      if (review != null) {
+        final fresh = await prepareNewInstall(review.request);
+        await _same(owner);
+        if (fresh.pack.version != review.pack.version ||
+            fresh.capacity['epoch'] != review.capacity['epoch'] ||
+            fresh.capacity['live_words'] != review.capacity['live_words'] ||
+            fresh.capacity['content_bytes'] !=
+                review.capacity['content_bytes']) {
+          throw const ApiException(
+            'The version or capacity changed. Review and confirm a new installation again.',
+          );
+        }
+        await _save(owner, pack.id, {
+          'blocked': 0,
+          'pending_body': jsonEncode({
+            'epoch': fresh.capacity['epoch'],
+            'capacity_basis': {
+              'live_words': fresh.capacity['live_words'],
+              'content_bytes': fresh.capacity['content_bytes'],
+            },
+          }),
+          'pending_version': fresh.pack.version,
+          'pending_unknown': 0,
+          'needs_confirmation': 0,
+        }, resolving: review.request);
+        await refreshLocal();
+      }
       var saved = await pending(pack.id);
       await _same(owner);
       if (saved?['blocked'] == 1) {
@@ -215,7 +363,7 @@ class CartridgeProvider extends ChangeNotifier {
       await _save(owner, pack.id, {'pending_unknown': 1});
       Map<String, Object?> result;
       try {
-        result = await api!.install(pack.id, version, body);
+        result = await api!.install(pack.id, version, body, owner: owner);
       } on ApiException catch (e) {
         await _same(owner);
         final unknown =
@@ -234,6 +382,7 @@ class CartridgeProvider extends ChangeNotifier {
               'Capacity changed: ${st['live_words']} words and ${st['content_bytes']} bytes used. Review and confirm again.';
         } else if (e.code == 'sync_reset_required') {
           await _save(owner, pack.id, {'blocked': 1});
+          await refreshLocal();
           message =
               'A database restore requires review. This installation will not be replayed.';
         } else if (!unknown) {

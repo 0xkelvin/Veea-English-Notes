@@ -154,8 +154,12 @@ class GoApiClient extends ApiClient {
     Map<String, String>? query,
     Map<String, String>? extraHeaders,
     bool authenticated = true,
+    String? expectedUserId,
   }) async {
     GoSession? session = authenticated ? await _authorized() : null;
+    if (expectedUserId != null && session?.userId != expectedUserId) {
+      throw const SessionChanged();
+    }
     Future<http.Response> perform() async {
       final req = http.Request(method, _uri(path, query));
       req.headers.addAll({

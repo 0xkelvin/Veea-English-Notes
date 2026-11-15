@@ -56,7 +56,7 @@ Fill `operator`, `UTC start/end`, `candidate/deployment`, `result`, `evidence li
 | [ ] G9 — real restore/PITR drill | G0–G8; provisioned independent checkpoint destination, dedicated key/source custody, scheduled publication/freshness monitoring, independent cutoff/minimum-generation records, isolated target and approved restoration window | Execute §6 and [the ledger workflow](deletion-ledger-recovery.md) with actual backup/PITR. Lose the original DB, recover the independent checkpoint, prove coverage, replay/purge, rotate epochs and verify; test interrupted publication and restore retries. Keep access closed if evidence is missing/behind. Check clients only on a disposable canary | Every deletion through the independently required cutoff, **including incomplete** jobs, is reapplied; survivor data remains, exports/mail/proofs cannot replay, epochs change and old cartridge requests stay blocked. Behind coverage blocks recovery | Backup/PITR ID/start point, independent source/key version and checkpoint generation/cutoff/count/digest, storage durability/retention/ACL and job freshness evidence, missing/behind refusal, original-DB-unavailable recovery, retry/prepare/purge/finish/verify and client results. Local fixture evidence is §8; destination/scheduling remain unprovisioned |
 | [ ] G10 — content and opening decision | G1–G9; Nin's real pack classification/content approval and client distribution status | Review TRD 10 limits (16 packs, 200 cumulative entries/pack, 1 MiB/document); split larger packs. Real publication is a separate Nin-run audited CLI action. Verify catalog metadata, Free/Premium expiry and owned-word use on a synthetic isolated canary. Approve removal of real Premium content only from future bundles after client support ships | This preparation publishes **no real content** and leaves the shared gate false. Existing owned words remain usable/syncable after downgrade. Opening sync/install requires a separately recorded operator decision; do not copy an unconditional `open=true` from an old runbook | Classification/license/stable-ID approval, signed client availability, canary evidence, explicit remaining-risk acceptance and separate gate-change ticket |
 
-**Known prerequisites without repository configuration:** staging hosts/orchestrator and rollout inventory, verified Resend account/domain/inboxes, real device/signing matrix, AC-7 numerical acceptance rule, network/ingress configuration, Prometheus/Alertmanager/receivers, retention policy confirmation and independently recoverable ledger custody. The ledger CLI/POSIX adapter is implemented; shared destination, schedule, freshness alerting, key custody and incident cutoff procedure are **deployment dependencies**, not provisioned here. These are pending/blocked inputs, not failed local tests. The cartridge library currently displays a review-required block but has no cartridge-specific review-resolution UI; do not claim that restoring normal user-driven recovery is verified. Resolve that product/UX gap before treating the full restore-and-review experience as releasable; never clear a blocked row or substitute a new epoch to bypass it.
+**Known prerequisites without repository configuration:** staging hosts/orchestrator and rollout inventory, verified Resend account/domain/inboxes, real device/signing matrix, AC-7 numerical acceptance rule, network/ingress configuration, Prometheus/Alertmanager/receivers, retention policy confirmation and independently recoverable ledger custody. The ledger CLI/POSIX adapter is implemented; shared destination, schedule, freshness alerting, key custody and incident cutoff procedure are **deployment dependencies**, not provisioned here. These are pending/blocked inputs, not failed local tests. The cartridge review-resolution UI is implemented and locally verified (§9): each saved request offers Discard or a separately confirmed new install after fresh checks. Native-device/staging acceptance remains required; never clear a blocked row or substitute a new epoch outside that explicit resolution flow.
 
 ## 3. Physical-device checklist for G4
 
@@ -66,7 +66,7 @@ For **each** supported signed iOS/Android build and OS version, with synthetic a
 2. Expire access on a controlled synthetic test session through the approved operator method, then launch concurrent protected requests. One refresh rotation, one persisted complete pair; restart during in-flight refresh/lost response requires fresh sign-in, never a retry with a consumed token.
 3. Hold refresh response, sign out or switch to B, then release. A late response cannot restore A's credentials or overwrite B's pair. Sign-out opens guest; B opens its own notebook. Test storage-write failure/full disk/locked-device behavior using approved platform tooling: it must fail closed without partial credential adoption.
 4. Request and confirm deletion with a fresh mailbox proof. Simulate lost completion/receipt response, restart and resume polling from `auth.go.deletion.v1`, independent of `auth.go.session.v1`. Only authoritative acceptance clears A's cache/queue/cursor/writer/review/cartridge rows; unknown result preserves them. Other accounts and guest remain intact. Re-register the same email after purge: new UUID, no old cache/queue.
-5. Keep installed words usable offline after downgrade. An old-epoch pending cartridge request must retain its version/body and show review-required after the isolated restore canary; no fresh install POST after it is blocked. Capture request **counts/digests**, not authorization or request bodies. Verify no tokens/OTPs in platform logs, SharedPreferences, SQLite, screenshots or diagnostics. Secure-store keys alone are not secrets; their values are.
+5. Keep installed words usable offline after downgrade. An old-epoch pending cartridge request must retain its version/body and show review-required after the isolated restore canary; no install POST from opening review, restart or Discard. A separately confirmed new install must recheck current version/entitlement/capacity/account and use a fresh request; cancelling or changing accounts leaves the original unresolved. Capture request **counts/digests**, not authorization or request bodies. Verify no tokens/OTPs in platform logs, SharedPreferences, SQLite, screenshots or diagnostics. Secure-store keys alone are not secrets; their values are.
 
 ## 4. Read-only ingress probes for G6 (Nin)
 
@@ -144,7 +144,7 @@ Keep the existing 11 rules. `db_tx_retries_total` is exported but a dedicated re
 
    Finish refuses if deletions remain. It then rotates all surviving epochs and retires every writer. Verify requires false sync gate, zero restored live sessions/proofs/capabilities/exports/pending mail, no deleted owners and no unchanged surviving epochs. Preserve its counts, not private ledger contents. Inspect minimized audit and survivor data; confirm one active Super Admin or perform approved audited CLI recovery before admin traffic resumes.
 6. If any SQL transaction fails, stop and `ROLLBACK` in that session; fix the cause under the ticket. Prepare can be replayed while isolated (it may restart purge checkpoints); finish/verify stay in that session. If it is lost, recover the verified independent checkpoint again to a new private output name, reload in a new session, repeat prepare/purge and record the new epoch baseline. Never skip failed assertions or set `open=true` to diagnose a purge. Interrupted publication is retried against the same store/source; a failed or lost acknowledgement is not evidence of coverage.
-7. Test old access/refresh, OTP, rights/export capabilities and sync cursor/writer on a **separate isolated synthetic canary** of the restored release. An old cartridge attempt while closed gets 503 and retains its exact owner/version/body/epoch; only the deliberately opened disposable canary can return 410 `sync_reset_required`. After that response, the client stores `blocked=1`; restart and Retry send **no new install POST** and preserve the old bytes for review. Do not equate a shared closed-gate 503 with an observed epoch refusal. Record the user-review UX gap from §2.
+7. Test old access/refresh, OTP, rights/export capabilities and sync cursor/writer on a **separate isolated synthetic canary** of the restored release. An old cartridge attempt while closed gets 503 and retains its exact owner/version/body/epoch; only the deliberately opened disposable canary can return 410 `sync_reset_required`. After that response, the client stores `blocked=1`; opening review, restart, Cancel and Discard send **no new install POST**. Discard preserves owned words and installation watermarks. Start a new install must show fresh version/capacity and require confirmation, recheck account/entitlement/version/capacity and persist a fresh request before its single POST. Switch accounts with confirmation open: the old review disappears and cannot dispatch for the new account. Do not equate a shared closed-gate 503 with an observed epoch refusal. Local coverage is §9; repeat on the deployed signed client under the approved isolated canary procedure.
 8. Leave the restored shared gate false. Any traffic cutover, real content publication, recovery UX acceptance and eventual sync opening are separate Nin decisions after G0–G10 evidence is complete. Restore does not recreate post-backup deletion receipts/capabilities from the minimal ledger; receipt continuity beyond the backup must be recorded as a limitation, not inferred from a 401/404 or used to erase a local cache automatically.
 
 Historical local logical backup evidence is in §7; the source-loss independent-ledger extension is in §8. Production storage durability, disaster-time ledger availability, installed scheduling/freshness monitoring, key custody, PITR retention, signed-device behavior, real mail delivery and routing still require the staging/operator checks above.
@@ -230,3 +230,57 @@ authoritative missing history is recovered. This is not a zero-loss acceptance g
 All staging/provider/device gates, the cartridge review-resolution UX and receipt-continuity
 limit remain as recorded above. Sync remains closed. Deployment, staging, commits and pushes
 remain Nin's work; no staging operation or index mutation was performed by this session.
+
+## 9. Cartridge restore-review local evidence
+
+Executed locally on **2026-11-15**, based on `6395abd` plus this review completion. Evidence
+directory: `/tmp/veea-cartridge-review-20261115` (private temporary artifacts; attach sanitized
+counts and request digests to the release ticket separately). The UI limitation recorded in
+historical §§7–8 is closed by these local results. Native-device/staging acceptance is still
+required; none of G0–G10 is marked complete here.
+
+| Check | Passed | Failed | Skipped | Evidence |
+|---|---:|---:|---:|---|
+| Flutter cartridge/sync/account/storage regressions | **122** | **0** | **0** | `regressions.jsonl`; includes **19** server-cartridge provider tests, **5** library widget tests and the owner-bound HTTP dispatch test; counts exclude hidden loader/teardown events |
+| Learner → local Go/PostgreSQL/Mailpit E2E | **8** | **0** | **0** | `flutter-go.jsonl`; Go host **1/0/0**, race-enabled, in `flutter-go-host.log` |
+| Go API/learning unit regressions, `-race` | **31** | **0** | **0** | `go-unit.jsonl`; tests and subtests |
+| Go cartridge router/PostgreSQL regressions, `-race` | **11** | **0** | **0** | `go-cartridges.jsonl`; six top-level tests plus subtests |
+
+Actual commands from repository root (Go commands run from `backend/`):
+
+```sh
+flutter analyze
+flutter test test/screens/cartridge_library_screen_test.dart test/models/cartridge_test.dart \
+  test/providers/cartridge_provider_test.dart test/providers/cartridge_server_test.dart \
+  test/data/sync test/data/go_session_test.dart test/providers/go_auth_provider_test.dart \
+  test/data/app_database_test.dart test/screens/go_account_screen_test.dart --reporter json
+VEEA_FLUTTER_E2E_REPORT=/tmp/veea-cartridge-review-20261115/flutter-go.jsonl make -C backend test-flutter-go
+# From backend/:
+go test -race -count=1 -json ./api ./internal/learning
+VEEA_TEST_DATABASE_URL="$(scripts/test-postgres.sh url)" \
+  go test -race -tags=integration -run '^TestCartridges_' -count=1 -json ./test/integration
+```
+
+Analysis passed with **no issues**. Widget tests prove opening the library, provider restart,
+cancelling new-install confirmation and offline Discard send no install POST. Each blocked
+request has its own actions; discarding one leaves the other. Switching accounts hides the
+old owner's list and invalidates an open confirmation; switching back restores the unresolved
+request. A real SQLite file-close/reopen provider test preserves exact old bytes/version and
+allows local discard without clearing installed state. New-install preflight sends no POST
+and leaves old bytes intact. Explicit confirmation uses the latest version, fresh epoch and
+capacity; the replacement is persisted before transmission. Changes to account, entitlement,
+version, epoch, capacity or review identity before dispatch refuse without replay. A lost
+response to the new attempt persists/retries its new exact bytes across provider restart.
+
+The real-Go restore case retains the earlier closed-gate 503/epoch 410 checks and actual SQLite
+restart. Opening review and read-only preflight send **zero** install POSTs. Explicitly confirmed
+resolution sends **one** request with the new epoch; the durable server watermark handles the
+previously accepted attempt. The existing Go authorization/expiry, quota, edit/delete/update,
+retry, export and purge contracts pass unchanged. The fixture is closed again at test end.
+
+No schema, migration, HTTP or rollout-gate change was needed; migration remains **00015**.
+The full backend suite and unrelated Flutter goldens/native tests were not rerun for this
+Flutter-only change; relevant regressions above were run. No unresolved local contract gap
+remains for cartridge review. Signed-device/staging review smoke, independent ledger storage
+and scheduling/custody, provider restore/PITR and the other release gates remain. Shared sync
+stays **closed**. No deployment, staging change, git staging, commit or push was performed.

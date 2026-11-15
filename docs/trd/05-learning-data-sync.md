@@ -339,6 +339,12 @@ On `writer_unknown` the epoch is unchanged. The writer was retired (§5.2) or ne
 
 ### 8.4 Review set **[Decided: D10]**
 
+Cartridge install requests have their own owner-scoped review section in the library (TRD 10
+§4): each blocked request offers local Discard or an explicitly confirmed new install after
+fresh version/entitlement/capacity checks. Neither action silently replays its old bytes or
+applies this vocabulary review set. Opening/restarting review sends no install POST. The
+current shared sync gate remains closed.
+
 Each account cache has one review set, holding these unresolved items:
 - the queue from before a restore (§8.2);
 - a retired writer's queue (§8.3);

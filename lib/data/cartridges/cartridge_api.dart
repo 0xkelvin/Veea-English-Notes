@@ -20,8 +20,9 @@ abstract interface class CartridgeApi {
   Future<Map<String, Object?>> install(
     String id,
     int version,
-    String exactBody,
-  );
+    String exactBody, {
+    required String owner,
+  });
 }
 
 class GoCartridgeApi implements CartridgeApi {
@@ -46,12 +47,14 @@ class GoCartridgeApi implements CartridgeApi {
   Future<Map<String, Object?>> install(
     String id,
     int version,
-    String exactBody,
-  ) async {
+    String exactBody, {
+    required String owner,
+  }) async {
     final response = await client.raw(
       'POST',
       '${_path(id, version)}/install',
       body: Uint8List.fromList(utf8.encode(exactBody)),
+      expectedUserId: owner,
     );
     return GoApiClient.decode(response);
   }

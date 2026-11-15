@@ -46,6 +46,33 @@ Server packs use the existing Go transport (single-flight refresh/session-genera
 
 A restore (`410`) blocks the stored attempt for explicit review, with no automatic move onto a new epoch. The existing vocabulary queue/review semantics are unchanged. Install success is durable even if subsequent cache catch-up fails; show that synchronization is pending and allow retry. The account cache is replaced only by the verified paginated TRD 05 core. No raw downloaded Premium content is persisted as a reusable entitlement. Sign-out opens guest; account switches fence late results. Confirmed deletion clears that owner's installation requests/state alongside its cache; same-email signup uses a new user ID.
 
+**Restore review completion (Nin's instruction, 2026-11-15).** The library lists each current
+owner's blocked request, including saved pack ID/version, independently of catalog availability.
+Opening it, restarting, refreshing metadata or cancelling confirmation never sends an install
+POST and never resolves the request. **Discard** clears only that request's pending fields and
+block; it preserves installed watermarks and owned words. It works offline and cannot resolve
+another owner's row.
+
+**Start a new install** performs a read-only preflight: verify current owner and exact blocked
+request identity, fetch the latest catalog version, download under current server entitlement,
+settle vocabulary sync and read current epoch/capacity. Show the version, entry count, used
+capacity and replacement consequence, then require **Confirm new install**. Recheck all of
+these after confirmation. A changed version, epoch or capacity requires a new review and
+confirmation; lost entitlement/offline/unready sync keeps the old request blocked. The server
+still enforces quota and entitlement atomically at installation. A subsequent capacity refusal
+uses the normal capacity-refresh/reconfirmation flow, with no automatic resubmission.
+
+Only after successful checks does one SQLite transaction compare the owner, blocked flag and
+original version/exact body, and replace that request with a newly constructed current-version,
+current-epoch/capacity request. Persist before sending and use the existing conservative unknown
+marker/retry rules for the new attempt. This is explicit resolution, not editing or replaying
+the old uncertain request. No new server request-ID field is introduced: the existing owner/pack
+watermark remains the server idempotency identity. HTTP dispatch additionally requires the
+intended stable user ID; a switched session cannot send this operation as another account.
+Account switches hide old reviews immediately, including an open confirmation, and switching
+back restores unresolved reviews. This does not apply or discard the separate vocabulary review
+set. The sync rollout gate remains closed.
+
 ## 5. Export, purge and size
 
 Installation watermarks are owner product data. The TRD 04 export adds optional `cartridge_installations` to schema 3 in the same snapshot (no old artifact invalidation), containing only pack IDs and installed versions. At 16 × (48-byte ID + int32 version), its exact JSON bound is **1,612 bytes**; the existing 16 KiB header and overall export bound remain sufficient, verified with the worst-case schema-3 header. Vocabulary remains in its normal canonical format, without duplicate cartridge content. Purge explicitly removes at most 16 watermarks before erasing the owner; shared catalog content survives. No new retention job is needed. Local install state is cleared only for the deleted owner.
@@ -93,3 +120,14 @@ No real cartridge was classified or published to a deployed service. Real pack a
 
 
 **Staging preparation through TRD 10 (2026-11-15):** the remaining deployment/provider/device/restore checks are consolidated in [the executable staging checklist](../staging-verification.md). Its §7 records the new local run, including the real synthetic dump/restore drill and the cartridge closed-gate/epoch/restart block test. Historical verification totals above are unchanged; no staging gate is closed by local evidence.
+
+**Restore review verification (2026-11-15):** the missing resolution UI is now implemented.
+Flutter analysis passed; the relevant cartridge/sync/account/storage selection passed **122/0/0**
+(pass/fail/skip), including five library widget tests and provider cases for file restart,
+offline discard, fresh request construction, confirmation races and lost-response retry.
+Local Go/Mailpit E2E passed **8/0/0** (race-enabled Go host **1/0/0**), including real epoch
+refusal, restart, read-only review preflight and one explicitly confirmed new-epoch request.
+Go API/learning regression passed **31/0/0**, and router/PostgreSQL cartridge tests **11/0/0**,
+both with `-race`. Commands and evidence are in [staging verification §9](../staging-verification.md#9-cartridge-restore-review-local-evidence).
+No HTTP/schema change, deployment or gate opening was required. Native-device and staging
+restore/cutover acceptance remain gates; the local review-resolution gap is closed.

@@ -11,6 +11,11 @@
 > **Keep the Go rollout sync gate closed**; do not enable it through this legacy
 > rollout. Sign-out opens guest, and only confirmed deletion clears the recorded
 > account's cache and queue. Same-email re-registration opens a new UUID.
+>
+> Cartridge restore review (2026-11-15): the Go library now lists blocked installation
+> requests per account. Discard is local; Start a new install requires fresh server checks
+> and explicit confirmation. Opening, cancelling or restarting review sends no install POST.
+> See TRD 10 §4 and staging verification §9; the Go sync gate stays closed.
 
 
 Implementation updated 10 November 2026 for `feat/first-launch-native-accounts`. The existing server and OTP provider belong to the Veea team; Nin will supply their connection details. No production service, paid SMS subscription or Zalo group was created.

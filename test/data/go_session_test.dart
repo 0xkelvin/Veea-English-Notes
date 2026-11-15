@@ -45,6 +45,28 @@ void main() {
       );
 
   test(
+    'owner-bound cartridge dispatch refuses a switched account before sending HTTP',
+    () async {
+      await store.establish(tokens(user: userB));
+      var calls = 0;
+      final c = client((r) async {
+        calls++;
+        return response({});
+      });
+      await expectLater(
+        c.raw(
+          'POST',
+          '/v1/cartridges/synthetic/versions/1/install',
+          expectedUserId: userA,
+        ),
+        throwsA(isA<SessionChanged>()),
+      );
+      expect(calls, 0);
+      c.dispose();
+    },
+  );
+
+  test(
     '25 concurrent 401s rotate once and observe one atomic persisted pair',
     () async {
       var calls = 0;
