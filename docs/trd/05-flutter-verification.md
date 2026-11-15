@@ -1,6 +1,6 @@
 # TRD 05 Flutter implementation and verification — 2026-11-14
 
-Branch: `feat/go-email-auth-account-foundation`. This records local verification, not release approval. The server gate remains closed. No server control row, applied Go migration, staging environment, commit or push was changed by this work.
+Branch: `feat/go-email-auth-account-foundation`. This records local verification, not release approval. The server gate remains closed. No release/staging gate or applied Go migration was changed. Disposable integration fixtures exercise both gate states. No commits or pushes were made.
 
 ## Takeover inventory
 
@@ -47,14 +47,14 @@ VEEA_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:54329/postgres \
   -run 'TestLearning'
 ```
 
-- Go learning unit/OpenAPI contract tests: **23 passed, 0 failed, 0 skipped**.
+- Go learning unit/OpenAPI contract tests: **23 passed, 0 failed, 0 skipped** (tests and subtests).
 - Go PostgreSQL learning/data-rights router tests: **21 passed, 0 failed, 0 skipped** (tests and subtests). Includes closed-by-default behavior, lost responses/expiry, snapshots/compaction, restore fencing, import capacity, export bounds, deletion/purge and re-registration.
 - No Go SQL changed; sqlc regeneration was unnecessary. Mailpit-specific delivery tests were outside this sync change and were not run.
 - Both staged and unstaged `git diff --check` passed.
 
 ## §15.2 result mapping
 
-“Passed” below means the named behavior passed the local SQLite/HTTP/widget tests, with Go contract/router verification above. It does not certify an end-to-end Go sign-in/deletion flow or authorize opening sync.
+“Passed” below means the named behavior passed the local SQLite/HTTP/widget tests, with Go contract/router verification above. The original matrix alone did not certify Go sign-in/deletion integration. The real-service closeout below now supplies that evidence; it still does not authorize opening sync.
 
 | Check | Result | Test evidence / reason |
 |---|---|---|
@@ -70,8 +70,74 @@ VEEA_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:54329/postgres \
 | 10. Confirmed deletion local erasure | **Passed** | Closed-account erasure removes cache, queue, partition/cursor/writer, staging, review and import decisions while preserving guest; existing provider confirmation/receipt tests exercise its callback |
 | 11. Shared canonical format | **Passed** | `canonical_vectors_test.dart` runs Go-produced exact bytes, byte sizes, Unicode scalar counts, validation order and limits; Go rejects stale fixtures |
 
-## Remaining contract gap and production gates
+## Flutter → Go integration closeout — 2026-11-15
 
-**Blocked: end-to-end Flutter → Go identity/lifecycle integration.** `AuthApi`, token refresh and phone-account screens still use the Rust `/api/v1/auth/*`, `/users/me` and challenge-based deletion receipt contract. Go's current OpenAPI uses email authentication under `/v1/auth/*`, `/v1/me`, opaque session tokens and operation-scoped `/v1/account-rights/*` proof/receipt capabilities. The new sync transport uses the correct Go `/v1/learning/sync/*` routes, but this work does not claim the existing phone UI can establish/refresh a Go session or consume a Go deletion acceptance/receipt. The local deletion erasure hook is ready; the Go acceptance/polling adapter remains required. These are earlier authentication/lifecycle client ports, not a reason to fall back to email-based ownership or replay old caches.
+The previous Go identity/lifecycle client blocker is **resolved for the sign-in, session, deletion and sync flows in this closeout**. Production `main()` now constructs `GoTokenStore`, `GoApiClient`, `GoAuthApi` and `GoAuthProvider`. Settings' account entry selects the Go email UI. The older Rust adapters and phone screens remain for explicit legacy callers/tests; the production Go path neither calls their endpoints nor adopts their credentials.
 
-Keep `learning_sync_control.open = false`. Before an operator considers opening it: port and verify the Go email/session and account-rights adapters; run the rebuilt Flutter flow against the local Go router with real sign-in/refresh, offline restart and a lost deletion response; then perform the intended device/staging checks under separate authorization. No staging action, gate-opening SQL, commit or push was performed.
+### Contracts implemented
+
+- Email OTP sign-in, OTP/password signup followed by email verification, password sign-in, `GET /v1/me`, session listing, revocation of another session, confirmed logout-all and current-device logout use the existing Go OpenAPI. Notebook identity is exactly **`TokenResponse.user.id`**, the stable `user_id`; it is never inferred from email or a JWT. Signing up again after purge selects the new returned UUID.
+- One secure-storage JSON value contains the user/session identity, a local generation, **both tokens**, expiries and refresh state. Go storage has its own namespace, without legacy fallback. Single-token save helpers cannot split a Go pair.
+- Refresh is single-flight per stored session generation, shared across authenticated requests and vocabulary sync. A delayed `401` for the old access token uses the already persisted pair. The `in_flight` marker commits **before** transmission. Network/timeout, unreadable success or an ambiguous server failure requires fresh sign-in; a restarted process never resends a potentially consumed refresh token. Explicit pre-rotation refusals such as `429` permit a later attempt, without an immediate retry. The complete rotated pair is persisted before any waiter reuses it.
+- Sign-out invalidates credentials before waiting for network/sync completion. Every authenticated response and refresh credential write checks the captured generation. An account switch or sign-out therefore makes old responses unusable. A late sign-in response is also fenced by the provider's intent generation. Logout is local even if the server is unreachable or the captured bearer has expired; server revocation is best effort in those cases.
+- The sync core is reused through `GoLearningHttpClient`: it shares Go authentication and preserves the exact original body bytes during a safe `401`/refresh replay. Receipt requests are explicitly unauthenticated with respect to normal sessions: only `Authorization: Rights <operation_token>` is sent.
+- A deletion request starts from the Go-authenticated account identity and current verified email. The operation ID, capability, challenge token and immutable target UUID are saved separately from credentials **before** submitting the fresh code. OTP values are never persisted. Completion includes `confirm: "delete_account"` after an explicit destructive confirmation.
+- Local account erasure happens only after the matching operation reports `pending` or `completed` with a valid `accepted_at`, via its `202` completion or capability status. A generic `401`, `404`, unknown outcome or `awaiting_proof` never erases the cache. Accepted status persists before local cleanup, so a restart can finish that known boundary even offline. Cleanup targets only the recorded UUID; another account and guest remain intact.
+- Unknown completion keeps the receipt and closes the account cache. Status can resume after restart/session revocation; the account screen polls at five-second intervals while pending, and app resume also checks it. Rejected first proofs preserve data and permit another attempt. Completed receipts remain a local confirmation; they are not credentials for any account.
+- A receipt for an older account does **not** block a different account's sync or import. `blocksCloudSync` is scoped to the selected UUID. Same-email re-registration neither reuses the old cache nor inherits its pending queue, writer, cursor or review set; old tagged backups are refused.
+
+### Reproducible local commands and actual results
+
+From the repository root:
+
+```sh
+flutter analyze
+flutter test test/data test/services test/providers \
+  test/screens/settings_screen_test.dart \
+  test/screens/sync_review_screen_test.dart \
+  test/screens/go_account_screen_test.dart --reporter json
+
+# Starts/reuses local disposable PostgreSQL and Mailpit; creates its own test DB.
+VEEA_FLUTTER_E2E_REPORT=/tmp/veea-flutter-go-e2e.jsonl \
+  make -C backend test-flutter-go
+```
+
+From `backend/`:
+
+```sh
+VEEA_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:54329/postgres \
+VEEA_TEST_SMTP_ADDR=127.0.0.1:1025 \
+VEEA_TEST_MAILPIT_API=http://127.0.0.1:8025 \
+  go test -race -tags=integration -count=1 -json ./...
+go vet -tags=integration,fluttere2e ./...
+make fmt
+bash -n scripts/test-flutter-go.sh
+```
+
+| Verification | Passed | Failed | Skipped |
+|---|---:|---:|---:|
+| Affected Flutter regressions | 348 | 0 | 0 |
+| Real-service Dart end-to-end scenarios | 6 | 0 | 0 |
+| Go unit + PostgreSQL + Mailpit regressions, `-race` | 1,049 | 0 | 0 |
+| Tagged Go host for the Dart end-to-end run, `-race` | 1 | 0 | 0 |
+
+Analysis reported **no issues**. Go vet, formatting, shell syntax and both staged/unstaged diff whitespace checks passed. Flutter counts exclude file-loading and test-hook pseudo-tests. Go counts include subtests (**416 top-level tests** in the full regression run). The new client coverage includes 13 transport/storage tests, nine provider tests and three account-entry widget tests. The existing TRD 05 acceptance suite remains green. No Go SQL changed; sqlc regeneration was unnecessary. No unrelated goldens were regenerated or run.
+
+The end-to-end host is compiled only with `integration,fluttere2e`. It serves **the production `app.New` router**, validates its exchanges against the current Go OpenAPI, uses an isolated `pgtest` PostgreSQL database and delivers real SMTP messages into loopback Mailpit. Dart extracts fresh OTPs from Mailpit, never from a fake sender or a test-code endpoint. Its temporary control server is test-only and loopback; it advances access expiry/cooldowns and runs the actual purge jobs. The storage restart simulation replaces the provider, transport, token store and SQLite handle using a disk-backed synthetic secure-storage boundary; it does not claim to exercise iOS Keychain or Android Keystore.
+
+The six scenarios passed:
+
+1. Real Mailpit signup proof, password and OTP sign-in preserve one UUID; session operations and guest sign-out work; vocabulary writes reach the real router.
+2. Twenty concurrent requests with expired access rotate exactly once, persist both tokens and produce no refresh reuse.
+3. Sign-out during a real committed refresh rejects the delayed response; credentials stay absent.
+4. Switching accounts during a real committed refresh rejects the old response; the new UUID and credentials remain usable.
+5. Losing a real committed refresh response requires sign-in; restarting does not resend the consumed token (`rotation_counter = 1`, no `refresh_reuse` revocation).
+6. A real accepted deletion response is lost and receipt reads are temporarily unavailable. The old cache/queue remain until a new provider polls the saved capability after restart. Acceptance clears only that account; purge completes; same-email signup receives a different UUID, empty account cache and no old queue. The old receipt cannot wipe or sign out the new account.
+
+The fault client intercepts selected responses **after** the real server has committed. It does not fabricate successes. Early verification exposed and fixed a logout-all completion race with notebook closure, stale Mailpit-code selection during same-email re-registration, and a receipt-scoping issue that could suppress a later account's background sync. Widget checks use real async storage outside the fake clock; the interrupted diagnostic UI run was replaced by the final passing suite above.
+
+### Remaining release gates
+
+**Keep `learning_sync_control.open = false`.** Only the disposable E2E database opens its gate temporarily; its initial closed state is asserted, it is closed again on exit (including failure), and the database is dropped. No deployed database or rollout control was changed.
+
+Before release, Nin still owns the explicit gate/deployment decision, real-device Keychain/Keystore and background/restart smoke checks, the verified Resend sending domain and real email delivery check, AC-7 timing measurement, and the previously recorded retention/restore/operational configuration checks. These local results do not prove those deployment properties or expand Phase 5 alerting. No staging deployment, staging command, commit or push was performed.

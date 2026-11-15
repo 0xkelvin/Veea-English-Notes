@@ -184,6 +184,11 @@ func (s *Service) Complete(ctx context.Context, op sqlc.AccountOperation, token,
 		if current.AcceptedAt != nil {
 			return nil
 		}
+		if op.Action == "delete" { // L2s after L2b, before L3 (TRD 06 §4.4)
+			if err := accounts.LockSuperAdminGuard(ctx, tx); err != nil {
+				return err
+			}
+		}
 		if a.UserID == nil || op.UserID == nil || *a.UserID != *op.UserID || a.ChallengeID != op.ChallengeID {
 			return otp.Rollback("binding_invalid", otp.ErrInvalidCode)
 		}
@@ -193,6 +198,13 @@ func (s *Service) Complete(ctx context.Context, op sqlc.AccountOperation, token,
 		}
 		if !ok || !eligible(op.Action, u) || !otp.MatchesAccount(a, u) || op.EmailRevision != u.EmailRevision || op.LifecycleRevision != u.LifecycleRevision {
 			return otp.Rollback("lifecycle_changed", ErrConflict)
+		}
+		if op.Action == "delete" {
+			if err := accounts.CheckNotLastSuperAdmin(ctx, tx, u); errors.Is(err, accounts.ErrLastSuperAdmin) {
+				return otp.Rollback("last_super_admin", err) // the proof stays usable
+			} else if err != nil {
+				return err
+			}
 		}
 		state := "pending"
 		digests := [][]byte{}
@@ -286,6 +298,12 @@ func (s *Service) Complete(ctx context.Context, op sqlc.AccountOperation, token,
 // cancelExports ends every pending or ready export of the owner inside the caller's
 // transition, discarding any artifact, with one account.export.cancel event per operation.
 func cancelExports(ctx context.Context, tx pgx.Tx, c session.Client, user uuid.UUID) error {
+	return CancelExports(ctx, tx, c, user, user)
+}
+
+// CancelExports is cancelExports for a transition made by another actor, such as an admin
+// suspension (TRD 06 §5.2): each account.export.cancel event names actor, with owner as target.
+func CancelExports(ctx context.Context, tx pgx.Tx, c session.Client, actor, user uuid.UUID) error {
 	ids, err := sqlc.New(tx).CancelAccountExports(ctx, &user)
 	if err != nil {
 		return err
@@ -294,7 +312,9 @@ func cancelExports(ctx context.Context, tx pgx.Tx, c session.Client, user uuid.U
 		return err
 	}
 	for _, id := range ids {
-		if err := audit.Record(ctx, tx, evidence(c, &user, "account.export.cancel", map[string]string{"operation_id": id.String()})); err != nil {
+		ev := evidence(c, &user, "account.export.cancel", map[string]string{"operation_id": id.String()})
+		ev.ActorUserID = &actor
+		if err := audit.Record(ctx, tx, ev); err != nil {
 			return err
 		}
 	}
@@ -305,6 +325,9 @@ func (s *Service) Deactivate(ctx context.Context, p session.Principal, revision 
 	var n int64
 	err := s.tx.Run(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		n = 0
+		if err := accounts.LockSuperAdminGuard(ctx, tx); err != nil { // L2s before L3 (TRD 06 §4.4)
+			return err
+		}
 		u, ok, err := accounts.LockForNoKeyUpdate(ctx, tx, p.UserID)
 		if err != nil {
 			return err
@@ -319,6 +342,9 @@ func (s *Service) Deactivate(ctx context.Context, p session.Principal, revision 
 		}
 		if u.LifecycleRevision != revision {
 			return ErrConflict
+		}
+		if err := accounts.CheckNotLastSuperAdmin(ctx, tx, u); err != nil {
+			return err
 		}
 		if err := accounts.SetState(ctx, tx, u.ID, "deactivated"); err != nil {
 			return err
@@ -344,6 +370,14 @@ func (s *Service) Deactivate(ctx context.Context, p session.Principal, revision 
 	if err == nil {
 		s.metrics.LifecycleAccepted("deactivate")
 		s.metrics.SessionsRevoked("deactivated", n)
+	}
+	if errors.Is(err, accounts.ErrLastSuperAdmin) {
+		// The refusal is evidence too; it commits on its own after the rollback.
+		ev := evidence(c, &p.UserID, "account.deactivate", nil)
+		ev.Outcome, ev.Reason, ev.SessionID = audit.Failure, "last_super_admin", &p.SessionID
+		if aerr := audit.Record(ctx, s.pool, ev); aerr != nil {
+			return aerr
+		}
 	}
 	return err
 }

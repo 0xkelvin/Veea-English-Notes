@@ -1,9 +1,10 @@
 openapi: 3.0.3
 info:
   title: Veea English Notes — Accounts API
-  version: 1.4.0-trd05
+  version: 1.5.0-trd06
   description: |
-    Email authentication and account foundation (TRD 01 §5), plus session management (TRD 02). This document is normative for the
+    Email authentication and account foundation (TRD 01 §5), plus session management (TRD 02), account lifecycle (TRD 04),
+    vocabulary sync (TRD 05) and RBAC user administration (TRD 06). This document is normative for the
     Go service in `backend/`: every route the router registers is listed here, and the
     integration suite validates every response it receives against it.
 
@@ -31,6 +32,7 @@ tags:
   - name: account
   - name: session
   - name: learning
+  - name: admin
 
 paths:
   /healthz:
@@ -481,7 +483,7 @@ paths:
       operationId: deactivateAccount
       summary: Deactivate and revoke all sessions; no retry receipt.
       security: [{ bearerAuth: [] }]
-      x-error-codes: [invalid_request, unsupported_media_type, rate_limited, internal_error, unauthorized, lifecycle_conflict]
+      x-error-codes: [invalid_request, unsupported_media_type, rate_limited, internal_error, unauthorized, lifecycle_conflict, last_super_admin]
       requestBody:
         required: true
         content:
@@ -580,13 +582,14 @@ paths:
       tags: [account]
       operationId: completeAccountDelete
       summary: Consume fresh proof atomically; accepted retries return the same operation.
+      description: The last active Super Admin is refused with `409 last_super_admin` and the proof stays usable (TRD 06 §4.4).
       security: [{ rightsAuth: [] }]
       parameters:
         - in: path
           name: operation_id
           required: true
           schema: { type: string, format: uuid }
-      x-error-codes: [invalid_request, unsupported_media_type, rate_limited, internal_error, not_found, invalid_code, code_attempts_exceeded, lifecycle_conflict]
+      x-error-codes: [invalid_request, unsupported_media_type, rate_limited, internal_error, not_found, invalid_code, code_attempts_exceeded, lifecycle_conflict, last_super_admin]
       requestBody:
         required: true
         content:
@@ -914,6 +917,183 @@ paths:
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "500": { $ref: "#/components/responses/InternalError" }
         "503": { $ref: "#/components/responses/SyncUnavailable" }
+  /v1/admin/users:
+    get:
+      tags: [admin]
+      operationId: listAdminUsers
+      summary: List or search accounts the actor may view (TRD 06 §6.3).
+      description: |
+        Staff only. An Admin sees accounts with role `user` only; a role filter for another role is
+        `403 target_not_permitted`. Keyset pages in `created_at` descending, `id` descending order.
+        Pages are not a snapshot and there is no total. The page token is bound to the filters.
+        Each request writes `admin.user.search` with the filter names only, never the search text.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: email, required: false, description: Exact match after normalization. Not with email_prefix., schema: { type: string } }
+        - { in: query, name: email_prefix, required: false, description: "3 to 254 characters after NFC and lowercasing; LIKE wildcards are literal.", schema: { type: string, minLength: 3, maxLength: 254 } }
+        - { in: query, name: role, required: false, schema: { type: string, enum: [user, admin, super_admin] } }
+        - { in: query, name: status, required: false, schema: { type: string, enum: [active, deactivated, suspended, pending_deletion] } }
+        - { in: query, name: limit, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { in: query, name: page_token, required: false, schema: { type: string, pattern: '^a1\.[A-Za-z0-9_-]{43}$' } }
+      x-error-codes: [invalid_request, invalid_email, unauthorized, forbidden, target_not_permitted, rate_limited, internal_error]
+      responses:
+        "200":
+          description: One page.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminUserPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminForbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/admin/users/{user_id}:
+    get:
+      tags: [admin]
+      operationId: getAdminUser
+      summary: One account's administrative detail (TRD 06 §6.4).
+      description: |
+        Staff only, within the TRD 06 matrix. `allowed_actions` and `assignable_roles` are computed
+        for this actor at this snapshot; every mutation rechecks them. Writes `admin.user.view`.
+        Never contains hashes, tokens, IP addresses, user agents or learning content.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/AdminUserID" }
+      x-error-codes: [invalid_request, unauthorized, forbidden, target_not_permitted, not_found, rate_limited, internal_error]
+      responses:
+        "200": { $ref: "#/components/responses/AdminUser" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminForbidden" }
+        "404": { $ref: "#/components/responses/AdminNotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/admin/users/{user_id}/sessions:
+    get:
+      tags: [admin]
+      operationId: listAdminUserSessions
+      summary: The target's live sessions (TRD 06 §6.5).
+      description: TRD 02 live predicate and ordering, without is_current, IP addresses or user agents. Writes `admin.user.sessions.view`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/AdminUserID" }
+      x-error-codes: [invalid_request, unauthorized, forbidden, target_not_permitted, not_found, rate_limited, internal_error]
+      responses:
+        "200":
+          description: Complete live list; the session cap bounds it.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminSessionList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminForbidden" }
+        "404": { $ref: "#/components/responses/AdminNotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/admin/users/{user_id}/session-revocations:
+    post:
+      tags: [admin]
+      operationId: revokeAdminUserSessions
+      summary: Revoke one owned session of the target, or all of them (TRD 06 §6.5).
+      description: |
+        `session_id: null` revokes every unrevoked target session. Unknown and foreign session IDs are
+        the same `404`. A retained revoked row returns `revoked_sessions: 0` with no event. Revocation
+        does not block a later sign-in; use suspension for that.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/AdminUserID" }
+      x-error-codes: [invalid_request, unsupported_media_type, unauthorized, forbidden, target_not_permitted, not_found, rate_limited, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminSessionRevocationRequest" }
+      responses:
+        "200":
+          description: Rows that changed from unrevoked to revoked.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [revoked_sessions]
+                properties:
+                  revoked_sessions: { type: integer, minimum: 0 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminForbidden" }
+        "404": { $ref: "#/components/responses/AdminNotFound" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/admin/users/{user_id}/lifecycle-transitions:
+    post:
+      tags: [admin]
+      operationId: transitionAdminUser
+      summary: Suspend or reinstate the target (TRD 06 §5.2, §5.3).
+      description: |
+        Suspension saves the interrupted state, revokes every target session and cancels exports.
+        Reinstatement restores exactly that state without reviving sessions or proofs. If the
+        requested end state already holds the answer is 200 with no change and no event; otherwise
+        `expected_lifecycle_revision` must match. Pending-deletion targets are `409 status_conflict`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/AdminUserID" }
+      x-error-codes: [invalid_request, unsupported_media_type, unauthorized, forbidden, target_not_permitted, not_found, lifecycle_conflict, status_conflict, rate_limited, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminTransitionRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/AdminUser" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminForbidden" }
+        "404": { $ref: "#/components/responses/AdminNotFound" }
+        "409": { $ref: "#/components/responses/AdminConflict" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/admin/users/{user_id}/role:
+    put:
+      tags: [admin]
+      operationId: changeAdminUserRole
+      summary: Change the target's role; Super Admin only (TRD 06 §5.1).
+      description: |
+        Promotion revokes every target session and requires an active, verified target. Demotion keeps
+        sessions and applies on the next request. A Super Admin's only self change is stepping down to
+        `user` while another active Super Admin remains (`409 last_super_admin` otherwise). If the target
+        already has `role` the answer is 200 with no change; otherwise `expected_role_revision` must match.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/AdminUserID" }
+      x-error-codes: [invalid_request, unsupported_media_type, unauthorized, forbidden, target_not_permitted, not_found, role_conflict, status_conflict, last_super_admin, rate_limited, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminRoleRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/AdminUser" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminForbidden" }
+        "404": { $ref: "#/components/responses/AdminNotFound" }
+        "409": { $ref: "#/components/responses/AdminConflict" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
 components:
   securitySchemes:
     rightsAuth:
@@ -940,6 +1120,14 @@ components:
     WWW-Authenticate:
       required: true
       schema: { type: string, enum: [Bearer] }
+
+  parameters:
+    AdminUserID:
+      in: path
+      name: user_id
+      required: true
+      description: Nonzero, 36-character hyphenated account UUID. Authentication and the staff check precede path validation.
+      schema: { type: string, format: uuid }
 
   requestBodies:
     Email:
@@ -1072,6 +1260,38 @@ components:
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
+    AdminUser:
+      description: The account's administrative view after the request.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AdminUser" }
+    AdminForbidden:
+      description: "`forbidden`: the actor is not staff. `target_not_permitted`: the TRD 06 matrix refuses this actor, target and action."
+      x-codes: [forbidden, target_not_permitted]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    AdminNotFound:
+      description: Unknown or purged account, or a session the target does not own.
+      x-codes: [not_found]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    AdminConflict:
+      description: "`lifecycle_conflict` or `role_conflict`: stale expected revision. `status_conflict` (with `account_status`): the target's status does not allow it. `last_super_admin`: no other active Super Admin would remain."
+      x-codes: [lifecycle_conflict, role_conflict, status_conflict, last_super_admin]
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
     OwnedRequestNotFound:
       description: Unknown or foreign request. No ownership disclosure.
       x-codes: [not_found]
@@ -1118,7 +1338,7 @@ components:
           schema: { $ref: "#/components/schemas/Problem" }
     Conflict:
       description: "`signup_unavailable`, `password_already_set`, `password_not_set` or `current_session_not_allowed`."
-      x-codes: [signup_unavailable, password_already_set, password_not_set, current_session_not_allowed, profile_conflict, email_unchanged, email_unavailable, lifecycle_conflict, export_not_ready, operation_canceled, sequence_gap, capacity_changed]
+      x-codes: [signup_unavailable, password_already_set, password_not_set, current_session_not_allowed, profile_conflict, email_unchanged, email_unavailable, lifecycle_conflict, export_not_ready, operation_canceled, sequence_gap, capacity_changed, last_super_admin]
       headers:
         X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
       content:
@@ -1339,6 +1559,11 @@ components:
         - not_found
         - method_not_allowed
         - unsupported_media_type
+        - forbidden
+        - target_not_permitted
+        - role_conflict
+        - status_conflict
+        - last_super_admin
     Problem:
       type: object
       additionalProperties: false
@@ -1358,6 +1583,7 @@ components:
         live_words: { type: integer, description: capacity_changed only. }
         content_bytes: { type: integer, description: capacity_changed only. }
         last_seq: { type: integer, description: "capacity_changed only: the writer's high-water mark, unchanged." }
+        account_status: { type: string, enum: [active, suspended, deactivated, pending_deletion], description: "status_conflict only: the target's current status." }
 
     DeactivateRequest:
       type: object
@@ -1597,3 +1823,126 @@ components:
         items: { type: array, maxItems: 500, items: { $ref: "#/components/schemas/VocabularyRecord" } }
         next_page_token: { type: string, nullable: true, pattern: '^s1\.[A-Za-z0-9_-]{54}$' }
         catch_up_cursor: { type: string, pattern: '^c1\.[A-Za-z0-9_-]{32}$' }
+    AdminTicketRef:
+      type: string
+      nullable: true
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$'
+      description: Optional external ticket identifier. No spaces, no @, nothing token-shaped.
+    AdminListItem:
+      type: object
+      additionalProperties: false
+      required: [id, email, status, role, created_at, state_changed_at]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        status: { type: string, enum: [active, suspended, deactivated, pending_deletion] }
+        role: { type: string, enum: [user, admin, super_admin] }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        state_changed_at: { type: string, format: date-time, nullable: true }
+    AdminUserPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_page_token]
+      properties:
+        items: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/AdminListItem" } }
+        next_page_token: { type: string, nullable: true, pattern: '^a1\.[A-Za-z0-9_-]{43}$' }
+    AdminUser:
+      type: object
+      additionalProperties: false
+      required: [id, email, email_verified_at, has_password, password_changed_at, display_name, preferred_language, time_zone,
+        created_at, status, lifecycle_revision, state_changed_at, suspension, pending_deletion, role, role_revision,
+        role_changed_at, sessions, allowed_actions, assignable_roles]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        email_verified_at: { type: string, format: date-time, nullable: true }
+        has_password: { type: boolean }
+        password_changed_at: { type: string, format: date-time, nullable: true }
+        display_name: { type: string, nullable: true }
+        preferred_language: { type: string }
+        time_zone: { type: string }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        status: { type: string, enum: [active, suspended, deactivated, pending_deletion] }
+        lifecycle_revision: { type: integer, minimum: 0 }
+        state_changed_at: { type: string, format: date-time, nullable: true }
+        suspension:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [reason_code, ticket_ref, suspended_at, suspended_by_user_id, resume_status]
+          properties:
+            reason_code: { type: string }
+            ticket_ref: { $ref: "#/components/schemas/AdminTicketRef" }
+            suspended_at: { type: string, format: date-time, nullable: true }
+            suspended_by_user_id: { type: string, format: uuid, nullable: true }
+            resume_status: { type: string, enum: [active, deactivated] }
+        pending_deletion:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [accepted_at]
+          properties:
+            accepted_at: { type: string, format: date-time, nullable: true }
+        role: { type: string, enum: [user, admin, super_admin] }
+        role_revision: { type: integer, minimum: 0 }
+        role_changed_at: { type: string, format: date-time, nullable: true }
+        sessions:
+          type: object
+          additionalProperties: false
+          required: [live_count, last_seen_at]
+          properties:
+            live_count: { type: integer, minimum: 0 }
+            last_seen_at: { type: string, format: date-time, nullable: true }
+        allowed_actions:
+          type: array
+          items: { type: string, enum: [suspend, reinstate, change_role, view_sessions, revoke_sessions] }
+        assignable_roles:
+          type: array
+          items: { type: string, enum: [user, admin, super_admin] }
+    AdminSessionList:
+      type: object
+      additionalProperties: false
+      required: [sessions]
+      properties:
+        sessions:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, device_name, platform, created_at, last_seen_at, refresh_expires_at, absolute_expires_at]
+            properties:
+              id: { type: string, format: uuid }
+              device_name: { type: string, minLength: 1, maxLength: 64 }
+              platform: { type: string, enum: [ios, android, web, other] }
+              created_at: { $ref: "#/components/schemas/Timestamp" }
+              last_seen_at: { $ref: "#/components/schemas/Timestamp" }
+              refresh_expires_at: { $ref: "#/components/schemas/Timestamp" }
+              absolute_expires_at: { $ref: "#/components/schemas/Timestamp" }
+    AdminSessionRevocationRequest:
+      type: object
+      additionalProperties: false
+      required: [session_id, reason_code, ticket_ref]
+      properties:
+        session_id: { type: string, format: uuid, nullable: true, description: null revokes every target session. }
+        reason_code: { type: string, enum: [account_compromise, owner_request, security_review, other] }
+        ticket_ref: { $ref: "#/components/schemas/AdminTicketRef" }
+    AdminTransitionRequest:
+      type: object
+      additionalProperties: false
+      required: [action, reason_code, ticket_ref, expected_lifecycle_revision]
+      properties:
+        action: { type: string, enum: [suspend, reinstate] }
+        reason_code:
+          type: string
+          description: "suspend: abuse, fraud, account_compromise, policy_violation, legal_request, owner_request, other. reinstate: appeal_upheld, issue_resolved, suspended_in_error, other."
+        ticket_ref: { $ref: "#/components/schemas/AdminTicketRef" }
+        expected_lifecycle_revision: { type: integer, minimum: 0 }
+    AdminRoleRequest:
+      type: object
+      additionalProperties: false
+      required: [role, reason_code, ticket_ref, expected_role_revision]
+      properties:
+        role: { type: string, enum: [user, admin, super_admin] }
+        reason_code: { type: string, enum: [staffing_change, access_review, account_compromise, other] }
+        ticket_ref: { $ref: "#/components/schemas/AdminTicketRef" }
+        expected_role_revision: { type: integer, minimum: 0 }

@@ -1,9 +1,12 @@
 # Veea English Notes — User Management Product Doc
 
-**Version:** v0.3 (Phase 1 and the Phase 3 v1 sync decisions approved; other later phases still proposals)
-**Date:** 2026-11-14
+**Version:** v0.4 (Phase 1, the Phase 3 v1 sync decisions and the Phase 4 RBAC decisions approved; other later phases still proposals)
+**Date:** 2026-11-15
 **Audience:** Product, backend and Flutter engineers, QA
 **Next document:** TRD 01 — *Email Authentication & Account Foundation*
+
+### Changes since v0.3
+- §9 RBAC and user administration: the matrix, Super Admin provisioning, last-Super-Admin protection, session effects and audit rules are approved (Nin, 2026-11-15). API and lock details live in [TRD 06](../trd/06-rbac-user-administration-api.md).
 
 ### Changes since v0.2
 - §8 Learning data sync: the v1 product rules are approved; protocol details live in [TRD 05](../trd/05-learning-data-sync.md). Q-L2 (sync conflict rule) is resolved.
@@ -61,7 +64,7 @@ Veea English Notes is an offline-first vocabulary app. It stays fully usable wit
 | **1** | Email OTP registration, email + password registration with OTP verification, email OTP sign-in, email + password sign-in, verified-email requirement, first-password set, password change and reset, session creation, refresh, current-device sign-out, automatic session revocation | **[Approved]**, detailed in §5 and §13 |
 | 2 | Account and profile management. **Follow-up scope [Approved]:** email change, device listing, revoking individual other sessions, user-initiated sign-out on all devices. Account status and data lifecycle (deactivate, delete, export) | Follow-up items approved as deferred; the rest **[Proposed]** |
 | 3 | Learning data sync | **[Approved]** v1 scope: vocabulary sync, detailed in §8 and TRD 05. Review progress is deferred |
-| 4 | RBAC and user administration | **[Proposed]** |
+| 4 | RBAC and user administration | **[Approved]**, detailed in §9 and TRD 06. Admin UI is TRD 07 |
 | 5 | Audit and monitoring | **[Proposed]** |
 | 6 | Free/Premium entitlements (no payments) | **[Proposed]** |
 | Later | Phone/SMS OTP, Facebook sign-in, Apple sign-in | **[Approved]** as later; no design yet |
@@ -285,22 +288,29 @@ Product rules only. API, storage, retry and restore protocol details are in [TRD
   - Adding a 21st retires the least recently used device's sync registration. That device's unsent changes go to manual review. Signing out of devices is unaffected (§5.6).
 - **[Approved]** **Review instead of silent replay.** After a server restore or a retired registration, the device downloads a fresh copy of the account. Unsynced changes from before stay for the learner to apply or discard one at a time. There is no bulk replay.
 
-## 9. RBAC and user administration (Phase 4 outline)
+## 9. RBAC and user administration (Phase 4)
+
+Approved by Nin on 2026-11-15. API, schema and lock order are in [TRD 06](../trd/06-rbac-user-administration-api.md).
 
 | Capability | User | Admin | Super Admin |
 |---|---|---|---|
 | Manage own account and data | Yes | Yes | Yes |
-| View and search users | No | Yes | Yes |
-| Suspend / reinstate a user | No | Yes | Yes |
-| Revoke a user's sessions | No | Yes | Yes |
-| Trigger a password reset for a user | No | Proposed: Yes | Yes |
+| View and search accounts | No | **User accounts only** | Every account |
+| Suspend / reinstate an account | No | **User accounts only** | Every other account, any role |
+| View / revoke an account's sessions | No | **User accounts only** | Every other account, any role |
+| Change roles (grant or remove Admin or Super Admin) | No | No | Every other account; on itself, only stepping down to User |
+| Trigger a password reset for a user | No | Out of scope (deferred) | Out of scope (deferred) |
 | View a user's learning content | No | **[Open]** | **[Open]** |
-| Grant/revoke Admin role | No | No | Yes |
-| Change system-wide settings | No | No | Yes |
+| Change system-wide settings | No | No | Not part of TRD 06 |
 
-- **[Proposed]** Admin actions require a stated reason and are audited.
-- **[Proposed]** Admins cannot act on Super Admins, and nobody can remove the last Super Admin.
-- **[Proposed]** Admins cannot see passwords, codes or tokens.
+- **[Approved]** Admins can view and manage User accounts only. They cannot see or act on Admin or Super Admin accounts, including their own.
+- **[Approved]** The only admin action anyone takes on their own account is a Super Admin stepping down to User, and only while another active Super Admin remains.
+- **[Approved]** The first Super Admin is provisioned by an operator command that promotes an existing active, verified account, only when no active Super Admin exists. Break-glass recovery exists only in that command and is audited.
+- **[Approved]** Nobody can remove the last active Super Admin: not by stepping down, demotion, suspension, deactivating their own account or accepting their own deletion. Concurrent attempts are serialized so exactly one active Super Admin always remains.
+- **[Approved]** Promotion signs the promoted account out everywhere. Demotion takes effect on the next request and keeps sessions. Suspension signs the account out everywhere and remembers whether it was active or deactivated. Reinstatement restores that state; old sessions and codes stay invalid. Accounts pending deletion cannot be suspended, reinstated or have their role changed.
+- **[Approved]** Every admin search, view and change is audited. Changes need a fixed reason code and may carry a ticket reference; there is no free-text note, and search text is never stored.
+- **[Approved]** Admins never see passwords, codes, tokens, IP addresses, user agents or learning content.
+- **[Approved]** Out of this delivery: the admin UI (TRD 07), suspension emails and admin-triggered password reset.
 
 ## 10. Audit and monitoring (Phase 5 outline)
 

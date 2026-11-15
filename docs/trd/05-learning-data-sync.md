@@ -1,6 +1,6 @@
 # TRD 05 — Learning Data Sync
 
-**Status:** v1.2. The backend is implemented and locally verified (§17): migration 00011, the six sync routes in `backend/api/openapi.yaml`, `backend/internal/learning/`, and the TRD 04 export and purge integration. Sync ships **closed** (`learning_sync_control.open = false`) and stays closed to users until the Flutter checks in §15.2 pass. Every product decision is recorded (D1–D10, §1.2), and Product Doc v0.3 §8 is aligned. This version also corrects the contracts listed in §17.2.
+**Status:** v1.2. The backend is implemented and locally verified (§17): migration 00011, the six sync routes in `backend/api/openapi.yaml`, `backend/internal/learning/`, and the TRD 04 export and purge integration. Sync ships **closed** (`learning_sync_control.open = false`) and stays closed to users until the Flutter checks in §15.2 pass. Every product decision is recorded (D1–D10, §1.2), and Product Doc v0.3 §8 is aligned. This version also corrects the contracts listed in §17.2. The Flutter sync core and local §15.2 evidence are now recorded in [Flutter verification](05-flutter-verification.md); the Go identity/session/deletion client integration now has local end-to-end evidence there; rollout and device/deployment gates remain closed.
 **Audience:** Nin, backend, Flutter and QA engineers.
 **Scope:** The first server-side sync of learning data in the Go backend:
 - ownership and offline retries;
@@ -729,12 +729,12 @@ Both orders are forced in `TestLearningRights_DeletionRacesPurgeAndReregistratio
 11. The shared canonical encoder produces the same bytes and code-point counts in Dart and Go, against shared test vectors.
 
 Local Flutter implementation and the 11-check result mapping are recorded in
-[Flutter verification](05-flutter-verification.md). The local checks pass; the Go
-identity/lifecycle client contract gap in that record still blocks opening sync.
+[Flutter verification](05-flutter-verification.md). The local checks and Go identity/session/deletion end-to-end scenarios pass;
+opening sync still requires the recorded device/deployment checks and operator decision.
 
 ## 16. Remaining implementation blockers
 
-1. **The rebuilt Flutter client and §15.2.** The local SQLite/HTTP/widget checks now pass ([verification](05-flutter-verification.md)). The existing Flutter auth/refresh/account-rights adapters still speak the Rust contract; their Go port and end-to-end verification remain blocked release work. Sync stays closed (`learning_sync_control.open = false`); opening it is a deliberate operator action after those gates are met.
+1. **The rebuilt Flutter client and §15.2.** The local SQLite/HTTP/widget checks now pass ([verification](05-flutter-verification.md)). Production Flutter auth/refresh/deletion adapters now use the Go contract and pass local Go/PostgreSQL/Mailpit end-to-end tests; real-device and deployment checks remain release gates. Sync stays closed (`learning_sync_control.open = false`); opening it is a deliberate operator action after those gates are met.
 2. **Shared encoder vectors for Dart.** The Go encoder and its tests exist. The vectors (escaping, emoji, combining marks, the 8,192/8,193-byte boundary) still have to be exported to the Flutter test suite.
 3. **Restore tooling and drill.** TRD 04 §12.5 and §12.7 have no restore tool yet. The §8.2 sync steps are SQL in this TRD, exercised by `TestLearningSync_RestoreRunbook`, but not drilled against a real backup.
 4. **Release order.** Migration 00011 runs through `cmd/migrate` before the binaries. It ends any ready version-1 export and adds a trigger on `users`. Every instance must run the new binaries before sync opens.

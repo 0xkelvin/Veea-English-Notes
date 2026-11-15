@@ -138,3 +138,19 @@ func TestDeletionBacklogGauge(t *testing.T) {
 		t.Fatal("a failed read must be visible, not a silent zero")
 	}
 }
+
+func TestAdminMetrics(t *testing.T) {
+	m := New()
+	m.AdminAction("suspend", "success")
+	m.RegisterActiveSuperAdmins(func(context.Context) (int64, error) { return 2, nil })
+	m.RegisterActiveSuperAdmins(func(context.Context) (int64, error) { return 9, nil }) // ignored
+	out := scrape(t, m)
+	for _, want := range []string{`admin_actions_total{action="suspend",result="success"} 1`, `admin_active_super_admins 2`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %s", want)
+		}
+	}
+	var nilM *Metrics
+	nilM.AdminAction("view", "success")
+	nilM.RegisterActiveSuperAdmins(func(context.Context) (int64, error) { return 1, nil })
+}

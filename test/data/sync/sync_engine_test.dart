@@ -353,6 +353,19 @@ void main() {
         await word('sent', deleted: true, synced: true);
         await queue('sent', 'delete');
         await word('never', synced: true);
+        await word('stale-deleted', synced: true);
+        await repo.database.update(
+          'words',
+          {
+            'server_copy': jsonEncode({
+              'entity_id': 'stale-deleted',
+              'revision': 1,
+              'deleted': true,
+            }),
+          },
+          where: 'id = ?',
+          whereArgs: ['stale-deleted'],
+        );
         await word('clean-lost', dirty: false, synced: true);
         var pushes = 0;
         final e = engine((r) {
@@ -372,6 +385,10 @@ void main() {
         expect(await e.sync(), SyncRun.done);
         expect(pushes, 0);
         final items = await e.reviewItems();
+        expect(
+          items.firstWhere((r) => r.entityId == 'stale-deleted').op,
+          'update',
+        );
         final sent = items.firstWhere((r) => r.entityId == 'sent');
         expect(sent.op, 'delete');
         expect(sent.row['writer_id'], 'writer');
@@ -787,6 +804,7 @@ void main() {
       var e = engine(route);
       final plan = await e.planImport();
       expect((await e.importWords(plan, ['guest'])).pending, isTrue);
+      expect(await e.shouldPromptImport(), isFalse);
       final payload = (await repo.database.query(
         'sync_queue',
       )).single['payload'];

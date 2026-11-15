@@ -188,7 +188,7 @@ func TestSetPassword_RechecksStateInsideTheTransaction(t *testing.T) {
 	}{
 		{"acting session logged out", `UPDATE sessions SET revoked_at = now(), revoked_reason = 'logout' WHERE id = $1`, true,
 			http.StatusUnauthorized, "unauthorized", "session_invalid"},
-		{"account suspended", `UPDATE users SET status = 'suspended' WHERE id = $1`, false,
+		{"account suspended", `UPDATE users SET status = 'suspended', resume_status = 'active', suspension_reason = 'other' WHERE id = $1`, false,
 			http.StatusUnauthorized, "unauthorized", "account_unavailable"},
 		{"password set meanwhile", `UPDATE users SET password_hash = '$argon2id$v=19$m=64,t=1,p=1$c2FsdHNhbHRzYWx0$aGFzaGhhc2hoYXNoaGFzaA' WHERE id = $1`, false,
 			http.StatusConflict, "password_already_set", "password_already_set"},
@@ -437,7 +437,7 @@ func TestReset_AcknowledgementIsUniform(t *testing.T) {
 	env := newSignupEnv(t, nil)
 	known, _ := env.passwordUser(t)
 	suspended := newUser(t, env.q)
-	mustExec(t, env.d.Pool, `UPDATE users SET status = 'suspended' WHERE id = $1`, suspended.ID)
+	mustExec(t, env.d.Pool, `UPDATE users SET status = 'suspended', resume_status = 'active', suspension_reason = 'other' WHERE id = $1`, suspended.ID)
 	shape := func(r response) string {
 		s := string(r.raw)
 		for _, k := range []string{"challenge_token", "expires_at", "resend_after"} {
@@ -523,7 +523,7 @@ func TestReset_AccountOutOfGoodStandingOrFailedWriteRollsBack(t *testing.T) {
 		code := env.queueCode()
 		ack := env.resetStart(t, u.Email)
 		hash := env.storedHash(t, u)
-		mustExec(t, env.d.Pool, `UPDATE users SET status = 'suspended' WHERE id = $1`, u.ID)
+		mustExec(t, env.d.Pool, `UPDATE users SET status = 'suspended', resume_status = 'active', suspension_reason = 'other' WHERE id = $1`, u.ID)
 		wantProblem(t, env.resetComplete(t, ack.str("challenge_token"), code, newPassword()), http.StatusBadRequest, "invalid_code")
 		if _, consumed, _ := env.challengeByToken(t, ack.str("challenge_token")); consumed || env.storedHash(t, u) != hash {
 			t.Fatal("nothing changes and the code is not consumed")

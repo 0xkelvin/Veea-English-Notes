@@ -599,7 +599,9 @@ UPDATE users SET status= $1, lifecycle_revision=lifecycle_revision+1,
  display_name=CASE WHEN $1::text='pending_deletion' THEN NULL ELSE display_name END,
  preferred_language=CASE WHEN $1::text='pending_deletion' THEN 'en' ELSE preferred_language END,
  time_zone=CASE WHEN $1::text='pending_deletion' THEN 'UTC' ELSE time_zone END,
- daily_goal=CASE WHEN $1::text='pending_deletion' THEN 20 ELSE daily_goal END
+ daily_goal=CASE WHEN $1::text='pending_deletion' THEN 20 ELSE daily_goal END,
+ -- TRD 06: leaving 'suspended' (owner deletion while suspended) clears the saved suspension.
+ resume_status=NULL, suspension_reason=NULL, suspension_ticket_ref=NULL, suspended_by=NULL
 WHERE id= $2
 `
 

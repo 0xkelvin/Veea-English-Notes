@@ -242,7 +242,7 @@ func TestSessionManagement_AuthenticationAndListRevalidation(t *testing.T) {
 			case "revoked":
 				mustExec(t, e.d.Pool, `UPDATE sessions SET revoked_at = now(), revoked_reason = 'logout' WHERE id = $1`, a.SessionID)
 			case "inactive":
-				mustExec(t, e.d.Pool, `UPDATE users SET status = 'suspended' WHERE id = $1`, u.ID)
+				mustExec(t, e.d.Pool, `UPDATE users SET status = 'suspended', resume_status = 'active', suspension_reason = 'other' WHERE id = $1`, u.ID)
 			case "unverified":
 				mustExec(t, e.d.Pool, `UPDATE users SET email_verified_at = NULL WHERE id = $1`, u.ID)
 			}

@@ -171,7 +171,7 @@ func TestAC22_ErrorBodiesNeverContainTheIssuedCode(t *testing.T) {
 		u := newUser(t, env.q)
 		code := env.queueCode()
 		ack := env.otpLoginStart(t, u.Email)
-		mustExec(t, env.d.Pool, `UPDATE users SET status = 'suspended' WHERE id = $1`, u.ID)
+		mustExec(t, env.d.Pool, `UPDATE users SET status = 'suspended', resume_status = 'active', suspension_reason = 'other' WHERE id = $1`, u.ID)
 		noCode(t, env.otpLoginVerify(t, ack.str("challenge_token"), code), code)
 	})
 	t.Run("set and reset with the right code", func(t *testing.T) {
@@ -364,6 +364,7 @@ func TestAudit_CooldownRecordIsScopedByPurpose(t *testing.T) {
 func TestContract_JSONOperationsRequireTheJSONMediaType(t *testing.T) {
 	env := newSignupEnv(t, nil)
 	s := env.issue(t, newUser(t, env.q), "Phone")
+	staff := env.issue(t, env.superAdmin(t), "Admin console") // admin routes check staff before the body
 	doc, _, err := loadContract()
 	if err != nil {
 		t.Fatal(err)
@@ -398,6 +399,8 @@ func TestContract_JSONOperationsRequireTheJSONMediaType(t *testing.T) {
 					if op.Security != nil && len(*op.Security) > 0 {
 						if rightsToken != "" {
 							req.Header.Set("Authorization", "Rights "+rightsToken)
+						} else if strings.HasPrefix(path, "/v1/admin/") {
+							req.Header.Set("Authorization", "Bearer "+staff.AccessToken)
 						} else {
 							req.Header.Set("Authorization", "Bearer "+s.AccessToken)
 						}

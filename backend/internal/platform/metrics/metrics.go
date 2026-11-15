@@ -26,6 +26,7 @@ type Metrics struct {
 	reg         *prometheus.Registry
 	pendingOnce sync.Once
 	backlogOnce sync.Once
+	adminOnce   sync.Once
 
 	otpStarted      *prometheus.CounterVec
 	otpVerified     *prometheus.CounterVec
@@ -43,6 +44,7 @@ type Metrics struct {
 	learningPush    *prometheus.CounterVec
 	learningItems   *prometheus.CounterVec
 	learningReset   *prometheus.CounterVec
+	adminActions    *prometheus.CounterVec
 }
 
 // New registers every TRD 11.3 metric plus the Go runtime and process collectors.
@@ -96,6 +98,9 @@ func New() *Metrics {
 	m.learningReset = f(prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "learning_sync_reset_total", Help: "410 sync_reset_required answers, by reason (TRD 05)."},
 		[]string{"reason"})).(*prometheus.CounterVec)
+	m.adminActions = f(prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "admin_actions_total", Help: "Admin API requests that reached their transaction, by action and result (TRD 06)."},
+		[]string{"action", "result"})).(*prometheus.CounterVec)
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	return m
 }
@@ -283,4 +288,33 @@ func (m *Metrics) LearningReset(reason string) {
 	if m != nil {
 		m.learningReset.WithLabelValues(label(reason)).Inc()
 	}
+}
+
+// AdminAction counts one admin request after its transaction ended: result is success, noop,
+// denied or conflict (TRD 06 §9.3).
+func (m *Metrics) AdminAction(action, result string) {
+	if m != nil {
+		m.adminActions.WithLabelValues(label(action), label(result)).Inc()
+	}
+}
+
+// RegisterActiveSuperAdmins exports admin_active_super_admins, read when scraped. The TRD 06
+// invariant keeps it at 1 or more; a 0 means a direct database edit. Only the first call
+// registers.
+func (m *Metrics) RegisterActiveSuperAdmins(count func(ctx context.Context) (int64, error)) {
+	if m == nil || count == nil {
+		return
+	}
+	m.adminOnce.Do(func() {
+		m.reg.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "admin_active_super_admins", Help: "Active, verified accounts with the super_admin role."}, func() float64 {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			n, err := count(ctx)
+			if err != nil {
+				return -1
+			}
+			return float64(n)
+		}))
+	})
 }

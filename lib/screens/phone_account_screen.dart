@@ -1,3 +1,5 @@
+import '../providers/go_auth_provider.dart';
+import 'go_account_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -30,6 +32,7 @@ class _AccountScreenState extends State<AccountScreen> {
     super.didChangeDependencies();
     if (_flow != null) return;
     final auth = context.read<AuthProvider>();
+    if (auth is GoAuthProvider) return;
     _flow = PhoneAuthController(auth)..initialize();
     // Resolve a deletion whose response was lost as soon as the screen opens.
     if (auth.hasPendingDeletion && !_checkedPending) {
@@ -416,6 +419,9 @@ class _AccountScreenState extends State<AccountScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (context.watch<AuthProvider>() is GoAuthProvider) {
+      return const GoAccountScreen();
+    }
     final auth = context.watch<AuthProvider>();
     final sync = context.watch<SyncService>();
     final words = context.watch<VocabularyProvider>().stats.totalWords;

@@ -14,6 +14,7 @@ Design: [`docs/trd/01-email-authentication-account-foundation.md`](../docs/trd/0
 api/openapi.yaml         the HTTP contract (normative); `go test ./api` checks it against the router
 cmd/api/                 HTTP service
 cmd/migrate/             applies migrations, then exits (up | status)
+cmd/admin/               operator-only: bootstrap-super-admin (TRD 06); never run by the API
 internal/platform/
   config/                environment loading and validation
   db/                    pgx pool, transaction runner (READ COMMITTED, deadlock retry)
@@ -124,7 +125,7 @@ are decoded strictly: unknown fields are `400 invalid_request`. A local run with
 
 ```sh
 make check                    # gofmt, vet, unit tests; no database needed
-make build                    # bin/api and bin/migrate
+make build                    # bin/api, bin/migrate and bin/admin
 make test-db-up               # disposable PostgreSQL in Docker on 127.0.0.1:54329
 make test-integration         # integration tests against it
 make test-db-down
@@ -240,3 +241,13 @@ See [TRD 02](../docs/trd/02-session-management.md) for response fields, concurre
 Completion preserves the user ID and data, consumes both proofs, invalidates older bound challenges using `email_revision`, revokes every session, and enqueues both notifications in one transaction. Retry with the revoked bearer returns 401; recover a lost response through the confirmation email or sign in with the new address. Old-mailbox recovery and receipt endpoints are deferred. The old notification omits the new address.
 
 Migrate before deploying. Every API instance must enforce challenge/password-sign-in email revisions before email cutover is enabled; an older instance could otherwise honor stale work. See [TRD 03](../docs/trd/03-account-profile-email-change.md) for contracts, lock ordering and verification evidence.
+
+### Flutter → Go local end-to-end checks
+
+Run `make test-flutter-go` to drive the real account/sync router from Dart against
+an isolated local PostgreSQL database and SMTP/Mailpit. The script starts/reuses
+the existing local services. It requires Flutter on PATH; `VEEA_FLUTTER_E2E_REPORT`
+can select the local JSON test report path. The fixture temporarily opens only its
+own test database's sync gate and closes it before disposal; rollout stays closed.
+See [Flutter verification](../docs/trd/05-flutter-verification.md) for coverage and
+release gates. No deployed endpoints are used.

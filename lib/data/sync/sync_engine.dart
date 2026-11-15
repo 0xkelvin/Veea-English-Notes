@@ -1265,7 +1265,13 @@ class SyncEngine {
               'base_revision': base,
               'data': data,
             }
-          : null;
+          : {
+              'op': 'update',
+              'entity_id': id,
+              'base_revision': base,
+              'changed_fields': [..._fields, 'capture_day'],
+              'data': data,
+            };
     }
     return {
       'op': 'update',
@@ -1657,6 +1663,14 @@ class SyncEngine {
         'live_words': plan.liveWords,
         'content_bytes': plan.contentBytes,
       });
+      // Consent is durable with the queue, even when the first response is
+      // lost and a later background run resolves it.
+      await txn.insert('sync_import_decisions', {
+        'user_id': owner,
+        'guest_dataset_id': plan.datasetId,
+        'decision': 'consented',
+        'decided_at': _now().toUtc().toIso8601String(),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
       var requestId = _uuid.v4();
       var requestCount = 0;
       for (final id in ids.toSet()) {

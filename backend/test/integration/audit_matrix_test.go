@@ -176,6 +176,26 @@ func TestAudit_Matrix(t *testing.T) {
 			ev{action: "auth.session.revoke", outcome: "success", actor: u.ID.String(), target: u.ID.String(), meta: map[string]string{"reason": "account_delete", "count": "0"}}, ev{action: "account.delete.request", outcome: "success", actor: u.ID.String(), target: u.ID.String()})
 	})
 
+	t.Run("TRD06 admin", func(t *testing.T) {
+		sa, s := env.staff(t, "super_admin")
+		u := env.withRole(t, "user")
+		env.issue(t, u, "Target")
+		actor, target := sa.ID.String(), u.ID.String()
+		rid := newRID()
+		wantStatus(t, env.call(t, "GET", adminPath(u.ID, ""), "", rid, bearer(s.AccessToken)...), 200)
+		env.wantEvents(t, rid, ev{action: "admin.user.view", outcome: "success", actor: actor, target: target, session: s.SessionID.String()})
+		rid = newRID()
+		wantStatus(t, env.call(t, "POST", adminPath(u.ID, "/lifecycle-transitions"), map[string]any{"action": "suspend",
+			"reason_code": "abuse", "ticket_ref": nil, "expected_lifecycle_revision": 0}, rid, bearer(s.AccessToken)...), 200)
+		env.wantEvents(t, rid,
+			ev{action: "auth.session.revoke", outcome: "success", actor: actor, target: target, session: s.SessionID.String(), meta: map[string]string{"reason": "account_suspended", "count": "1"}},
+			ev{action: "admin.user.suspend", outcome: "success", reason: "abuse", actor: actor, target: target, session: s.SessionID.String(), meta: map[string]string{"from_status": "active"}})
+		rid = newRID()
+		wantStatus(t, env.call(t, "PUT", adminPath(u.ID, "/role"), map[string]any{"role": "admin", "reason_code": "other",
+			"ticket_ref": nil, "expected_role_revision": 0}, rid, bearer(s.AccessToken)...), 409)
+		env.wantEvents(t, rid) // status_conflict: no event
+	})
+
 	// --- registration (Flows A, B) ---------------------------------------------------------
 	t.Run("signup start, new email", func(t *testing.T) {
 		rid := newRID()
@@ -254,7 +274,7 @@ func TestAudit_Matrix(t *testing.T) {
 		env.expireCooldownForPurpose(t, "login", u.Email)
 		code = env.queueCode()
 		ack = env.otpLoginStart(t, u.Email)
-		mustExec(t, env.d.Pool, `UPDATE users SET status = 'suspended' WHERE id = $1`, u.ID)
+		mustExec(t, env.d.Pool, `UPDATE users SET status = 'suspended', resume_status = 'active', suspension_reason = 'other' WHERE id = $1`, u.ID)
 		rid = newRID()
 		env.call(t, "POST", pathOTPLoginVerify, map[string]any{"challenge_token": ack.str("challenge_token"), "code": code, "device": testDevice}, rid)
 		env.wantEvents(t, rid, ev{action: "auth.otp.verify", outcome: "failure", reason: "account_unavailable", target: uid})
@@ -312,7 +332,7 @@ func TestAudit_Matrix(t *testing.T) {
 		env.wantEvents(t, rid,
 			ev{action: "auth.logout", outcome: "success", actor: uid, target: uid, session: a.SessionID.String()},
 			ev{action: "auth.session.revoke", outcome: "success", target: uid, session: a.SessionID.String(), meta: map[string]string{"reason": "logout", "count": "1"}})
-		mustExec(t, env.d.Pool, `UPDATE users SET status = 'suspended' WHERE id = $1`, u.ID)
+		mustExec(t, env.d.Pool, `UPDATE users SET status = 'suspended', resume_status = 'active', suspension_reason = 'other' WHERE id = $1`, u.ID)
 		rid = newRID()
 		wantStatus(t, env.call(t, "GET", pathMe, nil, rid, bearerOf(b)...), http.StatusUnauthorized)
 		env.wantEvents(t, rid, ev{action: "auth.session.revoke", outcome: "success", target: uid, session: b.SessionID.String(),

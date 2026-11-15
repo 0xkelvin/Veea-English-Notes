@@ -8,10 +8,10 @@ import 'data/local/legacy_import.dart';
 import 'data/feedback_repository.dart';
 import 'providers/feedback_provider.dart';
 import 'data/local/sqlite_vocabulary_repository.dart';
-import 'data/remote/api_client.dart';
-import 'data/remote/auth_api.dart';
-import 'data/remote/token_store.dart';
-import 'package:http/http.dart' as http;
+import 'data/remote/go/api_client.dart';
+import 'data/remote/go/auth_api.dart';
+import 'data/remote/go/session_store.dart';
+import 'providers/go_auth_provider.dart';
 import 'data/sync/learning_sync_api.dart';
 import 'data/sync/sync_engine.dart';
 import 'providers/app_gate_provider.dart';
@@ -46,21 +46,21 @@ Future<void> main() async {
     final vocabulary = VocabularyProvider(repository);
     await vocabulary.init();
 
-    const tokens = TokenStore();
-    final apiClient = ApiClient(tokenStore: tokens);
+    final tokens = GoTokenStore();
+    final apiClient = GoApiClient(tokens: tokens);
     final sync = SyncService(
       repository: repository,
       learningEngine: SyncEngine(
         db: repository.database,
         api: LearningSyncApi(
-          client: http.Client(),
+          client: GoLearningHttpClient(apiClient),
           baseUrl: AppConfig.apiBaseUrl,
           accessToken: tokens.readAccessToken,
         ),
       ),
     );
-    final auth = AuthProvider(
-      authApi: AuthApi(client: apiClient, tokens: tokens),
+    final auth = GoAuthProvider(
+      authApi: GoAuthApi(client: apiClient, tokens: tokens),
       tokens: tokens,
       client: apiClient,
       // Deleting an account has to wipe this device too, so the provider needs
@@ -220,7 +220,7 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
   Future<void> _syncNotebook() async {
     if (!widget.auth.isSignedIn ||
         !AppConfig.isCloudEnabled ||
-        widget.auth.hasPendingDeletion) {
+        widget.auth.blocksCloudSync) {
       return;
     }
     if (await widget.sync.synchronise() && mounted) {

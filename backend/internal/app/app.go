@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/account"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/admin"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/httpapi"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/otp"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/password"
@@ -142,9 +143,11 @@ func New(o Options) (http.Handler, error) {
 		Account:   account.New(o.Pool, otpSvc, outbox, m, o.OnTxRetry),
 		Lifecycle: lifecycle.New(o.Pool, otpSvc, keyring, emailHMAC, m, o.OnTxRetry),
 		Learning:  learning.New(o.Pool, m, o.OnTxRetry),
+		Admin:     admin.New(o.Pool, emailHMAC, m, o.OnTxRetry),
 		Limiter:   ratelimit.NewLimiter(o.Pool), Metrics: m, IPs: clientip.New(o.TrustedProxies),
 		Log: o.Logger.With("component", "http")}
 	m.RegisterOutboxPending(sqlc.New(o.Pool).CountPendingOutbox)
 	m.RegisterDeletionBacklog(sqlc.New(o.Pool).OldestPendingDeletionSeconds)
+	m.RegisterActiveSuperAdmins(sqlc.New(o.Pool).CountActiveSuperAdmins)
 	return httpx.NewHandler(o.Pool, o.ReadyTimeout, auth.Mount), nil
 }

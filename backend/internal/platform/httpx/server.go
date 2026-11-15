@@ -201,6 +201,11 @@ const (
 	CodeCurrentSessionNotAllowed = "current_session_not_allowed"
 	CodeMethodNotAllowed         = "method_not_allowed"
 	CodeUnsupportedMediaType     = "unsupported_media_type"
+	CodeForbidden                = "forbidden"
+	CodeTargetNotPermitted       = "target_not_permitted"
+	CodeRoleConflict             = "role_conflict"
+	CodeStatusConflict           = "status_conflict"
+	CodeLastSuperAdmin           = "last_super_admin"
 )
 
 var titles = map[string]string{
@@ -237,6 +242,11 @@ var titles = map[string]string{
 	CodeCurrentSessionNotAllowed: "Use sign out to end the current session.",
 	CodeMethodNotAllowed:         "This method is not allowed here.",
 	CodeUnsupportedMediaType:     "Send the request body as application/json.",
+	CodeForbidden:                "This account cannot use the admin API.",
+	CodeTargetNotPermitted:       "This action is not permitted on this account.",
+	CodeRoleConflict:             "The role changed. Reload the account before retrying.",
+	CodeStatusConflict:           "The account status does not allow this action.",
+	CodeLastSuperAdmin:           "Another active Super Admin is required first.",
 }
 
 // WriteProblem writes an RFC 9457 problem document with a stable code and the request id.

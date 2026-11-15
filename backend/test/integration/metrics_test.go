@@ -111,7 +111,7 @@ func TestMetrics_RecordedThroughTheRouter(t *testing.T) {
 	u := newUser(t, env.q)
 	lcode := env.queueCode()
 	lack := env.otpLoginStart(t, u.Email)
-	mustExec(t, env.d.Pool, `UPDATE users SET status = 'suspended' WHERE id = $1`, u.ID)
+	mustExec(t, env.d.Pool, `UPDATE users SET status = 'suspended', resume_status = 'active', suspension_reason = 'other' WHERE id = $1`, u.ID)
 	env.otpLoginVerify(t, lack.str("challenge_token"), lcode)
 	wantMetric(t, m, `auth_otp_verified_total{purpose="login",result="rejected"}`, 1)
 

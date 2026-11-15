@@ -381,6 +381,9 @@ class AuthProvider extends ChangeNotifier {
   /// A deletion was sent but its outcome is not yet known.
   bool get hasPendingDeletion => _pendingDeletion != null;
 
+  /// Whether unresolved deletion should stop this notebook from syncing.
+  bool get blocksCloudSync => hasPendingDeletion;
+
   /// Deletes the phone account with a fresh code.
   ///
   /// Local data is wiped only after the server confirms, either with 204 or,

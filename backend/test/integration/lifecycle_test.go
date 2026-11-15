@@ -127,7 +127,7 @@ func TestLifecycle_InactiveRestrictedExportAndDelete(t *testing.T) {
 			u := newUser(t, e.q)
 			a := e.issue(t, u, "A")
 			if status != "active" {
-				mustExec(t, e.d.Pool, `UPDATE users SET status=$2 WHERE id=$1`, u.ID, status)
+				mustExec(t, e.d.Pool, `UPDATE users SET status=$2::text, resume_status=CASE WHEN $2::text='suspended' THEN 'active' END, suspension_reason=CASE WHEN $2::text='suspended' THEN 'other' END WHERE id=$1`, u.ID, status)
 			}
 			p, r := e.rightsStart(t, "export", u.Email)
 			wantStatus(t, r, 202)
@@ -794,7 +794,7 @@ func TestLifecycle_ReactivationConflictAndReceiptExpiry(t *testing.T) {
 	mustExec(t, e.d.Pool, `UPDATE users SET status='deactivated' WHERE id=$1`, u.ID)
 	p, r := e.rightsStart(t, "reactivate", u.Email)
 	wantStatus(t, r, 202)
-	mustExec(t, e.d.Pool, `UPDATE users SET status='suspended',lifecycle_revision=1 WHERE id=$1`, u.ID)
+	mustExec(t, e.d.Pool, `UPDATE users SET status = 'suspended', resume_status = 'active', suspension_reason = 'other', lifecycle_revision=1 WHERE id=$1`, u.ID)
 	wantProblem(t, e.rightsComplete(t, p), 409, "lifecycle_conflict")
 	d, r := e.rightsStart(t, "delete", u.Email)
 	wantStatus(t, r, 202)

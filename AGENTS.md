@@ -53,6 +53,16 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
   `ON DELETE RESTRICT` and are drained in bounded batches by `learning.PurgeBatch`. Sync ships
   closed (`learning_sync_control.open = false`): do not open it before the Flutter checks in TRD 05
   §15.2 pass. `learning.AppendCanonical` is the only encoder for quota and export sizes.
+  RBAC user administration (TRD 06) is `backend/internal/admin/` (pure matrix in `policy.go`).
+  Every `/v1/admin/*` route is `authenticated(requireStaff(...))`; `requireStaff` is only a
+  pre-check, and admin writes revalidate the actor's role, standing and acting session under
+  lock (L3 actor and target in UUID order, then L4a). Admins act on role `user` only. Any
+  transaction that can remove an active Super Admin (role change, bootstrap, suspension, owner
+  deactivation, deletion acceptance) takes the Super Admin guard `accounts.LockSuperAdminGuard`
+  (L2s: after L0 to L2b, before L3) and calls `accounts.CheckNotLastSuperAdmin`. First Super
+  Admin and break-glass are `cmd/admin bootstrap-super-admin` only, never an API route or API
+  startup. A suspended row must carry `resume_status` and `suspension_reason`, so write fixtures
+  through the full column set.
   The HTTP contract is `backend/api/openapi.yaml`; a new or changed route updates it in the same
   change (`go test ./api` fails when the router and the spec disagree, and router tests fail on
   any response the spec does not describe).

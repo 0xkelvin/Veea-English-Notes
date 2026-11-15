@@ -7,6 +7,8 @@ package httpapi
 import (
 	"errors"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/account"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/admin"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity/accounts"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/learning"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/lifecycle"
 	"log/slog"
@@ -31,6 +33,7 @@ import (
 
 // Handlers serves the auth endpoints.
 type Handlers struct {
+	Admin     *admin.Service
 	Lifecycle *lifecycle.Service
 	Learning  *learning.Service
 	Account   *account.Service
@@ -80,6 +83,7 @@ func (h *Handlers) Mount(mux httpx.Router) {
 	mux.HandleFunc("POST /v1/learning/sync/import", h.authenticated(h.learningImport))
 	mux.HandleFunc("GET /v1/learning/sync/changes", h.authenticated(h.learningChanges))
 	mux.HandleFunc("GET /v1/learning/sync/snapshot", h.authenticated(h.learningSnapshot))
+	h.mountAdmin(mux)
 }
 
 // --- request and response shapes (TRD 5.2) ---------------------------------------------------
@@ -441,7 +445,24 @@ func (h *Handlers) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var limited *otp.RateLimitedError
 	var reset *learning.ResetError
 	var capacity *learning.CapacityError
+	var status *admin.StatusConflictError
 	switch {
+	case errors.Is(err, admin.ErrForbidden):
+		httpx.WriteProblem(w, http.StatusForbidden, httpx.CodeForbidden)
+	case errors.Is(err, admin.ErrTargetNotPermitted):
+		httpx.WriteProblem(w, http.StatusForbidden, httpx.CodeTargetNotPermitted)
+	case errors.Is(err, admin.ErrNotFound):
+		httpx.WriteProblem(w, http.StatusNotFound, httpx.CodeNotFound)
+	case errors.Is(err, admin.ErrLifecycleConflict):
+		httpx.WriteProblem(w, http.StatusConflict, httpx.CodeLifecycleConflict)
+	case errors.Is(err, admin.ErrRoleConflict):
+		httpx.WriteProblem(w, http.StatusConflict, httpx.CodeRoleConflict)
+	case errors.As(err, &status):
+		httpx.WriteProblem(w, http.StatusConflict, httpx.CodeStatusConflict, map[string]any{"account_status": status.Status})
+	case errors.Is(err, accounts.ErrLastSuperAdmin):
+		httpx.WriteProblem(w, http.StatusConflict, httpx.CodeLastSuperAdmin)
+	case errors.Is(err, admin.ErrInvalidPageToken):
+		httpx.WriteProblem(w, http.StatusBadRequest, httpx.CodeInvalidRequest)
 	case errors.Is(err, learning.ErrClosed):
 		w.Header().Set("Retry-After", "60")
 		httpx.WriteProblem(w, http.StatusServiceUnavailable, httpx.CodeSyncUnavailable)

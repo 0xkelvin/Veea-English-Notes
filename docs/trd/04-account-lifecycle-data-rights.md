@@ -85,6 +85,12 @@ No other transition is allowed: particularly no admin-created session, no suspen
 
 **[Future RBAC dependency]** Existing role strings `user/admin/super_admin` are not sufficient authorization to ship operator lifecycle routes. Future permissions must define who can suspend/reinstate/revoke, permitted target roles, reason requirements, independent approval for exceptional rights actions, and last-Super-Admin protections. Proposed operator API: `POST /v1/admin/users/{user_id}/lifecycle-transitions` with `{action, reason_code, expected_revision}`; it stays **unregistered** until that design is approved and enforced. No admin export/download or forced deletion permission is implied here. Owner rights for an operator account must respect future last-owner safeguards without quietly destroying the last administrative account; resolve that integration before enabling such accounts in production.
 
+**Amended 2026-11-15 by [TRD 06](06-rbac-user-administration-api.md) (approved by Nin): last-Super-Admin exception.** The operator routes now exist under TRD 06, including `POST /v1/admin/users/{user_id}/lifecycle-transitions` with `{action, reason_code, ticket_ref, expected_lifecycle_revision}`. Owner rights change for exactly one account, the **last active Super Admin**:
+- `POST /v1/me/deactivate` returns `409 last_super_admin` and changes nothing.
+- Deletion completion is refused with `409 last_super_admin` through `otp.Rollback`, so the proof is not consumed and is accepted once another active Super Admin exists.
+
+Both transactions take the shared Super Admin guard (L2s: after L0 to L2b, before L3) and recheck the active Super Admin count under it. Every other owner, including a suspended or deactivated Super Admin (which no longer counts as active), keeps the rights above unchanged. A suspended owner who accepts deletion has the saved suspension cleared in the same update. Admins cannot suspend, reinstate or change the role of a `pending_deletion` account.
+
 ### 3.3 Boundary semantics
 
 State + all-session revocation + lifecycle revision + audit commit together. Do not rely on the current best-effort per-request `account_inactive` revocation to sweep other sessions. Reinstate/reactivate increments the revision again and cannot un-revoke rows.
@@ -376,5 +382,5 @@ Verify each in the provider console and repeat after plan changes. Inbox copies 
 - Deploy migration 00010 before the matching binaries, and finish rolling every instance before exposing the rights routes; older binaries do not check lifecycle revisions.
 - Configure a restricted maintenance role, backup/log retention and Resend retention (§12.4, §12.6), run the restore drill (§12.5), and set an alert on `account_deletion_oldest_pending_seconds` above 24 h.
 - Confirm that the global 180-day audit limit is the intended reading of "minimized audit 180 days"; the implementation applies it to every audit row.
-- Flutter (receipt storage, token clearing on inactive responses, §6.3) and RBAC suspension/reinstatement remain separate work.
+- Flutter (receipt storage, token clearing on inactive responses, §6.3) remains separate work. RBAC suspension and reinstatement shipped in TRD 06, including the last-Super-Admin exception above.
 

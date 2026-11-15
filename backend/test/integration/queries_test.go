@@ -297,7 +297,7 @@ func TestQuery_AuthenticateAccessToken(t *testing.T) {
 	t.Run("inactive account", func(t *testing.T) {
 		v := newUser(t, q)
 		x := newSession(t, q, v.ID)
-		mustExec(t, d.Pool, `UPDATE users SET status = 'suspended' WHERE id = $1`, v.ID)
+		mustExec(t, d.Pool, `UPDATE users SET status = 'suspended', resume_status = 'active', suspension_reason = 'other' WHERE id = $1`, v.ID)
 		if _, err := q.AuthenticateAccessToken(ctx, x.AccessTokenHash); !isNoRows(err) {
 			t.Fatalf("suspended user authenticated: %v", err)
 		}

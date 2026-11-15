@@ -147,7 +147,7 @@ func TestOTPLogin_UnknownOrIneligibleEmailGetsTheSameAckAndNoEmail(t *testing.T)
 	env := newSignupEnv(t, nil)
 	active := newUser(t, env.q)
 	suspended := newUser(t, env.q)
-	mustExec(t, env.d.Pool, `UPDATE users SET status = 'suspended' WHERE id = $1`, suspended.ID)
+	mustExec(t, env.d.Pool, `UPDATE users SET status = 'suspended', resume_status = 'active', suspension_reason = 'other' WHERE id = $1`, suspended.ID)
 	unknown := newAddress("nobody")
 	users := env.count(t, "users")
 
@@ -187,7 +187,7 @@ func TestOTPLogin_UnknownOrIneligibleEmailGetsTheSameAckAndNoEmail(t *testing.T)
 func TestOTPLogin_AccountNoLongerEligibleAtVerify(t *testing.T) {
 	env := newSignupEnv(t, nil)
 	for _, mutate := range []string{
-		`UPDATE users SET status = 'suspended' WHERE id = $1`,
+		`UPDATE users SET status = 'suspended', resume_status = 'active', suspension_reason = 'other' WHERE id = $1`,
 		`UPDATE users SET email_verified_at = NULL WHERE id = $1`,
 	} {
 		t.Run(strings.Fields(mutate)[3], func(t *testing.T) {
@@ -208,7 +208,7 @@ func TestOTPLogin_AccountNoLongerEligibleAtVerify(t *testing.T) {
 				t.Fatal("expected the T-fail account_unavailable event")
 			}
 			// Back in good standing, the same code works.
-			mustExec(t, env.d.Pool, `UPDATE users SET status = 'active', email_verified_at = now() WHERE id = $1`, u.ID)
+			mustExec(t, env.d.Pool, `UPDATE users SET status = 'active', resume_status = NULL, suspension_reason = NULL, email_verified_at = now() WHERE id = $1`, u.ID)
 			if r := env.otpLoginVerify(t, ack.str("challenge_token"), code); r.status != http.StatusOK {
 				t.Fatalf("after reinstatement: %d %s", r.status, r.raw)
 			}
@@ -338,7 +338,7 @@ func TestPasswordLogin_GenericFailure(t *testing.T) {
 func TestPasswordLogin_NonActiveAccount(t *testing.T) {
 	env := newSignupEnv(t, nil)
 	for _, mutate := range []string{
-		`UPDATE users SET status = 'suspended' WHERE id = $1`,
+		`UPDATE users SET status = 'suspended', resume_status = 'active', suspension_reason = 'other' WHERE id = $1`,
 		`UPDATE users SET status = 'deactivated' WHERE id = $1`,
 		`UPDATE users SET status = 'pending_deletion' WHERE id = $1`,
 		`UPDATE users SET email_verified_at = NULL WHERE id = $1`,

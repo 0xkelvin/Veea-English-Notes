@@ -208,24 +208,30 @@ type Session struct {
 }
 
 type User struct {
-	ID                uuid.UUID
-	Email             string
-	EmailNormalized   string
-	EmailVerifiedAt   *time.Time
-	PasswordHash      *string
-	PasswordChangedAt *time.Time
-	Status            string
-	Role              string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-	DisplayName       *string
-	PreferredLanguage string
-	TimeZone          string
-	DailyGoal         int32
-	ProfileRevision   int64
-	EmailRevision     int64
-	LifecycleRevision int64
-	StateChangedAt    *time.Time
+	ID                  uuid.UUID
+	Email               string
+	EmailNormalized     string
+	EmailVerifiedAt     *time.Time
+	PasswordHash        *string
+	PasswordChangedAt   *time.Time
+	Status              string
+	Role                string
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	DisplayName         *string
+	PreferredLanguage   string
+	TimeZone            string
+	DailyGoal           int32
+	ProfileRevision     int64
+	EmailRevision       int64
+	LifecycleRevision   int64
+	StateChangedAt      *time.Time
+	RoleRevision        int64
+	RoleChangedAt       *time.Time
+	ResumeStatus        *string
+	SuspensionReason    *string
+	SuspensionTicketRef *string
+	SuspendedBy         *uuid.UUID
 }
 
 type VocabularyItem struct {

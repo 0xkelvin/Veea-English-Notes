@@ -1,13 +1,14 @@
 # Account, notebook and feedback rollout
 
-> TRD 05 takeover note (2026-11-14): this runbook describes the Rust phone/account
-> deployment. The application sync coordinator now uses the Go learning contract;
-> do not enable its server gate using the legacy rollout below. Go email/session
-> and account-rights client adapters and end-to-end verification are still required.
-> See [TRD 05 Flutter verification](trd/05-flutter-verification.md). Sign-out opens
-> guest; account caches stay isolated, and confirmed deletion removes the identified
-> account's local cache and sync state. Backup ownership/provenance and explicit
-> capacity confirmation apply to rebuilt imports.
+> Go integration update (2026-11-15): the runbook below is the legacy Rust
+> phone/account deployment. Production Flutter now uses Go email sign-in,
+> opaque session rotation, operation-capability deletion receipts and TRD 05
+> vocabulary sync. See [Flutter verification](trd/05-flutter-verification.md)
+> for local Go/PostgreSQL/Mailpit evidence and remaining release gates.
+> **Keep the Go rollout sync gate closed**; do not enable it through this legacy
+> rollout. Sign-out opens guest, and only confirmed deletion clears the recorded
+> account's cache and queue. Same-email re-registration opens a new UUID.
+
 
 Implementation updated 10 November 2026 for `feat/first-launch-native-accounts`. The existing server and OTP provider belong to the Veea team; Nin will supply their connection details. No production service, paid SMS subscription or Zalo group was created.
 

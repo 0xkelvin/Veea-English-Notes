@@ -1,3 +1,4 @@
+import '../providers/go_auth_provider.dart';
 import 'sync_review_screen.dart';
 import '../widgets/app_locks_settings_section.dart';
 import 'package:flutter/material.dart';
@@ -71,7 +72,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!mounted || _offeringImport || _authForImport?.isSignedIn != true) {
       return;
     }
-    if (_authForImport!.isBusy || _authForImport!.hasPendingDeletion) return;
+    if (_authForImport!.isBusy || _authForImport!.blocksCloudSync) return;
     final owner = _authForImport!.accountId;
     final engine = context.read<SyncService>().learningEngine;
     if (engine == null) return;
@@ -233,7 +234,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         title: const Text('Account and backup'),
                         subtitle: Text(
                           AppConfig.isCloudEnabled
-                              ? 'Phone sign-in and your notebook'
+                              ? (context.read<AuthProvider>() is GoAuthProvider
+                                    ? 'Email sign-in and your notebook'
+                                    : 'Phone sign-in and your notebook')
                               : 'Coming soon · Your notebook stays on this device',
                         ),
                         trailing: const Icon(Icons.chevron_right),
@@ -253,7 +256,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         'Export a backup to keep a separate copy.',
                       ],
                     )
-                  else if (AppConfig.legacyPasswordAccounts) ...[
+                  else if (AppConfig.legacyPasswordAccounts &&
+                      context.read<AuthProvider>() is! GoAuthProvider) ...[
                     const _SyncStatus(),
                     const SizedBox(height: PixelMetrics.space5),
                     Consumer<AuthProvider>(
