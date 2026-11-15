@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/audit"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/entitlements"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity/accounts"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/learning"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/notify"
@@ -48,7 +49,7 @@ func retryable(err error) bool {
 	return errors.As(err, &pg) && (pg.Code == "40001" || pg.Code == "40P01")
 }
 
-// runExport generates one pending export (schema version 2). The snapshot is one REPEATABLE
+// runExport generates one pending export (schema version 3). The snapshot is one REPEATABLE
 // READ transaction: it reads the user, head and live words, writes the sealed chunks, then
 // locks the user and the operation and publishes. A state change after the snapshot fails the
 // final lock with 40001 and the generation is retried; nothing partial is ever published.
@@ -99,7 +100,18 @@ func (s *Service) exportOnce(ctx context.Context, conn *pgxpool.Conn, id uuid.UU
 	if err != nil {
 		return "", err
 	}
-	header, err := exportHeader(snapshotAt, head.Revision, u)
+	// TRD 09: the plan at the snapshot's database time and the retained grant periods, read in
+	// the same REPEATABLE READ snapshot as the account and the vocabulary.
+	plan, err := entitlements.At(ctx, q, u.ID, snapshotAt)
+	if err != nil {
+		return "", err
+	}
+	grants, err := q.ListRetainedEntitlementGrants(ctx, sqlc.ListRetainedEntitlementGrantsParams{
+		UserID: u.ID, At: snapshotAt, MaxRows: entitlements.MaxRetainedGrants})
+	if err != nil {
+		return "", err
+	}
+	header, err := exportHeader(snapshotAt, head.Revision, u, entitlements.AppendExport(nil, plan, grants, snapshotAt))
 	if err != nil {
 		return "", err
 	}
@@ -167,7 +179,9 @@ func (s *Service) exportOnce(ctx context.Context, conn *pgxpool.Conn, id uuid.UU
 
 const exportTrailer = "]}"
 
-func exportHeader(snapshotAt time.Time, revision int64, u sqlc.User) ([]byte, error) {
+// exportHeader is the schema 3 header: schema 2 plus the TRD 09 entitlements section, placed
+// between the account and the vocabulary. section is entitlements.AppendExport output.
+func exportHeader(snapshotAt time.Time, revision int64, u sqlc.User, section []byte) ([]byte, error) {
 	account, err := json.Marshal(struct {
 		ID          uuid.UUID  `json:"user_id"`
 		Email       string     `json:"email"`
@@ -181,12 +195,13 @@ func exportHeader(snapshotAt time.Time, revision int64, u sqlc.User) ([]byte, er
 	if err != nil {
 		return nil, errors.New("rights: encode export header")
 	}
-	h := []byte(`{"schema_version":2,"snapshot_at":"`)
+	h := []byte(`{"schema_version":3,"snapshot_at":"`)
 	h = snapshotAt.UTC().AppendFormat(h, learning.ExportTime)
 	h = append(h, `","snapshot_revision":`...)
 	h = strconv.AppendInt(h, revision, 10)
 	h = append(h, `,"account":`...)
 	h = append(h, account...)
+	h = append(h, section...)
 	return append(h, `,"vocabulary":[`...), nil
 }
 

@@ -141,7 +141,33 @@ func TestAuditTokenRoundTripAndBinding(t *testing.T) {
 			t.Errorf("%q accepted", bad)
 		}
 	}
-	if len(AuditActions) != 5 {
-		t.Fatal("the history exposes exactly the five TRD 06 mutation actions")
+	if len(AuditActions) != 7 {
+		t.Fatal("the history exposes exactly the five TRD 06 mutation actions and the two TRD 09 plan actions")
+	}
+}
+
+// TRD 09 E4: plan management follows the manage rule, and nobody manages their own plan.
+func TestPlanManagementMatrix(t *testing.T) {
+	actor, other := uuid.New(), uuid.New()
+	cases := []struct {
+		actorRole, targetRole string
+		self, want            bool
+	}{
+		{"user", "user", false, false}, {"user", "user", true, false},
+		{"admin", "user", false, true}, {"admin", "admin", false, false}, {"admin", "super_admin", false, false}, {"admin", "admin", true, false},
+		{"super_admin", "user", false, true}, {"super_admin", "admin", false, true}, {"super_admin", "super_admin", false, true},
+		{"super_admin", "super_admin", true, false},
+	}
+	for _, c := range cases {
+		target := other
+		if c.self {
+			target = actor
+		}
+		if got := Permits(c.actorRole, actor, c.targetRole, target, ActPlan); got != c.want {
+			t.Errorf("%s → %s self=%v: got %v", c.actorRole, c.targetRole, c.self, got)
+		}
+	}
+	if !ValidReason("plan_grant", "support_courtesy") || ValidReason("plan_grant", "abuse") || !ValidReason("plan_revoke", "abuse") {
+		t.Fatal("plan reason sets")
 	}
 }

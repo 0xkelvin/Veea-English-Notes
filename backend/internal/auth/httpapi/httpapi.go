@@ -11,6 +11,7 @@ import (
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity/accounts"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/learning"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/lifecycle"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -33,6 +34,7 @@ import (
 
 // Handlers serves the auth endpoints.
 type Handlers struct {
+	Pool      *pgxpool.Pool // read-only owner queries (GET /v1/me/entitlements)
 	Admin     *admin.Service
 	Lifecycle *lifecycle.Service
 	Learning  *learning.Service
@@ -63,6 +65,7 @@ func (h *Handlers) Mount(mux httpx.Router) {
 	mux.HandleFunc("POST /v1/auth/token/refresh", h.refresh)
 	mux.HandleFunc("POST /v1/auth/logout", h.authenticated(h.logout))
 	mux.HandleFunc("GET /v1/me", h.authenticated(h.me))
+	mux.HandleFunc("GET /v1/me/entitlements", h.authenticated(h.meEntitlements))
 	mux.HandleFunc("POST /v1/me/deactivate", h.authenticated(h.deactivate))
 	for _, action := range []string{"export", "delete", "reactivate"} {
 		mux.HandleFunc("POST /v1/account-rights/"+action+"/start", h.rightsStart(action))
@@ -457,6 +460,10 @@ func (h *Handlers) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteProblem(w, http.StatusConflict, httpx.CodeLifecycleConflict)
 	case errors.Is(err, admin.ErrRoleConflict):
 		httpx.WriteProblem(w, http.StatusConflict, httpx.CodeRoleConflict)
+	case errors.Is(err, admin.ErrEntitlementConflict):
+		httpx.WriteProblem(w, http.StatusConflict, httpx.CodeEntitlementConflict)
+	case errors.Is(err, admin.ErrInvalidExpiry):
+		httpx.WriteProblem(w, http.StatusBadRequest, httpx.CodeInvalidExpiry)
 	case errors.As(err, &status):
 		httpx.WriteProblem(w, http.StatusConflict, httpx.CodeStatusConflict, map[string]any{"account_status": status.Status})
 	case errors.Is(err, accounts.ErrLastSuperAdmin):

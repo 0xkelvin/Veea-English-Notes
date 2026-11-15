@@ -341,10 +341,18 @@ Acceptance evidence (`backend/test/integration/lifecycle_test.go` unless noted; 
 
 AGENTS.md now records the `rightsAuthenticated` exception and the purge/export rule for new owned tables; TRD 01 §11.1/§11.3 list the events and metrics.
 
+### 12.3a TRD 09 amendment — 2026-11-15
+
+- **Export:** `account_operations.schema_version` is now 3. The file adds `entitlements` (the plan at the snapshot and the retained grant periods), without staff identifiers, ticket references, reason codes or audit metadata. Schema-2 artifacts stay downloadable until they expire.
+- **Inventory:** `entitlement_grants` is user-owned. Purge step 2 deletes it before the erase, and its `ON DELETE RESTRICT` foreign key fails a forgotten step closed.
+- **Retention:** grant periods are kept 180 days after their end, at most 50 per account (`CleanupEntitlementGrants` in the account-job cleanup list).
+- **Data rights:** export, deletion and reactivation never depend on the plan.
+
 ### 12.4 Retention: application enforcement vs deployment
 
 | Data | Default | Enforced by |
 |---|---|---|
+| Entitlement grant periods (TRD 09) | 180 days after the period ended; at most 50 per account; removed by the purge | **Application:** `CleanupEntitlementGrants`, the purge step, and the prune on each grant |
 | Audit events | 180 days from `occurred_at`; a purged owner's rows are minimized first | **Application:** `CleanupOldAudit` (all audit rows; this answers Q-L3) and `MinimizeAccountAudit` |
 | Deletion receipt | 30 days from acceptance | **Application:** receipt expiry; a purge still unfinished at expiry keeps running, but its capability is cleared |
 | Restoration ledger | 90 days after completion | **Application:** `retain_until`; an incomplete deletion is never cleaned |

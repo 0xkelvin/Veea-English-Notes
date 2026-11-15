@@ -418,8 +418,11 @@ func (s *Service) Download(ctx context.Context, op sqlc.AccountOperation, c sess
 		if current.State != "ready" {
 			return ErrNotReady
 		}
-		if current.SchemaVersion == nil || *current.SchemaVersion != 2 || current.ArtifactPlainBytes == nil {
-			return ErrExpired // version-1 artifacts were ended by migration 00011
+		// Version 1 artifacts were ended by migration 00011. Versions 2 and 3 (TRD 09 adds the
+		// entitlements section) share the chunk format, so a version 2 export published before
+		// the upgrade stays downloadable for its 24 h window.
+		if current.SchemaVersion == nil || (*current.SchemaVersion != 2 && *current.SchemaVersion != 3) || current.ArtifactPlainBytes == nil {
+			return ErrExpired
 		}
 		a = Artifact{Operation: op.ID, ID: current.ArtifactID, Size: *current.ArtifactPlainBytes}
 		return audit.Record(ctx, tx, evidence(c, op.UserID, "account.export.download", map[string]string{"operation_id": op.ID.String()}))

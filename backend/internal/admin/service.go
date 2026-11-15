@@ -18,6 +18,7 @@ import (
 
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/audit"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/session"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/entitlements"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity/accounts"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/lifecycle"
@@ -29,12 +30,14 @@ import (
 
 // Errors mapped by the HTTP layer (TRD 06 §6.9).
 var (
-	ErrForbidden          = errors.New("admin: actor is not staff")          // 403 forbidden
-	ErrTargetNotPermitted = errors.New("admin: target not permitted")        // 403 target_not_permitted
-	ErrNotFound           = errors.New("admin: not found")                   // 404 not_found
-	ErrLifecycleConflict  = errors.New("admin: lifecycle revision conflict") // 409 lifecycle_conflict
-	ErrRoleConflict       = errors.New("admin: role revision conflict")      // 409 role_conflict
-	ErrInvalidPageToken   = errors.New("admin: invalid page token")          // 400 invalid_request
+	ErrForbidden           = errors.New("admin: actor is not staff")            // 403 forbidden
+	ErrTargetNotPermitted  = errors.New("admin: target not permitted")          // 403 target_not_permitted
+	ErrNotFound            = errors.New("admin: not found")                     // 404 not_found
+	ErrLifecycleConflict   = errors.New("admin: lifecycle revision conflict")   // 409 lifecycle_conflict
+	ErrRoleConflict        = errors.New("admin: role revision conflict")        // 409 role_conflict
+	ErrInvalidPageToken    = errors.New("admin: invalid page token")            // 400 invalid_request
+	ErrEntitlementConflict = errors.New("admin: entitlement revision conflict") // 409 entitlement_conflict
+	ErrInvalidExpiry       = errors.New("admin: grant expiry out of range")     // 400 invalid_expiry
 )
 
 // StatusConflictError is 409 status_conflict: the target's status does not allow the action.
@@ -78,6 +81,7 @@ func New(pool *pgxpool.Pool, email *identity.EmailHMAC, m *metrics.Metrics, onRe
 // Detail is the administrative view of one account (TRD 06 §6.4).
 type Detail struct {
 	User               sqlc.User
+	Plan               entitlements.Plan
 	LiveSessions       int64
 	LastSeenAt         *time.Time
 	DeletionAcceptedAt *time.Time
@@ -509,8 +513,10 @@ func (s *Service) finish(ctx context.Context, p session.Principal, op string, er
 	case errors.Is(err, ErrForbidden), errors.Is(err, ErrTargetNotPermitted), errors.Is(err, accounts.ErrLastSuperAdmin):
 		s.metrics.AdminAction(op, "denied")
 		_ = s.RecordDenied(ctx, p, op, err, target, c)
-	case errors.Is(err, ErrLifecycleConflict), errors.Is(err, ErrRoleConflict), errors.As(err, &status):
+	case errors.Is(err, ErrLifecycleConflict), errors.Is(err, ErrRoleConflict), errors.Is(err, ErrEntitlementConflict), errors.As(err, &status):
 		s.metrics.AdminAction(op, "conflict")
+	case errors.Is(err, ErrInvalidExpiry):
+		s.metrics.AdminAction(op, "invalid")
 	case errors.As(err, &limited), errors.Is(err, session.ErrUnauthorized):
 	default:
 		s.metrics.AdminAction(op, "error")
@@ -590,6 +596,11 @@ func getUser(ctx context.Context, q *sqlc.Queries, id uuid.UUID) (sqlc.User, err
 // buildDetail projects t for an actor, computing the permitted actions at this snapshot.
 func buildDetail(ctx context.Context, q *sqlc.Queries, actorRole string, actorID uuid.UUID, t sqlc.User) (Detail, error) {
 	d := Detail{User: t, AllowedActions: []string{}, AssignableRoles: []string{}}
+	plan, err := entitlements.Effective(ctx, q, t.ID)
+	if err != nil {
+		return d, err
+	}
+	d.Plan = plan
 	sum, err := q.AdminSessionSummary(ctx, t.ID)
 	if err != nil {
 		return d, fmt.Errorf("admin: session summary: %w", err)
@@ -634,6 +645,9 @@ func buildDetail(ctx context.Context, q *sqlc.Queries, actorRole string, actorID
 	}
 	if Permits(actorRole, actorID, t.Role, t.ID, ActSessions) {
 		d.AllowedActions = append(d.AllowedActions, "view_sessions", "revoke_sessions")
+	}
+	if Permits(actorRole, actorID, t.Role, t.ID, ActPlan) && t.Status != accounts.StatusPendingDeletion {
+		d.AllowedActions = append(d.AllowedActions, "manage_plan")
 	}
 	return d, nil
 }

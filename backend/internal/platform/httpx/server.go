@@ -206,6 +206,8 @@ const (
 	CodeRoleConflict             = "role_conflict"
 	CodeStatusConflict           = "status_conflict"
 	CodeLastSuperAdmin           = "last_super_admin"
+	CodeEntitlementConflict      = "entitlement_conflict"
+	CodeInvalidExpiry            = "invalid_expiry"
 )
 
 var titles = map[string]string{
@@ -247,6 +249,8 @@ var titles = map[string]string{
 	CodeRoleConflict:             "The role changed. Reload the account before retrying.",
 	CodeStatusConflict:           "The account status does not allow this action.",
 	CodeLastSuperAdmin:           "Another active Super Admin is required first.",
+	CodeEntitlementConflict:      "The plan changed. Reload the account before retrying.",
+	CodeInvalidExpiry:            "The grant must end in the future and within 366 days.",
 }
 
 // WriteProblem writes an RFC 9457 problem document with a stable code and the request id.

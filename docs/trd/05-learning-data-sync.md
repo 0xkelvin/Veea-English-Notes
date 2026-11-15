@@ -564,6 +564,8 @@ Pushes are not blocked, since they take `KEY SHARE`, and they do not change the 
 
 **Expiry and cancellation** delete the chunk rows in the same transaction that ends the artifact: expiry after 24 h, cancellation at deletion acceptance, deactivation, reactivation or a revision change (TRD 04).
 
+**Amended 2026-11-15 by [TRD 09](09-free-premium-entitlements.md) §7.** Export schema 3 adds a fixed-width `entitlements` section (plan and at most 50 retained grant periods, at most 7,812 bytes) inside the existing 16 KiB header budget. The worst-case schema-3 header measures 13,138 bytes, so `MaxExportPlainBytes` (79,225,248) and `MaxExportChunks` (76) are unchanged. Both plans keep the §10 limits.
+
 ### 11.2 Purge
 
 The TRD 04 purge drains learning rows inside its final step (`purge_step` 2), before sessions, outbox and the erase. **`purge_step` keeps its 0..2 range;** the v1.1 widening is withdrawn.

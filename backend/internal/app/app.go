@@ -144,6 +144,7 @@ func New(o Options) (http.Handler, error) {
 		Lifecycle: lifecycle.New(o.Pool, otpSvc, keyring, emailHMAC, m, o.OnTxRetry),
 		Learning:  learning.New(o.Pool, m, o.OnTxRetry),
 		Admin:     admin.New(o.Pool, emailHMAC, m, o.OnTxRetry),
+		Pool:      o.Pool,
 		Limiter:   ratelimit.NewLimiter(o.Pool), Metrics: m, IPs: clientip.New(o.TrustedProxies),
 		Log: o.Logger.With("component", "http")}
 	m.RegisterOutboxPending(sqlc.New(o.Pool).CountPendingOutbox)

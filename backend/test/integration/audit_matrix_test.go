@@ -196,6 +196,22 @@ func TestAudit_Matrix(t *testing.T) {
 		env.wantEvents(t, rid) // status_conflict: no event
 	})
 
+	t.Run("TRD09 plan management", func(t *testing.T) {
+		a, s := env.staff(t, "admin")
+		u := env.withRole(t, "user")
+		ends := env.dbNow(t).Add(24 * time.Hour).Format(time.RFC3339Nano)
+		rid := newRID()
+		wantStatus(t, env.call(t, "PUT", adminPath(u.ID, "/entitlement"), map[string]any{"plan": "premium", "ends_at": ends,
+			"reason_code": "beta_access", "ticket_ref": "SUP-9", "expected_entitlement_revision": 0}, rid, bearer(s.AccessToken)...), 200)
+		env.wantEvents(t, rid, ev{action: "admin.entitlement.grant", outcome: "success", reason: "beta_access", actor: a.ID.String(),
+			target: u.ID.String(), session: s.SessionID.String(), meta: map[string]string{"ticket_ref": "SUP-9", "entitlement_revision": "1"}})
+		rid = newRID()
+		wantStatus(t, env.call(t, "PUT", adminPath(u.ID, "/entitlement"), map[string]any{"plan": "free", "ends_at": nil,
+			"reason_code": "granted_in_error", "ticket_ref": "SUP-9", "expected_entitlement_revision": 1}, rid, bearer(s.AccessToken)...), 200)
+		env.wantEvents(t, rid, ev{action: "admin.entitlement.revoke", outcome: "success", reason: "granted_in_error", actor: a.ID.String(),
+			target: u.ID.String(), meta: map[string]string{"entitlement_revision": "2"}})
+	})
+
 	// --- registration (Flows A, B) ---------------------------------------------------------
 	t.Run("signup start, new email", func(t *testing.T) {
 		rid := newRID()

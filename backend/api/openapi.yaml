@@ -1,10 +1,10 @@
 openapi: 3.0.3
 info:
   title: Veea English Notes — Accounts API
-  version: 1.6.0-trd06-audit
+  version: 1.7.0-trd09
   description: |
     Email authentication and account foundation (TRD 01 §5), plus session management (TRD 02), account lifecycle (TRD 04),
-    vocabulary sync (TRD 05) and RBAC user administration (TRD 06). This document is normative for the
+    vocabulary sync (TRD 05), RBAC user administration (TRD 06) and Free/Premium plans (TRD 09). This document is normative for the
     Go service in `backend/`: every route the router registers is listed here, and the
     integration suite validates every response it receives against it.
 
@@ -260,6 +260,30 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/me/entitlements:
+    get:
+      tags: [account]
+      operationId: getMyEntitlements
+      summary: The caller's effective plan and limits (TRD 09 §6.1).
+      description: |
+        Evaluated at database time when read: Premium while a manual grant is active (until `plan_expires_at`,
+        exclusive), otherwise Free. Plans are separate from roles. Both plans have the same TRD 05 limits, and
+        no capability is gated by plan yet; export, deletion and reactivation never depend on the plan.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unauthorized, rate_limited, internal_error]
+      responses:
+        "200":
+          description: The effective plan.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Entitlements" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "500": { $ref: "#/components/responses/InternalError" }
@@ -1096,6 +1120,36 @@ paths:
         "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "500": { $ref: "#/components/responses/InternalError" }
+  /v1/admin/users/{user_id}/entitlement:
+    put:
+      tags: [admin]
+      operationId: changeAdminUserPlan
+      summary: Grant or revoke Premium manually (TRD 09 §6.2).
+      description: |
+        `plan: premium` with `ends_at` (after the database time of the change and at most 366 days later) starts a
+        new grant now and closes any open one; `plan: free` with `ends_at: null` revokes the active grant. A fixed
+        reason and a ticket reference are required. An Admin manages User accounts; a Super Admin every other
+        account; nobody their own. If the end state already holds the answer is 200 with no change and no event;
+        otherwise `expected_entitlement_revision` must match. Plans never change roles or sessions.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/AdminUserID" }
+      x-error-codes: [invalid_request, invalid_expiry, unsupported_media_type, unauthorized, forbidden, target_not_permitted, not_found, entitlement_conflict, status_conflict, rate_limited, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminPlanRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/AdminUser" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminForbidden" }
+        "404": { $ref: "#/components/responses/AdminNotFound" }
+        "409": { $ref: "#/components/responses/AdminConflict" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
   /v1/admin/users/{user_id}/role:
     put:
       tags: [admin]
@@ -1318,7 +1372,7 @@ components:
           schema: { $ref: "#/components/schemas/Problem" }
     AdminConflict:
       description: "`lifecycle_conflict` or `role_conflict`: stale expected revision. `status_conflict` (with `account_status`): the target's status does not allow it. `last_super_admin`: no other active Super Admin would remain."
-      x-codes: [lifecycle_conflict, role_conflict, status_conflict, last_super_admin]
+      x-codes: [lifecycle_conflict, role_conflict, status_conflict, last_super_admin, entitlement_conflict]
       headers:
         X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
       content:
@@ -1337,7 +1391,7 @@ components:
         Cache-Control: { $ref: "#/components/headers/Cache-Control" }
     BadRequest:
       description: "`invalid_request`, `invalid_email`, `invalid_code` or `code_attempts_exceeded`."
-      x-codes: [invalid_request, invalid_email, invalid_code, code_attempts_exceeded]
+      x-codes: [invalid_request, invalid_email, invalid_code, code_attempts_exceeded, invalid_expiry]
       headers:
         X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
       content:
@@ -1596,6 +1650,8 @@ components:
         - role_conflict
         - status_conflict
         - last_super_admin
+        - entitlement_conflict
+        - invalid_expiry
     Problem:
       type: object
       additionalProperties: false
@@ -1674,7 +1730,7 @@ components:
       additionalProperties: false
       required: [schema_version, snapshot_at, snapshot_revision, account, vocabulary]
       properties:
-        schema_version: { type: integer, enum: [2] }
+        schema_version: { type: integer, enum: [2, 3], description: 3 since TRD 09 (adds entitlements); exports published earlier keep 2. }
         snapshot_at: { $ref: "#/components/schemas/Timestamp" }
         snapshot_revision: { type: integer, minimum: 0 }
         account:
@@ -1690,6 +1746,30 @@ components:
             preferred_language: { type: string, enum: [en, vi] }
             time_zone: { type: string }
             daily_goal: { type: integer }
+        entitlements:
+          type: object
+          additionalProperties: false
+          description: |
+            Schema 3 (TRD 09). The plan at snapshot_at and every retained grant period (at most 50, ended within
+            retention_days). Never staff identifiers, ticket references, reason codes or audit metadata.
+          required: [plan, plan_expires_at, retention_days, grants]
+          properties:
+            plan: { type: string, enum: [free, premium] }
+            plan_expires_at: { type: string, format: date-time, nullable: true }
+            retention_days: { type: integer, enum: [180] }
+            grants:
+              type: array
+              maxItems: 50
+              items:
+                type: object
+                additionalProperties: false
+                required: [starts_at, ends_at, ended_at, status, source]
+                properties:
+                  starts_at: { $ref: "#/components/schemas/Timestamp" }
+                  ends_at: { $ref: "#/components/schemas/Timestamp" }
+                  ended_at: { type: string, format: date-time, nullable: true }
+                  status: { type: string, enum: [active, expired, replaced, revoked] }
+                  source: { type: string, enum: [manual] }
         vocabulary:
           type: array
           maxItems: 50000
@@ -1883,6 +1963,7 @@ components:
       additionalProperties: false
       required: [id, email, email_verified_at, has_password, password_changed_at, display_name, preferred_language, time_zone,
         created_at, status, lifecycle_revision, state_changed_at, suspension, pending_deletion, role, role_revision,
+        plan, plan_expires_at, entitlement_revision,
         role_changed_at, sessions, allowed_actions, assignable_roles]
       properties:
         id: { type: string, format: uuid }
@@ -1918,6 +1999,9 @@ components:
         role: { type: string, enum: [user, admin, super_admin] }
         role_revision: { type: integer, minimum: 0 }
         role_changed_at: { type: string, format: date-time, nullable: true }
+        plan: { type: string, enum: [free, premium], description: Effective plan at database time (TRD 09). Separate from role. }
+        plan_expires_at: { type: string, format: date-time, nullable: true, description: End of the active Premium grant (exclusive). }
+        entitlement_revision: { type: integer, minimum: 0 }
         sessions:
           type: object
           additionalProperties: false
@@ -1927,7 +2011,7 @@ components:
             last_seen_at: { type: string, format: date-time, nullable: true }
         allowed_actions:
           type: array
-          items: { type: string, enum: [suspend, reinstate, change_role, view_sessions, revoke_sessions] }
+          items: { type: string, enum: [suspend, reinstate, change_role, view_sessions, revoke_sessions, manage_plan] }
         assignable_roles:
           type: array
           items: { type: string, enum: [user, admin, super_admin] }
@@ -1984,7 +2068,7 @@ components:
       required: [occurred_at, action, outcome, actor_user_id, reason_code, ticket_ref]
       properties:
         occurred_at: { $ref: "#/components/schemas/Timestamp" }
-        action: { type: string, enum: [suspend, reinstate, role_change, role_bootstrap, sessions_revoke] }
+        action: { type: string, enum: [suspend, reinstate, role_change, role_bootstrap, sessions_revoke, premium_grant, premium_revoke] }
         outcome: { type: string, enum: [success, failure] }
         actor_user_id: { type: string, format: uuid, nullable: true, description: The acting staff account; null for the CLI bootstrap. }
         reason_code: { type: string, nullable: true, description: The fixed TRD 06 reason code. }
@@ -1996,3 +2080,31 @@ components:
       properties:
         items: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/AdminAuditEntry" } }
         next_page_token: { type: string, nullable: true, pattern: '^h1\.[A-Za-z0-9_-]{32}$' }
+    Entitlements:
+      type: object
+      additionalProperties: false
+      required: [plan, plan_expires_at, limits, checked_at]
+      properties:
+        plan: { type: string, enum: [free, premium] }
+        plan_expires_at: { type: string, format: date-time, nullable: true }
+        limits:
+          type: object
+          additionalProperties: false
+          required: [live_words, content_bytes, writers]
+          properties:
+            live_words: { type: integer, enum: [50000] }
+            content_bytes: { type: integer, enum: [67108864] }
+            writers: { type: integer, enum: [20] }
+        checked_at: { $ref: "#/components/schemas/Timestamp" }
+    AdminPlanRequest:
+      type: object
+      additionalProperties: false
+      required: [plan, ends_at, reason_code, ticket_ref, expected_entitlement_revision]
+      properties:
+        plan: { type: string, enum: [premium, free] }
+        ends_at: { type: string, format: date-time, nullable: true, description: Required for premium (at most 366 days ahead); null for free. }
+        reason_code:
+          type: string
+          description: "premium: support_courtesy, beta_access, partner, promotion, other. free: granted_in_error, abuse, owner_request, ended_early, other."
+        ticket_ref: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$', description: "Required; no token prefix." }
+        expected_entitlement_revision: { type: integer, minimum: 0 }

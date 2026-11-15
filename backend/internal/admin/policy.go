@@ -24,6 +24,9 @@ const (
 	ActSuspend   Action = "suspend"   // lifecycle transition
 	ActReinstate Action = "reinstate" // lifecycle transition
 	ActRole      Action = "role"      // change role
+	// ActPlan manages Free/Premium grants (TRD 09). It follows the manage rule: an Admin for
+	// User accounts, a Super Admin for every other account, never the actor's own account.
+	ActPlan Action = "plan"
 )
 
 // IsStaff reports whether role may use /v1/admin at all.
@@ -79,6 +82,8 @@ var reasonCodes = map[string][]string{
 	"role":        {"staffing_change", "access_review", "account_compromise", "other"},
 	"sessions":    {"account_compromise", "owner_request", "security_review", "other"},
 	"break_glass": {"lost_access", "account_compromise", "other"},
+	"plan_grant":  {"support_courtesy", "beta_access", "partner", "promotion", "other"},
+	"plan_revoke": {"granted_in_error", "abuse", "owner_request", "ended_early", "other"},
 }
 
 // ValidReason reports whether code is a reason for kind (suspend, reinstate, role, sessions,

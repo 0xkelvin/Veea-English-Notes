@@ -316,6 +316,16 @@ Metrics:
 - `auth_sessions_revoked_total` with the three new reasons;
 - the gauge `admin_active_super_admins`.
 
+## 9b. Plan management (TRD 09, added 2026-11-15)
+
+`PUT /v1/admin/users/{user_id}/entitlement` uses this TRD's write path:
+
+- actor revalidation under L3 actor and target, then L4a;
+- the no-op rule and an expected revision (`entitlement_revision`, `409 entitlement_conflict`);
+- the matrix action `ActPlan`, which follows the manage rule: an Admin for User accounts, a Super Admin for every other account, and never one's own account.
+
+It takes no L2s, because it cannot remove a Super Admin. `AdminUser` gains `plan`, `plan_expires_at` and `entitlement_revision`, and `allowed_actions` gains `manage_plan`. The §9a history adds `premium_grant` and `premium_revoke`. See [TRD 09](09-free-premium-entitlements.md) §6.
+
 ## 9a. Per-account audit history (added 2026-11-15)
 
 `GET /v1/admin/users/{user_id}/audit` is the read side of the mutation events above. It lives in [`internal/admin/audit_history.go`](../../backend/internal/admin/audit_history.go), uses the `AdminAuditHistory` query in [`queries/admin.sql`](../../backend/internal/platform/db/queries/admin.sql), and its handler is in `httpapi/admin.go`.

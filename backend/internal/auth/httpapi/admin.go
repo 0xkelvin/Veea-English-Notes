@@ -15,8 +15,10 @@ import (
 
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/admin"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/session"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/entitlements"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity/accounts"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db/sqlc"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/httpx"
 )
 
@@ -30,6 +32,7 @@ func (h *Handlers) mountAdmin(mux httpx.Router) {
 	mux.HandleFunc("POST /v1/admin/users/{user_id}/session-revocations", h.authenticated(h.requireStaff("sessions_revoke", h.adminRevokeSessions)))
 	mux.HandleFunc("POST /v1/admin/users/{user_id}/lifecycle-transitions", h.authenticated(h.requireStaff("transition", h.adminTransition)))
 	mux.HandleFunc("PUT /v1/admin/users/{user_id}/role", h.authenticated(h.requireStaff("role_change", h.adminChangeRole)))
+	mux.HandleFunc("PUT /v1/admin/users/{user_id}/entitlement", h.authenticated(h.requireStaff("plan_change", h.adminChangePlan)))
 }
 
 // requireStaff is a fast pre-check on the authenticated role. It is not the authorization
@@ -181,6 +184,9 @@ type adminUser struct {
 	RoleRevision      int64                 `json:"role_revision"`
 	RoleChangedAt     *time.Time            `json:"role_changed_at"`
 	Sessions          adminSessionsSummary  `json:"sessions"`
+	Plan              string                `json:"plan"`
+	PlanExpiresAt     *time.Time            `json:"plan_expires_at"`
+	EntitlementRev    int64                 `json:"entitlement_revision"`
 	AllowedActions    []string              `json:"allowed_actions"`
 	AssignableRoles   []string              `json:"assignable_roles"`
 }
@@ -204,7 +210,8 @@ func adminUserBody(d admin.Detail) adminUser {
 		PasswordChangedAt: utc(u.PasswordChangedAt), DisplayName: u.DisplayName, PreferredLanguage: u.PreferredLanguage,
 		TimeZone: u.TimeZone, CreatedAt: u.CreatedAt.UTC(), Status: u.Status, LifecycleRevision: u.LifecycleRevision,
 		StateChangedAt: utc(u.StateChangedAt), Role: u.Role, RoleRevision: u.RoleRevision, RoleChangedAt: utc(u.RoleChangedAt),
-		Sessions:       adminSessionsSummary{LiveCount: d.LiveSessions, LastSeenAt: d.LastSeenAt},
+		Sessions: adminSessionsSummary{LiveCount: d.LiveSessions, LastSeenAt: d.LastSeenAt},
+		Plan:     d.Plan.Name, PlanExpiresAt: d.Plan.ExpiresAt, EntitlementRev: u.EntitlementRevision,
 		AllowedActions: d.AllowedActions, AssignableRoles: d.AssignableRoles,
 	}
 	if u.Status == accounts.StatusSuspended && u.SuspensionReason != nil && u.ResumeStatus != nil {
@@ -433,4 +440,57 @@ func (h *Handlers) adminAuditHistory(w http.ResponseWriter, r *http.Request, p s
 		Items         []adminAuditEntry `json:"items"`
 		NextPageToken *string           `json:"next_page_token"`
 	}{items, page.NextPageToken})
+}
+
+func (h *Handlers) adminChangePlan(w http.ResponseWriter, r *http.Request, p session.Principal) {
+	id, ok := pathUserID(r)
+	if !ok {
+		h.fail(w, r, httpx.ErrBadRequest)
+		return
+	}
+	var req struct {
+		Plan                        string     `json:"plan"`
+		EndsAt                      *time.Time `json:"ends_at"`
+		ReasonCode                  string     `json:"reason_code"`
+		TicketRef                   *string    `json:"ticket_ref"`
+		ExpectedEntitlementRevision *int64     `json:"expected_entitlement_revision"`
+	}
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	kind := map[string]string{entitlements.Premium: "plan_grant", entitlements.Free: "plan_revoke"}[req.Plan]
+	reason, ok := adminReason(kind, req.ReasonCode, req.TicketRef)
+	// TRD 09 E4: every change carries a ticket; Premium needs an expiry, Free must not have one.
+	if !ok || kind == "" || req.TicketRef == nil || req.ExpectedEntitlementRevision == nil || *req.ExpectedEntitlementRevision < 0 ||
+		(req.Plan == entitlements.Premium) != (req.EndsAt != nil) {
+		h.fail(w, r, httpx.ErrBadRequest)
+		return
+	}
+	d, err := h.Admin.ChangePlan(r.Context(), p, id, req.Plan, req.EndsAt, *req.ExpectedEntitlementRevision, reason, h.sessionClient(w, r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, adminUserBody(d))
+}
+
+// meEntitlements is GET /v1/me/entitlements (TRD 09 §6.1): the caller's effective plan at
+// database time and the plan's limits. Owner only; no capability is gated yet.
+func (h *Handlers) meEntitlements(w http.ResponseWriter, r *http.Request, p session.Principal) {
+	if r.URL.RawQuery != "" || r.URL.ForceQuery {
+		h.fail(w, r, httpx.ErrBadRequest)
+		return
+	}
+	plan, err := entitlements.Effective(r.Context(), sqlc.New(h.Pool), p.UserID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, struct {
+		Plan          string              `json:"plan"`
+		PlanExpiresAt *time.Time          `json:"plan_expires_at"`
+		Limits        entitlements.Limits `json:"limits"`
+		CheckedAt     time.Time           `json:"checked_at"`
+	}{plan.Name, plan.ExpiresAt, entitlements.LimitsFor(plan.Name), plan.CheckedAt})
 }

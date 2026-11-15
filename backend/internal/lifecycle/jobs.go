@@ -46,7 +46,7 @@ func (s *Service) RunBatch(ctx context.Context, conn *pgxpool.Conn, batch int32)
 	if err := s.expireArtifacts(ctx, conn, batch); err != nil {
 		errs = errors.Join(errs, err)
 	}
-	for _, cleanup := range []func(context.Context, int32) (int64, error){q.ExpirePendingOperationCapabilities, q.CleanupAccountOperations, q.CleanupDeletionLedger, q.CleanupAddressFences, q.CleanupOldAudit} {
+	for _, cleanup := range []func(context.Context, int32) (int64, error){q.ExpirePendingOperationCapabilities, q.CleanupAccountOperations, q.CleanupDeletionLedger, q.CleanupAddressFences, q.CleanupOldAudit, q.CleanupEntitlementGrants} {
 		if _, err := cleanup(ctx, batch); err != nil {
 			errs = errors.Join(errs, err)
 		}
@@ -196,6 +196,9 @@ func (s *Service) runJob(ctx context.Context, conn *pgxpool.Conn, id uuid.UUID, 
 			}
 			if n > 0 {
 				return nil
+			}
+			if err := q.DeleteAccountEntitlementGrants(ctx, u.ID); err != nil { // TRD 09, at most 50 rows
+				return err
 			}
 			if err := q.DeleteAccountEmailChanges(ctx, u.ID); err != nil {
 				return err

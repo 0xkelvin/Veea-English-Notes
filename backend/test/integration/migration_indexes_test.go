@@ -83,7 +83,8 @@ func TestMigrations_UpgradeFromVersion6KeepsDataAndAddsIndexes(t *testing.T) {
 		var out []string
 		for _, idx := range expectedIndexes {
 			if !strings.HasPrefix(idx, "account_operations_") && !strings.HasPrefix(idx, "deletion_ledger_") && idx != "audit_events_retention" && idx != "erased_addresses_expires" && idx != "otp_challenges_user" && idx != "email_changes_expires" && idx != "email_changes_one_pending" && idx != "otp_challenges_change" && idx != "otp_challenges_change_open" && !strings.HasPrefix(idx, "learning_") && !strings.HasPrefix(idx, "vocabulary_items_") &&
-				idx != "users_active_super_admins" && idx != "users_admin_order" && idx != "users_email_pattern" {
+				idx != "users_active_super_admins" && idx != "users_admin_order" && idx != "users_email_pattern" &&
+				!strings.HasPrefix(idx, "entitlement_grants_") {
 				out = append(out, idx)
 			}
 		}

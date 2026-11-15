@@ -172,6 +172,8 @@ const auditActionLabels = {
   'role_change': 'Role changed',
   'role_bootstrap': 'Made Super Admin (CLI bootstrap)',
   'sessions_revoke': 'Sessions revoked',
+  'premium_grant': 'Premium granted',
+  'premium_revoke': 'Premium revoked',
 };
 
 class AdminSession {

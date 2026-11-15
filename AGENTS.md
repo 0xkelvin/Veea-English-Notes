@@ -65,6 +65,10 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
   `ON DELETE RESTRICT` and are drained in bounded batches by `learning.PurgeBatch`. Sync ships
   closed (`learning_sync_control.open = false`): do not open it before the Flutter checks in TRD 05
   §15.2 pass. `learning.AppendCanonical` is the only encoder for quota and export sizes.
+  Free/Premium plans (TRD 09) are `backend/internal/entitlements/` (reads, export section) and
+  `admin.ChangePlan` (the only grant writer). Plans are not roles. Evaluate plans only through
+  `entitlement_premium_until()` at database time. Both plans share the TRD 05 limits, and no
+  capability is gated yet. Export schema 3 includes the plan; keep staff IDs and tickets out of it.
   Alert rules (TRD 08) are `backend/monitoring/prometheus/veea-alerts.yml`, tested by
   `make test-alerts` (promtool) and `go test ./monitoring` (names must exist in the registry).
   Edit scenarios in `gen_tests.py`, not the generated `veea-alerts.test.yml`. Renaming a metric or

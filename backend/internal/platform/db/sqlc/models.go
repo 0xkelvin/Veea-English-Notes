@@ -101,6 +101,25 @@ type EmailOutbox struct {
 	FinishedAt        *time.Time
 }
 
+type EntitlementGrant struct {
+	ID              uuid.UUID
+	UserID          uuid.UUID
+	Plan            string
+	Source          string
+	StartsAt        time.Time
+	EndsAt          time.Time
+	GrantedBy       uuid.UUID
+	ReasonCode      string
+	TicketRef       string
+	CreatedAt       time.Time
+	ClosedAt        *time.Time
+	ClosedReason    *string
+	ClosedBy        *uuid.UUID
+	CloseReasonCode *string
+	CloseTicketRef  *string
+	PeriodEnd       *time.Time
+}
+
 type ErasedAddress struct {
 	EmailHmac []byte
 	Cutoff    time.Time
@@ -237,6 +256,7 @@ type User struct {
 	SuspensionReason    *string
 	SuspensionTicketRef *string
 	SuspendedBy         *uuid.UUID
+	EntitlementRevision int64
 }
 
 type VocabularyItem struct {

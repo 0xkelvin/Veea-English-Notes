@@ -217,9 +217,9 @@ func TestAdmin_AuthorizationMatrix(t *testing.T) {
 						wantStatus(t, r, 200)
 						switch op {
 						case "view":
-							want := []string{"suspend", "change_role", "view_sessions", "revoke_sessions"}
+							want := []string{"suspend", "change_role", "view_sessions", "revoke_sessions", "manage_plan"}
 							if actorRole == "admin" {
-								want = []string{"suspend", "view_sessions", "revoke_sessions"}
+								want = []string{"suspend", "view_sessions", "revoke_sessions", "manage_plan"}
 							}
 							if kind == "self" {
 								want = []string{"change_role"}
@@ -418,7 +418,7 @@ func TestAdmin_SuspendReinstate(t *testing.T) {
 	wantStatus(t, r, 200)
 	susp := r.body["suspension"].(map[string]any)
 	if r.str("status") != "suspended" || susp["resume_status"] != "active" || susp["reason_code"] != "abuse" ||
-		susp["ticket_ref"] != "SUP-1042" || susp["suspended_by_user_id"] != admin.ID.String() || !slices.Equal(strs(r.body["allowed_actions"]), []string{"reinstate", "view_sessions", "revoke_sessions"}) {
+		susp["ticket_ref"] != "SUP-1042" || susp["suspended_by_user_id"] != admin.ID.String() || !slices.Equal(strs(r.body["allowed_actions"]), []string{"reinstate", "view_sessions", "revoke_sessions", "manage_plan"}) {
 		t.Fatalf("suspension view: %s", r.raw)
 	}
 	e.assertRevokedPair(t, a)
@@ -730,9 +730,9 @@ func TestAdmin_DetailProjection(t *testing.T) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	want := []string{"allowed_actions", "assignable_roles", "created_at", "display_name", "email", "email_verified_at", "has_password", "id",
-		"lifecycle_revision", "password_changed_at", "pending_deletion", "preferred_language", "role", "role_changed_at", "role_revision",
-		"sessions", "state_changed_at", "status", "suspension", "time_zone"}
+	want := []string{"allowed_actions", "assignable_roles", "created_at", "display_name", "email", "email_verified_at", "entitlement_revision",
+		"has_password", "id", "lifecycle_revision", "password_changed_at", "pending_deletion", "plan", "plan_expires_at", "preferred_language",
+		"role", "role_changed_at", "role_revision", "sessions", "state_changed_at", "status", "suspension", "time_zone"}
 	if !slices.Equal(keys, want) {
 		t.Fatalf("detail keys %v", keys)
 	}

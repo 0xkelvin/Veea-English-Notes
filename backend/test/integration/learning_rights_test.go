@@ -103,7 +103,7 @@ func TestLearningRights_ExportIncludesVocabularyAndFailsClosed(t *testing.T) {
 		SchemaVersion int               `json:"schema_version"`
 		Vocabulary    []json.RawMessage `json:"vocabulary"`
 	}
-	if err := json.Unmarshal(file.raw, &doc); err != nil || doc.SchemaVersion != 2 || len(doc.Vocabulary) != 1 {
+	if err := json.Unmarshal(file.raw, &doc); err != nil || doc.SchemaVersion != 3 || len(doc.Vocabulary) != 1 {
 		t.Fatalf("export: %v %+v", err, doc)
 	}
 	content := string(learning.AppendCanonical(nil, learning.Content{Word: `say "hi"`, Meaning: "m", Examples: []string{}, Tags: []string{"t"}}))
@@ -113,7 +113,7 @@ func TestLearningRights_ExportIncludesVocabularyAndFailsClosed(t *testing.T) {
 	if strings.Contains(string(file.raw), drop.String()) {
 		t.Fatal("tombstones are not exported")
 	}
-	if rowCount(t, e.d.Pool, `SELECT count(*) FROM account_operations WHERE id = $1 AND schema_version = 2 AND artifact_plain_bytes = $2`, uuid.MustParse(p.id), len(file.raw)) != 1 {
+	if rowCount(t, e.d.Pool, `SELECT count(*) FROM account_operations WHERE id = $1 AND schema_version = 3 AND artifact_plain_bytes = $2`, uuid.MustParse(p.id), len(file.raw)) != 1 {
 		t.Fatal("artifact_plain_bytes")
 	}
 	op := uuid.MustParse(p.id)

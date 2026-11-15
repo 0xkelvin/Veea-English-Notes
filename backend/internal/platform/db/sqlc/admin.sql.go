@@ -51,7 +51,8 @@ SELECT id, occurred_at, action, outcome, actor_user_id, reason,
     COALESCE(metadata->>'ticket_ref', '')::text AS ticket_ref
 FROM audit_events
 WHERE target_user_id = $1
-  AND action IN ('admin.user.suspend', 'admin.user.reinstate', 'admin.role.change', 'admin.role.bootstrap', 'admin.sessions.revoke')
+  AND action IN ('admin.user.suspend', 'admin.user.reinstate', 'admin.role.change', 'admin.role.bootstrap', 'admin.sessions.revoke',
+                 'admin.entitlement.grant', 'admin.entitlement.revoke')
   AND occurred_at > clock_timestamp() - interval '180 days'
   AND ($2::timestamptz IS NULL
        OR (occurred_at, id) < ($2::timestamptz, $3::bigint))
@@ -247,6 +248,18 @@ func (q *Queries) AdminSessionSummary(ctx context.Context, userID uuid.UUID) (Ad
 	var i AdminSessionSummaryRow
 	err := row.Scan(&i.LiveCount, &i.HasSessions, &i.LastSeenAt)
 	return i, err
+}
+
+const bumpEntitlementRevision = `-- name: BumpEntitlementRevision :execrows
+UPDATE users SET entitlement_revision = entitlement_revision + 1, updated_at = clock_timestamp() WHERE id = $1
+`
+
+func (q *Queries) BumpEntitlementRevision(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, bumpEntitlementRevision, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const countActiveSuperAdmins = `-- name: CountActiveSuperAdmins :one

@@ -31,8 +31,8 @@ UPDATE account_operations SET state='canceled',artifact_ciphertext=NULL,artifact
 WHERE user_id= @user_id AND action='export' AND state IN ('pending','ready')
 RETURNING id;
 -- name: PublishAccountExport :execrows
--- Schema version 2: the sealed chunks are already inserted in the same transaction (TRD 05 §11.1).
-UPDATE account_operations SET state='ready',schema_version=2,artifact_plain_bytes= @artifact_plain_bytes,
+-- Schema version 3 (TRD 09 adds entitlements): the sealed chunks are already inserted in the same transaction (TRD 05 §11.1).
+UPDATE account_operations SET state='ready',schema_version=3,artifact_plain_bytes= @artifact_plain_bytes,
  artifact_key_id= @artifact_key_id,download_expires_at=clock_timestamp()+interval '24 hours',completed_at=clock_timestamp()
 WHERE id= @id AND state='pending';
 -- name: ListAccountJobs :many

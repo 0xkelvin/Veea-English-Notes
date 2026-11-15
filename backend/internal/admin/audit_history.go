@@ -19,11 +19,13 @@ import (
 // AuditActions maps the stored TRD 06 mutation actions to the public enum of the history API.
 // Nothing else (reads, denials, owner or session events) is ever returned.
 var AuditActions = map[string]string{
-	"admin.user.suspend":    "suspend",
-	"admin.user.reinstate":  "reinstate",
-	"admin.role.change":     "role_change",
-	"admin.role.bootstrap":  "role_bootstrap",
-	"admin.sessions.revoke": "sessions_revoke",
+	"admin.user.suspend":       "suspend",
+	"admin.user.reinstate":     "reinstate",
+	"admin.role.change":        "role_change",
+	"admin.role.bootstrap":     "role_bootstrap",
+	"admin.sessions.revoke":    "sessions_revoke",
+	"admin.entitlement.grant":  "premium_grant",
+	"admin.entitlement.revoke": "premium_revoke",
 }
 
 // AuditEntry is the operator view of one event: exactly these fields (TRD 06 §9a).

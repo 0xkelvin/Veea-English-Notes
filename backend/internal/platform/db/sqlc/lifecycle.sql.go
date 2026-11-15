@@ -522,7 +522,7 @@ func (q *Queries) OldestPendingDeletionSeconds(ctx context.Context) (float64, er
 }
 
 const publishAccountExport = `-- name: PublishAccountExport :execrows
-UPDATE account_operations SET state='ready',schema_version=2,artifact_plain_bytes= $1,
+UPDATE account_operations SET state='ready',schema_version=3,artifact_plain_bytes= $1,
  artifact_key_id= $2,download_expires_at=clock_timestamp()+interval '24 hours',completed_at=clock_timestamp()
 WHERE id= $3 AND state='pending'
 `
@@ -533,7 +533,7 @@ type PublishAccountExportParams struct {
 	ID                 uuid.UUID
 }
 
-// Schema version 2: the sealed chunks are already inserted in the same transaction (TRD 05 §11.1).
+// Schema version 3 (TRD 09 adds entitlements): the sealed chunks are already inserted in the same transaction (TRD 05 §11.1).
 func (q *Queries) PublishAccountExport(ctx context.Context, arg PublishAccountExportParams) (int64, error) {
 	result, err := q.db.Exec(ctx, publishAccountExport, arg.ArtifactPlainBytes, arg.ArtifactKeyID, arg.ID)
 	if err != nil {

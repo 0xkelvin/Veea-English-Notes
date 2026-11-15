@@ -111,6 +111,10 @@ The confirm button stays disabled until a reason is chosen and any ticket refere
 
 **After success.** The returned `AdminUser` replaces the detail, the list row is updated, sessions are reloaded, and a confirmation notice appears. When a Super Admin steps down, the console re-reads `/v1/me` and moves to **No admin access**.
 
+## 5b. Plans (TRD 09, 2026-11-15)
+
+The Go API now returns `plan`, `plan_expires_at` and `entitlement_revision` on `AdminUser`, and `manage_plan` in `allowed_actions`. The console ignores actions it doesn't know, and the Audit history tab labels `premium_grant` and `premium_revoke`. A plan-management UI is **not built yet**. It will be a confirmation dialog with a fixed reason, a required ticket reference and a required expiry of at most 366 days, offered only when `manage_plan` is allowed. It is a follow-up amendment to this TRD.
+
 ## 5a. Audit history tab (added 2026-11-15)
 
 The account view has two tabs: **Overview** (everything in §5) and **Audit history**. The history comes from `GET /v1/admin/users/{id}/audit` (TRD 06 §9a). The server applies the same visibility rule as the detail view, so the tab never decides on its own who may see what.

@@ -1,9 +1,12 @@
 # Veea English Notes — User Management Product Doc
 
-**Version:** v0.4 (Phase 1, the Phase 3 v1 sync decisions and the Phase 4 RBAC decisions approved; other later phases still proposals)
+**Version:** v0.5 (Phase 1, the Phase 3 v1 sync decisions, the Phase 4 RBAC decisions and the Phase 6 plan-management decisions approved; other later phases still proposals)
 **Date:** 2026-11-15
 **Audience:** Product, backend and Flutter engineers, QA
 **Next document:** TRD 01 — *Email Authentication & Account Foundation*
+
+### Changes since v0.4
+- §11 Free/Premium: plan management is approved (Nin, 2026-11-15). Details in [TRD 09](../trd/09-free-premium-entitlements.md). Q-L4 is partly resolved: both plans keep the same limits, and no capability is Premium yet. The first Premium feature is proposed in [TRD 10](../trd/10-server-delivered-cartridges.md).
 
 ### Changes since v0.3
 - §9 RBAC and user administration: the matrix, Super Admin provisioning, last-Super-Admin protection, session effects and audit rules are approved (Nin, 2026-11-15). API and lock details live in [TRD 06](../trd/06-rbac-user-administration-api.md).
@@ -66,7 +69,7 @@ Veea English Notes is an offline-first vocabulary app. It stays fully usable wit
 | 3 | Learning data sync | **[Approved]** v1 scope: vocabulary sync, detailed in §8 and TRD 05. Review progress is deferred |
 | 4 | RBAC and user administration | **[Approved]**, detailed in §9 and TRD 06. Admin UI is TRD 07 |
 | 5 | Audit and monitoring | **[Proposed]** |
-| 6 | Free/Premium entitlements (no payments) | **[Proposed]** |
+| 6 | Free/Premium entitlements (no payments) | **[Approved]** plan management, detailed in §11 and TRD 09. No capability is gated yet |
 | Later | Phone/SMS OTP, Facebook sign-in, Apple sign-in | **[Approved]** as later; no design yet |
 
 Phase order after 1 is a proposal. Audit logging (Phase 5) should capture Phase 1 events from the first release, even before admin tooling exists (§10).
@@ -324,13 +327,23 @@ Approved by Nin on 2026-11-15. API, schema and lock order are in [TRD 06](../trd
 - **[Proposed]** Phase 1 events are recorded from the first release, even before admin viewing exists.
 - **[Open]** Audit retention period (Q-L3).
 
-## 11. Free / Premium entitlements (Phase 6 outline)
+## 11. Free / Premium entitlements (Phase 6)
 
-- **[Approved]** Payments are deferred.
-- **[Proposed]** Two plans, Free and Premium. The server is the authority on what a user may do; the app only reflects it.
-- **[Proposed]** Premium is granted manually or by an admin in the interim, with no purchase flow.
-- **[Proposed]** Downgrading never deletes user data; it limits new use.
-- **[Open]** Which features are Premium, and the Free limits (Q-L4). Earlier discovery work suggests cartridges, AI-assisted word help and cosmetic themes as candidates.
+Approved by Nin on 2026-11-15. API, storage and tests are in [TRD 09](../trd/09-free-premium-entitlements.md).
+
+- **[Approved]** Payments are deferred. Entitlements are modeled, but no purchase flow is in scope.
+- **[Approved]** Two plans, Free and Premium. The server is the authority on an account's plan; the app only reflects it.
+- **[Approved]** Plans are separate from roles. A role never gives a plan, and a plan never gives an administrative permission.
+- **[Approved]** Premium is granted manually by staff:
+  - Admins can manage plans for User accounts. Super Admins can manage plans for every other account. Nobody can change their own plan.
+  - Every change needs a fixed reason and a ticket reference.
+  - Every grant ends, at most 366 days after it is made.
+- **[Approved]** When a grant expires or is revoked, the account returns to Free and keeps all its data.
+- **[Approved]** Both plans keep the same limits as today (§8). Export, deletion and reactivation never depend on the plan.
+- **[Approved]** The owner's export includes the current plan and the retained grant periods. It never includes staff identities, ticket references or internal notes.
+- **[Approved]** No capability is Premium yet. Plan-based enforcement and payments are outside this phase.
+- **[Proposed]** The first Premium feature: cartridges (vocabulary packs) delivered by the server, so the plan can actually be enforced ([TRD 10](../trd/10-server-delivered-cartridges.md)).
+- **[Open]** Which other features are Premium (rest of Q-L4).
 
 ---
 
@@ -356,7 +369,7 @@ Approved by Nin on 2026-11-15. API, schema and lock order are in [TRD 06](../trd
 |---|---|---|
 | Q-L1 | Deletion grace period and retention | Phase 2 |
 | Q-L3 | Audit retention | Phase 5 |
-| Q-L4 | Premium feature list and Free limits | Phase 6 |
+| Q-L4 | Premium feature list (limits resolved: same for both plans; first feature proposed in TRD 10) | Phase 6 |
 
 ## 13. Phase 1 acceptance criteria
 

@@ -82,7 +82,8 @@ SELECT id, occurred_at, action, outcome, actor_user_id, reason,
     COALESCE(metadata->>'ticket_ref', '')::text AS ticket_ref
 FROM audit_events
 WHERE target_user_id = @target_user_id
-  AND action IN ('admin.user.suspend', 'admin.user.reinstate', 'admin.role.change', 'admin.role.bootstrap', 'admin.sessions.revoke')
+  AND action IN ('admin.user.suspend', 'admin.user.reinstate', 'admin.role.change', 'admin.role.bootstrap', 'admin.sessions.revoke',
+                 'admin.entitlement.grant', 'admin.entitlement.revoke')
   AND occurred_at > clock_timestamp() - interval '180 days'
   AND (sqlc.narg(after_occurred_at)::timestamptz IS NULL
        OR (occurred_at, id) < (sqlc.narg(after_occurred_at)::timestamptz, sqlc.narg(after_id)::bigint))
@@ -98,3 +99,6 @@ ON CONFLICT (id) DO NOTHING;
 -- name: SuperAdminBootstrapped :one
 -- admin_super_admin_bootstrapped, read when metrics are scraped.
 SELECT EXISTS (SELECT 1 FROM rbac_bootstrap)::boolean AS bootstrapped;
+
+-- name: BumpEntitlementRevision :execrows
+UPDATE users SET entitlement_revision = entitlement_revision + 1, updated_at = clock_timestamp() WHERE id = @id;

@@ -148,3 +148,15 @@ func SetRole(ctx context.Context, tx pgx.Tx, id uuid.UUID, role string) error {
 	}
 	return nil
 }
+
+// BumpEntitlementRevision increments the plan retry guard (TRD 09) on a row held at L3.
+func BumpEntitlementRevision(ctx context.Context, tx pgx.Tx, id uuid.UUID) error {
+	n, err := sqlc.New(tx).BumpEntitlementRevision(ctx, id)
+	if err != nil {
+		return fmt.Errorf("accounts: entitlement revision: %w", err)
+	}
+	if n != 1 {
+		return errors.New("accounts: entitlement revision: locked account not updated")
+	}
+	return nil
+}

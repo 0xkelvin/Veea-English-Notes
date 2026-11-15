@@ -84,7 +84,12 @@ void main() {
 
       await c.select(target.id);
       final d = c.detail!;
-      expect(d.allowedActions, {'suspend', 'view_sessions', 'revoke_sessions'});
+      expect(d.allowedActions, {
+        'suspend',
+        'view_sessions',
+        'revoke_sessions',
+        'manage_plan',
+      });
       expect(d.assignableRoles, isEmpty);
       expect(c.sessions, hasLength(2));
 
@@ -106,6 +111,7 @@ void main() {
         'reinstate',
         'view_sessions',
         'revoke_sessions',
+        'manage_plan',
       });
       expect(await state(target.id), containsPair('live_sessions', 0));
       expect(
