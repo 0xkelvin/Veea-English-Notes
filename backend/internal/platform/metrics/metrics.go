@@ -27,6 +27,7 @@ type Metrics struct {
 	pendingOnce sync.Once
 	backlogOnce sync.Once
 	adminOnce   sync.Once
+	bootOnce    sync.Once
 
 	otpStarted      *prometheus.CounterVec
 	otpVerified     *prometheus.CounterVec
@@ -317,4 +318,46 @@ func (m *Metrics) RegisterActiveSuperAdmins(count func(ctx context.Context) (int
 			return float64(n)
 		}))
 	})
+}
+
+// RegisterSuperAdminBootstrapped exports admin_super_admin_bootstrapped: 1 once the first Super
+// Admin bootstrap has committed (a durable marker, TRD 08), 0 before, -1 when the read fails. It
+// lets the "no active Super Admin" alert stay silent on a fresh deployment. First call registers.
+func (m *Metrics) RegisterSuperAdminBootstrapped(done func(ctx context.Context) (bool, error)) {
+	if m == nil || done == nil {
+		return
+	}
+	m.bootOnce.Do(func() {
+		m.reg.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "admin_super_admin_bootstrapped", Help: "1 after the first Super Admin bootstrap committed, else 0; -1 on read failure."}, func() float64 {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			ok, err := done(ctx)
+			switch {
+			case err != nil:
+				return -1
+			case ok:
+				return 1
+			}
+			return 0
+		}))
+	})
+}
+
+// EmailResults are the result label values of email_send_total: "sent" or the sender's error
+// class (notify.Class).
+var EmailResults = []string{"sent", "permanent", "retryable", "ambiguous"}
+
+// InitEmailSend creates every email_send_total{template,result} series at 0, so a delivery
+// failure right after a restart is an increase from 0 (not a series' first sample, which
+// increase() cannot see) and "no failures" is a real 0 rather than a missing series (TRD 08).
+func (m *Metrics) InitEmailSend(templates []string) {
+	if m == nil {
+		return
+	}
+	for _, t := range templates {
+		for _, r := range EmailResults {
+			m.emailSend.WithLabelValues(label(t), r)
+		}
+	}
 }

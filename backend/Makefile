@@ -7,7 +7,7 @@ SQLC := go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
 SQLC_OUT := internal/platform/db/sqlc
 
 .PHONY: help build fmt vet test test-db-up test-db-down test-integration check sqlc sqlc-verify \
-        mailpit-up mailpit-down test-flutter-go test-flutter-admin
+        mailpit-up mailpit-down test-flutter-go test-flutter-admin test-alerts
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -42,6 +42,9 @@ test-flutter-go: ## Flutter -> real Go router + disposable PostgreSQL + Mailpit;
 
 test-flutter-admin: ## TRD 07 admin console -> real Go router + OpenAPI checker + disposable PostgreSQL
 	scripts/test-flutter-admin.sh
+
+test-alerts: ## TRD 08 Prometheus rules: promtool check + unit tests (local promtool or pinned image)
+	scripts/test-alert-rules.sh
 
 mailpit-up: ## Start local Mailpit (SMTP 127.0.0.1:1025, UI http://127.0.0.1:8025)
 	scripts/test-mailpit.sh start

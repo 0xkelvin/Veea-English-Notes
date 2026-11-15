@@ -414,7 +414,7 @@ Existing fixtures that wrote `status = 'suspended'` directly now also write `res
 
 1. Run migration 00012 with `cmd/migrate`, then roll every API instance before any admin route is used. Older binaries do not clear the suspension fields when a suspended owner accepts deletion.
 2. Provision the first Super Admin with `bin/admin bootstrap-super-admin`, then grant a second one through the API so the guard never blocks routine work. Record who may run the CLI (production database access) in the runbook.
-3. Alert on `admin_active_super_admins < 1` and on spikes of `admin.access.denied`. Phase 5 owns alerting.
+3. Alert on `admin_active_super_admins < 1` and on spikes of `admin.access.denied`. Phase 5 owns alerting. **Delivered in [TRD 08](08-monitoring-alerting.md)** as `VeeaNoActiveSuperAdmin`, gated on the bootstrap marker so a fresh deployment stays silent. Alerting on `admin.access.denied` spikes needs a metric and remains open.
 4. TRD 07 builds the UI: confirmation before suspension and promotion, reason pickers, `allowed_actions`, and re-reading after a conflict. Delivered in [TRD 07](07-admin-console.md) (`admin_console/`), which records the remaining audit-history and CORS gaps.
 
 ## 13. Implementation and verification record — 2026-11-15

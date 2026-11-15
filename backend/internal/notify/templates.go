@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	htmltemplate "html/template"
+	"sort"
 	texttemplate "text/template"
 	"time"
 )
@@ -117,4 +118,15 @@ func Render(t Template, p Payload) (Rendered, error) {
 		return Rendered{}, errors.New("notify: render html body")
 	}
 	return Rendered{Subject: spec.subject, Text: tb.String(), HTML: hb.String()}, nil
+}
+
+// TemplateNames lists every template, sorted, so metrics can create their series up front
+// (TRD 08).
+func TemplateNames() []string {
+	out := make([]string, 0, len(specs))
+	for t := range specs {
+		out = append(out, string(t))
+	}
+	sort.Strings(out)
+	return out
 }

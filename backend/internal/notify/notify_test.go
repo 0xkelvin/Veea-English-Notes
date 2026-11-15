@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -269,6 +270,18 @@ func TestBackoffSchedule(t *testing.T) {
 	for sends, want := range map[int]time.Duration{1: 30 * time.Second, 2: time.Minute, 3: 2 * time.Minute, 4: 4 * time.Minute, 5: 4 * time.Minute, 0: 30 * time.Second} {
 		if got := w.backoff(sends); got != want {
 			t.Errorf("after send %d: %s, want %s", sends, got, want)
+		}
+	}
+}
+
+func TestTemplateNamesCoverEveryTemplate(t *testing.T) {
+	names := TemplateNames()
+	if len(names) != len(specs) || !sort.StringsAreSorted(names) {
+		t.Fatalf("names %v", names)
+	}
+	for _, n := range names {
+		if !Template(n).valid() {
+			t.Errorf("%s is not a valid template", n)
 		}
 	}
 }

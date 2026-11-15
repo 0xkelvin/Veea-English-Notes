@@ -52,6 +52,7 @@ func run() error {
 	defer pool.Close() // last: every background task below stops first
 
 	m := metrics.New()
+	m.InitEmailSend(notify.TemplateNames()) // TRD 08: failure series exist at 0 from startup
 
 	// Background tasks. Each stops on every exit path before the pool closes: the worker lets
 	// reserved sends finish and record; the cleanup runner interrupts a running job and releases

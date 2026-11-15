@@ -88,3 +88,13 @@ WHERE target_user_id = @target_user_id
        OR (occurred_at, id) < (sqlc.narg(after_occurred_at)::timestamptz, sqlc.narg(after_id)::bigint))
 ORDER BY occurred_at DESC, id DESC
 LIMIT @page_limit;
+
+-- name: MarkSuperAdminBootstrapped :exec
+-- TRD 08: written in the bootstrap transaction (and by any promotion to super_admin, as a
+-- backstop). Idempotent; the first time is kept.
+INSERT INTO rbac_bootstrap (id, first_bootstrapped_at) VALUES (1, clock_timestamp())
+ON CONFLICT (id) DO NOTHING;
+
+-- name: SuperAdminBootstrapped :one
+-- admin_super_admin_bootstrapped, read when metrics are scraped.
+SELECT EXISTS (SELECT 1 FROM rbac_bootstrap)::boolean AS bootstrapped;

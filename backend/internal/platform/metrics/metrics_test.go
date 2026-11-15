@@ -154,3 +154,34 @@ func TestAdminMetrics(t *testing.T) {
 	nilM.AdminAction("view", "success")
 	nilM.RegisterActiveSuperAdmins(func(context.Context) (int64, error) { return 1, nil })
 }
+
+func TestMonitoringSeriesForTRD08(t *testing.T) {
+	m := New()
+	m.InitEmailSend([]string{"login_code", "Not A Code"})
+	m.RegisterSuperAdminBootstrapped(func(context.Context) (bool, error) { return true, nil })
+	out := scrape(t, m)
+	for _, want := range []string{
+		`email_send_total{result="sent",template="login_code"} 0`,
+		`email_send_total{result="permanent",template="login_code"} 0`,
+		`email_send_total{result="ambiguous",template="login_code"} 0`,
+		`email_send_total{result="retryable",template="other"} 0`,
+		`admin_super_admin_bootstrapped 1`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %s", want)
+		}
+	}
+	for want, done := range map[string]func(context.Context) (bool, error){
+		`admin_super_admin_bootstrapped 0`:  func(context.Context) (bool, error) { return false, nil },
+		`admin_super_admin_bootstrapped -1`: func(context.Context) (bool, error) { return false, context.DeadlineExceeded },
+	} {
+		m := New()
+		m.RegisterSuperAdminBootstrapped(done)
+		if !strings.Contains(scrape(t, m), want) {
+			t.Errorf("missing %s", want)
+		}
+	}
+	var nilM *Metrics
+	nilM.InitEmailSend([]string{"x"})
+	nilM.RegisterSuperAdminBootstrapped(nil)
+}

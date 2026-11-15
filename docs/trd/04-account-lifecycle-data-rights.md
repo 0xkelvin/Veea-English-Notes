@@ -380,7 +380,7 @@ Verify each in the provider console and repeat after plan changes. Inbox copies 
 ### 12.7 Remaining release gates
 
 - Deploy migration 00010 before the matching binaries, and finish rolling every instance before exposing the rights routes; older binaries do not check lifecycle revisions.
-- Configure a restricted maintenance role, backup/log retention and Resend retention (§12.4, §12.6), run the restore drill (§12.5), and set an alert on `account_deletion_oldest_pending_seconds` above 24 h.
+- Configure a restricted maintenance role, backup/log retention and Resend retention (§12.4, §12.6), run the restore drill (§12.5), and set an alert on `account_deletion_oldest_pending_seconds` above 24 h (delivered as `VeeaAccountPurgeOverdue`, with a 2 h `VeeaAccountPurgeSlow` warning, in [TRD 08](08-monitoring-alerting.md)).
 - Confirm that the global 180-day audit limit is the intended reading of "minimized audit 180 days"; the implementation applies it to every audit row.
 - Flutter (receipt storage, token clearing on inactive responses, §6.3) remains separate work. RBAC suspension and reinstatement shipped in TRD 06, including the last-Super-Admin exception above.
 

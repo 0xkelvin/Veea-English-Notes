@@ -1,0 +1,161 @@
+# TRD 08 — Prometheus alert rules for the Go API (cmd/api), scraped at VEEA_METRICS_ADDR /metrics.
+#
+# Convention (a deployment requirement, TRD 08 §3): the scrape job is named "veea-api" and every
+# API instance is one target. Metric names and labels come from internal/platform/metrics; the
+# test monitoring/rules_test.go fails if an expression names a metric the service does not export.
+# Tested with promtool: scripts/test-alert-rules.sh (veea-alerts.test.yml).
+#
+# Severity: critical pages the on-call operator; warning opens a ticket for the next business day.
+# The database-backed gauges are the same on every instance, so their rules aggregate with
+# max by (job). Each reads -1 when its query fails, which VeeaApiMonitoringReadFailed reports;
+# the value rules ignore -1 instead of mistaking it for a healthy or an alarming value.
+groups:
+  - name: veea-api-availability
+    interval: 1m
+    rules:
+      - alert: VeeaApiScrapeFailing
+        expr: up{job="veea-api"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Prometheus cannot scrape a Veea API metrics endpoint.
+          description: A known target has failed every scrape for 5 minutes. Its other alerts cannot fire while it is down; treat it as blind, not healthy.
+          runbook: docs/trd/08-monitoring-alerting.md#51-scrape-failing-or-absent
+
+      - alert: VeeaApiScrapeTargetAbsent
+        expr: absent(up{job="veea-api"})
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: No Veea API scrape target exists at all.
+          description: Prometheus has no up series for job veea-api, so service discovery or the scrape configuration lost every target.
+          runbook: docs/trd/08-monitoring-alerting.md#51-scrape-failing-or-absent
+
+      - alert: VeeaApiMonitoringSeriesMissing
+        expr: |
+          up{job="veea-api"} == 1
+          unless on (job, instance)
+            count by (job, instance) ({job="veea-api", __name__=~"admin_active_super_admins|admin_super_admin_bootstrapped|account_deletion_oldest_pending_seconds|email_outbox_pending"}) == 4
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: A scraped Veea API instance does not export all TRD 08 gauges.
+          description: The scrape succeeds but at least one database-backed gauge is absent, so the alerts built on it are silent. A missing series is not a healthy zero.
+          runbook: docs/trd/08-monitoring-alerting.md#52-monitoring-series-missing-or-read-failed
+
+      - alert: VeeaApiMonitoringReadFailed
+        expr: |
+          min by (job, instance) ({job="veea-api", __name__=~"admin_active_super_admins|admin_super_admin_bootstrapped|account_deletion_oldest_pending_seconds|email_outbox_pending"}) < 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: A Veea API instance cannot read a database-backed gauge.
+          description: At least one gauge reports the -1 read-failure sentinel. The alert that depends on it cannot judge the real value.
+          runbook: docs/trd/08-monitoring-alerting.md#52-monitoring-series-missing-or-read-failed
+
+  - name: veea-api-accounts
+    interval: 1m
+    rules:
+      - alert: VeeaNoActiveSuperAdmin
+        expr: |
+          max by (job) (admin_super_admin_bootstrapped{job="veea-api"}) == 1
+          and on (job)
+          max by (job) (admin_active_super_admins{job="veea-api"}) == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: No active Super Admin remains after bootstrap.
+          description: The TRD 06 invariant is broken (direct database change, or every Super Admin suspended or deactivated outside the API). Nobody can grant roles or recover staff access through the console.
+          runbook: docs/trd/08-monitoring-alerting.md#53-no-active-super-admin
+
+      - alert: VeeaAccountPurgeSlow
+        expr: max by (job) (account_deletion_oldest_pending_seconds{job="veea-api"}) > 7200
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: An accepted account deletion has been purging for over 2 hours.
+          description: Purges normally finish in minutes. The TRD 04 promise is 24 hours; act before it is broken.
+          runbook: docs/trd/08-monitoring-alerting.md#54-account-purge-slow-or-overdue
+
+      - alert: VeeaAccountPurgeOverdue
+        expr: max by (job) (account_deletion_oldest_pending_seconds{job="veea-api"}) > 86400
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: An accepted account deletion is unfinished after 24 hours.
+          description: The TRD 04 active-store erasure target (24 h from acceptance) is missed. The account stays sealed and its email reserved until the purge completes.
+          runbook: docs/trd/08-monitoring-alerting.md#54-account-purge-slow-or-overdue
+
+  - name: veea-api-email
+    interval: 1m
+    rules:
+      - alert: VeeaEmailDeliveryFailureRatioHigh
+        expr: |
+          (
+            sum by (job) (increase(email_send_total{job="veea-api", result=~"permanent|ambiguous"}[30m]))
+            /
+            sum by (job) (increase(email_send_total{job="veea-api"}[30m]))
+          ) > 0.25
+          and on (job)
+          sum by (job) (increase(email_send_total{job="veea-api"}[30m])) >= 20
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: Over 25% of email provider calls fail.
+          description: With at least 20 calls in 30 minutes, more than a quarter ended permanent or ambiguous. Sign-in, signup and reset codes are not arriving.
+          runbook: docs/trd/08-monitoring-alerting.md#55-email-delivery-failing
+
+      - alert: VeeaEmailDeliveryFailingLowVolume
+        expr: |
+          sum by (job) (increase(email_send_total{job="veea-api", result=~"permanent|ambiguous"}[1h])) >= 3
+          and on (job)
+          (
+            sum by (job) (increase(email_send_total{job="veea-api", result="sent"}[1h]))
+            or on (job)
+            sum by (job) (increase(email_send_total{job="veea-api"}[1h])) * 0
+          ) == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Email delivery appears to be down at low traffic.
+          description: At least 3 provider calls failed in the last hour and none succeeded. The ratio rule needs 20 calls, so this catches a quiet outage.
+          runbook: docs/trd/08-monitoring-alerting.md#55-email-delivery-failing
+
+      - alert: VeeaEmailOutboxBacklogGrowing
+        expr: |
+          max by (job) (email_outbox_pending{job="veea-api"}) >= 20
+          and on (job)
+          max by (job) (deriv(email_outbox_pending{job="veea-api"}[15m])) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: The email outbox backlog is at least 20 and still growing.
+          description: Messages are queued faster than they are sent or terminalized. Codes expire after 10 minutes, so users will start missing them.
+          runbook: docs/trd/08-monitoring-alerting.md#56-outbox-backlog-growing-or-stalled
+
+      - alert: VeeaEmailOutboxStalled
+        expr: |
+          max by (job) (min_over_time(email_outbox_pending{job="veea-api"}[20m])) > 0
+          and on (job)
+          (
+            sum by (job) (increase(email_send_total{job="veea-api"}[20m]))
+            or on (job)
+            max by (job) (email_outbox_pending{job="veea-api"}) * 0
+          ) == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: Email is queued but no worker has called the provider for 30 minutes.
+          description: At least one message stayed pending for 20 minutes with zero provider calls, and that lasted 10 more minutes. The worker retries every 4 minutes at most, so a live worker would have called the provider.
+          runbook: docs/trd/08-monitoring-alerting.md#56-outbox-backlog-growing-or-stalled

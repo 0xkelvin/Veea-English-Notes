@@ -65,6 +65,10 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
   `ON DELETE RESTRICT` and are drained in bounded batches by `learning.PurgeBatch`. Sync ships
   closed (`learning_sync_control.open = false`): do not open it before the Flutter checks in TRD 05
   §15.2 pass. `learning.AppendCanonical` is the only encoder for quota and export sizes.
+  Alert rules (TRD 08) are `backend/monitoring/prometheus/veea-alerts.yml`, tested by
+  `make test-alerts` (promtool) and `go test ./monitoring` (names must exist in the registry).
+  Edit scenarios in `gen_tests.py`, not the generated `veea-alerts.test.yml`. Renaming a metric or
+  label value breaks alerts: change the rules and tests in the same change.
   RBAC user administration (TRD 06) is `backend/internal/admin/` (pure matrix in `policy.go`).
   Every `/v1/admin/*` route is `authenticated(requireStaff(...))`; `requireStaff` is only a
   pre-check, and admin writes revalidate the actor's role, standing and acting session under

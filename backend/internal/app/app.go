@@ -149,5 +149,6 @@ func New(o Options) (http.Handler, error) {
 	m.RegisterOutboxPending(sqlc.New(o.Pool).CountPendingOutbox)
 	m.RegisterDeletionBacklog(sqlc.New(o.Pool).OldestPendingDeletionSeconds)
 	m.RegisterActiveSuperAdmins(sqlc.New(o.Pool).CountActiveSuperAdmins)
+	m.RegisterSuperAdminBootstrapped(sqlc.New(o.Pool).SuperAdminBootstrapped)
 	return httpx.NewHandler(o.Pool, o.ReadyTimeout, auth.Mount), nil
 }

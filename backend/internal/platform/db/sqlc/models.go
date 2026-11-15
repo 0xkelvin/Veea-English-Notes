@@ -179,6 +179,11 @@ type RateLimitCounter struct {
 	Count       int32
 }
 
+type RbacBootstrap struct {
+	ID                  int16
+	FirstBootstrappedAt time.Time
+}
+
 type RefreshTokensConsumed struct {
 	TokenHash   []byte
 	SessionID   uuid.UUID

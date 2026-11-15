@@ -1631,6 +1631,7 @@ This is the price of having no grace window. It is accepted in exchange for stri
 | Database | `db_tx_retries_total{reason}` (deadlock or serialization retries, §7.1 rule 7) |
 | Argon2 | `argon2_wait_seconds` |
 | Account lifecycle (TRD 04) | `account_lifecycle_accepted_total{action}` (`deactivate`, `reactivate`, `export`, `delete`), `account_jobs_total{job,result}` (`ready`, `canceled`, `expired`, `completed`, `error`), `account_deletion_oldest_pending_seconds` |
+| Administration (TRD 06, TRD 08) | `admin_actions_total{action,result}`, `admin_active_super_admins`, `admin_super_admin_bootstrapped` (1 after the first bootstrap, 0 before, -1 on read failure) |
 | Learning sync (TRD 05) | `learning_sync_push_total{route,result}` (`push`, `import`; `ok`, `reset`, `capacity_changed`, `sequence_gap`), `learning_sync_items_total{op,outcome}`, `learning_sync_reset_total{reason}` |
 
 **Implementation notes** (`internal/platform/metrics`, release hardening)
@@ -1642,6 +1643,7 @@ This is the price of having no grace window. It is accepted in exchange for stri
   - `auth_sessions_revoked_total{reason}`: the `sessions.revoked_reason` values, added by count.
   - `db_tx_retries_total{reason}`: `deadlock` or `serialization`.
 - **Label hygiene.** Every label value passes a filter that keeps only `[a-z0-9_]{1,40}` and turns anything else into `other`. An email, an IP address or a token cannot become a label even by mistake (`TestLabelsCannotCarryPersonalDataOrTokens`, and a scan of the scraped output in `TestMetrics_RecordedThroughTheRouter`).
+- **Alerting (TRD 08).** Rules live in `backend/monitoring/prometheus/`. `cmd/api` creates every `email_send_total{template,result}` series at 0 on startup, so the first failure after a restart is visible to `increase()`.
 - **`email_outbox_pending`** is read with a count query when scraped, with a 1 s timeout. A failed read reports `-1`, not a silent `0`. At most two scrapes run at once, each bounded to 5 s, so scraping cannot tie up the API pool. The gauge registers once per `Metrics`, so building a second handler with the same instance does not panic.
 - **`account_deletion_oldest_pending_seconds`** is the age of the oldest accepted, unfinished purge, read when scraped like `email_outbox_pending` (`-1` on a failed read, `0` when none). It is the measure for the TRD 04 24-hour purge target; the alert threshold belongs to deployment. An idempotent completion replay is not counted again.
 - **Hooks reused.** `OnTxRetry`, the hasher's `ObserveWait` and the worker's new `OnSend` and `OnStale` hooks feed the collectors; `notify` and `db` do not import the metrics package.

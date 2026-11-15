@@ -451,6 +451,11 @@ func (s *Service) ChangeRole(ctx context.Context, p session.Principal, targetID 
 		if err := accounts.SetRole(ctx, tx, t.ID, role); err != nil {
 			return err
 		}
+		if role == accounts.RoleSuperAdmin { // backstop for the TRD 08 marker; idempotent
+			if err := q.MarkSuperAdminBootstrapped(ctx); err != nil {
+				return fmt.Errorf("admin: bootstrap marker: %w", err)
+			}
+		}
 		var events []audit.Event
 		if promotion {
 			reason := ReasonRoleChange

@@ -111,6 +111,9 @@ func Bootstrap(ctx context.Context, pool *pgxpool.Pool, req BootstrapRequest) (B
 		if err := accounts.SetRole(ctx, tx, u.ID, accounts.RoleSuperAdmin); err != nil {
 			return err
 		}
+		if err := q.MarkSuperAdminBootstrapped(ctx); err != nil { // TRD 08 monitoring marker
+			return fmt.Errorf("admin: bootstrap marker: %w", err)
+		}
 		reason := ReasonRoleChange
 		n, err := q.RevokeAllSessionsForUser(ctx, sqlc.RevokeAllSessionsForUserParams{Reason: &reason, UserID: u.ID}) // L4b
 		if err != nil {

@@ -278,6 +278,18 @@ func (q *Queries) CountOtherActiveSuperAdmins(ctx context.Context, id uuid.UUID)
 	return count, err
 }
 
+const markSuperAdminBootstrapped = `-- name: MarkSuperAdminBootstrapped :exec
+INSERT INTO rbac_bootstrap (id, first_bootstrapped_at) VALUES (1, clock_timestamp())
+ON CONFLICT (id) DO NOTHING
+`
+
+// TRD 08: written in the bootstrap transaction (and by any promotion to super_admin, as a
+// backstop). Idempotent; the first time is kept.
+func (q *Queries) MarkSuperAdminBootstrapped(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, markSuperAdminBootstrapped)
+	return err
+}
+
 const reinstateUser = `-- name: ReinstateUser :execrows
 UPDATE users SET status = resume_status, resume_status = NULL, suspension_reason = NULL,
     suspension_ticket_ref = NULL, suspended_by = NULL,
@@ -312,6 +324,18 @@ func (q *Queries) SetUserRole(ctx context.Context, arg SetUserRoleParams) (int64
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const superAdminBootstrapped = `-- name: SuperAdminBootstrapped :one
+SELECT EXISTS (SELECT 1 FROM rbac_bootstrap)::boolean AS bootstrapped
+`
+
+// admin_super_admin_bootstrapped, read when metrics are scraped.
+func (q *Queries) SuperAdminBootstrapped(ctx context.Context) (bool, error) {
+	row := q.db.QueryRow(ctx, superAdminBootstrapped)
+	var bootstrapped bool
+	err := row.Scan(&bootstrapped)
+	return bootstrapped, err
 }
 
 const suspendUser = `-- name: SuspendUser :execrows
