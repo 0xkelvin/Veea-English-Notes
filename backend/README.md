@@ -255,6 +255,78 @@ not a device launch. Default-target and explicit Rust mappings were checked with
 Rust. The selected disposable project/image was removed through `backend-down-v` and scoped
 image cleanup; existing test containers remained running. `make -C backend check` passed.
 
+## Production Docker (Resend, no Mailpit)
+
+`compose.production.yaml` is independent of local Compose. It runs PostgreSQL 17 with a named
+volume, a one-shot Go migrator, a transactional permission step, then the non-root Go API.
+The API has its own network namespace and uses Resend over HTTPS; Mailpit is not included.
+Default project is `veea-production`, env file `backend/.env.production`. These are separate
+from local `veea-go` data and keys. No local users/data are automatically moved to production.
+
+From the repo root, create a **new private** config (refuses overwriting an existing file):
+
+```sh
+(umask 077; set -C; cat backend/.env.production.example > backend/.env.production)
+```
+
+Fill it privately before running commands. Set `VEEA_PROD_IMAGE` to a versioned release tag
+(for example `veea-backend:release-001`) when building locally, or a registry digest when
+deploying a previously built/pulled image. Generate **each** DB password/HMAC/OTP key
+independently with `openssl rand -hex 32`; outbox format is `1:<64 hex characters>`.
+Set `VEEA_EMAIL_FROM` to a verified-domain bare address and inject the private Resend API key.
+Never commit the env file or put values in shell history/logs. Keep application encryption/HMAC
+keys and required old key versions with the durable database; do not regenerate on restart.
+
+```sh
+make backend-prod-config         # Validate without printing secrets
+make backend-prod-build          # Build the configured tagged api/migrate/admin image
+make backend-prod-up             # Use prebuilt image, wait for DB -> migrate -> grants -> API
+make backend-prod-migrate-status # Expected: current_version=15 pending=0
+make backend-prod-health
+make backend-prod-ps
+make backend-prod-logs            # Ctrl-C stops log following only
+make backend-prod-down            # Preserve the production database volume
+```
+
+The same targets work with `make -C backend`. Use `PROD_PROJECT_NAME` / `PROD_ENV_FILE` on
+every command to override the selection; relative env paths are backend-relative. Up never
+builds or pulls implicitly. For registry releases, pull the configured image through your
+deployment pipeline before up. There is deliberately **no production volume-wipe target**.
+
+Fresh-volume initialization creates separate non-superuser migration, API and maintenance
+roles. The migrator owns the database/schema; the API has no schema-creation permission and
+can read/insert audit but cannot update/delete it. Maintenance can minimize/expire audit.
+`permissions` reapplies table/sequence grants after migration and must succeed before API
+startup. Bootstrap administrator credentials stay with PostgreSQL, not the API. Initialization
+runs only on a **new** volume: editing password env values later does not rotate existing DB
+roles. Perform planned SQL/secret rotation instead. This layout cannot adopt an arbitrary
+existing database volume without a reviewed role/grant migration.
+
+PostgreSQL publishes **no host port**. API defaults to `127.0.0.1:28386`, metrics to
+`127.0.0.1:29090`; configure a host HTTPS reverse proxy and internal Prometheus. Block the
+public `/v1/admin/` prefix and serve the admin console only on the approved operator ingress.
+Use `VEEA_TRUSTED_PROXIES` only for the real trusted proxy path. Container-internal DB transport
+is confined to the single-host Docker bridge; external database transport requires TLS design.
+
+This is production orchestration, **not completed production acceptance**. Before traffic,
+complete [the staging checklist](../docs/staging-verification.md): actual release image/commit,
+verified Resend inbox delivery, native-device and AC-7 checks, ingress/alerts, and real backup/
+restore with independent deletion-ledger custody. Named volumes are not backups. Configure
+30-day backup/PITR, independent deletion checkpoints, restore drills, 14-day log retention and
+monitoring outside this Compose file. API logs have size-based rotation here, not time retention.
+The sync/install gate remains false on a new database and is never opened by these targets;
+restarting an existing database preserves its current gate. Review any local edits to approved
+rate limits and their TRD tests before creating a production release. No real production
+deployment or email delivery is performed by the local verification.
+
+Production-shaped local verification (2026-11-15): **18 checks passed, 0 failed** using a unique
+disposable project and fake Resend settings, without submitting an email. Root/backend config
+and Make targets, no Mailpit/shared namespace, private database port, loopback API/metrics,
+image build, 15/0 migration, health 200, closed sync, three non-superuser roles, audit/schema
+privileges, down/up persistence, zero-migration replay and failed-grant startup blocking were
+verified. Only that test project's resources/image were removed. `make -C backend check`
+passed. These local results do not complete the operational release gates above.
+
 ## Schema and queries
 
 Migrations follow TRD 01 section 6 and are listed in [`migrations/README.md`](migrations/README.md).

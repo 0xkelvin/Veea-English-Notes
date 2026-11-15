@@ -116,3 +116,36 @@ sqlc-verify: ## Validate queries, regenerate, and fail if the checked-in output 
 	@scripts/sqlc-verify.sh "$(SQLC)" $(SQLC_OUT)
 
 check: fmt vet test ## Everything that needs no database or network
+
+# Production is a separate file/project/env: no Mailpit, no local-key generator, no wipe target.
+PROD_PROJECT_NAME ?= veea-production
+PROD_ENV_FILE ?= .env.production
+PROD_ENV_PATH = $(if $(filter /%,$(PROD_ENV_FILE)),$(PROD_ENV_FILE),$(BACKEND_DIR)/$(PROD_ENV_FILE))
+PROD_COMPOSE = docker compose --project-directory "$(BACKEND_DIR)" --env-file "$(PROD_ENV_PATH)" -p "$(PROD_PROJECT_NAME)" -f "$(BACKEND_DIR)/compose.production.yaml"
+.PHONY: backend-prod-config backend-prod-build backend-prod-up backend-prod-down backend-prod-logs backend-prod-ps backend-prod-migrate-status backend-prod-health
+
+backend-prod-config: ## Validate production settings without printing secrets
+	$(PROD_COMPOSE) config --quiet
+
+backend-prod-build: backend-prod-config ## Build api/migrate/admin under the configured release image tag
+	$(PROD_COMPOSE) build
+
+backend-prod-up: backend-prod-config ## Start prebuilt production image; wait for DB, migration and grants
+	$(PROD_COMPOSE) up -d --no-build --wait --wait-timeout 180
+
+backend-prod-down: ## Stop production services, preserving all database data
+	$(PROD_COMPOSE) down
+
+backend-prod-logs: ## Follow production logs (BACKEND_LOG_ARGS overrides follow)
+	$(PROD_COMPOSE) logs $(BACKEND_LOG_ARGS)
+
+backend-prod-ps: ## Show production services and completed migration/grants jobs
+	$(PROD_COMPOSE) ps --all
+
+backend-prod-migrate-status: ## Read production migration status
+	$(PROD_COMPOSE) run --rm --no-deps migrate status
+
+backend-prod-health: ## Check production API on its host loopback mapping
+	@binding="$$( $(PROD_COMPOSE) port api 18386 )"; \
+	 test -n "$$binding" && curl --fail --silent --show-error "http://$$binding/healthz" && \
+	 curl --fail --silent --show-error "http://$$binding/readyz"

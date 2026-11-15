@@ -153,6 +153,15 @@ always backend-relative. `backend-env` generates private Go keys once and never 
 Existing Go test scripts use separate disposable services/ports. CI for `cloud/` is
 `cloud/.github/workflows/ci.yml` (fmt, clippy, test); there is no CI for Flutter tests.
 
+Production Docker uses the separate `backend/compose.production.yaml` and `backend-prod-*`
+Make targets (root delegates to backend). It uses Resend without Mailpit, a private
+`PROD_ENV_FILE` (default `.env.production`, backend-relative), and `PROD_PROJECT_NAME`
+(default `veea-production`). Preserve its database/keys; no production wipe target exists.
+Fresh roles and post-migration grants are in `backend/ops/production/`; API audit remains
+append-only, maintenance can minimize it. API/metrics bind loopback; production ingress,
+backup/ledger custody and release gates remain operator responsibilities, never implied by
+local Compose verification. Never point local tests at a deployed production database.
+
 Baseline as of 2026-11-10 on `main` (check before blaming your change):
 `cargo fmt -- --check` and `cargo clippy` already fail (e.g. `phone_auth.rs`
 `delete_verified_account` has 9 arguments), and 5 tests in `test/golden/screens_golden_test.dart`

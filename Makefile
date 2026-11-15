@@ -100,3 +100,28 @@ check: analyze test ## Run analyze and test together
 
 clean: ## Clean Flutter build artifacts
 	flutter clean
+
+.PHONY: backend-prod-config backend-prod-build backend-prod-up backend-prod-down backend-prod-logs backend-prod-ps backend-prod-migrate-status backend-prod-health
+backend-prod-config: ## Validate production configuration
+	+$(MAKE) -C backend $@
+
+backend-prod-build: ## Build the production release image
+	+$(MAKE) -C backend $@
+
+backend-prod-up: ## Start production Docker stack without Mailpit
+	+$(MAKE) -C backend $@
+
+backend-prod-down: ## Stop production and keep database data
+	+$(MAKE) -C backend $@
+
+backend-prod-logs: ## Follow production logs
+	+$(MAKE) -C backend $@
+
+backend-prod-ps: ## Show production service status
+	+$(MAKE) -C backend $@
+
+backend-prod-migrate-status: ## Show production migration status
+	+$(MAKE) -C backend $@
+
+backend-prod-health: ## Check production health/readiness
+	+$(MAKE) -C backend $@

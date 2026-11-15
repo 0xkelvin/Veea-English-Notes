@@ -119,6 +119,29 @@ using the same API port before starting Go. Existing `cloud/` CI/deployment and 
 test-service scripts remain unchanged. Switching API URLs does not make Go/Rust account or
 sync contracts interchangeable.
 
+### Production Docker with Resend
+
+Production orchestration is separate from local development and has **no Mailpit**. It runs
+PostgreSQL 17, migration and permission jobs, then the non-root Go API with Resend.
+Prepare private settings using [backend production setup](backend/README.md#production-docker-resend-no-mailpit), then run:
+
+```sh
+make backend-prod-config
+make backend-prod-build
+make backend-prod-up
+make backend-prod-migrate-status
+make backend-prod-health
+make backend-prod-ps
+make backend-prod-logs
+make backend-prod-down  # Preserves database data
+```
+
+Root and backend-directory targets use the same production project/env. The database has no
+host port; API/metrics bind loopback for an external HTTPS proxy/internal monitoring. Production
+uses separate data, credentials and roles; existing local data is preserved. Backup/restore,
+independent ledger custody, ingress and release acceptance remain deployment prerequisites.
+These commands do not open sync or publish content.
+
 ### Run Tests
 
 ```bash

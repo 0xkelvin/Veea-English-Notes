@@ -1,0 +1,89 @@
+# Single-host production foundation. TLS ingress, backups and release acceptance are external.
+name: veea-production
+x-backend: &backend
+  image: ${VEEA_PROD_IMAGE:?Set a versioned release image tag or digest}
+  build:
+    context: .
+    dockerfile: Dockerfile
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  logging:
+    driver: local
+    options:
+      max-size: 10m
+      max-file: "5"
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: veea
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${VEEA_PROD_DB_ADMIN_PASSWORD:?Set a private hex database bootstrap password}
+      VEEA_PROD_MIGRATION_PASSWORD: ${VEEA_PROD_MIGRATION_PASSWORD:?Set a private hex migration password}
+      VEEA_PROD_API_PASSWORD: ${VEEA_PROD_API_PASSWORD:?Set a private hex API database password}
+      VEEA_PROD_MAINTENANCE_PASSWORD: ${VEEA_PROD_MAINTENANCE_PASSWORD:?Set a private hex maintenance password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./ops/production/init-roles.sql:/docker-entrypoint-initdb.d/01-roles.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U postgres -d veea']
+      interval: 3s
+      timeout: 3s
+      retries: 40
+  migrate:
+    <<: *backend
+    entrypoint: [/app/bin/migrate]
+    command: [up]
+    restart: "no"
+    environment:
+      VEEA_DATABASE_URL: postgres://veea_migrator:${VEEA_PROD_MIGRATION_PASSWORD:?Set migration password}@postgres:5432/veea?sslmode=disable
+    depends_on:
+      postgres: {condition: service_healthy}
+  permissions:
+    image: postgres:17-alpine
+    user: postgres
+    restart: "no"
+    environment:
+      PGHOST: postgres
+      PGDATABASE: veea
+      PGUSER: veea_migrator
+      PGPASSWORD: ${VEEA_PROD_MIGRATION_PASSWORD:?Set migration password}
+    volumes:
+      - ./ops/production/grants.sql:/ops/grants.sql:ro
+    entrypoint: [psql, -X, -v, ON_ERROR_STOP=1, -f, /ops/grants.sql]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+  api:
+    <<: *backend
+    restart: unless-stopped
+    command: [/app/bin/api]
+    environment:
+      VEEA_DATABASE_URL: postgres://veea_api:${VEEA_PROD_API_PASSWORD:?Set API database password}@postgres:5432/veea?sslmode=disable
+      VEEA_MAINTENANCE_DATABASE_URL: postgres://veea_maintenance:${VEEA_PROD_MAINTENANCE_PASSWORD:?Set maintenance password}@postgres:5432/veea?sslmode=disable
+      VEEA_HTTP_ADDR: :18386
+      VEEA_METRICS_ADDR: :9090
+      VEEA_EMAIL_SENDER: resend
+      VEEA_EMAIL_FROM: ${VEEA_EMAIL_FROM:?Set verified-domain From address}
+      VEEA_RESEND_API_KEY: ${VEEA_RESEND_API_KEY:?Set private Resend key}
+      VEEA_EMAIL_HMAC_KEY: ${VEEA_EMAIL_HMAC_KEY:?Set email HMAC key}
+      VEEA_OTP_KEY: ${VEEA_OTP_KEY:?Set OTP key}
+      VEEA_OUTBOX_KEY: ${VEEA_OUTBOX_KEY:?Set outbox key}
+      VEEA_TRUSTED_PROXIES: ${VEEA_TRUSTED_PROXIES:-}
+    ports:
+      - "127.0.0.1:${VEEA_PROD_HTTP_PORT:-28386}:18386"
+      - "127.0.0.1:${VEEA_PROD_METRICS_PORT:-29090}:9090"
+    depends_on:
+      postgres: {condition: service_healthy}
+      permissions: {condition: service_completed_successfully}
+    stop_grace_period: 45s
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:18386/readyz]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+volumes:
+  postgres_data:

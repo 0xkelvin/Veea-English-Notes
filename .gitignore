@@ -61,3 +61,6 @@ test/golden/failures/
 
 # Go backend build output
 /backend/bin/
+
+# Private production Compose configuration
+/backend/.env.production
