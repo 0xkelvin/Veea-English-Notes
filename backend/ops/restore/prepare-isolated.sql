@@ -1,14 +1,24 @@
 -- OPERATOR ONLY: no API/worker/traffic attached. Run after migration 00015.
--- Same connection must hold pg_temp.restore_deletions, loaded from the authoritative
--- retained ledger (including incomplete deletions), and SET veea.restore_isolated='yes'.
+-- Same connection must load the private SQL from admin ledger recover, including
+-- restore_deletions + restore_recovery_proof, and SET veea.restore_isolated='yes'.
 -- This is not a migration or an API action. Keep the gate closed on every outcome.
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '60s';
 DO $$ BEGIN
  IF current_setting('veea.restore_isolated', true) IS DISTINCT FROM 'yes'
-    OR to_regclass('pg_temp.restore_deletions') IS NULL THEN
+    OR to_regclass('pg_temp.restore_deletions') IS NULL
+    OR to_regclass('pg_temp.restore_recovery_proof') IS NULL THEN
    RAISE EXCEPTION 'isolated restore acknowledgement and authoritative ledger required';
+ END IF;
+ IF (SELECT count(*) FROM restore_recovery_proof) <> 1
+ OR EXISTS(SELECT 1 FROM restore_recovery_proof WHERE source_id='00000000-0000-0000-0000-000000000000'
+     OR generation < min_generation OR min_generation < 1 OR covered_through < required_through
+     OR backup_at < backup_floor OR backup_at > required_through
+     OR backup_floor <> covered_through - interval '720 hours'
+     OR record_count <> (SELECT count(*) FROM restore_deletions)
+     OR checkpoint_digest !~ '^[a-f0-9]{64}$') THEN
+   RAISE EXCEPTION 'independent recovery proof missing, incomplete or behind; keep access closed';
  END IF;
  IF EXISTS (SELECT 1 FROM learning_sync_control WHERE open) THEN
    RAISE EXCEPTION 'close sync before preparing an isolated restore';

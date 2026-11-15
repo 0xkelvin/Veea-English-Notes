@@ -8,6 +8,11 @@ migrations 00001 to 00009. Resend is selected for production email (TRD 01 R12);
 
 Staging readiness through migration **00015**: [`docs/staging-verification.md`](../docs/staging-verification.md).
 Local evidence runner: `scripts/verify-staging-local.sh`; isolated logical restore drill: `scripts/test-restore-drill.sh`.
+Independent deletion checkpoint commands: `bin/admin ledger archive`, `status`, `recover`;
+see [`docs/deletion-ledger-recovery.md`](../docs/deletion-ledger-recovery.md) for dedicated
+key/source custody, coverage requirements and private restore SQL. Recover/status need no
+source database. Missing/behind checkpoints block reopening. The POSIX adapter is implemented;
+an independent storage destination and its schedule/monitoring remain deployment prerequisites.
 These do not deploy or open sync.
 
 Design: [`docs/trd/01-email-authentication-account-foundation.md`](../docs/trd/01-email-authentication-account-foundation.md).
@@ -18,7 +23,7 @@ Design: [`docs/trd/01-email-authentication-account-foundation.md`](../docs/trd/0
 api/openapi.yaml         the HTTP contract (normative); `go test ./api` checks it against the router
 cmd/api/                 HTTP service
 cmd/migrate/             applies migrations, then exits (up | status)
-cmd/admin/               operator-only: bootstrap-super-admin (TRD 06); never run by the API
+cmd/admin/               operator-only: bootstrap, cartridge publication, independent deletion checkpoints; never run by the API
 internal/platform/
   config/                environment loading and validation
   db/                    pgx pool, transaction runner (READ COMMITTED, deadlock retry)

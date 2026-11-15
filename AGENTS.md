@@ -117,6 +117,11 @@ checks run through `backend/scripts/verify-staging-local.sh`; the separately tag
 `pg_dump`/`pg_restore` drill is `backend/scripts/test-restore-drill.sh`. Operator-only isolated
 restore SQL is in `backend/ops/restore/`; it never opens sync. Staging/provider/device gates
 and cartridge review-resolution limitations remain explicit in the checklist.
+Independent deletion checkpoints use `cmd/admin ledger {archive,status,recover}` and
+`internal/recoveryledger/`, with dedicated `VEEA_RECOVERY_KEYS` and an independently held
+source UUID. Follow `docs/deletion-ledger-recovery.md`: `202` is DB acceptance, not independent
+publication. Missing/behind coverage blocks restored access. The private POSIX adapter is
+locally tested; shared storage, scheduling, key custody and freshness monitoring require deployment.
 
 ## Commands
 

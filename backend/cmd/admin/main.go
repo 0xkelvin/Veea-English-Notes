@@ -24,7 +24,8 @@ import (
 const usage = `usage: admin bootstrap-super-admin (--user-id UUID | --email ADDRESS)
              [--mode first|break_glass] [--reason-code CODE] [--ticket-ref REF]
   admin publish-cartridge --file FILE --ticket-ref REF
-  (reads VEEA_DATABASE_URL)
+  admin ledger archive|recover|status (see subcommand usage)
+  (database commands read VEEA_DATABASE_URL; ledger recover/status do not)
   first        (default) only when no active Super Admin exists
   break_glass  recovery when every Super Admin is unreachable; needs --reason-code
                lost_access, account_compromise or other
@@ -47,6 +48,9 @@ var bootstrapper = func(ctx context.Context, url string, req admin.BootstrapRequ
 }
 
 func run(ctx context.Context, args []string, getenv func(string) string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "ledger" {
+		return ledgerCommand(ctx, args[1:], getenv, stdout, stderr)
+	}
 	if len(args) > 0 && args[0] == "publish-cartridge" {
 		return publishCartridge(ctx, args[1:], getenv, stdout, stderr)
 	}

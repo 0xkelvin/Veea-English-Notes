@@ -10,6 +10,7 @@ VEEA_VERIFY_EVIDENCE="$(cd "$VEEA_VERIFY_EVIDENCE" && pwd)"
 # Credentials for a running deployment are not inputs to disposable tests.
 unset VEEA_DATABASE_URL VEEA_MAINTENANCE_DATABASE_URL VEEA_RESEND_API_KEY
 unset VEEA_EMAIL_HMAC_KEY VEEA_OUTBOX_KEY VEEA_OTP_KEY VEEA_EMAIL_SENDER
+unset VEEA_RECOVERY_KEYS
 for command in go flutter docker python3 pg_dump pg_restore; do
   command -v "$command" >/dev/null || { echo "missing local prerequisite: $command" >&2; exit 2; }
 done

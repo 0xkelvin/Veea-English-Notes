@@ -30,7 +30,7 @@ The runner removes inherited deployment DB/email secrets from its child environm
 | Schema/query reproducibility | `make -C backend sqlc-verify` | Reproducible generated code; full suite includes empty DB, replay and populated 14→15 upgrade |
 | Backend and Resend stand-in regression | From `backend/`: `VEEA_TEST_DATABASE_URL="$(scripts/test-postgres.sh url)" VEEA_TEST_SMTP_ADDR=127.0.0.1:1025 VEEA_TEST_MAILPIT_API=http://127.0.0.1:8025 go test -race -tags=integration -count=1 -json ./...` | No failures/skips; retain JSON, top-level/subtest counts, Mailpit pass, OpenAPI coverage. Resend tests are `httptest`, not live provider readiness |
 | Alert rules | `make -C backend test-alerts` | All 11 rules, 21 scenarios/74 checks; preserve promtool output/version. Routing is not tested locally |
-| Restore SQL and real backup | `backend/scripts/test-restore-drill.sh` | Actual `pg_dump`/`pg_restore`, completed + incomplete post-backup deletions replayed, normal purge drains both, survivor words/catalog retained, epochs changed, writers retired, restored artifacts/mail/proofs fenced, gate closed. Restore refuses completion before purge |
+| Restore SQL and real backup | `backend/scripts/test-restore-drill.sh` | Actual `pg_dump`/`pg_restore`, encrypted checkpoint recovery after the original DB is dropped, post-backup completed/incomplete deletions, interruption/retry, normal purge, survivor data retained, epochs rotated and gate closed. Missing/behind proofs and premature finish are refused |
 | Learner analyzer/regressions | Root `flutter analyze`; selected tests in runner | Analysis clean, no failures/skips; includes durable queue, canonical fixtures, account/storage, snapshot/import and cartridge tests |
 | Learner → Go | `make -C backend test-flutter-go` | Real Go/PostgreSQL/Mailpit; every case passes, including pre-restore cartridge request retained across 503, blocked after 410, and still blocked after SQLite/secure-store restart. Retain Dart JSON and Go host `-race` output |
 | Admin analyzer/tests → Go | From `admin_console/`: `flutter analyze`; `flutter test --reporter json`; root `make -C backend test-flutter-admin` | Unit/widget tests pass; environment-gated E2E skips in the standalone run all pass through the real-Go harness |
@@ -53,10 +53,10 @@ Fill `operator`, `UTC start/end`, `candidate/deployment`, `result`, `evidence li
 | [ ] G6 — admin ingress and console | G1; dedicated same-origin admin host, TLS, operator VPN/IP policy, public ingress rules, approved Super Admin | Execute §4; bootstrap only through audited `bin/admin bootstrap-super-admin` if needed. Test plan grant/revoke, stale revision from second console and permission loss through the deployed console with synthetic accounts | Public `/v1/admin/*` is edge 404; outside operator network admin host unreachable; inside admin proxy unauthenticated admin request gets Go 401; metrics unavailable from both ingresses. No CORS dependency or token persistence in browser; conflict requires fresh confirmation, audit reloads | Results from both network positions, sanitized response headers, edge/upstream route trace, deployed static/API digests, audit actor/reason/ticket without credentials |
 | [ ] G7 — metrics, alert evaluation and delivery | G1/G2/G6; reachable internal metrics, real Prometheus/ruler version, on-call/test ticket destinations | Load existing rules with deployed-version `promtool check rules`; job `veea-api`, one target per instance, scrape/evaluate ≤1m. Check all four gauges present/nonnegative. Send labeled **test** critical/warning notifications through the approved Alertmanager route; run §5 controlled evaluation/failure/recovery drills | Critical pages, warning tickets next business day; receiver sees firing and resolved with the intended labels. Healthy baseline silent; missing target/series and read failures never count as healthy zero. No new Phase 5 scope/rules added | Rule/config digests, target/evaluation pages, PromQL/time series, notification/ticket IDs and firing/resolution timestamps, noise/silence tests |
 | [ ] G8 — retention and deletion SLO | G2/G3/G7; provider consoles and cleanup dashboards; policy owner | Verify actual backup/PITR/WAL/replica expiry ≤30d, logs 14d and documented Resend message/recipient/log retention/deletion controls. Confirm the intended **global** 180d audit policy (TRD 04 §12.7), receipt 30d, restoration ledger 90d after completion, 24h exports and 24h purge target with actual deployed workers. Run proof→acceptance→revoked access→purge→same-email new account; include entitlement and cartridge state | Application/deployment retention distinguished; incomplete deletion markers never expire. Old device cannot authenticate or attach old account cache to new UUID. Provider retention unknown means gate not complete | Redacted provider configuration, maintenance privilege check, accepted/completed UTC and oldest-pending metric, minimized audit samples, zero owned rows and independent re-registration. Do not claim immutable backup/inbox copies erased immediately |
-| [ ] G9 — real restore/PITR drill | G0–G8; verified independent authoritative ledger custody/final cutoff, encryption keys, isolated target and approved restoration window | Execute §6 using the actual backup/PITR mechanism; follow prepared SQL and normal purge, rotate epochs/retire writers, check stale clients, keep gate closed. Verify client behavior on an isolated synthetic canary with sync enabled only in that copy | Latest accepted **and incomplete** deletions cannot return, survivor data remains, exports/mail/proofs cannot replay, all old sessions revoked, old sync cursors/writers refused, old cartridge request never adopts new epoch and remains blocked across restart | Backup/PITR ID, source/cutoff/custody/hash of ledger, prepare/purge/finish/verify results, row counts, before/after epoch comparison, revoked session tests, client block evidence. Local logical dump is not this staging/provider drill |
+| [ ] G9 — real restore/PITR drill | G0–G8; provisioned independent checkpoint destination, dedicated key/source custody, scheduled publication/freshness monitoring, independent cutoff/minimum-generation records, isolated target and approved restoration window | Execute §6 and [the ledger workflow](deletion-ledger-recovery.md) with actual backup/PITR. Lose the original DB, recover the independent checkpoint, prove coverage, replay/purge, rotate epochs and verify; test interrupted publication and restore retries. Keep access closed if evidence is missing/behind. Check clients only on a disposable canary | Every deletion through the independently required cutoff, **including incomplete** jobs, is reapplied; survivor data remains, exports/mail/proofs cannot replay, epochs change and old cartridge requests stay blocked. Behind coverage blocks recovery | Backup/PITR ID/start point, independent source/key version and checkpoint generation/cutoff/count/digest, storage durability/retention/ACL and job freshness evidence, missing/behind refusal, original-DB-unavailable recovery, retry/prepare/purge/finish/verify and client results. Local fixture evidence is §8; destination/scheduling remain unprovisioned |
 | [ ] G10 — content and opening decision | G1–G9; Nin's real pack classification/content approval and client distribution status | Review TRD 10 limits (16 packs, 200 cumulative entries/pack, 1 MiB/document); split larger packs. Real publication is a separate Nin-run audited CLI action. Verify catalog metadata, Free/Premium expiry and owned-word use on a synthetic isolated canary. Approve removal of real Premium content only from future bundles after client support ships | This preparation publishes **no real content** and leaves the shared gate false. Existing owned words remain usable/syncable after downgrade. Opening sync/install requires a separately recorded operator decision; do not copy an unconditional `open=true` from an old runbook | Classification/license/stable-ID approval, signed client availability, canary evidence, explicit remaining-risk acceptance and separate gate-change ticket |
 
-**Known prerequisites without repository configuration:** staging hosts/orchestrator and rollout inventory, verified Resend account/domain/inboxes, real device/signing matrix, AC-7 numerical acceptance rule, network/ingress configuration, Prometheus/Alertmanager/receivers, retention policy confirmation and independently recoverable ledger custody. These are pending/blocked inputs, not failed local tests. The cartridge library currently displays a review-required block but has no cartridge-specific review-resolution UI; do not claim that restoring normal user-driven recovery is verified. Resolve that product/UX gap before treating the full restore-and-review experience as releasable; never clear a blocked row or substitute a new epoch to bypass it.
+**Known prerequisites without repository configuration:** staging hosts/orchestrator and rollout inventory, verified Resend account/domain/inboxes, real device/signing matrix, AC-7 numerical acceptance rule, network/ingress configuration, Prometheus/Alertmanager/receivers, retention policy confirmation and independently recoverable ledger custody. The ledger CLI/POSIX adapter is implemented; shared destination, schedule, freshness alerting, key custody and incident cutoff procedure are **deployment dependencies**, not provisioned here. These are pending/blocked inputs, not failed local tests. The cartridge library currently displays a review-required block but has no cartridge-specific review-resolution UI; do not claim that restoring normal user-driven recovery is verified. Resolve that product/UX gap before treating the full restore-and-review experience as releasable; never clear a blocked row or substitute a new epoch to bypass it.
 
 ## 3. Physical-device checklist for G4
 
@@ -100,15 +100,20 @@ Keep the existing 11 rules. `db_tx_retries_total` is exported but a dedicated re
 
 ## 6. Isolated restore sequence for G9 (Nin)
 
-**Stop boundary:** no API, worker, scheduler, migration peer or user traffic may touch the target while preparing it. Stop/fence source writes before the final authoritative ledger capture, or provide a verified continuous ledger stream through the cutover instant. A ledger stored **only inside the older backup is insufficient**. This repository does not provision independent journal/replication custody; loss of that authoritative history blocks reopening. Include every retained completed/incomplete marker and markers already in the backup, not just completed jobs or an assumed date filter. Verify retention covers the entire ≤30-day backup/PITR window.
+**Stop boundary:** no API, worker, scheduler, migration peer or user traffic may touch the target while preparing it. Follow [independent ledger recovery](deletion-ledger-recovery.md) for provisioning, archive scheduling and gap handling. Deletion `202` is DB acceptance; independent recoverability begins only at acknowledged durable checkpoint publication. A ledger stored **only inside the older backup is insufficient**. The local POSIX adapter is implemented; shared custody is not provisioned. Missing/behind/unknown coverage blocks **all** restored access and sync. Never archive the restored DB to manufacture missing history.
 
-1. In the release ticket record backup/PITR point, source ledger capture/cutoff, operator, hashes and key-version availability. Export a minimal ledger separately using the approved secure process (UUID markers/timestamps only, still private). An operator-controlled `psql` session on the authoritative source can use:
+1. Establish source UUID, conservative backup/PITR start point, required-through cutoff and minimum generation from **independent** provisioning/backup/incident/receipt records. For planned cutover fence all source writes, record the final database-clock boundary and run a final `bin/admin ledger archive` against the authoritative primary without `--initialize`; preserve its receipt. For disaster recovery retrieve the already published independent checkpoint; the original DB need not exist. From `backend/`, with dedicated recovery keys loaded privately and requirements set from those records:
 
-   ```sql
-   \copy (SELECT operation_id,user_id,accepted_at,completed_at,retain_until FROM deletion_ledger ORDER BY user_id) TO './private/restore-ledger.csv' WITH (FORMAT csv, HEADER true)
+   ```sh
+   set -eu
+   umask 077
+   mkdir -m 700 ./private-recovery
+   bin/admin ledger recover --store "$VEEA_LEDGER_STORE" --source "$VEEA_LEDGER_SOURCE" \
+     --backup-at "$VEEA_RECOVERY_BACKUP_AT" --required-through "$VEEA_RECOVERY_REQUIRED_THROUGH" \
+     --min-generation "$VEEA_RECOVERY_MIN_GENERATION" --out ./private-recovery/recovered.sql
    ```
 
-   Hash and transfer through the approved encrypted channel with restricted access. Record only digest/count/cutoff in public evidence. Confirm no accepted deletion can occur after the capture without being included.
+   Require exit 0 and retain the receipt (generation/cutoff/count/digest), operator and key version IDs. Output must use a private directory and a new filename. Transfer only through the approved encrypted restricted channel. A stale checkpoint does not prove that no later acceptance occurred. If the source is lost and coverage is short, retrieve newer independently retained checkpoints or authoritative replica/WAL evidence under the runbook; otherwise **stop**. Never lower the required cutoff/generation to make recovery pass. Include all retained completed/incomplete markers, not a manual date-filtered CSV.
 2. Restore the actual provider backup/PITR into an isolated target, with outbound email denied and no ingress. Run candidate `bin/migrate up` then `status`; require 15/0. Close/verify sync **before attaching any process**, even if the backup contains `open=true`:
 
    ```sql
@@ -116,18 +121,17 @@ Keep the existing 11 rules. `db_tx_retries_total` is exported but a dedicated re
    SELECT open FROM learning_sync_control;
    ```
 
-3. Use **one kept-open private `psql` session**, with `ON_ERROR_STOP` and DB identity checked by Nin; do not paste connection secrets. Paths below are relative to the repository root. `restore_deletions` and `restore_heads_before` are session-local, so use this same session through step 6:
+3. Use **one kept-open private `psql` session**, with `ON_ERROR_STOP` and DB identity checked by Nin; do not paste connection secrets. Paths below are relative to the repository root; recovery output was created under `backend/`. The proof, incoming ledger and epoch baseline are session-local, so use this same session through step 6:
 
    ```sql
    \set ON_ERROR_STOP on
    SET veea.restore_isolated='yes'; -- operator acknowledgement, not an isolation mechanism
-   CREATE TEMP TABLE restore_deletions (LIKE deletion_ledger INCLUDING ALL);
-   \copy restore_deletions FROM './private/restore-ledger.csv' WITH (FORMAT csv, HEADER true)
+   \i backend/private-recovery/recovered.sql
    SELECT count(*) AS incoming_markers FROM restore_deletions;
    \i backend/ops/restore/prepare-isolated.sql
    ```
 
-   The script replays the union of authoritative/restored ledgers, seals restored owners, requeues exactly their accepted deletion operations from step 0, revokes all restored sessions, invalidates proofs/operation capabilities, cancels exports/chunks and cancels unsent mail. Existing delete operation address digests are preserved for normal fence expiry. New restoration operations issue no capability/proof. A conflicting user/operation identity refuses the transaction. No traffic is allowed until erasure finishes; the absence of a newly generated address fence for a reconstructed operation must never be used to permit signups before then.
+   The CLI authenticates the encrypted checkpoint; prepare/finish/verify additionally require its coverage proof and matching count. Do not hand-write those tables or bypass recovery with CSV. The script replays the union of recovered/restored ledgers, seals restored owners, requeues exactly their accepted deletion operations from purge step 0, revokes all restored sessions, invalidates proofs/operation capabilities, cancels exports/chunks and cancels unsent mail. Existing delete operation address digests are preserved for normal fence expiry. New restoration operations issue no capability/proof. A conflicting user/operation identity refuses the transaction. No traffic is allowed until erasure finishes; the absence of a newly generated address fence for a reconstructed operation must never be used to permit signups before then.
 4. Start **one current candidate API process only inside the isolated network** to run the real cleanup jobs, with loopback HTTP, internal metrics, sender `fake`, preserved key versions and no outbound provider route. This is a maintenance surrogate: no standalone cleanup command exists. Do not attach the public/admin ingress or use restored credentials. It starts cleanup immediately and repeats every five minutes; record successes/errors and `account_deletion_oldest_pending_seconds`. Stop on any error. Wait for pending delete count and age to be 0; age 0 alone is not enough. The purge must erase vocabulary, writers/head, entitlements and installation watermarks; minimize owner audit.
 5. Stop the isolated process. In the kept-open `psql` session:
 
@@ -139,13 +143,13 @@ Keep the existing 11 rules. `db_tx_retries_total` is exported but a dedicated re
    ```
 
    Finish refuses if deletions remain. It then rotates all surviving epochs and retires every writer. Verify requires false sync gate, zero restored live sessions/proofs/capabilities/exports/pending mail, no deleted owners and no unchanged surviving epochs. Preserve its counts, not private ledger contents. Inspect minimized audit and survivor data; confirm one active Super Admin or perform approved audited CLI recovery before admin traffic resumes.
-6. If any SQL transaction fails, stop and `ROLLBACK` in that session; fix the cause under the ticket. Prepare can be replayed while isolated (it may restart purge checkpoints); finish/verify stay in that session. If it is lost, restart the documented preparation with the original authoritative ledger and record the new epoch baseline. Never skip failed assertions or set `open=true` to diagnose a purge.
+6. If any SQL transaction fails, stop and `ROLLBACK` in that session; fix the cause under the ticket. Prepare can be replayed while isolated (it may restart purge checkpoints); finish/verify stay in that session. If it is lost, recover the verified independent checkpoint again to a new private output name, reload in a new session, repeat prepare/purge and record the new epoch baseline. Never skip failed assertions or set `open=true` to diagnose a purge. Interrupted publication is retried against the same store/source; a failed or lost acknowledgement is not evidence of coverage.
 7. Test old access/refresh, OTP, rights/export capabilities and sync cursor/writer on a **separate isolated synthetic canary** of the restored release. An old cartridge attempt while closed gets 503 and retains its exact owner/version/body/epoch; only the deliberately opened disposable canary can return 410 `sync_reset_required`. After that response, the client stores `blocked=1`; restart and Retry send **no new install POST** and preserve the old bytes for review. Do not equate a shared closed-gate 503 with an observed epoch refusal. Record the user-review UX gap from §2.
 8. Leave the restored shared gate false. Any traffic cutover, real content publication, recovery UX acceptance and eventual sync opening are separate Nin decisions after G0–G10 evidence is complete. Restore does not recreate post-backup deletion receipts/capabilities from the minimal ledger; receipt continuity beyond the backup must be recorded as a limitation, not inferred from a 401/404 or used to erase a local cache automatically.
 
-Local logical backup evidence is in §7. Production storage durability, disaster-time ledger availability, PITR retention, signed-device behavior, real mail delivery and routing still require the staging/operator checks above.
+Historical local logical backup evidence is in §7; the source-loss independent-ledger extension is in §8. Production storage durability, disaster-time ledger availability, installed scheduling/freshness monitoring, key custody, PITR retention, signed-device behavior, real mail delivery and routing still require the staging/operator checks above.
 
-## 7. Current local evidence
+## 7. Initial staging-preparation local evidence (historical)
 
 Executed locally on **2026-11-15**, based on `a3659a3642b9a427c8b0c1366c363ccf62f8d27f` plus this uncommitted preparation. Private evidence directory: `/tmp/veea-staging-verification-20261115` (temporary local artifact, not a durable release-ticket attachment). The runner records tool versions and worktree status in `environment.txt`; copy sanitized evidence to the release ticket before deleting local files. Go 1.26.2, Flutter 3.47.9 / Dart 3.13.7; local PostgreSQL 17 service, `pg_dump`/`pg_restore` 18.3. No deployed service or real provider was contacted.
 
@@ -165,3 +169,64 @@ The logical restore test executes the checked-in SQL on a **real restored databa
 The new tagged Flutter E2E verifies the actual Go gate/epoch contracts, without fabricating API success: an install response is lost after commit; fixture-only restore fencing closes sync, revokes sessions, rotates the owner's epoch and retires writers; fresh sign-in uses the same UUID. A retry while closed returns **503** with unchanged pending version/body/epoch. Opening only that disposable fixture produces **410**, sets `blocked=1`, and preserves the request. After reopening SQLite and the secure-store boundary, Retry emits **zero install POSTs** and still requires review. This does not prove native secure storage or a complete review-resolution UX.
 
 **Remaining gates:** all G0–G10 staging/operator checkboxes remain open. In particular, no live Resend domain/delivery, native Keychain/Keystore smoke, production-cost AC-7 latency/tolerance, real ingress/Alertmanager routing, provider retention/PITR/independent ledger custody, or real content publication was verified. Cartridge review resolution and minimal-ledger receipt-continuity limitations are explicit above. Sync/install rollout remains **closed**. No staging change, deployment, real content publication, commit or push was made; externally staged files were left untouched.
+
+## 8. Independent ledger local evidence
+
+Executed locally on **2026-11-15**, based on `5bee407` plus this recovery change. Private
+evidence: `/tmp/veea-ledger-recovery-20261115` (temporary local files; attach sanitized results
+to the release ticket separately). Go 1.26.2, local PostgreSQL 17, `pg_dump`/`pg_restore` 18.3.
+No deployed service, shared-storage destination or real email provider was contacted.
+
+| Check | Passed | Failed | Skipped | Evidence |
+|---|---:|---:|---:|---|
+| Full PostgreSQL + Mailpit Go suite, `-race` | **1,291** | **0** | **0** | `full-race.jsonl`; **483 top-level**, 470 unit and 821 integration tests/subtests. OpenAPI still 367 combinations, no violations, four pre-existing unexercised responses |
+| Recovery package + admin CLI, `-race` | **23** | **0** | **0** | `focused-unit.jsonl`; overlapping subset of the full suite, not additional passes |
+| Recovery-ledger PostgreSQL tests | **3** | **0** | **0** | Subset of `full-race.jsonl`: archive/gap, observed acceptance-lock wait, retained unfinished markers/concurrent publishers |
+| Source-loss backup/restore drill, `-race` | **3** | **0** | **0** | `restore.jsonl`; one top-level plus two subtests, separately tagged and not included in 1,291 |
+| Learner → real local Go/Mailpit Dart E2E | **8** | **0** | **0** | `flutter-go.jsonl`; excludes hidden loader/teardown events. Go harness **1/0/0** in `flutter-go-host.log`, separately tagged and race-enabled |
+
+From `backend/`, the actual checks were:
+
+```sh
+make sqlc
+make sqlc-verify
+make check
+make build
+go vet -tags=integration,fluttere2e,restoredrill ./...
+go test -race -count=1 -json ./internal/recoveryledger ./cmd/admin
+VEEA_TEST_DATABASE_URL="$(scripts/test-postgres.sh url)" \
+  VEEA_TEST_SMTP_ADDR=127.0.0.1:1025 VEEA_TEST_MAILPIT_API=http://127.0.0.1:8025 \
+  go test -race -tags=integration -count=1 -json ./...
+scripts/test-restore-drill.sh
+VEEA_FLUTTER_E2E_REPORT=/tmp/veea-ledger-recovery-20261115/flutter-go.jsonl make test-flutter-go
+```
+
+SQL generation/verification, `make check`, build and tagged vet passed. After the retry-test
+refinement, affected unit tests, check/build/vet and the restore drill were rerun and passed.
+Shell syntax and both worktree/index whitespace checks passed. No Flutter production code or
+HTTP contract changed; the existing Flutter E2E was run as a restore/account regression.
+Migration version remains **15**; no migration or OpenAPI change was needed.
+
+The drill now takes a real backup **before** accepting two deletions, completes one and leaves
+one incomplete. An injected publication interruption leaves the old checkpoint insufficient;
+recovery refuses it. Publication retry succeeds, then source cleanup **drops the original DB**
+and the test verifies it is absent. A new CLI process with an unavailable source URL retrieves
+the encrypted checkpoint from the separate local fixture and emits private recovery SQL.
+The restored target refuses missing/behind proof and refuses finish before purge. After one
+purge pass the restore session is lost; the store is reopened, the checkpoint recovered again,
+and prepare/purge/finish/verify safely retried. Deleted accounts and owned data are absent,
+survivor vocabulary/shared catalog remain, owner audit is minimized, epochs change, writers
+are retired, old artifacts/mail/proofs are fenced and sync stays **false**. No reopening is
+performed. Unit interruption tests cover both before and after atomic rename, plus tamper,
+truncation, wrong source/key, stale generation/cutoff, old backup, key rotation and cancellation.
+
+**Remaining G9 deployment dependency:** choose and provision independent storage and its tested
+durability/serialization/retention/versioning/ACLs, dedicated key and source/receipt custody,
+checkpoint scheduler, freshness failure routing and conservative incident cutoff procedure.
+The local adapter proves recovery without the original database, **not** survival of a host/site
+loss or installed operational coverage. Deletion `202` still precedes independent publication;
+if the original is lost before the required interval is archived, access remains blocked until
+authoritative missing history is recovered. This is not a zero-loss acceptance guarantee.
+All staging/provider/device gates, the cartridge review-resolution UX and receipt-continuity
+limit remain as recorded above. Sync remains closed. Deployment, staging, commits and pushes
+remain Nin's work; no staging operation or index mutation was performed by this session.

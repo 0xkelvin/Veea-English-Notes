@@ -1,8 +1,19 @@
 -- Read-only, same session; fails closed if a restore invariant is unmet.
 DO $$ BEGIN
  IF current_setting('veea.restore_isolated',true) IS DISTINCT FROM 'yes'
-    OR to_regclass('pg_temp.restore_heads_before') IS NULL THEN
+    OR to_regclass('pg_temp.restore_heads_before') IS NULL
+    OR to_regclass('pg_temp.restore_recovery_proof') IS NULL
+    OR to_regclass('pg_temp.restore_deletions') IS NULL THEN
    RAISE EXCEPTION 'isolated restore session required';
+ END IF;
+ IF (SELECT count(*) FROM restore_recovery_proof) <> 1
+ OR EXISTS(SELECT 1 FROM restore_recovery_proof WHERE source_id='00000000-0000-0000-0000-000000000000'
+     OR generation < min_generation OR min_generation < 1 OR covered_through < required_through
+     OR backup_at < backup_floor OR backup_at > required_through
+     OR backup_floor <> covered_through - interval '720 hours'
+     OR record_count <> (SELECT count(*) FROM restore_deletions)
+     OR checkpoint_digest !~ '^[a-f0-9]{64}$') THEN
+   RAISE EXCEPTION 'independent recovery proof missing, incomplete or behind; keep access closed';
  END IF;
  IF EXISTS(SELECT 1 FROM learning_sync_control WHERE open)
  OR EXISTS(SELECT 1 FROM learning_sync_heads h JOIN restore_heads_before b USING(user_id) WHERE h.epoch=b.epoch)
