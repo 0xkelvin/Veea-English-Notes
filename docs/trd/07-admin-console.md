@@ -1,6 +1,6 @@
 # TRD 07 — Admin Console
 
-**Status:** v1.1. The first operator workflow and the per-account Audit history tab (§5a) are implemented and verified against local Go (§10). Nin approved the deployment decision (§3.1) on 2026-11-15. The location and stack choices in §2 were made in the v1.0 delivery.
+**Status:** v1.2. The operator workflow, per-account Audit history tab (§5a) and Premium plan management (§5b) are implemented and verified against local Go (§10). Nin approved the deployment decision (§3.1) on 2026-11-15. The location and stack choices in §2 were made in the v1.0 delivery.
 **Date:** 2026-11-15
 **Audience:** Nin, frontend and backend engineers, and whoever deploys the console.
 
@@ -9,9 +9,10 @@
 This TRD builds on these approved inputs:
 
 - [AGENTS.md](../../AGENTS.md);
-- [User Management Product Doc v0.4](../product/user-management.md) §9;
+- [User Management Product Doc v0.5](../product/user-management.md) §§9, 11;
 - [TRD 06 v1.0](06-rbac-user-administration-api.md);
-- the HTTP contract [`backend/api/openapi.yaml`](../../backend/api/openapi.yaml) `1.5.0-trd06`.
+- [TRD 09 v1.0](09-free-premium-entitlements.md);
+- the HTTP contract [`backend/api/openapi.yaml`](../../backend/api/openapi.yaml) `1.7.0-trd09`.
 
 The console adds no API, schema or authorization rule. **The Go API is the authorization authority.** The console offers an action only when the server listed it in `allowed_actions` or `assignable_roles` for this actor and target. Every mutation is decided again by the server, which revalidates the actor's role and session inside its transaction. Hiding a button is convenience, never security.
 
@@ -113,7 +114,13 @@ The confirm button stays disabled until a reason is chosen and any ticket refere
 
 ## 5b. Plans (TRD 09, 2026-11-15)
 
-The Go API now returns `plan`, `plan_expires_at` and `entitlement_revision` on `AdminUser`, and `manage_plan` in `allowed_actions`. The console ignores actions it doesn't know, and the Audit history tab labels `premium_grant` and `premium_revoke`. A plan-management UI is **not built yet**. It will be a confirmation dialog with a fixed reason, a required ticket reference and a required expiry of at most 366 days, offered only when `manage_plan` is allowed. It is a follow-up amendment to this TRD.
+The account detail shows the server's effective `plan` and `plan_expires_at` in UTC, including for read-only targets. It does not infer effectiveness from the browser clock. Unknown future action values remain ignored.
+
+**Actions and confirmation.** Only `manage_plan` offers **Grant Premium**; **Revoke Premium** additionally requires the returned effective plan to be Premium. Grant can replace an existing grant. Both reuse the existing target-naming confirmation dialog, fixed reason codes (TRD 09 §6) and ticket validation, but a ticket is **required** for plan changes. Grant also requires an explicit RFC3339 expiry with UTC or a numeric offset; the console normalizes it to UTC. The backend enforces that it is after database time and within 366 days. Revoke sends a null expiry. Neither action changes roles, sessions, data or current limits.
+
+**Contract and retries.** `PUT /v1/admin/users/{id}/entitlement` sends `plan`, `ends_at`, `reason_code`, `ticket_ref` and `expected_entitlement_revision`. The confirmation captures the viewed account ID and revision; a selection change or a detail reload with a different revision refuses submission locally. `409 entitlement_conflict` reloads the latest detail and audit history, explains the conflict and requires a new confirmation. There is no automatic conflict replay. The existing transport and backend retry/no-op rules remain authoritative.
+
+**After success.** Reload the account detail and the first audit page, including when the history tab has not yet been opened. The history labels `premium_grant` and `premium_revoke` with their fixed reasons. Permission loss follows §7; the console does not reproduce the backend's role matrix.
 
 ## 5a. Audit history tab (added 2026-11-15)
 
@@ -126,7 +133,7 @@ The account view has two tabs: **Overview** (everything in §5) and **Audit hist
 | Paging | **Load older entries** follows `next_page_token` (50 per page). |
 | Empty | "No administrative changes in the last 180 days." |
 | Error | The mapped message with **Retry**. |
-| Refresh | A history already shown reloads after any successful suspend, reinstate, role change or revocation in this console. |
+| Refresh | A history already shown reloads after any successful suspend, reinstate, role change or session revocation. A successful plan change reloads the first page even if history has not yet been shown. |
 | Permission loss | `403 forbidden` re-reads `/v1/me` and moves to No admin access. `403 target_not_permitted` shows "Your role cannot view this account or its history any more." in the tab. `401` returns to sign-in. `404` closes the account and refreshes the list. |
 
 The tab shows only the API's allowlisted fields. Actor emails are not part of the allowlist, so actors appear by identifier.
@@ -143,7 +150,9 @@ Messages come from [`messages.dart`](../../admin_console/lib/src/messages.dart).
 | `404 not_found` (account) | "This account no longer exists. It may have been deleted. The list was refreshed." | Clears the selection; re-runs the search |
 | `404` on one session | "That session had already ended. The list was refreshed." | Reloads detail and sessions |
 | `409 lifecycle_conflict`, `role_conflict` | "This account changed while you were viewing it. The latest details are shown…" | Reloads detail (fresh revisions) |
-| `409 status_conflict` with `account_status: pending_deletion` | "This account is pending deletion. It cannot be suspended, reinstated or given a new role…" | Reloads detail, which shows the pending-deletion call-out |
+| `409 entitlement_conflict` | "This account's plan changed while you were viewing it… review it and confirm again…" | Reloads detail and audit; never resubmits automatically |
+| `400 invalid_expiry` | Choose an expiry after the server's current time and within 366 days | Requires a new confirmation; no automatic retry |
+| `409 status_conflict` with `account_status: pending_deletion` | "This account is pending deletion. It cannot be suspended, reinstated or given a new role or plan…" | Reloads detail, which shows the pending-deletion call-out |
 | `409 status_conflict`, other status | "This action is not allowed while the account is …" | Reloads detail |
 | `409 last_super_admin` | "At least one other active Super Admin must remain. Promote another Super Admin first, then try again." | Reloads detail, which no longer offers the step-down |
 | `429` | "Too many admin requests. Wait a minute, then try again." | Nothing sent again automatically |
@@ -197,7 +206,7 @@ There is no server push; an idle console shows stale data until its next request
 
 ## 10. Verification — 2026-11-15
 
-All runs used local services only: a disposable loopback PostgreSQL and synthetic accounts, never a deployed server.
+All runs used local services only: a disposable loopback PostgreSQL and synthetic accounts, never a deployed server. The following table records the original v1.1 verification; §10.1 records the subsequent plan UI checks.
 
 | Check | Command | Actual result |
 |---|---|---|
@@ -234,10 +243,26 @@ All runs used local services only: a disposable loopback PostgreSQL and syntheti
 - Super Admin step-down; account deleted while open; narrow layout;
 - Audit history tab: empty state; loading, then entries with actor, reason and ticket, refreshed after a change; paging with *Load older entries*; error with retry; demoted actor leaves the console; target became staff; session ended while viewing.
 
+### 10.1 Premium plan UI verification — 2026-11-15
+
+Run from the repository root unless a package directory is shown. These checks used only synthetic accounts and disposable local PostgreSQL; no deployed service was contacted. The backend API, migrations and OpenAPI contract are unchanged by the UI work.
+
+| Check | Command | Actual result |
+|---|---|---|
+| Console analyzer | `cd admin_console && flutter analyze` | **No issues** |
+| Full console suite | `cd admin_console && flutter test --reporter json` | **42 passed, 0 failed, 10 skipped**. The 10 real-Go E2E cases skip without their harness environment; all ran separately below |
+| New plan widget cases | Included in `test/plan_widget_test.dart` above | **11 passed, 0 failed, 0 skipped** |
+| Local Go E2E | `make -C backend test-flutter-admin` | **Dart: 10 passed, 0 failed, 0 skipped**. **Go host: 1 passed, 0 failed, 0 skipped**, with `-race`. The existing OpenAPI exchange checker and hygiene checks passed |
+
+The 11 new widget cases cover server plan/expiry display; capability-only action visibility; self and pending-deletion targets; required reason, ticket and explicit valid expiry; cancellation; exact grant/revoke payloads with revisions; detail and initially unopened audit refresh; stale revision from another console; a revision reload or account switch while confirming; actor and target permission loss; and a backend `invalid_expiry` response. A conflict never causes automatic resubmission, and reopening requires new input and confirmation.
+
+Four new local-Go cases cover grant and revoke with retained sessions and exact audit fields (including no duplicate event on a same-state retry); a second console changing the revision and an explicit fresh confirmation; actor demotion; and target promotion beyond the actor's authority. They run through the production router using the console API/controller and the existing six E2E cases also pass. Widget tests exercise the corresponding dialogs. No contract gap was found. The backend's full PostgreSQL + Mailpit suite recorded in TRD 09 §11 was not rerun for this UI-only change. Deployment checks in §3.1 remain release gates; the first Premium feature and payments remain outside this scope.
+
 ## 11. Decision record
 
 1. **Hosting — decided 2026-11-15:** dedicated admin origin with same-origin proxying; no CORS (§3.1).
 2. **Network restriction — decided 2026-11-15:** operator network only, and `/v1/admin/` blocked on the public learner ingress (§3.1). The configuration is deployment work outside the repository.
 3. **Audit history — delivered 2026-11-15:** TRD 06 §9a and §5a.
+4. **Premium plan management — delivered 2026-11-15:** existing TRD 09 decisions implemented in §5b; no new backend contract or permission rule.
 
 Staging, commits and pushes are left to Nin.

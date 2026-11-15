@@ -154,7 +154,7 @@ It measures **13,138 of 16,384 bytes** (`learning.MaxHeaderBytes`). The TRD 05 �
 | TRD 04 export | Schema 3 is additive. Existing export, deletion and reactivation flows pass unchanged. Download accepts schema 2 or 3. |
 | TRD 04 purge | Grant rows are removed in step 2. RESTRICT makes a missing step fail closed. Re-registration after purge starts Free with no history. |
 | TRD 06 admin | Same conventions. `AdminUser` gains three fields and `allowed_actions` gains `manage_plan`, an **additive contract change** (§10). |
-| TRD 07 console | Shows the new history actions with labels. A plan-management UI is not part of this change (§10). |
+| TRD 07 console | Shows effective plan/expiry, capability-gated grant/revoke and labeled history actions. The UI amendment is delivered in TRD 07 §5b, verified in §10.1. |
 
 ## 9. Tests
 
@@ -184,10 +184,9 @@ Updated existing tests for the additive contract: `manage_plan` in the TRD 06 ma
   - `allowed_actions` and the audit-history `action` enum gain new values.
   - Exports are schema 3.
 
-  The TRD 07 console ignores unknown actions and shows labels for the new history actions; its 6 real-Go e2e tests pass. A client that rejects unknown enum values must be updated. Nothing in this repository does.
+  The TRD 07 console ignores unknown actions and supports the new plan actions and fields (§5b of that TRD); its 10 real-Go E2E tests pass (verification below). A client that rejects unknown enum values must be updated. Nothing in this repository does.
 - **No unresolved contract conflict.**
 - **Open:**
-  - the plan-management console UI (a TRD 07 amendment);
   - the first gated capability (TRD 10);
   - payments.
 
@@ -205,5 +204,7 @@ Run from `backend/` against loopback-only disposable PostgreSQL and Mailpit. The
 | Runtime OpenAPI contract checker | **343** combinations, no violations. Only the four pre-existing exceptions are unexercised; every documented TRD 09 status and code was produced. The checker caught the missing `entitlements` property on `AccountExport` during implementation, and it was added |
 | Admin console (`admin_console/`) | `flutter analyze`: no issues. `flutter test`: 31 passed, 6 skipped (e2e without its environment). `make test-flutter-admin` against real Go: 6 ran, 6 passed, 0 skipped |
 | Worst-case export header | 13,138 of 16,384 bytes; the section bound is 7,812 bytes; the total export bound is unchanged at 79,225,248 bytes |
+
+**Subsequent console UI verification (2026-11-15):** `cd admin_console && flutter analyze` has no issues. `flutter test --reporter json` passes **42**, fails **0** and skips **10** (E2E without its environment), including **11 new plan widget tests**. `make -C backend test-flutter-admin` runs all **10 E2E tests: 10 passed, 0 failed, 0 skipped**, including four new plan scenarios; the Go host passes **1**, fails **0**, skips **0** with `-race`. Its OpenAPI exchange and hygiene checks pass. TRD 07 §10.1 records coverage and commands. No backend contract changed or gap was found; the full backend suite above is the prior backend verification, not a new run for the console UI.
 
 Staging, commits and pushes are left to Nin.

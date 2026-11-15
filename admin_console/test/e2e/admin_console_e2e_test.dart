@@ -358,4 +358,178 @@ void main() {
     expect(c.phase, Phase.noAccess);
     expect(c.notice!.text, Messages.noAccess);
   }, skip: skip);
+  test(
+    'plans: grant and revoke refresh detail and allowlisted history without changing sessions',
+    () async {
+      final actor = await fixture(role: 'admin');
+      final target = await fixture(sessions: 1);
+      final ops = await signIn(actor);
+      await ops.select(target.id);
+      expect(ops.detail!.plan, 'free');
+      expect(ops.detail!.can('manage_plan'), isTrue);
+      final end = DateTime.now().toUtc().add(const Duration(days: 30));
+      expect(
+        await ops.changePlan('premium', end, 'beta_access', 'BETA-1042'),
+        isTrue,
+      );
+      expect(ops.detail!.plan, 'premium');
+      expect(ops.detail!.planExpiresAt, end);
+      expect(ops.detail!.entitlementRevision, 1);
+      expect(ops.audit.single.action, 'premium_grant');
+      expect(ops.audit.single.reasonCode, 'beta_access');
+      expect(ops.audit.single.ticketRef, 'BETA-1042');
+      expect(ops.audit.single.actorUserId, actor.id);
+      // Same end state is a safe no-op and does not duplicate history.
+      expect(
+        await ops.changePlan('premium', end, 'beta_access', 'BETA-1042'),
+        isTrue,
+      );
+      expect(ops.detail!.entitlementRevision, 1);
+      expect(ops.audit.length, 1);
+      expect(
+        await ops.changePlan('free', null, 'ended_early', 'SUP-1043'),
+        isTrue,
+      );
+      expect(ops.detail!.plan, 'free');
+      expect(ops.detail!.planExpiresAt, isNull);
+      expect(ops.detail!.entitlementRevision, 2);
+      expect(ops.audit.map((e) => e.action), [
+        'premium_revoke',
+        'premium_grant',
+      ]);
+      expect(ops.audit.map((e) => e.ticketRef), ['SUP-1043', 'BETA-1042']);
+      expect((await state(target.id))['live_sessions'], 1);
+    },
+    skip: skip,
+  );
+
+  test(
+    'plans: a second console makes a revision stale; retry requires newly confirmed detail',
+    () async {
+      final a = await fixture(role: 'admin'), b = await fixture(role: 'admin');
+      final target = await fixture();
+      final first = await signIn(a), second = await signIn(b);
+      await first.select(target.id);
+      await second.select(target.id);
+      final oldRevision = first.detail!.entitlementRevision;
+      final end = DateTime.now().toUtc().add(const Duration(days: 30));
+      final otherEnd = end.add(const Duration(days: 1));
+      expect(
+        await second.changePlan('premium', otherEnd, 'partner', 'PARTNER-1'),
+        isTrue,
+      );
+      expect(
+        await first.changePlan('premium', end, 'promotion', 'PROMO-2'),
+        isFalse,
+      );
+      expect(first.notice!.text, Messages.planChanged);
+      expect(first.detail!.planExpiresAt, otherEnd);
+      expect(first.detail!.entitlementRevision, 1);
+      expect(first.audit.length, 1);
+      expect(first.audit.single.actorUserId, b.id);
+      expect(
+        (await second.api.user(target.id)).entitlementRevision,
+        1,
+        reason: 'no automatic replay',
+      );
+      expect(
+        await first.changePlan(
+          'premium',
+          end,
+          'promotion',
+          'PROMO-2',
+          targetId: target.id,
+          expectedEntitlementRevision: oldRevision,
+        ),
+        isFalse,
+      );
+      expect((await second.api.user(target.id)).entitlementRevision, 1);
+      // The UI's new dialog supplies this newly reviewed revision.
+      expect(
+        await first.changePlan(
+          'premium',
+          end,
+          'promotion',
+          'PROMO-2',
+          targetId: target.id,
+          expectedEntitlementRevision: first.detail!.entitlementRevision,
+        ),
+        isTrue,
+      );
+      expect(first.detail!.entitlementRevision, 2);
+      expect(first.detail!.planExpiresAt, end);
+      expect(first.audit.length, 2);
+      expect(first.audit.first.actorUserId, a.id);
+    },
+    skip: skip,
+  );
+
+  test(
+    'plans: actor loses staff permission after viewing manage_plan',
+    () async {
+      final root = await fixture(role: 'super_admin'),
+          actor = await fixture(role: 'admin');
+      final target = await fixture();
+      final ops = await signIn(actor), sa = await signIn(root);
+      await ops.select(target.id);
+      expect(ops.detail!.can('manage_plan'), isTrue);
+      await sa.select(actor.id);
+      expect(await sa.changeRole('user', 'access_review', 'SEC-1'), isTrue);
+      expect(
+        await ops.changePlan(
+          'premium',
+          DateTime.now().toUtc().add(const Duration(days: 10)),
+          'support_courtesy',
+          'SUP-1',
+        ),
+        isFalse,
+      );
+      expect(ops.phase, Phase.noAccess);
+      expect(ops.notice!.text, Messages.accessRemoved);
+      final unchanged = await sa.api.user(target.id);
+      expect(unchanged.plan, 'free');
+      expect(unchanged.entitlementRevision, 0);
+      expect((await sa.api.audit(target.id)).items, isEmpty);
+    },
+    skip: skip,
+  );
+
+  test(
+    'plans: target promotion removes an Admin’s permission before submit',
+    () async {
+      final root = await fixture(role: 'super_admin'),
+          actor = await fixture(role: 'admin');
+      final target = await fixture();
+      final ops = await signIn(actor), sa = await signIn(root);
+      await ops.select(target.id);
+      expect(ops.detail!.can('manage_plan'), isTrue);
+      await sa.select(target.id);
+      expect(
+        await sa.changeRole('admin', 'staffing_change', 'STAFF-1'),
+        isTrue,
+      );
+      expect(
+        await ops.changePlan(
+          'premium',
+          DateTime.now().toUtc().add(const Duration(days: 10)),
+          'support_courtesy',
+          'SUP-1',
+        ),
+        isFalse,
+      );
+      expect(ops.phase, Phase.ready);
+      expect(ops.detailLoad, Load.failed);
+      expect(ops.detailError, 'Your role cannot view this account.');
+      final unchanged = await sa.api.user(target.id);
+      expect(unchanged.plan, 'free');
+      expect(unchanged.entitlementRevision, 0);
+      expect(
+        (await sa.api.audit(
+          target.id,
+        )).items.every((e) => e.action != 'premium_grant'),
+        isTrue,
+      );
+    },
+    skip: skip,
+  );
 }

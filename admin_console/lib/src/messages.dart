@@ -17,8 +17,12 @@ class Messages {
       'This account no longer exists. It may have been deleted. The list was refreshed.';
   static const changed =
       'This account changed while you were viewing it. The latest details are shown; review them and try again.';
+  static const planChanged =
+      'This account’s plan changed while you were viewing it. The latest plan is shown; review it and confirm again before submitting.';
+  static const invalidExpiry =
+      'Choose an expiry after the server’s current time and no more than 366 days ahead, then confirm again.';
   static const pendingDeletion =
-      'This account is pending deletion. It cannot be suspended, reinstated or given a new role, and its data is being erased.';
+      'This account is pending deletion. It cannot be suspended, reinstated, given a new role or have its plan changed, and its data is being erased.';
   static const lastSuperAdmin =
       'At least one other active Super Admin must remain. Promote another Super Admin first, then try again.';
   static const rateLimited =
@@ -45,6 +49,8 @@ class Messages {
       'target_not_permitted' => targetNotPermitted,
       'not_found' => notFound,
       'lifecycle_conflict' || 'role_conflict' => changed,
+      'entitlement_conflict' => planChanged,
+      'invalid_expiry' => invalidExpiry,
       'status_conflict' => statusConflict(e.accountStatus),
       'last_super_admin' => lastSuperAdmin,
       'rate_limited' => rateLimited,

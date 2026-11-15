@@ -96,6 +96,27 @@ class AdminApi {
     );
   }
 
+  Future<AdminUser> changePlan(
+    String id, {
+    required String plan,
+    required DateTime? endsAt,
+    required String reason,
+    required String ticketRef,
+    required int expectedEntitlementRevision,
+  }) async => AdminUser.fromJson(
+    await transport.request(
+      'PUT',
+      '/v1/admin/users/$id/entitlement',
+      body: {
+        'plan': plan,
+        'ends_at': endsAt?.toUtc().toIso8601String(),
+        'reason_code': reason,
+        'ticket_ref': ticketRef,
+        'expected_entitlement_revision': expectedEntitlementRevision,
+      },
+    ),
+  );
+
   Future<AdminUser> changeRole(
     String id, {
     required String role,

@@ -4,15 +4,21 @@ import '../models.dart';
 
 /// What an operator confirmed in [ActionDialog].
 class ActionRequest {
-  const ActionRequest({required this.reason, this.ticketRef, this.role});
+  const ActionRequest({
+    required this.reason,
+    this.ticketRef,
+    this.role,
+    this.endsAt,
+  });
   final String reason;
   final String? ticketRef;
   final String? role;
+  final DateTime? endsAt;
 }
 
 /// Confirmation for every mutation (TRD 07 §5.4): it names the target, states
 /// the effect, and requires one of the API's fixed reason codes. A ticket
-/// reference is optional and checked with the server's rule before sending.
+/// reference can be required for plans and is checked with the server's rule before sending.
 class ActionDialog extends StatefulWidget {
   const ActionDialog({
     super.key,
@@ -24,13 +30,15 @@ class ActionDialog extends StatefulWidget {
     this.roles,
     this.effectForRole,
     this.destructive = false,
+    this.requireTicket = false,
+    this.requireExpiry = false,
   });
 
   final String title, target, reasonKind, confirmLabel;
   final String? effect;
   final List<String>? roles;
   final String Function(String role)? effectForRole;
-  final bool destructive;
+  final bool destructive, requireTicket, requireExpiry;
 
   @override
   State<ActionDialog> createState() => _ActionDialogState();
@@ -39,6 +47,7 @@ class ActionDialog extends StatefulWidget {
 class _ActionDialogState extends State<ActionDialog> {
   String? _reason, _role;
   final _ticket = TextEditingController();
+  final _expiry = TextEditingController();
 
   @override
   void initState() {
@@ -50,19 +59,24 @@ class _ActionDialogState extends State<ActionDialog> {
   @override
   void dispose() {
     _ticket.dispose();
+    _expiry.dispose();
     super.dispose();
   }
 
   String? get _ticketError {
     final t = _ticket.text.trim();
-    if (t.isEmpty || validTicketRef(t)) return null;
+    if (t.isEmpty) {
+      return widget.requireTicket ? 'A ticket reference is required.' : null;
+    }
+    if (validTicketRef(t)) return null;
     return 'Use up to 40 letters, digits, ".", "_" or "-", starting with a letter or digit.';
   }
 
   bool get _ready =>
       _reason != null &&
       (widget.roles == null || _role != null) &&
-      _ticketError == null;
+      _ticketError == null &&
+      (!widget.requireExpiry || parsePlanExpiry(_expiry.text) != null);
 
   @override
   Widget build(BuildContext context) {
@@ -115,6 +129,27 @@ class _ActionDialogState extends State<ActionDialog> {
                   ),
                   child: Text(effect),
                 ),
+              if (widget.requireExpiry) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  key: const Key('dialog-expiry'),
+                  controller: _expiry,
+                  onChanged: (_) => setState(() {}),
+                  decoration: InputDecoration(
+                    labelText: 'Premium expiry (required)',
+                    hintText: '2026-12-15T10:00:00Z',
+                    helperText:
+                        'Include Z (UTC) or a timezone offset. Server time must be before expiry and within 366 days.',
+                    helperMaxLines: 3,
+                    border: const OutlineInputBorder(),
+                    errorText:
+                        _expiry.text.isNotEmpty &&
+                            parsePlanExpiry(_expiry.text) == null
+                        ? 'Enter a valid timestamp with Z or a timezone offset.'
+                        : null,
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 key: const Key('dialog-reason'),
@@ -138,7 +173,9 @@ class _ActionDialogState extends State<ActionDialog> {
                 controller: _ticket,
                 onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
-                  labelText: 'Ticket reference (optional)',
+                  labelText: widget.requireTicket
+                      ? 'Ticket reference (required)'
+                      : 'Ticket reference (optional)',
                   hintText: 'for example SUP-1042',
                   border: const OutlineInputBorder(),
                   errorText: _ticketError,
@@ -170,6 +207,9 @@ class _ActionDialogState extends State<ActionDialog> {
                         ? null
                         : _ticket.text.trim(),
                     role: _role,
+                    endsAt: widget.requireExpiry
+                        ? parsePlanExpiry(_expiry.text)
+                        : null,
                   ),
                 )
               : null,

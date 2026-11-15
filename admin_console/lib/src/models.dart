@@ -1,4 +1,4 @@
-/// Projections of the TRD 06 contract (`backend/api/openapi.yaml` 1.5.0-trd06).
+/// Projections of the TRD 06/09 contract (`backend/api/openapi.yaml`).
 library;
 
 DateTime? _time(Object? v) =>
@@ -85,10 +85,13 @@ class Suspension {
 class AdminUser {
   AdminUser._(this.json);
   factory AdminUser.fromJson(Map<String, Object?> j) {
-    for (final k in ['id', 'email', 'status', 'role']) {
+    for (final k in ['id', 'email', 'status', 'role', 'plan']) {
       _str(j, k);
     }
-    if (j['allowed_actions'] is! List ||
+    if (j['entitlement_revision'] is! int ||
+        (j['entitlement_revision']! as int) < 0 ||
+        (j['plan_expires_at'] != null && _time(j['plan_expires_at']) == null) ||
+        j['allowed_actions'] is! List ||
         j['assignable_roles'] is! List ||
         j['sessions'] is! Map) {
       throw const FormatException('incomplete admin user');
@@ -100,6 +103,9 @@ class AdminUser {
   String get email => json['email']! as String;
   String get status => json['status']! as String;
   String get role => json['role']! as String;
+  String get plan => json['plan']! as String;
+  DateTime? get planExpiresAt => _time(json['plan_expires_at']);
+  int get entitlementRevision => json['entitlement_revision']! as int;
   String? get displayName => json['display_name'] as String?;
   bool get hasPassword => json['has_password'] == true;
   DateTime? get emailVerifiedAt => _time(json['email_verified_at']);
@@ -214,6 +220,20 @@ const reasonCodes = <String, List<String>>{
     'other',
   ],
   'role': ['staffing_change', 'access_review', 'account_compromise', 'other'],
+  'premium_grant': [
+    'support_courtesy',
+    'beta_access',
+    'partner',
+    'promotion',
+    'other',
+  ],
+  'premium_revoke': [
+    'granted_in_error',
+    'abuse',
+    'owner_request',
+    'ended_early',
+    'other',
+  ],
   'sessions': [
     'account_compromise',
     'owner_request',
@@ -223,6 +243,12 @@ const reasonCodes = <String, List<String>>{
 };
 
 const reasonLabels = <String, String>{
+  'support_courtesy': 'Support courtesy',
+  'beta_access': 'Beta access',
+  'partner': 'Partner',
+  'promotion': 'Promotion',
+  'granted_in_error': 'Granted in error',
+  'ended_early': 'Ended early',
   'abuse': 'Abuse',
   'fraud': 'Fraud',
   'account_compromise': 'Account compromise',
@@ -237,6 +263,38 @@ const reasonLabels = <String, String>{
   'security_review': 'Security review',
   'other': 'Other',
 };
+
+const planLabels = {'free': 'Free', 'premium': 'Premium'};
+
+/// An explicit RFC 3339 instant (up to microseconds), never a browser-local
+/// date with an inferred timezone. Range/permissions remain server decisions.
+DateTime? parsePlanExpiry(String input) {
+  final match = RegExp(
+    r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$',
+  ).firstMatch(input.trim());
+  if (match == null) return null;
+  final year = int.parse(match[1]!),
+      month = int.parse(match[2]!),
+      day = int.parse(match[3]!);
+  final calendar = DateTime.utc(year, month, day);
+  if (year < 1 ||
+      calendar.year != year ||
+      calendar.month != month ||
+      calendar.day != day ||
+      int.parse(match[4]!) > 23 ||
+      int.parse(match[5]!) > 59 ||
+      int.parse(match[6]!) > 59) {
+    return null;
+  }
+  final offset = match[7]!;
+  if (offset != 'Z' &&
+      (int.parse(offset.substring(1, 3)) > 23 ||
+          int.parse(offset.substring(4, 6)) > 59)) {
+    return null;
+  }
+  final time = DateTime.tryParse(input.trim())?.toUtc();
+  return time != null && time.year >= 1 && time.year <= 9999 ? time : null;
+}
 
 const roleLabels = {
   'user': 'User',

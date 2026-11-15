@@ -382,6 +382,43 @@ class ConsoleController extends ChangeNotifier {
         'Role changed to ${roleLabels[role] ?? role}.',
       );
 
+  /// [targetId] and [expectedEntitlementRevision] bind the user's confirmation
+  /// to the detail they reviewed, even if a background reload finishes while
+  /// the dialog is open. A conflict is never automatically replayed.
+  Future<bool> changePlan(
+    String plan,
+    DateTime? endsAt,
+    String reason,
+    String ticketRef, {
+    String? targetId,
+    int? expectedEntitlementRevision,
+  }) async {
+    final d = detail;
+    if (d == null || mutating) return false;
+    if ((targetId != null && targetId != d.id) ||
+        (expectedEntitlementRevision != null &&
+            expectedEntitlementRevision != d.entitlementRevision)) {
+      notice = const Notice(Messages.planChanged, error: true);
+      await reloadDetail();
+      return false;
+    }
+    return _mutate(
+      (confirmed) => api.changePlan(
+        confirmed.id,
+        plan: plan,
+        endsAt: endsAt,
+        reason: reason,
+        ticketRef: ticketRef,
+        expectedEntitlementRevision:
+            expectedEntitlementRevision ?? confirmed.entitlementRevision,
+      ),
+      plan == 'premium'
+          ? 'Premium grant saved.'
+          : 'Premium revoked. The account is Free.',
+      refreshDetailAndAudit: true,
+    );
+  }
+
   Future<bool> revokeSessions({
     String? sessionId,
     required String reason,
@@ -430,8 +467,9 @@ class ConsoleController extends ChangeNotifier {
 
   Future<bool> _mutate(
     Future<AdminUser> Function(AdminUser d) call,
-    String done,
-  ) async {
+    String done, {
+    bool refreshDetailAndAudit = false,
+  }) async {
     final d = detail;
     if (d == null || mutating) return false;
     mutating = true;
@@ -439,6 +477,10 @@ class ConsoleController extends ChangeNotifier {
     _changed();
     try {
       final updated = await call(d);
+      if (refreshDetailAndAudit &&
+          (selectedId != d.id || phase != Phase.ready)) {
+        return true;
+      }
       _showDetail(updated);
       notice = Notice(done);
       if (updated.id == me?.id) {
@@ -449,9 +491,14 @@ class ConsoleController extends ChangeNotifier {
           return true;
         }
       }
-      mutating = false;
-      await reloadSessions();
-      await _refreshAuditIfShown();
+      if (refreshDetailAndAudit) {
+        await reloadDetail();
+        if (phase == Phase.ready && detail?.id == d.id) await loadAudit();
+      } else {
+        mutating = false;
+        await reloadSessions();
+        await _refreshAuditIfShown();
+      }
       return true;
     } on Object catch (e) {
       mutating = false;
@@ -479,6 +526,10 @@ class ConsoleController extends ChangeNotifier {
         notice = const Notice(Messages.targetNotPermitted, error: true);
         await _refreshMe();
         if (phase == Phase.ready) await reloadDetail();
+      case 'entitlement_conflict':
+        notice = const Notice(Messages.planChanged, error: true);
+        await reloadDetail();
+        if (phase == Phase.ready && detail != null) await loadAudit();
       case 'lifecycle_conflict' ||
           'role_conflict' ||
           'status_conflict' ||

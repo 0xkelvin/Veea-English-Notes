@@ -443,6 +443,9 @@ class UserDetailPane extends StatelessWidget {
           'Created': fmt(d.createdAt),
           'Status changed': fmt(d.stateChangedAt),
           'Role changed': fmt(d.roleChangedAt),
+          'Effective plan': planLabels[d.plan] ?? d.plan,
+          'Plan expiry (UTC)':
+              d.planExpiresAt?.toIso8601String() ?? 'No active Premium grant',
           'Live sessions': '${d.liveSessions}',
           'Last seen': fmt(d.lastSeenAt),
         }),
@@ -678,6 +681,25 @@ class _Actions extends StatelessWidget {
           label: Text(self ? 'Step down to User' : 'Change role'),
           onPressed: c.mutating ? null : () => _role(context),
         ),
+      if (u.can('manage_plan')) ...[
+        FilledButton.tonalIcon(
+          key: const Key('action-grant-premium'),
+          icon: const Icon(Icons.workspace_premium_outlined),
+          label: const Text('Grant Premium'),
+          onPressed: c.mutating || c.detailLoad != Load.loaded
+              ? null
+              : () => _plan(context, true),
+        ),
+        if (u.plan == 'premium')
+          OutlinedButton.icon(
+            key: const Key('action-revoke-premium'),
+            icon: const Icon(Icons.remove_circle_outline),
+            label: const Text('Revoke Premium'),
+            onPressed: c.mutating || c.detailLoad != Load.loaded
+                ? null
+                : () => _plan(context, false),
+          ),
+      ],
       if (u.can('revoke_sessions') && u.liveSessions > 0)
         OutlinedButton.icon(
           key: const Key('action-revoke-all'),
@@ -702,6 +724,35 @@ class _Actions extends StatelessWidget {
 
   Future<ActionRequest?> _ask(BuildContext context, ActionDialog dialog) =>
       showDialog<ActionRequest>(context: context, builder: (_) => dialog);
+
+  Future<void> _plan(BuildContext context, bool grant) async {
+    final confirmed = user;
+    final request = await _ask(
+      context,
+      ActionDialog(
+        title: grant ? 'Grant Premium?' : 'Revoke Premium?',
+        target: confirmed.email,
+        reasonKind: grant ? 'premium_grant' : 'premium_revoke',
+        confirmLabel: grant ? 'Grant Premium' : 'Revoke Premium',
+        requireTicket: true,
+        requireExpiry: grant,
+        destructive: !grant,
+        effect: grant
+            ? 'Premium starts when saved and ends at the expiry you choose. An existing grant is replaced. Roles, sessions, data and current limits stay the same.'
+            : 'The account returns to Free immediately. Roles, sessions, data and current limits stay the same.',
+      ),
+    );
+    if (request != null) {
+      await controller.changePlan(
+        grant ? 'premium' : 'free',
+        request.endsAt,
+        request.reason,
+        request.ticketRef!,
+        targetId: confirmed.id,
+        expectedEntitlementRevision: confirmed.entitlementRevision,
+      );
+    }
+  }
 
   Future<void> _suspend(BuildContext context) async {
     final r = await _ask(

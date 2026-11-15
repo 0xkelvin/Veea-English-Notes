@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:veea_admin_console/src/models.dart';
 
 /// An in-memory stand-in for the TRD 06 routes, for widget tests only. It
 /// mirrors the approved matrix and the server-computed `allowed_actions`, so
@@ -18,6 +19,10 @@ class FakeAccount {
   });
   final String id, email, password;
   String role, status;
+  String plan = 'free';
+  DateTime? planExpiresAt;
+  int entitlementRevision = 0;
+  final withheldActions = <String>{};
   int lifecycleRevision = 0, roleRevision = 0;
   String? resumeStatus, suspensionReason, ticketRef;
   final sessions = <String>['s-$_n-a', 's-${_n++}-b'];
@@ -51,6 +56,7 @@ class FakeBackend {
   final _access = <String, String>{}, _refresh = <String, String>{};
   final _failures = <String, _Failure>{};
   final requests = <String>[];
+  final planRequests = <Map<String, Object?>>[];
   Completer<void>?
   gate; // when set, admin requests wait for it (loading states)
   int _tokens = 0;
@@ -176,6 +182,9 @@ class FakeBackend {
     if (_permits(actor, t, 'sessions')) {
       allowed.addAll(['view_sessions', 'revoke_sessions']);
     }
+    if (_permits(actor, t, 'plan') && t.status != 'pending_deletion') {
+      allowed.add('manage_plan');
+    }
     return {
       'id': t.id,
       'email': t.email,
@@ -203,12 +212,17 @@ class FakeBackend {
           : null,
       'role': t.role,
       'role_revision': t.roleRevision,
+      'plan': t.plan,
+      'plan_expires_at': t.planExpiresAt?.toUtc().toIso8601String(),
+      'entitlement_revision': t.entitlementRevision,
       'role_changed_at': null,
       'sessions': {
         'live_count': t.status == 'active' ? t.sessions.length : 0,
         'last_seen_at': null,
       },
-      'allowed_actions': allowed,
+      'allowed_actions': allowed
+          .where((a) => !t.withheldActions.contains(a))
+          .toList(),
       'assignable_roles': assignable,
     };
   }
@@ -384,6 +398,44 @@ class FakeBackend {
             ..lifecycleRevision += 1
             ..record('reinstate', actor.id, body);
         }
+        return _json(200, _detail(actor, t));
+      case 'PUT entitlement':
+        planRequests.add(Map.of(body));
+        if (!_permits(actor, t, 'plan') ||
+            t.withheldActions.contains('manage_plan')) {
+          return _problem(403, 'target_not_permitted');
+        }
+        final plan = body['plan'] as String;
+        final expiry = body['ends_at'] == null
+            ? null
+            : DateTime.parse(body['ends_at']! as String);
+        final reasons =
+            reasonCodes[plan == 'premium'
+                ? 'premium_grant'
+                : 'premium_revoke']!;
+        if (!reasons.contains(body['reason_code']) ||
+            body['ticket_ref'] is! String ||
+            !validTicketRef(body['ticket_ref']! as String)) {
+          return _problem(400, 'invalid_request');
+        }
+        if (t.plan == plan && t.planExpiresAt == expiry) {
+          return _json(200, _detail(actor, t));
+        }
+        if (t.status == 'pending_deletion') {
+          return _problem(409, 'status_conflict', accountStatus: t.status);
+        }
+        if (t.entitlementRevision != body['expected_entitlement_revision']) {
+          return _problem(409, 'entitlement_conflict');
+        }
+        t
+          ..plan = plan
+          ..planExpiresAt = expiry
+          ..entitlementRevision += 1
+          ..record(
+            plan == 'premium' ? 'premium_grant' : 'premium_revoke',
+            actor.id,
+            body,
+          );
         return _json(200, _detail(actor, t));
       case 'PUT role':
         if (!_permits(actor, t, 'role')) {
