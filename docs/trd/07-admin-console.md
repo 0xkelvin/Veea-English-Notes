@@ -1,0 +1,203 @@
+# TRD 07 — Admin Console
+
+**Status:** v1.0. The first operator workflow is implemented and verified against local Go (§10). The location, stack and deployment choices in §2 and §3 were made in this delivery; §11 lists the points Nin should confirm before any shared deployment.
+**Date:** 2026-11-15
+**Audience:** Nin, frontend and backend engineers, and whoever deploys the console.
+
+## 1. Authority and inputs
+
+This TRD builds on these approved inputs:
+
+- [AGENTS.md](../../AGENTS.md);
+- [User Management Product Doc v0.4](../product/user-management.md) §9;
+- [TRD 06 v1.0](06-rbac-user-administration-api.md);
+- the HTTP contract [`backend/api/openapi.yaml`](../../backend/api/openapi.yaml) `1.5.0-trd06`.
+
+The console adds no API, schema or authorization rule. **The Go API is the authorization authority.** The console offers an action only when the server listed it in `allowed_actions` or `assignable_roles` for this actor and target. Every mutation is decided again by the server, which revalidates the actor's role and session inside its transaction. Hiding a button is convenience, never security.
+
+## 2. Location and stack
+
+### 2.1 What exists
+
+- The only frontend is the Flutter mobile app at the repository root. Its `web/` folder holds icons only (no `index.html`), so the app has never been built for the web.
+- The Go client in `lib/data/remote/go/` keeps sessions in platform secure storage, with durable generation and in-flight markers built for a phone that must survive restarts.
+- There is no web deployment anywhere in the repository. The only container setup is the Rust `cloud/` Dockerfile and docker-compose stack.
+- The Go service sends **no CORS headers**, and it serves only the API.
+- An existing pattern runs Dart tests against the real Go router: `TestFlutterGo_EndToEnd` plus `scripts/test-flutter-go.sh`.
+
+### 2.2 Choice
+
+**[Technical]** The console is a separate Flutter **web** package, [`admin_console/`](../../admin_console/), with its own `pubspec.yaml`. Its only dependencies are `flutter` and `http`.
+
+| Option | Why not chosen, or why chosen |
+|---|---|
+| Add the console to the root app (new web platform, second entrypoint) | Would give the mobile app a web target it does not support (SQLite, widgets, notifications), and would ship console code inside the learner app. |
+| A new JavaScript or TypeScript stack | Adds a toolchain and a language the repository does not use, for a small internal tool. |
+| HTML served by the Go service | Mixes UI into the API binary and would need cookie sessions and CSRF protection. That is a new authentication mode TRD 06 did not approve. |
+| **Separate Flutter web package (chosen)** | Same language and tooling as the app; deploys independently as static files; the learner app is untouched. Tests use `flutter test`, and the real-Go harness follows the existing pattern. |
+
+**[Technical]** The console does **not** reuse `GoApiClient`. Its transport ([`transport.dart`](../../admin_console/lib/src/transport.dart)) keeps credentials **in memory only**, which is the safer model for a privileged browser session. Persisting a refresh token in browser storage would let any script injected into the origin reuse a staff session. The transport sends a bearer token, does one single-flight refresh on 401 with one retry, and treats a lost refresh response as an ended session, never resending a possibly consumed token. That last rule matches the mobile client and TRD 01 §8.4 reuse detection.
+
+## 3. Deployment
+
+### 3.1 Supported topology (same origin)
+
+```text
+https://admin.<domain>/          -> static files from admin_console/build/web
+https://admin.<domain>/v1/*      -> reverse proxy to the Go API (cmd/api)
+```
+
+- The console calls the API at its own origin by default (`Uri.base.origin`). The Go API has no CORS, so **a console on another origin cannot call it**: this is a deployment dependency (§8). `--dart-define=VEEA_ADMIN_API_BASE_URL=…` exists for tests and the dev server, not for cross-origin production.
+- **Build:** `cd admin_console && flutter build web --release --no-web-resources-cdn`. This sets `useLocalCanvasKit: true`, so the page loads its own CanvasKit and makes no third-party CDN request (verified, §10).
+- **Recommended edge headers:** `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store` on `index.html`, and a Content-Security-Policy limited to `'self'`. The page sets `noindex, nofollow`.
+- **[Recommended]** Restrict network access to the console origin (VPN or IP allowlist) as defence in depth. The API's bearer and role checks remain the actual control.
+- The Go service and migrations are deployed as in TRD 06 §12. The console needs at least one Super Admin bootstrapped with `bin/admin`.
+
+### 3.2 Local development
+
+[`admin_console/tool/serve.dart`](../../admin_console/tool/serve.dart) is a loopback-only dev server. It serves `build/web` and proxies `/v1/`, `/healthz` and `/readyz` to a loopback Go API (default `http://127.0.0.1:18386`), reproducing the same-origin topology. It refuses a non-loopback upstream.
+
+```sh
+cd admin_console && flutter build web --release --no-web-resources-cdn
+dart run tool/serve.dart       # http://127.0.0.1:8090
+```
+
+## 4. Sign-in and session
+
+| Concern | Behavior |
+|---|---|
+| Sign-in | Email and password (`POST /v1/auth/password/login`), or an email code (`/v1/auth/otp/start` then `/verify`). The device label is `Veea Admin Console` with platform `web`. |
+| Who may enter | After sign-in the console reads `GET /v1/me`. A `user` role gets a **No admin access** page with a sign-out button. Admin and Super Admin get the console. |
+| Credentials | In memory only. A reload, a closed tab or sign-out ends the console session. Nothing goes to local storage, cookies, URLs or logs. |
+| Access expiry | The 15-minute access token is refreshed transparently once per 401. Concurrent requests share one refresh. |
+| Session ended | A failed or lost refresh, or any 401 after refresh, returns to sign-in with *"Your session ended or was revoked. Sign in again to continue."* |
+| Sign-out | Clears locally first, then calls `POST /v1/auth/logout` (best effort). |
+
+## 5. The first operator workflow
+
+| Step | UI | API |
+|---|---|---|
+| Search and list | Email field with **Starts with** (3 or more characters) or **Exact**; status filter; role filter for Super Admins only. *Load more* pages with `next_page_token`. Admins also see *"As an Admin you can see and manage User accounts only."* | `GET /v1/admin/users` |
+| Account summary | Email, role and status chips, account ID, display name, verification, password set, created, status and role change times, live session count, last seen. Pending-deletion and suspension call-outs (reason, ticket reference, resume state). | `GET /v1/admin/users/{id}` |
+| Session summary | Device list with sign-in and last-seen times, and **Revoke** per session. Shown only when `view_sessions` is allowed. | `GET …/sessions` |
+| Suspend or reinstate | Buttons only for `suspend` or `reinstate`. | `POST …/lifecycle-transitions` with `expected_lifecycle_revision` from the loaded detail |
+| Change role | Shown only for `change_role`, choosing from `assignable_roles`. On the actor's own account it reads **Step down to User**. | `PUT …/role` with `expected_role_revision` |
+| Revoke sessions | **Sign out everywhere** (when live sessions exist) or per-session **Revoke**. | `POST …/session-revocations` |
+
+**Confirmation.** Every mutation opens a dialog that:
+
+- names the target account;
+- states the effect (for example, "Promoting … signs the account out on every device", "You lose admin access as soon as this is saved");
+- requires one of the API's **fixed reason codes** for that action (TRD 06 §6.5);
+- accepts an optional ticket reference, checked with the server's rule.
+
+The confirm button stays disabled until a reason is chosen and any ticket reference is valid. Cancel sends nothing.
+
+**Visibility.** The role filter is shown only to Super Admins. Every action button comes only from the server's lists, and `allowed_actions` is recomputed on every detail load and after every mutation. When nothing is allowed, a sentence explains why: pending deletion, your own account, or your role.
+
+**After success.** The returned `AdminUser` replaces the detail, the list row is updated, sessions are reloaded, and a confirmation notice appears. When a Super Admin steps down, the console re-reads `/v1/me` and moves to **No admin access**.
+
+## 6. Refusals and messages
+
+Messages come from [`messages.dart`](../../admin_console/lib/src/messages.dart). The server's `title` is never shown.
+
+| Server outcome | Message (abridged) | Console behavior |
+|---|---|---|
+| `401` / refresh failure | "Your session ended or was revoked. Sign in again…" | Drops credentials; back to sign-in |
+| `403 forbidden` | "Your admin access was removed, so the server refused this action…" | Re-reads `/v1/me`; **No admin access** if no longer staff |
+| `403 target_not_permitted` | "Your role does not allow this on this account. Its details were reloaded…" | Re-reads `/v1/me`, reloads detail; shows "Your role cannot view this account." if the view is refused |
+| `404 not_found` (account) | "This account no longer exists. It may have been deleted. The list was refreshed." | Clears the selection; re-runs the search |
+| `404` on one session | "That session had already ended. The list was refreshed." | Reloads detail and sessions |
+| `409 lifecycle_conflict`, `role_conflict` | "This account changed while you were viewing it. The latest details are shown…" | Reloads detail (fresh revisions) |
+| `409 status_conflict` with `account_status: pending_deletion` | "This account is pending deletion. It cannot be suspended, reinstated or given a new role…" | Reloads detail, which shows the pending-deletion call-out |
+| `409 status_conflict`, other status | "This action is not allowed while the account is …" | Reloads detail |
+| `409 last_super_admin` | "At least one other active Super Admin must remain. Promote another Super Admin first, then try again." | Reloads detail, which no longer offers the step-down |
+| `429` | "Too many admin requests. Wait a minute, then try again." | Nothing sent again automatically |
+| `400` | "The server rejected the request. Check the search, reason and ticket reference." | — |
+| Network failure | "Cannot reach the server. Check the connection and try again." | — |
+| `500` / unknown | "Something went wrong on the server. Try again; if it continues, report it." | — |
+
+**Loading, empty and error states.** The list, detail and sessions each have a spinner, an error message with **Retry**, and an empty state:
+
+- list: "No accounts match this search…", or "There are no accounts you can see yet.";
+- sessions: "No live sessions.";
+- detail: "Select an account to see its details and actions."
+
+Invalid search input is explained before any request is sent. Notices are dismissible and announced as a live region. At 960 px and wider the list and detail sit side by side; narrower screens show one pane with **Back to list**.
+
+## 7. Permission changes while the console is open
+
+The console never caches authorization. When an operator's role changes elsewhere, the very next request reflects it:
+
+- **Demoted:** the server refuses the next admin request (`403 forbidden`). The console re-reads `/v1/me` and shows **No admin access**. Nothing was changed on the target.
+- **Sessions revoked by a Super Admin, or suspended:** the next request fails refresh, and the console returns to sign-in.
+- **The target's role or state changed:** `target_not_permitted`, the revision conflicts or `status_conflict` reload the detail, so the offered actions match the server again.
+
+There is no server push; an idle console shows stale data until its next request, which the server then judges.
+
+## 8. API and deployment gaps (recorded, not blocking)
+
+| Gap | Effect | Proposed follow-up |
+|---|---|---|
+| **No audit history read API.** TRD 06 writes `admin.*` and `auth.*` events, but nothing documented serves them. | The console shows no per-account history. Operators use the reason and ticket reference shown in the suspension call-out. | A Phase 5 TRD: `GET /v1/admin/users/{id}/audit` with minimized, paginated events and its own audit of reads |
+| **No dashboard statistics API** (counts by status or role, recent changes). | No dashboard; the console opens on the account list. | Add a read model only after the metrics in TRD 06 §9.3 prove insufficient |
+| **No CORS** on the Go API | The console must share the API's origin (§3.1). The dev server reproduces this locally. | Add an allowlisted CORS layer only if a separate console origin is required (an API change, with tests) |
+| **No search by account ID** | Detail by ID works (`GET /v1/admin/users/{id}`); the list searches by email only. | Optional `id` filter on `listAdminUsers` |
+| **No staff session policy** | Staff sessions follow the learner lifetimes (refresh up to the TRD 01 limits); the console only shortens them by keeping tokens in memory. | TRD 06 §13 left step-up and short staff sessions open |
+
+## 9. Code map
+
+| Area | File |
+|---|---|
+| Entry and base URL | [`admin_console/lib/main.dart`](../../admin_console/lib/main.dart) |
+| Transport (memory-only tokens, refresh, problems) | [`lib/src/transport.dart`](../../admin_console/lib/src/transport.dart) |
+| Typed TRD 06 calls | [`lib/src/admin_api.dart`](../../admin_console/lib/src/admin_api.dart) |
+| Contract projections, reason codes, ticket rule, search | [`lib/src/models.dart`](../../admin_console/lib/src/models.dart) |
+| Workflows and refusal handling | [`lib/src/console_controller.dart`](../../admin_console/lib/src/console_controller.dart) |
+| Messages | [`lib/src/messages.dart`](../../admin_console/lib/src/messages.dart) |
+| UI | [`lib/src/ui/`](../../admin_console/lib/src/ui/) (`app.dart`, `console_page.dart`, `action_dialog.dart`) |
+| Dev server | [`tool/serve.dart`](../../admin_console/tool/serve.dart) |
+| Tests | [`test/`](../../admin_console/test/): widget, transport, and the e2e suite in `test/e2e/` |
+| Real-Go harness | [`backend/test/integration/flutter_admin_e2e_test.go`](../../backend/test/integration/flutter_admin_e2e_test.go), [`backend/scripts/test-flutter-admin.sh`](../../backend/scripts/test-flutter-admin.sh), `make -C backend test-flutter-admin` |
+
+## 10. Verification — 2026-11-15
+
+All runs used local services only: a disposable loopback PostgreSQL and synthetic accounts, never a deployed server.
+
+| Check | Command | Actual result |
+|---|---|---|
+| Console analyzer | `cd admin_console && flutter analyze` | No issues |
+| Console unit and widget tests | `cd admin_console && flutter test` | **24 passed, 5 skipped** (the e2e file skips without its environment). 19 widget tests (below) and 5 transport tests (single-flight refresh, refused and lost refresh, problem parsing, no tokens in URLs, malformed sign-in, logout) |
+| Console against real Go | `backend/scripts/test-flutter-admin.sh` (`TestFlutterGo_AdminConsole`, `-race`) | **Go test passed. Dart: 5 ran, 5 passed, 0 skipped.** Every exchange was validated by the OpenAPI response checker, and the harness's hygiene, no-retry and log checks passed |
+| Web build | `flutter build web --release --no-web-resources-cdn` | Built; `useLocalCanvasKit: true` |
+| Same-origin smoke | `bin/migrate up` and `bin/api` on a disposable database with throwaway keys, behind `dart run tool/serve.dart` | Console served (`<title>Veea Admin Console</title>`, security headers). `/healthz` 200 through the proxy. `/v1/admin/users` without a token: `401 unauthorized` with `WWW-Authenticate: Bearer`. Unknown paths fall back to `index.html` |
+| Bootstrap CLI smoke | `bin/admin bootstrap-super-admin --email …` twice | First run promoted (`role_revision=1`, exit 0). Second run refused (exit 1). One `admin.role.bootstrap` row with a null actor, reason `bootstrap`, mode `first` |
+| Root app analyzer | `flutter analyze` (repository root) | No issues; the learner app is unchanged |
+
+**Against real Go** (`admin_console/test/e2e/admin_console_e2e_test.dart`):
+
+1. **Admin:** sees only User accounts, and an exact search for a staff email finds nothing. On a User the detail offers exactly `suspend`, `view_sessions` and `revoke_sessions`. Revoking one session leaves 1 live in the database. Suspension with ticket `SUP-1042` signs out everything and offers `reinstate`. Reinstatement returns the account to active. Opening a staff account shows "Your role cannot view this account.".
+2. **Super Admin:** lists Super Admins. Promotion to Admin revokes every session (0 live), then demotion. A pending-deletion target offers only session actions, and a stale Suspend gets `status_conflict` with the pending-deletion message. After suspending the other Super Admin, self step-down is not offered, and a forced attempt gets `last_super_admin`. After reinstating them, stepping down succeeds and the console moves to No admin access.
+3. **Permission change refused by the server:** an Admin's console has Suspend available on a User. A Super Admin demotes that Admin in another console. The Admin's Suspend gets `403 forbidden`, and the console shows No admin access with the access-removed message. The target stayed active with its session, and the demoted Admin's sessions were kept.
+4. **Session expiry:** an expired access token is refreshed silently. After a Super Admin revokes the Admin's sessions, the Admin's next request returns to sign-in with the session-ended message, and the credentials are dropped.
+5. A User account cannot enter the console.
+
+**Widget tests (fake TRD 06 backend, `test/support/fake_backend.dart`):**
+
+- no-access page; wrong password; email-code sign-in;
+- Admin view (no role filter, no role action, no staff rows); Super Admin view (role filter, last Super Admin offered nothing);
+- list loading, prefix validation, empty and error-with-retry states; detail loading and error states;
+- suspend dialog: reason required, invalid and token-shaped tickets refused, cancel sends nothing; then reinstate;
+- promotion with role and reason; single and all session revocation;
+- silent access refresh; revoked session returns to sign-in;
+- demoted mid-session; target promoted elsewhere (`target_not_permitted`);
+- pending deletion (banner, no actions, conflict message); `last_super_admin` and a stale revision;
+- Super Admin step-down; account deleted while open; narrow layout.
+
+## 11. Decisions for Nin before a shared deployment
+
+1. **Hosting.** Serve the console at a dedicated origin that reverse-proxies `/v1/` to the Go API (recommended), or approve a CORS allowlist on the API (an API change).
+2. **Network restriction** for the console origin (VPN or IP allowlist), on top of the API's checks.
+3. **Audit history** (§8) as the next TRD, so operators can see who changed an account and why from the console.
+
+Staging, commits and pushes are left to Nin.

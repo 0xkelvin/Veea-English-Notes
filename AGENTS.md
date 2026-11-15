@@ -14,6 +14,15 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
 - Tests mirror `lib/` under `test/`; goldens in `test/golden/`; Swift tests in `test/native/`.
 - Native iOS Screen Time code: `ios/` (Runner plus three extension targets). See `README.md`.
 
+**Admin console** (`admin_console/`, its own `pubspec.yaml`; TRD 07)
+- Flutter **web** package, separate from the learner app; calls only the TRD 06 `/v1/admin/*`
+  routes plus sign-in and `/v1/me`. The Go API is the authorization authority: show only actions
+  from the server's `allowed_actions`/`assignable_roles`, and map every refusal (TRD 07 §6).
+- Credentials stay in memory (no browser storage). Deploy `build/web` on the API's origin; the Go
+  API has no CORS. `dart run tool/serve.dart` is the loopback same-origin dev server.
+- Tests: `cd admin_console && flutter analyze && flutter test`; against real Go:
+  `make -C backend test-flutter-admin` (Docker for the disposable PostgreSQL).
+
 **Rust backend** (`cloud/`, `cloud/Cargo.toml`, edition 2024)
 - `cloud/src/main.rs` / `lib.rs`; wiring in `bootstrap/app_state.rs`.
 - Routes: `interfaces/http/router.rs`; handlers in `interfaces/http/handlers/`;
@@ -94,6 +103,8 @@ Run from the repo root for Flutter and from `cloud/` for Rust (`make -C cloud <t
 | Flutter tests | `make test` (`flutter test`) | Flutter SDK |
 | Update goldens | `make test-update-goldens` | Only after an intentional visual change |
 | Native Screen Time tests | `bash tool/test_native_screen_time.sh` | macOS with `swiftc` |
+| Admin console lint/tests | `cd admin_console && flutter analyze && flutter test` | Flutter SDK |
+| Admin console vs real Go | `make -C backend test-flutter-admin` | Flutter SDK, Go, Docker |
 | Unsigned iOS build | `flutter build ios --release --no-codesign` | macOS, Xcode (not run; from README) |
 | Rust format | `cargo fmt -- --check` | Rust toolchain |
 | Rust lint (CI) | `make clippy` | Rust toolchain **and `cmake`** (`--all-features` builds `rdkafka`) |

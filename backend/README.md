@@ -251,3 +251,11 @@ can select the local JSON test report path. The fixture temporarily opens only i
 own test database's sync gate and closes it before disposal; rollout stays closed.
 See [Flutter verification](../docs/trd/05-flutter-verification.md) for coverage and
 release gates. No deployed endpoints are used.
+
+### Admin console → Go local end-to-end checks (TRD 07)
+
+Run `make test-flutter-admin` to drive the admin console (`../admin_console/`) against the real
+router, its OpenAPI response checker and an isolated local PostgreSQL. The loopback fixture surface
+in `test/integration/flutter_admin_e2e_test.go` only creates synthetic accounts and reads their
+state; every admin action goes through `/v1/admin/*`. `VEEA_ADMIN_E2E_REPORT` selects the Dart JSON
+report path. No deployed endpoints are used. See [TRD 07](../docs/trd/07-admin-console.md).
