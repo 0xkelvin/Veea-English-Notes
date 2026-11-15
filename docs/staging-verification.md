@@ -2,6 +2,12 @@
 
 **Owner:** Nin. **Candidate:** record commit, dirty-tree status, migration/API/CLI/Flutter/admin artifact digests and deployment ID in the release ticket. **Prepared:** 2026-11-15. This is an executable checklist, not deployment or release approval.
 
+**Latest acceptance attempt (2026-11-15): [results and blockers](staging-acceptance-2026-11-15.md).**
+The independent local ledger drill and all 18 local runner steps passed. Actual staging G0–G10
+remain **Blocked** pending access/provenance/device/operational evidence; local passes do not
+check off those gates. Candidate binary commit, local migration and the inspected signed IPA
+are recorded separately from the unverified deployed identities.
+
 **Invariant: `learning_sync_control.open = false`.** This preparation neither changes staging nor opens its sync/install gate. Only disposable local test databases temporarily exercise an open gate. Deployments, provider configuration, real content publication and the eventual gate decision belong to Nin. Stop on any failed prerequisite; a local pass never marks a staging/device check complete.
 
 Authority: [AGENTS](../AGENTS.md), [TRD 01 §12.4](trd/01-email-authentication-account-foundation.md#124-verification-before-release), [TRD 04 §§12.4–12.7](trd/04-account-lifecycle-data-rights.md#124-retention-application-enforcement-vs-deployment), [TRD 05 §8.2 and Flutter evidence](trd/05-flutter-verification.md), [TRD 07 §3.1](trd/07-admin-console.md#31-deployment-decision-approved-by-nin-2026-11-15), [TRD 08 §§5–10](trd/08-monitoring-alerting.md), [TRD 10 §§8–9](trd/10-server-delivered-cartridges.md). The body of [account-feedback-rollout](account-feedback-rollout.md) describes the superseded Rust/phone rollout; do not execute it for Go.
@@ -29,7 +35,7 @@ The runner removes inherited deployment DB/email secrets from its child environm
 | Backend static/unit/build | `make -C backend check`; `make -C backend build`; tagged `go vet` | Exit 0; API/migrate/admin binaries; no formatting/vet errors |
 | Schema/query reproducibility | `make -C backend sqlc-verify` | Reproducible generated code; full suite includes empty DB, replay and populated 14→15 upgrade |
 | Backend and Resend stand-in regression | From `backend/`: `VEEA_TEST_DATABASE_URL="$(scripts/test-postgres.sh url)" VEEA_TEST_SMTP_ADDR=127.0.0.1:1025 VEEA_TEST_MAILPIT_API=http://127.0.0.1:8025 go test -race -tags=integration -count=1 -json ./...` | No failures/skips; retain JSON, top-level/subtest counts, Mailpit pass, OpenAPI coverage. Resend tests are `httptest`, not live provider readiness |
-| Alert rules | `make -C backend test-alerts` | All 11 rules, 21 scenarios/74 checks; preserve promtool output/version. Routing is not tested locally |
+| Alert rules | `make -C backend test-alerts` | All 11 rules, current 20 scenarios/74 checks; preserve promtool output/version. Routing is not tested locally |
 | Restore SQL and real backup | `backend/scripts/test-restore-drill.sh` | Actual `pg_dump`/`pg_restore`, encrypted checkpoint recovery after the original DB is dropped, post-backup completed/incomplete deletions, interruption/retry, normal purge, survivor data retained, epochs rotated and gate closed. Missing/behind proofs and premature finish are refused |
 | Learner analyzer/regressions | Root `flutter analyze`; selected tests in runner | Analysis clean, no failures/skips; includes durable queue, canonical fixtures, account/storage, snapshot/import and cartridge tests |
 | Learner → Go | `make -C backend test-flutter-go` | Real Go/PostgreSQL/Mailpit; every case passes, including pre-restore cartridge request retained across 503, blocked after 410, and still blocked after SQLite/secure-store restart. Retain Dart JSON and Go host `-race` output |

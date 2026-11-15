@@ -50,6 +50,7 @@ app.*.map.json
 # Cloud
 /target
 .env
+/backend/.env.tmp.*
 # Diff artifacts written by failing golden tests.
 test/golden/failures/
 

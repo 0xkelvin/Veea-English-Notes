@@ -4,7 +4,7 @@ Go modular monolith on PostgreSQL. It replaces the Rust service in `cloud/`
 (TRD 01 R9); both live in the repo until `cloud/` is retired. It includes TRD 01's email signup (OTP and password), OTP and password sign-in, sessions with
 refresh rotation, first-password set, change and reset, the encrypted email outbox,
 audit events, rate limits, the cleanup jobs, the metrics listener, TRD 02 session management and TRD 03 profile/email change. The schema is
-migrations 00001 to 00009. Resend is selected for production email (TRD 01 R12); Mailpit remains the local default.
+migrations 00001 through 00015. Resend is selected for production email (TRD 01 R12); Mailpit remains the local default.
 
 Staging readiness through migration **00015**: [`docs/staging-verification.md`](../docs/staging-verification.md).
 Local evidence runner: `scripts/verify-staging-local.sh`; isolated logical restore drill: `scripts/test-restore-drill.sh`.
@@ -144,6 +144,116 @@ VEEA_DATABASE_URL=postgres://... bin/api
 ```
 
 Migrations run as a separate step before a deploy, never on API startup.
+
+## Local Docker Compose
+
+This is the default local backend. The root Makefile delegates `backend-*` here; there is one
+Compose implementation. Needs Docker with Compose v2+ and `openssl`; no host Go SDK is needed.
+Run the following from the repository root, or use `make -C backend <same-target>`:
+
+```sh
+make backend-env                 # Optional: backend-up also generates private keys once
+make backend-config              # Validate without printing secrets
+make backend-up                  # Always builds the image; migrates before starting the API
+make backend-migrate-status      # current_version=15 pending=0
+make backend-health              # /healthz and /readyz
+make backend-ps
+make backend-logs                # Follow; use BACKEND_LOG_ARGS='--no-color --tail=20' for a snapshot
+make backend-down               # Keep database volume and .env
+```
+
+Default project: `veea-go`; default env: `backend/.env`. Override `COMPOSE_PROJECT_NAME` and
+`COMPOSE_ENV_FILE` on **every** command for an isolated project. Relative env paths resolve
+against `backend/` for both root and backend invocations; `--project-directory`, env, project
+and Compose file are explicit. `backend-env` uses private atomic publication, independent
+`openssl rand -hex 32` values (outbox prefixed with `1:`), and preserves an existing file.
+Use [`.env.example`](.env.example) for port overrides and key formats. If you previously copied
+the blank example, fill its keys yourself; setup deliberately never overwrites an existing file.
+
+`backend-run` now aliases detached `backend-up`. `backend-down-v` explicitly deletes this
+Go project's database volume; ordinary down preserves it. Legacy root commands are retained
+as `rust-backend-{env,up,run,health,down,down-v}`; see the [old-to-new mapping](../README.md#local-go-backend-default).
+No Rust volume/data conversion occurs. Root `run-cloud` remains a Flutter launch, defaults to
+the running Go stack's published URL, and requires startup first unless `API_BASE_URL` is
+explicit. An explicit `APP_PORT` is a compatibility alias for `VEEA_GO_HTTP_PORT` when the latter
+is not explicitly set. The backend health/URL targets discover the actual published port.
+
+The image uses Go **1.26.2** from `go.mod`, checks that match during the build, and packages
+`/app/bin/api`, `migrate` and `admin` as UID/GID **10001** with CA certificates and IANA zones.
+The final image contains no Go toolchain. This stack is for local development: PostgreSQL 17
+uses a project-scoped named volume with normal durability; Mailpit captures mail without relay.
+The local database role also runs maintenance; production privilege separation is a separate
+deployment configuration.
+
+For direct Compose use, first run `make backend-env` from `backend/`, then the equivalent
+commands below from that directory. Each generated key is independently random; no value is
+a build argument, source file or image layer. Do not run with shell tracing. Make supplies
+explicit paths/project automatically; preserve the same selection if invoking Compose yourself.
+
+```sh
+docker compose config --quiet
+docker compose up -d --build --wait --wait-timeout 120
+docker compose run --rm --no-deps migrate status
+# Expected: current_version=15 pending=0
+curl -fsS http://127.0.0.1:18386/healthz
+curl -fsS http://127.0.0.1:18386/readyz
+docker compose exec -T postgres psql -U veea -d veea \
+  -c 'SELECT open FROM learning_sync_control;'
+# Expected: f. Compose never opens the sync/install gate.
+```
+
+`migrate` waits for PostgreSQL's TCP healthcheck and exits after `up`. API startup requires
+that exit to succeed, plus healthy PostgreSQL and Mailpit. These are Compose's
+[`service_healthy` / `service_completed_successfully` conditions](https://docs.docker.com/compose/how-tos/startup-order/).
+For an explicit operator command use, for example,
+`docker compose run --rm --no-deps --entrypoint /app/bin/admin migrate` (prints usage).
+Recovery-key custody and independent storage still follow the ledger runbook; neither is
+provisioned by this local stack.
+
+All host bindings are loopback: API **18386**, PostgreSQL **54328**, metrics **19090**,
+Mailpit SMTP **1026**, inbox **8026**. Override `VEEA_GO_*_PORT` in `.env` if occupied.
+The existing test scripts keep their separate 54329/1025/8025 ports and containers. The API
+intentionally shares Mailpit's network namespace (`network_mode: service:mailpit`): its SMTP
+address remains **127.0.0.1:1025**, preserving the sender's loopback-only security contract.
+Consequently the API/metrics port mappings live on the Mailpit service. PostgreSQL remains
+reachable as `postgres:5432` inside that namespace. Compose fixes the sender to local SMTP;
+no Resend credential is needed or forwarded.
+
+Email smoke (also needs Python 3; prints only a message count, never an OTP):
+
+```sh
+curl -fsS -o /dev/null -w 'signup start: %{http_code}\n' \
+  -H 'Content-Type: application/json' \
+  --data "{\"email\":\"compose-smoke-$(date +%s)@example.test\"}" \
+  http://127.0.0.1:18386/v1/auth/signup/otp/start
+# Expected: 202. Allow a few seconds for the outbox worker, then:
+curl -fsS http://127.0.0.1:8026/api/v1/messages | \
+  python3 -c 'import json,sys; n=json.load(sys.stdin)["total"]; assert n>0; print("Mailpit messages:", n)'
+```
+
+Read the synthetic inbox at `http://127.0.0.1:8026` if needed. `docker compose down` followed
+by `docker compose up -d --wait` preserves PostgreSQL data; keep `.env` and its keys too so
+existing encrypted outbox data remains decryptable. Mailpit itself is ephemeral. `down -v`
+deliberately removes this project's local database volume; use it only when discarding that
+project's data. For isolated verification use a unique `-p <project>` on **every** command,
+a private `--env-file`, and unused loopback ports. Never use `down -v` on another project.
+
+Verified locally on 2026-11-15 with Docker 29.9.3 / Compose 5.7.0: config and image build
+passed; 24 disposable smoke assertions passed, including migration-failure startup blocking,
+15/0 migration status, health/readiness 200, non-root binaries, app mail in Mailpit and database
+persistence across normal down/up with migration replay applying 0. Sync stayed false.
+Only the verification project's resources were removed; the existing test services/scripts
+were preserved. `make check` also passed. No staging or deployment readiness is implied.
+
+The Make integration was then verified through the public root/backend targets: **30 smoke
+assertions passed, 0 failed**. Both directories selected the same project/env, generated keys
+were private and unchanged on repeat setup, `APP_PORT` reached the actual published port,
+config/status/health/logs worked from both directories, OTP delivery succeeded, and root down
+followed by backend `backend-run` preserved the database identity/probe/outbox with 15/0 status
+and migration replay applying 0. `run-cloud` routing was checked with a Flutter command stub,
+not a device launch. Default-target and explicit Rust mappings were checked without starting
+Rust. The selected disposable project/image was removed through `backend-down-v` and scoped
+image cleanup; existing test containers remained running. `make -C backend check` passed.
 
 ## Schema and queries
 

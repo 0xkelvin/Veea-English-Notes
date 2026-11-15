@@ -1,0 +1,23 @@
+# Allow only build inputs: local env files, binaries, logs, dumps and operator evidence
+# must never enter the build context or any image layer.
+**
+!go.mod
+!go.sum
+!cmd/
+!cmd/**
+!internal/
+!internal/**
+!migrations/
+!migrations/**
+!api/
+!api/**
+**/*_test.go
+**/.env
+**/.env.*
+**/*.env
+**/*.env.*
+**/*.log
+**/*.dump
+**/*.sql.gz
+**/*.key
+**/*.pem

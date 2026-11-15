@@ -1,5 +1,22 @@
 # Go backend (TRD 01). Run from backend/, or use `make -C backend <target>`.
-# The repo-root Makefile's backend-* targets belong to the Rust service in cloud/.
+# The root backend-* targets delegate here. Test services remain separate from Compose.
+.DEFAULT_GOAL := help
+
+# Explicit paths make root/backend invocations select the same project and env file.
+# Relative COMPOSE_ENV_FILE paths are always relative to backend/, never the invoking cwd.
+BACKEND_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+COMPOSE_PROJECT_NAME ?= veea-go
+COMPOSE_ENV_FILE ?= .env
+BACKEND_ENV_FILE = $(if $(filter /%,$(COMPOSE_ENV_FILE)),$(COMPOSE_ENV_FILE),$(BACKEND_DIR)/$(COMPOSE_ENV_FILE))
+COMPOSE = docker compose --project-directory "$(BACKEND_DIR)" --env-file "$(BACKEND_ENV_FILE)" -p "$(COMPOSE_PROJECT_NAME)" -f "$(BACKEND_DIR)/compose.yaml"
+BACKEND_LOG_ARGS ?= --follow --tail=100
+
+# Preserve an explicitly supplied legacy APP_PORT as an alias for the Go host port.
+ifneq ($(origin APP_PORT),undefined)
+ifeq ($(origin VEEA_GO_HTTP_PORT),undefined)
+export VEEA_GO_HTTP_PORT := $(APP_PORT)
+endif
+endif
 
 # Pinned so every machine generates byte-identical code. Needs a C compiler (cgo) and,
 # on first use, network access to fetch the module.
@@ -7,11 +24,50 @@ SQLC := go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
 SQLC_OUT := internal/platform/db/sqlc
 
 .PHONY: help build fmt vet test test-db-up test-db-down test-integration check sqlc sqlc-verify \
-        mailpit-up mailpit-down test-flutter-go test-flutter-admin test-alerts
+        mailpit-up mailpit-down test-flutter-go test-flutter-admin test-alerts \
+        backend-env backend-config backend-up backend-run backend-down backend-down-v \
+        backend-logs backend-ps backend-health backend-url backend-migrate-status
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+backend-env: ## Generate private local Compose keys once; preserve an existing env file
+	@"$(BACKEND_DIR)/scripts/compose-env.sh" "$(BACKEND_ENV_FILE)"
+
+backend-config: backend-env ## Validate the selected Go Compose config without printing secrets
+	$(COMPOSE) config --quiet
+
+backend-up: backend-env ## Build and start Go API, migration, PostgreSQL and Mailpit; wait for health
+	$(COMPOSE) up -d --build --wait --wait-timeout 120
+
+backend-run: backend-up ## Compatibility alias for backend-up (detached Go stack)
+
+backend-down: ## Stop the selected Go Compose project; preserve its PostgreSQL volume
+	$(COMPOSE) down
+
+backend-down-v: ## Stop the selected Go project and DELETE its local database volume
+	$(COMPOSE) down --volumes
+
+backend-logs: ## Follow Go stack logs (override BACKEND_LOG_ARGS for a finite snapshot)
+	$(COMPOSE) logs $(BACKEND_LOG_ARGS)
+
+backend-ps: ## Show Go stack status, including the completed migrator
+	$(COMPOSE) ps --all
+
+backend-migrate-status: ## Show current Go schema version and pending migration count
+	$(COMPOSE) run --rm --no-deps migrate status
+
+backend-url: ## Print the running Go API loopback URL (including a configured custom port)
+	@binding="$$( $(COMPOSE) port mailpit 18386 )"; \
+	 test -n "$$binding" || { echo "Start the Go stack with make backend-up first." >&2; exit 1; }; \
+	 printf 'http://%s\n' "$$binding"
+
+backend-health: ## Check the running Go API's /healthz and /readyz using its published port
+	@binding="$$( $(COMPOSE) port mailpit 18386 )"; \
+	 test -n "$$binding" || { echo "Start the Go stack with make backend-up first." >&2; exit 1; }; \
+	 curl --fail --silent --show-error "http://$$binding/healthz" && \
+	 curl --fail --silent --show-error "http://$$binding/readyz"
 
 build: ## Build the api, migrate and admin binaries into bin/
 	go build -o bin/api ./cmd/api

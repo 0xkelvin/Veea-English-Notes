@@ -49,7 +49,7 @@ Veea English is open source and extensible! Anyone can build and contribute a cu
 - **Automatic IPA Pronunciation & Offline Dictionary**: Bundled 126,000-word offline dictionary with text-to-speech audio reading.
 - **Unicode Diacritic-Insensitive Search**: Fast SQLite search folding Vietnamese diacritics (e.g. typing `kien cuong` finds `kiên cường`).
 - **6 Retro Pixel Themes**: *Paper Light, Night Dark, GameBoy Matrix Green, Cyberpunk Neon, OLED True Black, System Default*.
-- **Offline-First & Optional Cloud Sync**: 100% usable without an internet connection; optional cloud sync across devices backed by Rust microservice.
+- **Offline-First & Optional Go Backend**: usable without an account or server; Go provides accounts and vocabulary sync. The sync/install rollout gate ships closed. The legacy Rust service remains under `cloud/` for maintenance.
 
 ---
 
@@ -73,6 +73,51 @@ flutter pub get
 # Run on simulator or connected device
 flutter run
 ```
+
+### Local Go Backend (default)
+
+Needs Docker with Compose v2+ and `openssl`. From the repository root:
+
+```sh
+make backend-up                 # Generate local keys once, build Go, migrate, wait for health
+make backend-migrate-status     # Expected: current_version=15 pending=0
+make backend-health             # Go /healthz and /readyz
+make backend-ps                 # Includes successful one-shot migrator
+make run-cloud                  # Launch Flutter against the running Go stack
+make backend-logs               # Follow logs; Ctrl-C stops following only
+make backend-down               # Stop this stack, preserve PostgreSQL data and local keys
+```
+
+`make -C backend backend-up` and the other `backend-*` targets select the same Compose project
+and environment. Defaults are project **veea-go** and **backend/.env**, regardless of invocation
+directory. Setup never overwrites an existing env file or prints its generated keys.
+All host ports bind to `127.0.0.1`: API **18386**, PostgreSQL **54328**, metrics **19090**,
+Mailpit inbox **8026**, SMTP **1026**. See [backend setup and email smoke](backend/README.md#local-docker-compose).
+Keep the generated keys with the volume. Sync stays disabled; this is local setup, not release approval.
+
+For another local project, pass the same `COMPOSE_PROJECT_NAME` and `COMPOSE_ENV_FILE` to every
+command. Relative env paths are always relative to `backend/`; absolute private paths also work.
+Port overrides are in [the safe example](backend/.env.example). `APP_PORT=18387` remains a Make
+alias for the Go API host port unless `VEEA_GO_HTTP_PORT` is explicitly set. `run-cloud` still
+launches Flutter only; start the stack first. It resolves the running Go port automatically,
+or accepts an explicit `API_BASE_URL=http://localhost:18387`.
+
+| Existing command | Default behavior now | Legacy Rust equivalent |
+|---|---|---|
+| `backend-env` | Generate `backend/.env` once | `rust-backend-env` copies `cloud/.env.example` only if missing |
+| `backend-up` | Build/start Go API + migration + PostgreSQL + Mailpit | `rust-backend-up` starts Rust PostgreSQL/Redis/NATS |
+| `backend-run` | Alias for `backend-up`, **detached** | `rust-backend-run` runs Cargo in the foreground |
+| `backend-health` | Go `/healthz` and `/readyz` | `rust-backend-health` checks `/health/ready` |
+| `backend-down` | Stop Go; keep its named database volume | `rust-backend-down` |
+| `backend-down-v` | Explicitly **delete the selected Go project's volume** | `rust-backend-down-v` deletes legacy Rust volumes |
+| `run-cloud` | Flutter against running Go (or explicit API URL) | This target does not start a server; Rust maintenance uses the explicit commands above |
+
+New `backend-logs`, `backend-ps`, `backend-migrate-status`, `backend-config` and `backend-url`
+are also available from either directory. The Go and Rust projects/volumes are separate;
+existing Rust data is not migrated or deleted by this command remapping. Stop any old server
+using the same API port before starting Go. Existing `cloud/` CI/deployment and Go disposable
+test-service scripts remain unchanged. Switching API URLs does not make Go/Rust account or
+sync contracts interchangeable.
 
 ### Run Tests
 

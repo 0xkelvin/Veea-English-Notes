@@ -1,7 +1,7 @@
 # Veea English Notes
 
-Offline-first Flutter vocabulary app (iOS/Android) plus an optional Rust sync/account
-backend in `cloud/`. The app is fully usable with no server; cloud is enabled only when
+Offline-first Flutter vocabulary app (iOS/Android) plus the optional Go account/sync backend
+in `backend/`; legacy Rust remains in `cloud/` for maintenance. The app is fully usable with no server; cloud is enabled only when
 built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_config.dart`).
 
 ## Where things are
@@ -34,10 +34,10 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
 - Schema: `cloud/migrations/` (run automatically on startup).
 - Integration tests: `cloud/tests/account_data_integration.rs`.
 
-**Go backend** (`backend/`, replaces the Rust service once TRD 01 is implemented; see
+**Go backend** (`backend/`, the default local service; legacy Rust remains separately available; see
 `docs/trd/01-email-authentication-account-foundation.md` and `backend/README.md`)
 - So far: config, pgx pool, `/healthz`, `/readyz`, `cmd/migrate`, a disposable-PostgreSQL test
-  harness, migrations 00001 to 00009 (`backend/migrations/`) and sqlc queries
+  harness, migrations 00001 to 00015 (`backend/migrations/`) and sqlc queries
   (`backend/internal/platform/db/queries/` generates into `.../db/sqlc/`, never edit by hand).
   Identity primitives live in `backend/internal/identity/` (email normalization, password policy
   and blocklist, Argon2id hasher). Hash and verify passwords before opening a transaction; that
@@ -141,9 +141,16 @@ Run from the repo root for Flutter and from `cloud/` for Rust (`make -C cloud <t
 | Rust unit tests (CI) | `make test` | Rust toolchain **and `cmake`** |
 | Rust unit tests, no cmake | `cargo test` (default features) | Rust toolchain only; no DB or Redis |
 | Rust integration tests | `VEEA_TEST_DATABASE_URL=<disposable local db> cargo test --test account_data_integration -- --ignored` | Local Postgres (not run; from the test file header) |
-| Local backend stack | `make backend-up`, `make backend-run`, `make run-cloud` | Docker, Rust toolchain |
+| Local Go backend stack | `make backend-up`, `make backend-down`, `make backend-logs`, `make backend-ps`, `make backend-migrate-status` (root or `make -C backend`) | Docker Compose, openssl |
+| Flutter with Go | `make run-cloud` after `make backend-up` | Flutter SDK; resolves running Go port |
+| Legacy Rust stack | `make rust-backend-up`, `make rust-backend-run`, `make rust-backend-down` | Docker, Rust toolchain |
 
-`make backend-down-v` deletes the local database volume. CI for `cloud/` is
+`make backend-down` preserves the Go volume; `backend-down-v` explicitly deletes it.
+Compose orchestration is in `backend/Makefile`; root targets delegate there. Use the same
+`COMPOSE_PROJECT_NAME` / `COMPOSE_ENV_FILE` overrides on every call; relative env paths are
+always backend-relative. `backend-env` generates private Go keys once and never overwrites.
+`backend-run` is a detached Go startup alias; Rust foreground runs require `rust-backend-run`.
+Existing Go test scripts use separate disposable services/ports. CI for `cloud/` is
 `cloud/.github/workflows/ci.yml` (fmt, clippy, test); there is no CI for Flutter tests.
 
 Baseline as of 2026-11-10 on `main` (check before blaming your change):
@@ -186,13 +193,14 @@ Treat these as blocking when reviewing or changing `cloud/` or the sync/auth cli
 
 ## Verification and data hygiene
 
-- Verify against local services only: the docker-compose stack in `cloud/` or a disposable
+- Verify against local services only: the Go Compose stack in `backend/`, legacy `cloud/`, or a disposable
   local Postgres, and `--dart-define=VEEA_API_BASE_URL=http://localhost:18386`. Never point a
   test, script or app build at a deployed server.
 - Use synthetic fixtures (fake phone numbers, stub OTP delivery as in
   `account_data_integration.rs`, generated UUIDs).
 - Keep credentials and production user data out of prompts, logs, fixtures and commits.
   `cloud/.env` is gitignored and may hold real secrets: do not read or paste it. Copy
-  `cloud/.env.example` (`make backend-env`) and use throwaway values.
+  `cloud/.env.example` (`make rust-backend-env`) for Rust; `make backend-env` generates independent
+  throwaway Go keys in gitignored `backend/.env`. Never read or print existing deployment secrets.
 - Simulators and unsigned builds do not prove Screen Time enforcement; see the README
   Verification section for the signed-device checks.
