@@ -118,9 +118,38 @@ void main() {
       expect(c.detail!.status, 'active');
       expect((await state(target.id))['status'], 'active');
 
+      // Audit history: the three mutations above, newest first, by this Admin.
+      await c.loadAudit();
+      expect(c.auditLoad, Load.loaded);
+      expect(c.audit.map((e) => e.action), [
+        'reinstate',
+        'suspend',
+        'sessions_revoke',
+      ]);
+      expect(c.audit.map((e) => e.reasonCode), [
+        'appeal_upheld',
+        'abuse',
+        'security_review',
+      ]);
+      expect(c.audit.map((e) => e.ticketRef), [null, 'SUP-1042', null]);
+      expect(
+        c.audit.every(
+          (e) => e.actorUserId == admin.id && e.outcome == 'success',
+        ),
+        isTrue,
+      );
+      expect(c.auditNextPageToken, isNull);
+
       await c.select(staff.id); // a stale link to a staff account
       expect(c.detailLoad, Load.failed);
       expect(c.detailError, 'Your role cannot view this account.');
+      await c.loadAudit(); // the history follows the same visibility rule
+      expect(c.auditLoad, Load.failed);
+      expect(
+        c.auditError,
+        'Your role cannot view this account or its history any more.',
+      );
+      expect(c.phase, Phase.ready);
       await c.signOut();
       expect(c.phase, Phase.signedOut);
     },
@@ -150,6 +179,25 @@ void main() {
       );
       expect(await c.changeRole('user', 'access_review', null), isTrue);
       expect((await state(target.id))['role'], 'user');
+      // Paging through the history one entry at a time.
+      c.auditPageSize = 1;
+      await c.loadAudit();
+      expect(c.audit, hasLength(1));
+      expect(c.auditNextPageToken, isNotNull);
+      await c.loadMoreAudit();
+      expect(c.audit.map((e) => e.action), ['role_change', 'role_change']);
+      expect(c.audit.map((e) => e.reasonCode), [
+        'access_review',
+        'staffing_change',
+      ]);
+      expect(c.audit.every((e) => e.actorUserId == root.id), isTrue);
+      expect(c.auditNextPageToken, isNull);
+      c.auditPageSize = 50;
+      // A Super Admin can view its own history (TRD 06 self-view).
+      await c.select(root.id);
+      await c.loadAudit();
+      expect(c.auditLoad, Load.loaded);
+      expect(c.audit, isEmpty);
 
       await c.select(leaving.id);
       expect(c.detail!.pendingDeletion, isTrue);
@@ -255,6 +303,48 @@ void main() {
     },
     skip: skip,
   );
+
+  test('history: permission loss and session end while viewing', () async {
+    final root = await fixture(role: 'super_admin');
+    final admin = await fixture(role: 'admin');
+    final target = await fixture(sessions: 1);
+    final ops = await signIn(admin);
+    await ops.select(target.id);
+    expect(
+      await ops.revokeSessions(reason: 'owner_request', ticketRef: 'SUP-77'),
+      isTrue,
+    );
+    await ops.loadAudit();
+    expect(ops.audit.single.action, 'sessions_revoke');
+    expect(ops.audit.single.ticketRef, 'SUP-77');
+
+    final sa = await signIn(root);
+    await sa.select(target.id);
+    await sa.loadAudit();
+    expect(
+      sa.audit.single.actorUserId,
+      admin.id,
+      reason: 'a Super Admin sees the Admin as actor',
+    );
+    await sa.select(admin.id);
+    expect(await sa.changeRole('user', 'access_review', null), isTrue);
+
+    await ops.loadAudit(); // refused by the server after the demotion
+    expect(ops.phase, Phase.noAccess);
+    expect(ops.notice!.text, Messages.accessRemoved);
+
+    // A second Admin whose sessions are revoked while viewing the history.
+    final admin2 = await fixture(role: 'admin');
+    final ops2 = await signIn(admin2);
+    await ops2.select(target.id);
+    await ops2.loadAudit();
+    expect(ops2.auditLoad, Load.loaded);
+    await sa.select(admin2.id);
+    expect(await sa.revokeSessions(reason: 'security_review'), isTrue);
+    await ops2.loadAudit();
+    expect(ops2.phase, Phase.signedOut);
+    expect(ops2.notice!.text, Messages.sessionEnded);
+  }, skip: skip);
 
   test('a non-staff account cannot use the console', () async {
     final user = await fixture();

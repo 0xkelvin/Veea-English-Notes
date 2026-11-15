@@ -424,6 +424,132 @@ void main() {
     expect(key('user-row-${user.id}'), findsNothing);
   });
 
+  group('audit history tab', () {
+    Future<void> openAudit(WidgetTester t) async {
+      await t.tap(key('tab-audit'));
+      await t.pumpAndSettle();
+    }
+
+    testWidgets('empty state for an account without changes', (t) async {
+      await boot(t, b, admin.email);
+      await openUser(t, user);
+      await openAudit(t);
+      expect(key('audit-empty'), findsOneWidget);
+      expect(
+        find.textContaining('No administrative changes in the last 180 days.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'loading, then entries with actor, reason and ticket; refreshed after a change',
+      (t) async {
+        await boot(t, b, admin.email);
+        await openUser(t, user);
+        await t.tap(key('action-suspend'));
+        await t.pumpAndSettle();
+        await pick(t, 'dialog-reason', 'Fraud');
+        await t.enterText(key('dialog-ticket'), 'SUP-7');
+        await t.pump();
+        await t.tap(key('dialog-confirm'));
+        await t.pumpAndSettle();
+        b.gate = Completer<void>();
+        await t.tap(key('tab-audit'));
+        for (var i = 0; i < 6; i++) {
+          await t.pump(const Duration(milliseconds: 100)); // the tab animation
+        }
+        expect(key('audit-loading'), findsOneWidget);
+        b.gate!.complete();
+        b.gate = null;
+        await t.pumpAndSettle();
+        expect(find.text('Suspended'), findsWidgets);
+        expect(find.textContaining('by you'), findsOneWidget);
+        expect(
+          find.textContaining('Reason: Fraud · Ticket SUP-7'),
+          findsOneWidget,
+        );
+        // A change made from the Overview tab refreshes a history already shown.
+        await t.tap(key('tab-overview'));
+        await t.pumpAndSettle();
+        await t.tap(key('action-reinstate'));
+        await t.pumpAndSettle();
+        await pick(t, 'dialog-reason', 'Issue resolved');
+        await t.tap(key('dialog-confirm'));
+        await t.pumpAndSettle();
+        await openAudit(t);
+        expect(key('audit-entry-0'), findsOneWidget);
+        expect(key('audit-entry-1'), findsOneWidget);
+        expect(find.text('Reinstated'), findsOneWidget);
+      },
+    );
+
+    testWidgets('pages with "Load older entries"', (t) async {
+      for (var i = 0; i < 3; i++) {
+        user.record('sessions_revoke', sa.id, {
+          'reason_code': 'security_review',
+          'ticket_ref': null,
+        });
+      }
+      final c = await boot(t, b, admin.email);
+      c.auditPageSize = 2;
+      await openUser(t, user);
+      await openAudit(t);
+      expect(key('audit-entry-1'), findsOneWidget);
+      expect(key('audit-entry-2'), findsNothing);
+      expect(find.textContaining('staff account'), findsWidgets);
+      await t.tap(key('audit-load-more'));
+      await t.pumpAndSettle();
+      expect(key('audit-entry-2'), findsOneWidget);
+      expect(key('audit-load-more'), findsNothing);
+    });
+
+    testWidgets('error state with retry', (t) async {
+      await boot(t, b, admin.email);
+      await openUser(t, user);
+      b.failNext('GET /v1/admin/users/${user.id}/audit', 500, 'internal_error');
+      await openAudit(t);
+      expect(key('audit-error'), findsOneWidget);
+      expect(find.text(Messages.generic), findsOneWidget);
+      await t.tap(key('audit-retry'));
+      await t.pumpAndSettle();
+      expect(key('audit-empty'), findsOneWidget);
+    });
+
+    testWidgets('permission loss: demoted actor leaves the console', (t) async {
+      await boot(t, b, admin.email);
+      await openUser(t, user);
+      admin.role = 'user';
+      await openAudit(t);
+      expect(key('no-access'), findsOneWidget);
+      expect(noticeText(t), Messages.accessRemoved);
+    });
+
+    testWidgets('permission loss: target became staff', (t) async {
+      await boot(t, b, admin.email);
+      await openUser(t, user);
+      user.role = 'admin';
+      await openAudit(t);
+      expect(key('audit-error'), findsOneWidget);
+      expect(
+        find.text(
+          'Your role cannot view this account or its history any more.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('session ended while viewing history returns to sign-in', (
+      t,
+    ) async {
+      await boot(t, b, admin.email);
+      await openUser(t, user);
+      b.endSessions();
+      await openAudit(t);
+      expect(key('signin-email'), findsOneWidget);
+      expect(noticeText(t), Messages.sessionEnded);
+    });
+  });
+
   testWidgets('narrow layout shows list, then detail with a back button', (
     t,
   ) async {

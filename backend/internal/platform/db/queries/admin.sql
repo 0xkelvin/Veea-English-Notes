@@ -72,3 +72,19 @@ ORDER BY last_seen_at DESC, id ASC;
 SELECT accepted_at::timestamptz FROM account_operations
 WHERE user_id = @user_id AND action = 'delete' AND accepted_at IS NOT NULL
 LIMIT 1;
+
+-- name: AdminAuditHistory :many
+-- Per-account administrative mutation history (TRD 06 §9a). Only the TRD 06 mutation actions,
+-- newest first with the identity column as tie-breaker, and never past the 180-day audit
+-- retention even if the cleanup job has not reached a row yet. An empty ticket reference
+-- means none (a real one is at least one character). Uses audit_events_target.
+SELECT id, occurred_at, action, outcome, actor_user_id, reason,
+    COALESCE(metadata->>'ticket_ref', '')::text AS ticket_ref
+FROM audit_events
+WHERE target_user_id = @target_user_id
+  AND action IN ('admin.user.suspend', 'admin.user.reinstate', 'admin.role.change', 'admin.role.bootstrap', 'admin.sessions.revoke')
+  AND occurred_at > clock_timestamp() - interval '180 days'
+  AND (sqlc.narg(after_occurred_at)::timestamptz IS NULL
+       OR (occurred_at, id) < (sqlc.narg(after_occurred_at)::timestamptz, sqlc.narg(after_id)::bigint))
+ORDER BY occurred_at DESC, id DESC
+LIMIT @page_limit;

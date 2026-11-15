@@ -1,6 +1,6 @@
 # TRD 07 — Admin Console
 
-**Status:** v1.0. The first operator workflow is implemented and verified against local Go (§10). The location, stack and deployment choices in §2 and §3 were made in this delivery; §11 lists the points Nin should confirm before any shared deployment.
+**Status:** v1.1. The first operator workflow and the per-account Audit history tab (§5a) are implemented and verified against local Go (§10). Nin approved the deployment decision (§3.1) on 2026-11-15. The location and stack choices in §2 were made in the v1.0 delivery.
 **Date:** 2026-11-15
 **Audience:** Nin, frontend and backend engineers, and whoever deploys the console.
 
@@ -40,17 +40,31 @@ The console adds no API, schema or authorization rule. **The Go API is the autho
 
 ## 3. Deployment
 
-### 3.1 Supported topology (same origin)
+### 3.1 Deployment decision (approved by Nin, 2026-11-15)
+
+1. **Dedicated admin origin.** The console is served only from its own origin (for example `https://admin.<domain>`), never from the learner app's or the public API's host.
+2. **Same-origin proxying.** That origin serves the static console and reverse-proxies `/v1/` to `cmd/api`. The console calls its own origin (`Uri.base.origin`), so the Go API needs **no CORS**, and none will be added.
+3. **Restricted network access.** The admin origin is reachable only from the operator network (VPN or IP allowlist). The API's bearer and role checks remain the authorization control; the restriction is defence in depth.
+4. **Admin routes blocked on the public learner ingress.** The single `cmd/api` binary serves both learner and admin routes. The public ingress for the learner app must therefore reject `/v1/admin/` and everything under it (for example with `404`) before the request reaches Go. Learner routes (`/v1/auth/*`, `/v1/me*`, `/v1/account-rights/*`, `/v1/learning/*`) stay public. The admin ingress proxies `/v1/` in full, because the console also needs sign-in, refresh, logout and `/v1/me`.
 
 ```text
-https://admin.<domain>/          -> static files from admin_console/build/web
-https://admin.<domain>/v1/*      -> reverse proxy to the Go API (cmd/api)
+https://admin.<domain>/          -> admin_console/build/web          (operator network only)
+https://admin.<domain>/v1/*      -> cmd/api                          (operator network only)
+https://api.<domain>/v1/admin/*  -> rejected at the edge (404)       (public learner ingress)
+https://api.<domain>/v1/*        -> cmd/api                          (public learner ingress)
 ```
 
-- The console calls the API at its own origin by default (`Uri.base.origin`). The Go API has no CORS, so **a console on another origin cannot call it**: this is a deployment dependency (§8). `--dart-define=VEEA_ADMIN_API_BASE_URL=…` exists for tests and the dev server, not for cross-origin production.
+Deployment configuration (proxy, ingress rules, allowlists, TLS) is **outside this task**; nothing in the repository configures it. These are its release checks:
+
+- from outside the operator network, the admin origin is unreachable;
+- through the public ingress, `GET /v1/admin/users` returns the edge's `404`, not the Go `401`;
+- through the admin origin, `GET /v1/admin/users` without a token returns the Go `401 unauthorized`, exactly as the local smoke test shows (§10).
+
+**Build and headers**
+
+- `--dart-define=VEEA_ADMIN_API_BASE_URL=…` exists for tests and the dev server, not for cross-origin production.
 - **Build:** `cd admin_console && flutter build web --release --no-web-resources-cdn`. This sets `useLocalCanvasKit: true`, so the page loads its own CanvasKit and makes no third-party CDN request (verified, §10).
 - **Recommended edge headers:** `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store` on `index.html`, and a Content-Security-Policy limited to `'self'`. The page sets `noindex, nofollow`.
-- **[Recommended]** Restrict network access to the console origin (VPN or IP allowlist) as defence in depth. The API's bearer and role checks remain the actual control.
 - The Go service and migrations are deployed as in TRD 06 §12. The console needs at least one Super Admin bootstrapped with `bin/admin`.
 
 ### 3.2 Local development
@@ -97,6 +111,22 @@ The confirm button stays disabled until a reason is chosen and any ticket refere
 
 **After success.** The returned `AdminUser` replaces the detail, the list row is updated, sessions are reloaded, and a confirmation notice appears. When a Super Admin steps down, the console re-reads `/v1/me` and moves to **No admin access**.
 
+## 5a. Audit history tab (added 2026-11-15)
+
+The account view has two tabs: **Overview** (everything in §5) and **Audit history**. The history comes from `GET /v1/admin/users/{id}/audit` (TRD 06 §9a). The server applies the same visibility rule as the detail view, so the tab never decides on its own who may see what.
+
+| Concern | Behavior |
+|---|---|
+| Loading | The first page loads when the tab is first shown (spinner). The tab resets when another account is opened. |
+| Entries | Newest first. Each shows the action ("Suspended", "Reinstated", "Role changed", "Made Super Admin (CLI bootstrap)", "Sessions revoked"), the time, the actor ("you", "staff account 0123abcd…", or "the operator CLI"), the reason label, the ticket reference when present, and a "Failed" chip when the outcome is not success. A scope line says which changes are listed and that entries are kept for 180 days. |
+| Paging | **Load older entries** follows `next_page_token` (50 per page). |
+| Empty | "No administrative changes in the last 180 days." |
+| Error | The mapped message with **Retry**. |
+| Refresh | A history already shown reloads after any successful suspend, reinstate, role change or revocation in this console. |
+| Permission loss | `403 forbidden` re-reads `/v1/me` and moves to No admin access. `403 target_not_permitted` shows "Your role cannot view this account or its history any more." in the tab. `401` returns to sign-in. `404` closes the account and refreshes the list. |
+
+The tab shows only the API's allowlisted fields. Actor emails are not part of the allowlist, so actors appear by identifier.
+
 ## 6. Refusals and messages
 
 Messages come from [`messages.dart`](../../admin_console/lib/src/messages.dart). The server's `title` is never shown.
@@ -139,9 +169,10 @@ There is no server push; an idle console shows stale data until its next request
 
 | Gap | Effect | Proposed follow-up |
 |---|---|---|
-| **No audit history read API.** TRD 06 writes `admin.*` and `auth.*` events, but nothing documented serves them. | The console shows no per-account history. Operators use the reason and ticket reference shown in the suspension call-out. | A Phase 5 TRD: `GET /v1/admin/users/{id}/audit` with minimized, paginated events and its own audit of reads |
+| ~~No audit history read API~~ | **Resolved 2026-11-15:** `GET /v1/admin/users/{id}/audit` (TRD 06 §9a) and the Audit history tab (§5a) | Actor emails and from/to values are outside the allowlist; widen it only by a new decision |
 | **No dashboard statistics API** (counts by status or role, recent changes). | No dashboard; the console opens on the account list. | Add a read model only after the metrics in TRD 06 §9.3 prove insufficient |
-| **No CORS** on the Go API | The console must share the API's origin (§3.1). The dev server reproduces this locally. | Add an allowlisted CORS layer only if a separate console origin is required (an API change, with tests) |
+| No CORS on the Go API | **Decided 2026-11-15:** same-origin proxying on a dedicated admin origin (§3.1), so no CORS is needed | — |
+| Deployment configuration | The admin ingress, network allowlist and the public ingress block on `/v1/admin/` are not in the repository (§3.1) | Deployment work, with the release checks in §3.1 |
 | **No search by account ID** | Detail by ID works (`GET /v1/admin/users/{id}`); the list searches by email only. | Optional `id` filter on `listAdminUsers` |
 | **No staff session policy** | Staff sessions follow the learner lifetimes (refresh up to the TRD 01 limits); the console only shortens them by keeping tokens in memory. | TRD 06 §13 left step-up and short staff sessions open |
 
@@ -167,8 +198,8 @@ All runs used local services only: a disposable loopback PostgreSQL and syntheti
 | Check | Command | Actual result |
 |---|---|---|
 | Console analyzer | `cd admin_console && flutter analyze` | No issues |
-| Console unit and widget tests | `cd admin_console && flutter test` | **24 passed, 5 skipped** (the e2e file skips without its environment). 19 widget tests (below) and 5 transport tests (single-flight refresh, refused and lost refresh, problem parsing, no tokens in URLs, malformed sign-in, logout) |
-| Console against real Go | `backend/scripts/test-flutter-admin.sh` (`TestFlutterGo_AdminConsole`, `-race`) | **Go test passed. Dart: 5 ran, 5 passed, 0 skipped.** Every exchange was validated by the OpenAPI response checker, and the harness's hygiene, no-retry and log checks passed |
+| Console unit and widget tests | `cd admin_console && flutter test` | **31 passed, 6 skipped** (the e2e file skips without its environment). 26 widget tests (below) and 5 transport tests (single-flight refresh, refused and lost refresh, problem parsing, no tokens in URLs, malformed sign-in, logout) |
+| Console against real Go | `backend/scripts/test-flutter-admin.sh` (`TestFlutterGo_AdminConsole`, `-race`) | **Go test passed. Dart: 6 ran, 6 passed, 0 skipped.** Every exchange was validated by the OpenAPI response checker, and the harness's hygiene, no-retry and log checks passed |
 | Web build | `flutter build web --release --no-web-resources-cdn` | Built; `useLocalCanvasKit: true` |
 | Same-origin smoke | `bin/migrate up` and `bin/api` on a disposable database with throwaway keys, behind `dart run tool/serve.dart` | Console served (`<title>Veea Admin Console</title>`, security headers). `/healthz` 200 through the proxy. `/v1/admin/users` without a token: `401 unauthorized` with `WWW-Authenticate: Bearer`. Unknown paths fall back to `index.html` |
 | Bootstrap CLI smoke | `bin/admin bootstrap-super-admin --email …` twice | First run promoted (`role_revision=1`, exit 0). Second run refused (exit 1). One `admin.role.bootstrap` row with a null actor, reason `bootstrap`, mode `first` |
@@ -181,6 +212,10 @@ All runs used local services only: a disposable loopback PostgreSQL and syntheti
 3. **Permission change refused by the server:** an Admin's console has Suspend available on a User. A Super Admin demotes that Admin in another console. The Admin's Suspend gets `403 forbidden`, and the console shows No admin access with the access-removed message. The target stayed active with its session, and the demoted Admin's sessions were kept.
 4. **Session expiry:** an expired access token is refreshed silently. After a Super Admin revokes the Admin's sessions, the Admin's next request returns to sign-in with the session-ended message, and the credentials are dropped.
 5. A User account cannot enter the console.
+6. **Audit history (2026-11-15):**
+   - In test 1, the Admin's history is `reinstate`, `suspend`, `sessions_revoke`, newest first, with reasons `appeal_upheld`, `abuse`, `security_review`, ticket `SUP-1042` on the suspension only, and the Admin as actor. The staff account's history is refused with the target-not-permitted message, while the console stays usable.
+   - In test 2, the two role changes page one entry at a time (`access_review`, then `staffing_change`, by the Super Admin), and a Super Admin views its own (empty) history.
+   - A sixth test: an Admin's revocation with ticket `SUP-77` appears in the Admin's history and in the Super Admin's view with the Admin as actor. After the Admin is demoted, its next history request moves it to No admin access. A second Admin whose sessions are revoked while viewing history returns to sign-in.
 
 **Widget tests (fake TRD 06 backend, `test/support/fake_backend.dart`):**
 
@@ -192,12 +227,13 @@ All runs used local services only: a disposable loopback PostgreSQL and syntheti
 - silent access refresh; revoked session returns to sign-in;
 - demoted mid-session; target promoted elsewhere (`target_not_permitted`);
 - pending deletion (banner, no actions, conflict message); `last_super_admin` and a stale revision;
-- Super Admin step-down; account deleted while open; narrow layout.
+- Super Admin step-down; account deleted while open; narrow layout;
+- Audit history tab: empty state; loading, then entries with actor, reason and ticket, refreshed after a change; paging with *Load older entries*; error with retry; demoted actor leaves the console; target became staff; session ended while viewing.
 
-## 11. Decisions for Nin before a shared deployment
+## 11. Decision record
 
-1. **Hosting.** Serve the console at a dedicated origin that reverse-proxies `/v1/` to the Go API (recommended), or approve a CORS allowlist on the API (an API change).
-2. **Network restriction** for the console origin (VPN or IP allowlist), on top of the API's checks.
-3. **Audit history** (§8) as the next TRD, so operators can see who changed an account and why from the console.
+1. **Hosting — decided 2026-11-15:** dedicated admin origin with same-origin proxying; no CORS (§3.1).
+2. **Network restriction — decided 2026-11-15:** operator network only, and `/v1/admin/` blocked on the public learner ingress (§3.1). The configuration is deployment work outside the repository.
+3. **Audit history — delivered 2026-11-15:** TRD 06 §9a and §5a.
 
 Staging, commits and pushes are left to Nin.

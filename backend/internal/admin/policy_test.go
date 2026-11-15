@@ -121,3 +121,27 @@ func mustTime(t *testing.T, s string) time.Time {
 	}
 	return v
 }
+
+func TestAuditTokenRoundTripAndBinding(t *testing.T) {
+	target, other := uuid.New(), uuid.New()
+	at := mustTime(t, "2026-11-15T01:02:03.456789Z")
+	tok := encodeAuditToken(at, 42, target)
+	if len(tok) != 35 {
+		t.Fatalf("token length %d", len(tok))
+	}
+	gotAt, id, ok := decodeAuditToken(tok, target)
+	if !ok || !gotAt.Equal(at) || id != 42 {
+		t.Fatalf("round trip: %v %d %v", gotAt, id, ok)
+	}
+	if _, _, ok := decodeAuditToken(tok, other); ok {
+		t.Fatal("a token must be bound to its account")
+	}
+	for _, bad := range []string{"", "h1.", "a1." + tok[3:], tok + "A", encodeAuditToken(at, 0, target)} {
+		if _, _, ok := decodeAuditToken(bad, target); ok {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	if len(AuditActions) != 5 {
+		t.Fatal("the history exposes exactly the five TRD 06 mutation actions")
+	}
+}

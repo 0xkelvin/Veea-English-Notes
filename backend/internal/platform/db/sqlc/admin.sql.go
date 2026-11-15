@@ -46,6 +46,73 @@ func (q *Queries) AdminActingSessionLive(ctx context.Context, arg AdminActingSes
 	return role, err
 }
 
+const adminAuditHistory = `-- name: AdminAuditHistory :many
+SELECT id, occurred_at, action, outcome, actor_user_id, reason,
+    COALESCE(metadata->>'ticket_ref', '')::text AS ticket_ref
+FROM audit_events
+WHERE target_user_id = $1
+  AND action IN ('admin.user.suspend', 'admin.user.reinstate', 'admin.role.change', 'admin.role.bootstrap', 'admin.sessions.revoke')
+  AND occurred_at > clock_timestamp() - interval '180 days'
+  AND ($2::timestamptz IS NULL
+       OR (occurred_at, id) < ($2::timestamptz, $3::bigint))
+ORDER BY occurred_at DESC, id DESC
+LIMIT $4
+`
+
+type AdminAuditHistoryParams struct {
+	TargetUserID    *uuid.UUID
+	AfterOccurredAt *time.Time
+	AfterID         *int64
+	PageLimit       int32
+}
+
+type AdminAuditHistoryRow struct {
+	ID          int64
+	OccurredAt  time.Time
+	Action      string
+	Outcome     string
+	ActorUserID *uuid.UUID
+	Reason      *string
+	TicketRef   string
+}
+
+// Per-account administrative mutation history (TRD 06 §9a). Only the TRD 06 mutation actions,
+// newest first with the identity column as tie-breaker, and never past the 180-day audit
+// retention even if the cleanup job has not reached a row yet. An empty ticket reference
+// means none (a real one is at least one character). Uses audit_events_target.
+func (q *Queries) AdminAuditHistory(ctx context.Context, arg AdminAuditHistoryParams) ([]AdminAuditHistoryRow, error) {
+	rows, err := q.db.Query(ctx, adminAuditHistory,
+		arg.TargetUserID,
+		arg.AfterOccurredAt,
+		arg.AfterID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AdminAuditHistoryRow{}
+	for rows.Next() {
+		var i AdminAuditHistoryRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OccurredAt,
+			&i.Action,
+			&i.Outcome,
+			&i.ActorUserID,
+			&i.Reason,
+			&i.TicketRef,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const adminListLiveSessions = `-- name: AdminListLiveSessions :many
 SELECT id, device_name, platform, created_at, last_seen_at, refresh_expires_at, absolute_expires_at
 FROM sessions

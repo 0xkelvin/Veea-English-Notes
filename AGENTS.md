@@ -18,8 +18,11 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
 - Flutter **web** package, separate from the learner app; calls only the TRD 06 `/v1/admin/*`
   routes plus sign-in and `/v1/me`. The Go API is the authorization authority: show only actions
   from the server's `allowed_actions`/`assignable_roles`, and map every refusal (TRD 07 §6).
-- Credentials stay in memory (no browser storage). Deploy `build/web` on the API's origin; the Go
-  API has no CORS. `dart run tool/serve.dart` is the loopback same-origin dev server.
+- Credentials stay in memory (no browser storage). Deployment (approved, TRD 07 §3.1): dedicated
+  admin origin proxying `/v1/` same-origin (no CORS), operator-network only, and `/v1/admin/`
+  blocked on the public learner ingress. `dart run tool/serve.dart` is the loopback dev server.
+- Audit history is `GET /v1/admin/users/{id}/audit` (TRD 06 §9a): view-rule visibility, an
+  explicit field allowlist, `(occurred_at, id)` cursor; never widen the allowlist without a decision.
 - Tests: `cd admin_console && flutter analyze && flutter test`; against real Go:
   `make -C backend test-flutter-admin` (Docker for the disposable PostgreSQL).
 

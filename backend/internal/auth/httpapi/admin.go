@@ -26,6 +26,7 @@ func (h *Handlers) mountAdmin(mux httpx.Router) {
 	mux.HandleFunc("GET /v1/admin/users", h.authenticated(h.requireStaff("search", h.adminListUsers)))
 	mux.HandleFunc("GET /v1/admin/users/{user_id}", h.authenticated(h.requireStaff("view", h.adminGetUser)))
 	mux.HandleFunc("GET /v1/admin/users/{user_id}/sessions", h.authenticated(h.requireStaff("sessions_view", h.adminListSessions)))
+	mux.HandleFunc("GET /v1/admin/users/{user_id}/audit", h.authenticated(h.requireStaff("audit_view", h.adminAuditHistory)))
 	mux.HandleFunc("POST /v1/admin/users/{user_id}/session-revocations", h.authenticated(h.requireStaff("sessions_revoke", h.adminRevokeSessions)))
 	mux.HandleFunc("POST /v1/admin/users/{user_id}/lifecycle-transitions", h.authenticated(h.requireStaff("transition", h.adminTransition)))
 	mux.HandleFunc("PUT /v1/admin/users/{user_id}/role", h.authenticated(h.requireStaff("role_change", h.adminChangeRole)))
@@ -369,4 +370,67 @@ func (h *Handlers) adminChangeRole(w http.ResponseWriter, r *http.Request, p ses
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, adminUserBody(d))
+}
+
+// adminAuditEntry is the explicit field allowlist of the history view (TRD 06 §9a): no IP,
+// user agent, request ID, session, email HMAC or other metadata ever leaves the server here.
+type adminAuditEntry struct {
+	OccurredAt  time.Time  `json:"occurred_at"`
+	Action      string     `json:"action"`
+	Outcome     string     `json:"outcome"`
+	ActorUserID *uuid.UUID `json:"actor_user_id"`
+	ReasonCode  *string    `json:"reason_code"`
+	TicketRef   *string    `json:"ticket_ref"`
+}
+
+func (h *Handlers) adminAuditHistory(w http.ResponseWriter, r *http.Request, p session.Principal) {
+	raw := r.PathValue("user_id")
+	id, err := uuid.Parse(raw)
+	if err != nil || len(raw) != 36 || id == uuid.Nil {
+		h.fail(w, r, httpx.ErrBadRequest)
+		return
+	}
+	vals, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		h.fail(w, r, httpx.ErrBadRequest)
+		return
+	}
+	limit, token := 50, ""
+	for k, v := range vals {
+		if len(v) != 1 {
+			h.fail(w, r, httpx.ErrBadRequest)
+			return
+		}
+		switch k {
+		case "limit":
+			n, err := strconv.Atoi(v[0])
+			if !limitPattern.MatchString(v[0]) || err != nil || n > 100 {
+				h.fail(w, r, httpx.ErrBadRequest)
+				return
+			}
+			limit = n
+		case "page_token":
+			if token = v[0]; token == "" {
+				h.fail(w, r, httpx.ErrBadRequest)
+				return
+			}
+		default:
+			h.fail(w, r, httpx.ErrBadRequest)
+			return
+		}
+	}
+	page, err := h.Admin.AuditHistory(r.Context(), p, id, token, limit, h.sessionClient(w, r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	items := make([]adminAuditEntry, 0, len(page.Items))
+	for _, e := range page.Items {
+		items = append(items, adminAuditEntry{OccurredAt: e.OccurredAt, Action: e.Action, Outcome: e.Outcome,
+			ActorUserID: e.ActorUserID, ReasonCode: e.ReasonCode, TicketRef: e.TicketRef})
+	}
+	httpx.WriteJSON(w, http.StatusOK, struct {
+		Items         []adminAuditEntry `json:"items"`
+		NextPageToken *string           `json:"next_page_token"`
+	}{items, page.NextPageToken})
 }

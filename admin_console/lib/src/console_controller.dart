@@ -48,6 +48,13 @@ class ConsoleController extends ChangeNotifier {
   String? sessionsError;
   bool mutating = false;
 
+  Load auditLoad = Load.idle;
+  List<AuditEntry> audit = const [];
+  String? auditNextPageToken;
+  String? auditError;
+  bool auditLoadingMore = false;
+  int auditPageSize = 50;
+
   bool _disposed = false;
 
   void _changed() {
@@ -149,6 +156,11 @@ class ConsoleController extends ChangeNotifier {
     sessions = const [];
     sessionsLoad = Load.idle;
     sessionsError = null;
+    audit = const [];
+    auditLoad = Load.idle;
+    auditNextPageToken = null;
+    auditError = null;
+    auditLoadingMore = false;
   }
 
   // --- search and list -----------------------------------------------------------------------
@@ -259,6 +271,72 @@ class ConsoleController extends ChangeNotifier {
     _changed();
   }
 
+  // --- audit history (TRD 06 §9a) ----------------------------------------------------------
+
+  /// Loads the first page of the selected account's administrative history.
+  /// The server applies the same visibility rule as the detail view.
+  Future<void> loadAudit() async {
+    final id = selectedId;
+    if (id == null) return;
+    auditLoad = Load.loading;
+    auditError = null;
+    _changed();
+    try {
+      final page = await api.audit(id, limit: auditPageSize);
+      if (selectedId != id) return;
+      audit = page.items;
+      auditNextPageToken = page.nextPageToken;
+      auditLoad = Load.loaded;
+    } on Object catch (e) {
+      if (await _auditRefused(e)) return;
+      audit = const [];
+      auditNextPageToken = null;
+      auditLoad = Load.failed;
+    }
+    _changed();
+  }
+
+  Future<void> loadMoreAudit() async {
+    final id = selectedId, token = auditNextPageToken;
+    if (id == null || token == null || auditLoadingMore) return;
+    auditLoadingMore = true;
+    _changed();
+    try {
+      final page = await api.audit(id, pageToken: token, limit: auditPageSize);
+      if (selectedId != id) return;
+      audit = [...audit, ...page.items];
+      auditNextPageToken = page.nextPageToken;
+    } on Object catch (e) {
+      if (await _auditRefused(e)) return;
+      auditLoad = Load.failed;
+    } finally {
+      auditLoadingMore = false;
+      _changed();
+    }
+  }
+
+  /// Returns true when the refusal moved the console elsewhere; otherwise sets
+  /// [auditError] for the in-place error state.
+  Future<bool> _auditRefused(Object e) async {
+    if (await _global(e)) return true;
+    if (e is AdminApiException && e.code == 'not_found') {
+      await _gone();
+      return true;
+    }
+    if (e is AdminApiException && e.code == 'target_not_permitted') {
+      auditError =
+          'Your role cannot view this account or its history any more.';
+      await _refreshMe();
+      return phase != Phase.ready;
+    }
+    auditError = Messages.describe(e);
+    return false;
+  }
+
+  Future<void> _refreshAuditIfShown() async {
+    if (auditLoad != Load.idle) await loadAudit();
+  }
+
   void _showDetail(AdminUser u) {
     detail = u;
     detailLoad = Load.loaded;
@@ -328,6 +406,7 @@ class ConsoleController extends ChangeNotifier {
       );
       mutating = false;
       await reloadDetail();
+      await _refreshAuditIfShown();
       return true;
     } on Object catch (e) {
       mutating = false;
@@ -372,6 +451,7 @@ class ConsoleController extends ChangeNotifier {
       }
       mutating = false;
       await reloadSessions();
+      await _refreshAuditIfShown();
       return true;
     } on Object catch (e) {
       mutating = false;

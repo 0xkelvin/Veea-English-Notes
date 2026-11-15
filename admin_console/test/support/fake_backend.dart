@@ -21,6 +21,21 @@ class FakeAccount {
   int lifecycleRevision = 0, roleRevision = 0;
   String? resumeStatus, suspensionReason, ticketRef;
   final sessions = <String>['s-$_n-a', 's-${_n++}-b'];
+  final audit =
+      <Map<String, Object?>>[]; // newest first, the API's allowlisted fields
+  void record(
+    String action,
+    String actor,
+    Map<String, Object?> body,
+  ) => audit.insert(0, {
+    'occurred_at':
+        '2026-11-15T10:${(audit.length % 60).toString().padLeft(2, '0')}:00Z',
+    'action': action,
+    'outcome': 'success',
+    'actor_user_id': actor,
+    'reason_code': body['reason_code'],
+    'ticket_ref': body['ticket_ref'],
+  });
   static int _n = 0;
 }
 
@@ -295,6 +310,19 @@ class FakeBackend {
           return _problem(403, 'target_not_permitted');
         }
         return _json(200, _detail(actor, t));
+      case 'GET audit':
+        if (!_permits(actor, t, 'view')) {
+          return _problem(403, 'target_not_permitted');
+        }
+        final limit = int.parse(r.url.queryParameters['limit'] ?? '50');
+        final from = int.parse(
+          (r.url.queryParameters['page_token'] ?? 'h1.0').substring(3),
+        );
+        final page = t.audit.skip(from).take(limit).toList();
+        final next = from + limit < t.audit.length
+            ? 'h1.${from + limit}'
+            : null;
+        return _json(200, {'items': page, 'next_page_token': next});
       case 'GET sessions':
         if (!_permits(actor, t, 'sessions')) {
           return _problem(403, 'target_not_permitted');
@@ -319,6 +347,7 @@ class FakeBackend {
           return _problem(403, 'target_not_permitted');
         }
         final n = body['session_id'] == null ? t.sessions.length : 1;
+        t.record('sessions_revoke', actor.id, body);
         if (body['session_id'] == null) {
           t.sessions.clear();
         } else if (t.sessions.isNotEmpty) {
@@ -343,7 +372,8 @@ class FakeBackend {
             ..suspensionReason = body['reason_code'] as String
             ..ticketRef = body['ticket_ref'] as String?
             ..lifecycleRevision += 1
-            ..sessions.clear();
+            ..sessions.clear()
+            ..record('suspend', actor.id, body);
         } else {
           if (t.status == 'pending_deletion') {
             return _problem(409, 'status_conflict', accountStatus: t.status);
@@ -351,7 +381,8 @@ class FakeBackend {
           t
             ..status = t.resumeStatus ?? 'active'
             ..resumeStatus = null
-            ..lifecycleRevision += 1;
+            ..lifecycleRevision += 1
+            ..record('reinstate', actor.id, body);
         }
         return _json(200, _detail(actor, t));
       case 'PUT role':
@@ -369,7 +400,8 @@ class FakeBackend {
         }
         t
           ..role = body['role'] as String
-          ..roleRevision += 1;
+          ..roleRevision += 1
+          ..record('role_change', actor.id, body);
         return _json(200, _detail(actor, t));
     }
     return _problem(404, 'not_found');

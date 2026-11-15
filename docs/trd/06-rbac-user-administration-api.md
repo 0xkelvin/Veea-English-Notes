@@ -185,6 +185,7 @@ Concurrent outcomes (tested both orders):
 | `revokeAdminUserSessions` | `POST /v1/admin/users/{user_id}/session-revocations` `{session_id \| null, reason_code, ticket_ref}` | `200 {revoked_sessions}` |
 | `transitionAdminUser` | `POST /v1/admin/users/{user_id}/lifecycle-transitions` `{action: suspend \| reinstate, reason_code, ticket_ref, expected_lifecycle_revision}` | `200 AdminUser` |
 | `changeAdminUserRole` | `PUT /v1/admin/users/{user_id}/role` `{role, reason_code, ticket_ref, expected_role_revision}` | `200 AdminUser` |
+| `listAdminUserAudit` (2026-11-15, §9a) | `GET /v1/admin/users/{user_id}/audit?limit&page_token` | `200 {items, next_page_token}` |
 
 ### 6.3 List and search
 
@@ -296,7 +297,7 @@ For admin events, the actor is the admin, the target is the account and the sess
 | Action | Outcome and fields |
 |---|---|
 | `admin.user.search` | success. `filters` (names only, or `none`), `result_count`, `page` (`first` or `next`). `email_hmac` only for an exact `email` filter. Never the search text. |
-| `admin.user.view`, `admin.user.sessions.view` | success. Committed in the read transaction. |
+| `admin.user.view`, `admin.user.sessions.view`, `admin.user.audit.view` (§9a) | success. Committed in the read transaction. The history view adds `result_count` and `page`. |
 | `admin.user.suspend` | success. `reason` is the code. `from_status`, `lifecycle_revision`, `ticket_ref?`. Preceded by `auth.session.revoke` (`account_suspended`) and any `account.export.cancel`. |
 | `admin.user.reinstate` | success. `reason`, `to_status`, `lifecycle_revision`, `ticket_ref?`. |
 | `admin.role.change` | success. `reason`, `from_role`, `to_role`, `role_revision`, `ticket_ref?`. Preceded by `auth.session.revoke` (`role_change`) when a promotion revoked rows. |
@@ -314,6 +315,58 @@ Metrics:
 - `admin_actions_total{action,result}`, with result `success`, `noop`, `denied`, `conflict` or `error`;
 - `auth_sessions_revoked_total` with the three new reasons;
 - the gauge `admin_active_super_admins`.
+
+## 9a. Per-account audit history (added 2026-11-15)
+
+`GET /v1/admin/users/{user_id}/audit` is the read side of the mutation events above. It lives in [`internal/admin/audit_history.go`](../../backend/internal/admin/audit_history.go), uses the `AdminAuditHistory` query in [`queries/admin.sql`](../../backend/internal/platform/db/queries/admin.sql), and its handler is in `httpapi/admin.go`.
+
+**Visibility.** It applies the same rule as `getAdminUser`, through the same `read` path:
+
+- the actor is revalidated in one `REPEATABLE READ` snapshot (`401` or `403 forbidden`);
+- the target must exist (`404`);
+- `Permits(…, ActView)` decides access (`403 target_not_permitted`). An Admin sees User accounts only; a Super Admin sees every account, including its own.
+
+`admin.user.audit.view` commits in that transaction before any data is returned. Pending-deletion targets remain visible until the purge, then the account is `404`.
+
+**What is listed.** Only the five TRD 06 mutation actions on `target_user_id`, with this public mapping:
+
+| Stored action | Public `action` |
+|---|---|
+| `admin.user.suspend` | `suspend` |
+| `admin.user.reinstate` | `reinstate` |
+| `admin.role.change` | `role_change` |
+| `admin.role.bootstrap` | `role_bootstrap` |
+| `admin.sessions.revoke` | `sessions_revoke` |
+
+Reads, denials, owner and system events (`auth.*`, `account.*`) are never returned.
+
+**Field allowlist.** Each item is exactly:
+
+| Field | Source |
+|---|---|
+| `occurred_at` | `occurred_at` |
+| `action` | mapped as above |
+| `outcome` | `outcome` |
+| `actor_user_id` | `actor_user_id`; null for the CLI bootstrap |
+| `reason_code` | `reason` |
+| `ticket_ref` | `metadata.ticket_ref`, or null |
+
+Nothing else leaves the server: no IP, user agent, request ID, session, email HMAC or other metadata. An explicit DTO enforces this, and the OpenAPI schema has `additionalProperties: false`.
+
+**Ordering and cursor.**
+
+- Newest first by `occurred_at DESC, id DESC`. The `bigint` identity is the tie-breaker, so equal timestamps page deterministically, with no duplicates or gaps.
+- `limit` is 1 to 100 (default 50), fetching `limit + 1` rows.
+- `page_token` is `h1.` plus base64url of 24 bytes: the last row's `occurred_at` in microseconds, its `id`, and an 8-byte SHA-256 fingerprint of the target UUID. A token from another account, or a malformed one, is `400 invalid_request`. A forged but well-formed token only moves the start position within rows the actor may already read.
+- The existing `audit_events_target (target_user_id, occurred_at DESC)` index serves the query; no migration was needed.
+
+**Retention is unchanged.**
+
+- The 180-day `CleanupOldAudit` job and TRD 04 minimization are untouched.
+- The query also excludes rows older than 180 days, so a lagging cleanup can never make the API serve an expired event.
+- A row minimized because its actor or target was purged keeps action, outcome, reason and actor, but its `ticket_ref` becomes null ("where available").
+
+**Rate limit and metrics:** the read rule (`admin_read_user_1m`) and `admin_actions_total{action="audit_view"}`.
 
 ## 10. Code map
 
@@ -348,7 +401,10 @@ The tests use the production `app.New` router, a migrated disposable loopback Po
 | `TestAdmin_SuspensionRaces` | Against password sign-in, refresh and owner deletion completion, each in both orders |
 | `TestAdmin_AuditEvents`, `TestAudit_Matrix` "TRD06 admin" | Exact events for search, view, sessions view, revocation, suspension, no-op, reinstatement, promotion, demotion, last-Super-Admin denial, deduplicated `insufficient_role` and `target_not_permitted`. Metrics |
 | `TestAdmin_TransactionalAuditAndRetry` | A failing audit insert rolls back the suspension and fails the view. A forced `40001` retries once with one event set and one metric |
-| `TestAdmin_ContractErrors`, `TestAdmin_RateLimitsAndInternalErrors` | Every route: `403 forbidden`, path, query and body `400`, `404`, `429` with no state change, and `500` |
+| `TestAdmin_ContractErrors`, `TestAdmin_RateLimitsAndInternalErrors` | Every route, including the audit history: `403 forbidden`, path, query and body `400`, `404`, `429` with no state change, and `500` |
+| `TestAdminAudit_TargetVisibility` (§9a) | 3 actor roles × {self, user, admin, super_admin} against the `view` matrix; unknown `404`; pending deletion visible; demoted actor `403 forbidden`; target promoted `403 target_not_permitted` |
+| `TestAdminAudit_PaginationWithTiedTimestampsAndRetention` (§9a) | Six real mutations forced to one timestamp, paged two at a time in exact ID-descending order. Excludes other accounts, reads, denials and no-op revocations. Token bound to the account; malformed tokens and parameters refused. A 181-day-old event is not served |
+| `TestAdminAudit_FieldAllowlist` (§9a) | Exact top-level and item key sets; no user agent, IP, request ID or metadata leaks; the read is audited and not listed; bootstrap has a null actor; a minimized row loses only its ticket |
 | `TestMigrations_RBACUpgradeFrom11` | A populated version 11 upgrades without row loss. A legacy suspended row is backfilled. Constraints reject inconsistent rows and invalid ticket references. Old and new revocation reasons are accepted. Replay works |
 | Unit: `internal/admin`, `cmd/admin`, `metrics` | The matrix cell by cell, assignable roles, reasons, ticket references, page-token round trip and binding, LIKE escaping, CLI parsing and refusals (never printing the address), metrics |
 
@@ -383,3 +439,14 @@ go test -race -tags=integration -count=1 -json ./...
 | Runtime OpenAPI contract checker | **318** distinct operation, status and code combinations, no violations. The only unexercised entries are the four pre-existing exceptions (`GET /readyz 503` / `not_ready`, `GET /v1/me 500` / `internal_error`); no TRD 06 response is exempted |
 
 All verification used disposable loopback PostgreSQL and Mailpit with synthetic accounts, never a deployed server. The release gates in §12 (rollout order, provisioning, CLI access control, alerting) are deployment work that these tests do not prove. There are no known implementation blockers.
+
+### 13.1 Audit history addendum — 2026-11-15
+
+Added §9a: `GET /v1/admin/users/{user_id}/audit`. OpenAPI is now `1.6.0-trd06-audit`. There is no migration; the version stays **12**. Verified with the same commands against loopback PostgreSQL and Mailpit:
+
+| Check | Actual result |
+|---|---|
+| `make sqlc-verify`, `make check`, `make build` | Passed |
+| Full race run | **1206 passed, 0 failed, 0 skipped** tests and subtests (445 top-level). 20 packages passed; 12 have no test files. Integration package: 771 passed. The 3 `TestAdminAudit_*` tests with their subtests: 7 passed. Mailpit delivery ran and passed |
+| Runtime OpenAPI contract checker | **326** combinations, no violations. Only the four pre-existing exceptions remain unexercised; every documented audit-history status and code was produced |
+| Console against real Go (`make test-flutter-admin`) | Go test passed. Dart: 6 ran, 6 passed, 0 skipped (TRD 07 §10) |

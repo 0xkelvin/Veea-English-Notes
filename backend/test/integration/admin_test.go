@@ -763,6 +763,7 @@ func TestAdmin_ContractErrors(t *testing.T) {
 		{"GET", pathAdminUsers, ""},
 		{"GET", adminPath(u.ID, ""), ""},
 		{"GET", adminPath(u.ID, "/sessions"), ""},
+		{"GET", adminPath(u.ID, "/audit"), ""},
 		{"POST", adminPath(u.ID, "/session-revocations"), `{"session_id":null,"reason_code":"other","ticket_ref":null}`},
 		{"POST", adminPath(u.ID, "/lifecycle-transitions"), `{"action":"suspend","reason_code":"other","ticket_ref":null,"expected_lifecycle_revision":0}`},
 		{"PUT", adminPath(u.ID, "/role"), `{"role":"admin","reason_code":"other","ticket_ref":null,"expected_role_revision":0}`},
@@ -810,6 +811,7 @@ func TestAdmin_RateLimitsAndInternalErrors(t *testing.T) {
 			e.adminGet(t, s.AccessToken, pathAdminUsers), e.adminGet(t, s.AccessToken, adminPath(u.ID, "")),
 			e.adminGet(t, s.AccessToken, adminPath(u.ID, "/sessions")), e.adminRevoke(t, s.AccessToken, u.ID, nil),
 			e.suspend(t, s.AccessToken, u.ID), e.adminRole(t, s.AccessToken, u.ID, "admin", 0),
+			e.adminGet(t, s.AccessToken, adminPath(u.ID, "/audit")),
 		} {
 			wantProblem(t, r, 429, "rate_limited")
 		}
@@ -828,6 +830,7 @@ func TestAdmin_RateLimitsAndInternalErrors(t *testing.T) {
 			e.adminGet(t, s.AccessToken, pathAdminUsers), e.adminGet(t, s.AccessToken, adminPath(u.ID, "")),
 			e.adminGet(t, s.AccessToken, adminPath(u.ID, "/sessions")), e.adminRevoke(t, s.AccessToken, u.ID, nil),
 			e.adminTransition(t, s.AccessToken, u.ID, "suspend", "abuse", 0), e.adminRole(t, s.AccessToken, u.ID, "admin", 0),
+			e.adminGet(t, s.AccessToken, adminPath(u.ID, "/audit")),
 		} {
 			wantProblem(t, r, 500, "internal_error")
 		}

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Veea English Notes — Accounts API
-  version: 1.5.0-trd06
+  version: 1.6.0-trd06-audit
   description: |
     Email authentication and account foundation (TRD 01 §5), plus session management (TRD 02), account lifecycle (TRD 04),
     vocabulary sync (TRD 05) and RBAC user administration (TRD 06). This document is normative for the
@@ -996,6 +996,38 @@ paths:
         "404": { $ref: "#/components/responses/AdminNotFound" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "500": { $ref: "#/components/responses/InternalError" }
+  /v1/admin/users/{user_id}/audit:
+    get:
+      tags: [admin]
+      operationId: listAdminUserAudit
+      summary: Administrative mutation history of one account (TRD 06 §9a).
+      description: |
+        Staff only, with the same target visibility as getAdminUser (an Admin sees User accounts only;
+        a Super Admin sees every account, including its own). Returns only suspension, reinstatement,
+        role change, role bootstrap and session revocation events, newest first by `occurred_at` with the
+        event identity as tie-breaker, and never events past the 180-day audit retention. Each item is
+        an explicit field allowlist. The page token is bound to this account. Writes `admin.user.audit.view`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/AdminUserID" }
+        - { in: query, name: limit, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { in: query, name: page_token, required: false, schema: { type: string, pattern: '^h1\.[A-Za-z0-9_-]{32}$' } }
+      x-error-codes: [invalid_request, unauthorized, forbidden, target_not_permitted, not_found, rate_limited, internal_error]
+      responses:
+        "200":
+          description: One page, newest first.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Cache-Control: { $ref: "#/components/headers/Cache-Control" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminAuditPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminForbidden" }
+        "404": { $ref: "#/components/responses/AdminNotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
   /v1/admin/users/{user_id}/session-revocations:
     post:
       tags: [admin]
@@ -1946,3 +1978,21 @@ components:
         reason_code: { type: string, enum: [staffing_change, access_review, account_compromise, other] }
         ticket_ref: { $ref: "#/components/schemas/AdminTicketRef" }
         expected_role_revision: { type: integer, minimum: 0 }
+    AdminAuditEntry:
+      type: object
+      additionalProperties: false
+      required: [occurred_at, action, outcome, actor_user_id, reason_code, ticket_ref]
+      properties:
+        occurred_at: { $ref: "#/components/schemas/Timestamp" }
+        action: { type: string, enum: [suspend, reinstate, role_change, role_bootstrap, sessions_revoke] }
+        outcome: { type: string, enum: [success, failure] }
+        actor_user_id: { type: string, format: uuid, nullable: true, description: The acting staff account; null for the CLI bootstrap. }
+        reason_code: { type: string, nullable: true, description: The fixed TRD 06 reason code. }
+        ticket_ref: { $ref: "#/components/schemas/AdminTicketRef" }
+    AdminAuditPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_page_token]
+      properties:
+        items: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/AdminAuditEntry" } }
+        next_page_token: { type: string, nullable: true, pattern: '^h1\.[A-Za-z0-9_-]{32}$' }

@@ -38,6 +38,24 @@ class AdminApi {
         .toList();
   }
 
+  /// One page of the account's administrative history, newest first.
+  Future<AuditPage> audit(
+    String id, {
+    String? pageToken,
+    int limit = 50,
+  }) async {
+    final body = await transport.request(
+      'GET',
+      '/v1/admin/users/$id/audit',
+      query: {'limit': '$limit', 'page_token': ?pageToken},
+    );
+    final items = (body['items'] as List? ?? const [])
+        .whereType<Map>()
+        .map((m) => AuditEntry.fromJson(m.cast<String, Object?>()))
+        .toList();
+    return AuditPage(items, body['next_page_token'] as String?);
+  }
+
   /// Revokes one session, or every session when [sessionId] is null.
   Future<int> revokeSessions(
     String id, {

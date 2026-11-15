@@ -377,36 +377,44 @@ class UserDetailPane extends StatelessWidget {
     final d = c.detail!;
     final self = d.id == c.me?.id;
     final t = Theme.of(context).textTheme;
-    return ListView(
+    final header = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          back,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  d.email,
+                  style: t.headlineSmall,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (c.detailLoad == Load.loading)
+                const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: [
+              RoleChip(d.role),
+              StatusChip(d.status),
+              if (self) const Chip(label: Text('You')),
+            ],
+          ),
+        ],
+      ),
+    );
+    final overview = ListView(
       key: const Key('detail'),
       padding: const EdgeInsets.all(16),
       children: [
-        back,
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                d.email,
-                style: t.headlineSmall,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            if (c.detailLoad == Load.loading)
-              const SizedBox.square(
-                dimension: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          children: [
-            RoleChip(d.role),
-            StatusChip(d.status),
-            if (self) const Chip(label: Text('You')),
-          ],
-        ),
         if (d.pendingDeletion)
           _Callout(
             key: const Key('detail-pending-deletion'),
@@ -446,7 +454,136 @@ class UserDetailPane extends StatelessWidget {
         ],
       ],
     );
+    return DefaultTabController(
+      key: ValueKey('tabs-${d.id}'), // a new account opens on Overview
+      length: 2,
+      child: Column(
+        children: [
+          header,
+          const TabBar(
+            tabs: [
+              Tab(key: Key('tab-overview'), text: 'Overview'),
+              Tab(key: Key('tab-audit'), text: 'Audit history'),
+            ],
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                overview,
+                AuditHistoryTab(controller: c),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
+}
+
+/// The account's administrative history (TRD 07 §5a). Loaded when the tab is
+/// first shown; the server applies the same visibility rule as the detail.
+class AuditHistoryTab extends StatefulWidget {
+  const AuditHistoryTab({super.key, required this.controller});
+  final ConsoleController controller;
+  @override
+  State<AuditHistoryTab> createState() => _AuditHistoryTabState();
+}
+
+class _AuditHistoryTabState extends State<AuditHistoryTab> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && widget.controller.auditLoad == Load.idle) {
+        widget.controller.loadAudit();
+      }
+    });
+  }
+
+  String _actor(String? id) {
+    if (id == null) return 'the operator CLI';
+    if (id == widget.controller.me?.id) return 'you';
+    return 'staff account ${id.substring(0, 8)}…';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.controller;
+    final t = Theme.of(context).textTheme;
+    const scope =
+        'Suspensions, reinstatements, role changes and session revocations made by staff. '
+        'Entries are kept for 180 days.';
+    switch (c.auditLoad) {
+      case Load.idle:
+      case Load.loading:
+        return const Center(
+          child: CircularProgressIndicator(key: Key('audit-loading')),
+        );
+      case Load.failed:
+        return _StateMessage(
+          key: const Key('audit-error'),
+          icon: Icons.error_outline,
+          text: c.auditError ?? 'The history could not be loaded.',
+          action: TextButton(
+            key: const Key('audit-retry'),
+            onPressed: c.loadAudit,
+            child: const Text('Retry'),
+          ),
+        );
+      case Load.loaded:
+        if (c.audit.isEmpty) {
+          return const _StateMessage(
+            key: Key('audit-empty'),
+            icon: Icons.history,
+            text: 'No administrative changes in the last 180 days.\n$scope',
+          );
+        }
+        return ListView(
+          key: const Key('audit-list'),
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text(scope, style: t.bodySmall),
+            const SizedBox(height: 8),
+            for (final (i, e) in c.audit.indexed)
+              ListTile(
+                key: Key('audit-entry-$i'),
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(_icon(e.action)),
+                title: Text(auditActionLabels[e.action] ?? e.action),
+                subtitle: Text(
+                  [
+                    '${fmt(e.occurredAt)} by ${_actor(e.actorUserId)}',
+                    if (e.reasonCode != null)
+                      'Reason: ${reasonLabels[e.reasonCode] ?? e.reasonCode}',
+                    if (e.ticketRef != null) 'Ticket ${e.ticketRef}',
+                  ].join(' · '),
+                ),
+                trailing: e.outcome == 'success'
+                    ? null
+                    : const Chip(label: Text('Failed')),
+              ),
+            if (c.auditNextPageToken != null)
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: c.auditLoadingMore
+                    ? const Center(child: CircularProgressIndicator())
+                    : OutlinedButton(
+                        key: const Key('audit-load-more'),
+                        onPressed: c.loadMoreAudit,
+                        child: const Text('Load older entries'),
+                      ),
+              ),
+          ],
+        );
+    }
+  }
+
+  IconData _icon(String action) => switch (action) {
+    'suspend' => Icons.block,
+    'reinstate' => Icons.settings_backup_restore,
+    'sessions_revoke' => Icons.logout,
+    _ => Icons.admin_panel_settings_outlined,
+  };
 }
 
 class _Callout extends StatelessWidget {

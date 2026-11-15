@@ -136,6 +136,44 @@ class AdminUser {
   }
 }
 
+/// One administrative change on an account: exactly the API's allowlisted fields
+/// (`GET /v1/admin/users/{id}/audit`, TRD 06 §9a).
+class AuditEntry {
+  const AuditEntry({
+    required this.occurredAt,
+    required this.action,
+    required this.outcome,
+    this.actorUserId,
+    this.reasonCode,
+    this.ticketRef,
+  });
+  factory AuditEntry.fromJson(Map<String, Object?> j) => AuditEntry(
+    occurredAt: _time(j['occurred_at'])!,
+    action: _str(j, 'action'),
+    outcome: _str(j, 'outcome'),
+    actorUserId: j['actor_user_id'] as String?,
+    reasonCode: j['reason_code'] as String?,
+    ticketRef: j['ticket_ref'] as String?,
+  );
+  final DateTime occurredAt;
+  final String action, outcome;
+  final String? actorUserId, reasonCode, ticketRef;
+}
+
+class AuditPage {
+  const AuditPage(this.items, this.nextPageToken);
+  final List<AuditEntry> items;
+  final String? nextPageToken;
+}
+
+const auditActionLabels = {
+  'suspend': 'Suspended',
+  'reinstate': 'Reinstated',
+  'role_change': 'Role changed',
+  'role_bootstrap': 'Made Super Admin (CLI bootstrap)',
+  'sessions_revoke': 'Sessions revoked',
+};
+
 class AdminSession {
   const AdminSession({
     required this.id,
