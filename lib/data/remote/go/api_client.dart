@@ -227,6 +227,11 @@ class GoApiClient extends ApiClient {
     'lifecycle_conflict':
         'The account changed. Request a new verification code.',
     'not_found': 'This operation is unavailable or its receipt expired.',
+    'plan_required': 'Premium is required for this download or update.',
+    'capacity_changed':
+        'Capacity changed. Review and confirm the import again.',
+    'sync_reset_required':
+        'The server was restored. Review the pending installation.',
     'sync_unavailable': 'Cloud sync is not available yet.',
   };
   static ApiException problem(http.Response r) {

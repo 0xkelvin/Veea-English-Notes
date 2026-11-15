@@ -111,7 +111,13 @@ func (s *Service) exportOnce(ctx context.Context, conn *pgxpool.Conn, id uuid.UU
 	if err != nil {
 		return "", err
 	}
-	header, err := exportHeader(snapshotAt, head.Revision, u, entitlements.AppendExport(nil, plan, grants, snapshotAt))
+	installations, err := q.ListCartridgeInstallations(ctx, u.ID)
+	if err != nil {
+		return "", err
+	}
+	section := entitlements.AppendExport(nil, plan, grants, snapshotAt)
+	section = learning.AppendCartridgeInstallations(section, installations)
+	header, err := exportHeader(snapshotAt, head.Revision, u, section)
 	if err != nil {
 		return "", err
 	}

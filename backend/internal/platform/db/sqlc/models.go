@@ -59,6 +59,32 @@ type AuditEvent struct {
 	Metadata     []byte
 }
 
+type Cartridge struct {
+	ID           string
+	RequiredPlan string
+}
+
+type CartridgeEntry struct {
+	CartridgeID  string
+	EntryID      uuid.UUID
+	FirstVersion int32
+}
+
+type CartridgeInstallation struct {
+	UserID           uuid.UUID
+	CartridgeID      string
+	InstalledVersion int32
+}
+
+type CartridgeVersion struct {
+	CartridgeID string
+	Version     int32
+	Title       string
+	WordCount   int32
+	Sha256      string
+	Document    []byte
+}
+
 type DeletionLedger struct {
 	OperationID uuid.UUID
 	UserID      uuid.UUID

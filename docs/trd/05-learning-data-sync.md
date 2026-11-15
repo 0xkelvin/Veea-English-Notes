@@ -97,7 +97,8 @@ The Rust prototype is in `cloud/` ([`word_repository_pg.rs`](../../cloud/src/inf
 | Review progress (gate stage, SM-2, gate history) | Device-local until one canonical review model exists |
 | Learning preferences already in the TRD 03 profile (`daily_goal`, language, time zone) | Already synced by the profile |
 | Gate rounds, gated apps, pass duration | Device-local permanently |
-| Pet, friends, playlists, installed cartridges, widget and theme settings | Device-local. Each needs its own owner, export and delete declaration before it can sync |
+| Pet, friends, playlists, widget and theme settings | Device-local. Each needs its own owner, export and delete declaration before it can sync |
+| Cartridge installations (TRD 10 amendment, 2026-11-15) | Owned word copies sync normally; server installation watermarks are owner-scoped, exported and purged. Bundled starter receipt and pending install requests are owner-scoped SQLite state |
 | Pronunciations, cartridge content | Never: shared reference data |
 
 **[Design]** Local review progress is keyed by the local item ID:
@@ -106,6 +107,8 @@ The Rust prototype is in `cloud/` ([`word_repository_pg.rs`](../../cloud/src/inf
 - An imported guest word keeps its progress on that device only.
 
 The server never holds review progress, so export and purge do not cover it.
+
+**TRD 10 amendment (2026-11-15).** Server cartridge install/update is a specialized atomic import using the same `admitImport`, `apply`, canonical size, lock order, head/feed and closed rollout gate. It has a durable per-owner/pack version watermark instead of a device writer sequence, and only creates entries first published after that watermark. It never replays or renumbers the existing writer queue. Explicit updates preserve edited/deleted entries even after tombstone compaction. Pending install requests retain their exact version/epoch across unknown outcomes; a restore blocks them for review. The 16-watermark export section is exactly bounded at 1,612 bytes; the worst-case full header is 14,700/16,384 bytes and the overall export bound stays 79,225,248 bytes. See [TRD 10](10-server-delivered-cartridges.md).
 
 ## 4. Ownership **[Decided: D4]**
 

@@ -66,6 +66,9 @@ func (h *Handlers) Mount(mux httpx.Router) {
 	mux.HandleFunc("POST /v1/auth/logout", h.authenticated(h.logout))
 	mux.HandleFunc("GET /v1/me", h.authenticated(h.me))
 	mux.HandleFunc("GET /v1/me/entitlements", h.authenticated(h.meEntitlements))
+	mux.HandleFunc("GET /v1/cartridges", h.authenticated(h.cartridgeCatalog))
+	mux.HandleFunc("GET /v1/cartridges/{cartridge_id}/versions/{version}/content", h.authenticated(h.cartridgeContent))
+	mux.HandleFunc("POST /v1/cartridges/{cartridge_id}/versions/{version}/install", h.authenticated(h.cartridgeInstall))
 	mux.HandleFunc("POST /v1/me/deactivate", h.authenticated(h.deactivate))
 	for _, action := range []string{"export", "delete", "reactivate"} {
 		mux.HandleFunc("POST /v1/account-rights/"+action+"/start", h.rightsStart(action))
@@ -470,6 +473,10 @@ func (h *Handlers) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteProblem(w, http.StatusConflict, httpx.CodeLastSuperAdmin)
 	case errors.Is(err, admin.ErrInvalidPageToken):
 		httpx.WriteProblem(w, http.StatusBadRequest, httpx.CodeInvalidRequest)
+	case errors.Is(err, learning.ErrPlanRequired):
+		httpx.WriteProblem(w, http.StatusForbidden, httpx.CodePlanRequired)
+	case errors.Is(err, learning.ErrCartridgeNotFound):
+		httpx.WriteProblem(w, http.StatusNotFound, httpx.CodeNotFound)
 	case errors.Is(err, learning.ErrClosed):
 		w.Header().Set("Retry-After", "60")
 		httpx.WriteProblem(w, http.StatusServiceUnavailable, httpx.CodeSyncUnavailable)

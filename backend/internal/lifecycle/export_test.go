@@ -76,6 +76,15 @@ func TestExportHeaderWorstCaseWithEntitlements(t *testing.T) {
 	if len(section) > entitlements.MaxExportSectionBytes {
 		t.Fatalf("section %d bytes exceeds its bound %d", len(section), entitlements.MaxExportSectionBytes)
 	}
+	installations := make([]sqlc.ListCartridgeInstallationsRow, learning.MaxCartridges)
+	for i := range installations {
+		installations[i] = sqlc.ListCartridgeInstallationsRow{CartridgeID: strings.Repeat("z", 48), InstalledVersion: 2147483647}
+	}
+	beforeCartridges := len(section)
+	section = learning.AppendCartridgeInstallations(section, installations)
+	if len(section)-beforeCartridges != 1612 {
+		t.Fatalf("cartridge section bound changed: %d", len(section)-beforeCartridges)
+	}
 	h, err := exportHeader(far, 9_223_372_036_854_775_807, u, section)
 	if err != nil {
 		t.Fatal(err)
@@ -83,7 +92,7 @@ func TestExportHeaderWorstCaseWithEntitlements(t *testing.T) {
 	if got := len(h) + len(exportTrailer); got > learning.MaxHeaderBytes {
 		t.Fatalf("worst-case header %d bytes exceeds MaxHeaderBytes %d", got, learning.MaxHeaderBytes)
 	} else {
-		t.Logf("worst-case header %d of %d bytes (entitlements section %d, bound %d)", got, learning.MaxHeaderBytes, len(section), entitlements.MaxExportSectionBytes)
+		t.Logf("worst-case header %d of %d bytes (entitlements + cartridges %d)", got, learning.MaxHeaderBytes, len(section))
 	}
 	if learning.MaxExportPlainBytes != 79_225_248 {
 		t.Fatal("the TRD 05 export bound must not change")

@@ -16,6 +16,7 @@ import (
 
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/audit"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/session"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/learning"
 )
 
 // ev is one expected audit row. For actor, target and session: "" is not checked, "-" must be
@@ -194,6 +195,21 @@ func TestAudit_Matrix(t *testing.T) {
 		wantStatus(t, env.call(t, "PUT", adminPath(u.ID, "/role"), map[string]any{"role": "admin", "reason_code": "other",
 			"ticket_ref": nil, "expected_role_revision": 0}, rid, bearer(s.AccessToken)...), 409)
 		env.wantEvents(t, rid) // status_conflict: no event
+	})
+
+	t.Run("TRD10 operator publication", func(t *testing.T) {
+		raw := cartridgeFixture(t, "audit_fixture", "free", 1, uuid.New())
+		changed, err := learning.PublishCartridge(context.Background(), env.d.Pool, raw, "FIX-10")
+		if err != nil || !changed {
+			t.Fatal(err)
+		}
+		if rowCount(t, env.d.Pool, `SELECT count(*) FROM audit_events WHERE action='cartridge.publish' AND actor_user_id IS NULL AND target_user_id IS NULL AND session_id IS NULL AND reason='publish' AND metadata = '{"source":"cli","cartridge_id":"audit_fixture","version":"1","ticket_ref":"FIX-10"}'::jsonb`) != 1 {
+			t.Fatal("incorrect publication audit")
+		}
+		changed, err = learning.PublishCartridge(context.Background(), env.d.Pool, raw, "FIX-10")
+		if err != nil || changed {
+			t.Fatal("retry was not a noop")
+		}
 	})
 
 	t.Run("TRD09 plan management", func(t *testing.T) {

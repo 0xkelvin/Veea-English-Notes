@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -54,7 +55,30 @@ func TestFlutterGo_EndToEnd(t *testing.T) {
 	go func() { defer wg.Done(); _ = worker.Run(ctx) }()
 	t.Cleanup(func() { cancel(); wg.Wait() })
 
+	// Synthetic content only; neither publishing nor plan controls exist in production HTTP.
+	a, b, c := uuid.New(), uuid.New(), uuid.New()
+	e.publishPack(t, "e2e_premium", "premium", 1, a, b)
+	e.publishPack(t, "e2e_premium", "premium", 2, a, b, c)
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /cartridge-plan", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			UserID  uuid.UUID `json:"user_id"`
+			Premium bool      `json:"premium"`
+		}
+		if json.NewDecoder(r.Body).Decode(&body) != nil || body.UserID == uuid.Nil {
+			w.WriteHeader(400)
+			return
+		}
+		_, err := e.d.Pool.Exec(r.Context(), `DELETE FROM entitlement_grants WHERE user_id=$1`, body.UserID)
+		if err == nil && body.Premium {
+			_, err = e.d.Pool.Exec(r.Context(), `INSERT INTO entitlement_grants(id,user_id,plan,source,starts_at,ends_at,granted_by,reason_code,ticket_ref) VALUES ($1,$2,'premium','manual',clock_timestamp()-interval '1 minute',clock_timestamp()+interval '1 hour',$3,'other','E2E-10')`, uuid.New(), body.UserID, uuid.New())
+		}
+		if err != nil {
+			w.WriteHeader(500)
+			return
+		}
+		w.WriteHeader(200)
+	})
 	mux.HandleFunc("POST /expire-access", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			SessionID string `json:"session_id"`

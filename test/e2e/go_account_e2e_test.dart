@@ -1,4 +1,6 @@
 import 'package:veea_english_app/data/remote/api_client.dart' show ApiException;
+import 'package:veea_english_app/data/cartridges/cartridge_api.dart';
+import 'package:veea_english_app/providers/cartridge_provider.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -26,7 +28,8 @@ class FaultClient extends http.BaseClient {
       loseRefresh = false,
       loseDelete = false,
       blockReceipt = false,
-      losePush = false;
+      losePush = false,
+      loseInstall = false;
   final refreshCommitted = Completer<void>(),
       releaseRefresh = Completer<void>();
   int refreshes = 0;
@@ -51,6 +54,10 @@ class FaultClient extends http.BaseClient {
         path.startsWith('/v1/account-rights/delete/') &&
         path.endsWith('/complete')) {
       throw http.ClientException('synthetic lost deletion response');
+    }
+    if (loseInstall && path.endsWith('/install')) {
+      loseInstall = false;
+      throw http.ClientException('synthetic lost installation response');
     }
     if (losePush && path == '/v1/learning/sync/push') {
       losePush = false;
@@ -518,6 +525,122 @@ void main() {
       );
       expect(await app.engine.sync(), SyncRun.done);
       expect(await app.repo.exportAll(), isEmpty);
+    },
+    skip: !configured,
+  );
+  test(
+    'real cartridges: plan gate, lost response/restart, update preserving edits/deletes and offline downgrade',
+    () async {
+      await signup(app, email(), password());
+      await command('/open-fixture-sync');
+      var cartridges = CartridgeProvider(
+        repository: app.repo,
+        api: GoCartridgeApi(app.client),
+        sync: app.sync,
+      );
+      await cartridges.refreshCatalog();
+      final latest = cartridges.catalog.singleWhere(
+        (p) => p.id == 'e2e_premium',
+      );
+      final v1 = CartridgeMetadata({
+        ...latest.json,
+        'version': 1,
+        'word_count': 2,
+      });
+      await expectLater(
+        cartridges.installServer(v1),
+        throwsA(
+          isA<ApiException>().having((e) => e.code, 'code', 'plan_required'),
+        ),
+      );
+      await command('/cartridge-plan', {
+        'user_id': app.auth.accountId,
+        'premium': true,
+      });
+      final owner = app.auth.accountId;
+      final secure = app.secure;
+      cartridges.dispose();
+      await app.close();
+      final fault = FaultClient()..loseInstall = true;
+      app = GoAccountStack(
+        await SqliteVocabularyRepository.open(
+          path: '${dir.path}/notebook.sqlite',
+        ),
+        secure,
+        base!,
+        network: fault,
+      );
+      await app.auth.restore();
+      cartridges = CartridgeProvider(
+        repository: app.repo,
+        api: GoCartridgeApi(app.client),
+        sync: app.sync,
+      );
+      await expectLater(
+        cartridges.installServer(v1),
+        throwsA(isA<ApiException>()),
+      );
+      final first = (await cartridges.pending(v1.id))!['pending_body'];
+      cartridges.dispose();
+      await app.close();
+      app = GoAccountStack(
+        await SqliteVocabularyRepository.open(
+          path: '${dir.path}/notebook.sqlite',
+        ),
+        secure,
+        base,
+      );
+      await app.auth.restore();
+      cartridges = CartridgeProvider(
+        repository: app.repo,
+        api: GoCartridgeApi(app.client),
+        sync: app.sync,
+      );
+      expect((await cartridges.pending(v1.id))!['pending_body'], first);
+      await command('/cartridge-plan', {'user_id': owner, 'premium': false});
+      expect(
+        await cartridges.installServer(v1),
+        0,
+        reason: 'accepted installation receipt resolves after downgrade',
+      );
+      var words = await app.repo.exportAll();
+      expect(words, hasLength(2));
+      final edited = words.first, deleted = words.last;
+      await app.repo.update(
+        edited.copyWith(
+          meaning: 'owner edit',
+          isDirty: true,
+          updatedAt: DateTime.now(),
+        ),
+      );
+      await app.repo.softDelete(deleted.id, DateTime.now());
+      expect(await app.engine.sync(), SyncRun.done);
+      await command('/cartridge-plan', {'user_id': owner, 'premium': true});
+      expect(await cartridges.installServer(latest), 1);
+      words = await app.repo.exportAll();
+      expect(words, hasLength(2));
+      expect(words.singleWhere((w) => w.id == edited.id).meaning, 'owner edit');
+      expect(words.any((w) => w.id == deleted.id), isFalse);
+      await command('/cartridge-plan', {'user_id': owner, 'premium': false});
+      expect(
+        await app.engine.sync(),
+        SyncRun.done,
+        reason: 'owned words sync after downgrade',
+      );
+      cartridges.dispose();
+      await app.close();
+      // Cold offline restart: SQLite words need neither download authorization nor a live plan.
+      app = GoAccountStack(
+        await SqliteVocabularyRepository.open(
+          path: '${dir.path}/notebook.sqlite',
+        ),
+        secure,
+        'http://127.0.0.1:1',
+      );
+      await app.auth.restore();
+      words = await app.repo.exportAll();
+      expect(words, hasLength(2));
+      expect(words.singleWhere((w) => w.id == edited.id).meaning, 'owner edit');
     },
     skip: !configured,
   );

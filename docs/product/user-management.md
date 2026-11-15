@@ -1,9 +1,12 @@
 # Veea English Notes — User Management Product Doc
 
-**Version:** v0.5 (Phase 1, the Phase 3 v1 sync decisions, the Phase 4 RBAC decisions and the Phase 6 plan-management decisions approved; other later phases still proposals)
+**Version:** v0.6 (TRD 10 server-cartridge decisions, Phase 1, the Phase 3 v1 sync decisions, the Phase 4 RBAC decisions and the Phase 6 plan-management decisions approved; other later phases still proposals)
 **Date:** 2026-11-15
 **Audience:** Product, backend and Flutter engineers, QA
 **Next document:** TRD 01 — *Email Authentication & Account Foundation*
+
+### Changes since v0.5
+- Server-delivered cartridges are approved (Nin, 2026-11-15): one bundled Free offline starter, signed-in Free/Premium metadata, database-time Premium download/new-install/update enforcement, owned words kept after downgrade, explicit additive updates preserving edits/deletes. Real classification is pending; development fixtures are synthetic. [TRD 10](../trd/10-server-delivered-cartridges.md) records implementation bounds and rollout gates.
 
 ### Changes since v0.4
 - §11 Free/Premium: plan management is approved (Nin, 2026-11-15). Details in [TRD 09](../trd/09-free-premium-entitlements.md). Q-L4 is partly resolved: both plans keep the same limits, and no capability is Premium yet. The first Premium feature is proposed in [TRD 10](../trd/10-server-delivered-cartridges.md).
@@ -69,7 +72,7 @@ Veea English Notes is an offline-first vocabulary app. It stays fully usable wit
 | 3 | Learning data sync | **[Approved]** v1 scope: vocabulary sync, detailed in §8 and TRD 05. Review progress is deferred |
 | 4 | RBAC and user administration | **[Approved]**, detailed in §9 and TRD 06. Admin UI is TRD 07 |
 | 5 | Audit and monitoring | **[Proposed]** |
-| 6 | Free/Premium entitlements (no payments) | **[Approved]** plan management, detailed in §11 and TRD 09. No capability is gated yet |
+| 6 | Free/Premium entitlements (no payments) | **[Approved]** plan management, detailed in §11 and TRD 09. Cartridges are the first gated capability (TRD 10); existing account/data-rights/sync access stays independent |
 | Later | Phone/SMS OTP, Facebook sign-in, Apple sign-in | **[Approved]** as later; no design yet |
 
 Phase order after 1 is a proposal. Audit logging (Phase 5) should capture Phase 1 events from the first release, even before admin tooling exists (§10).
@@ -341,8 +344,9 @@ Approved by Nin on 2026-11-15. API, storage and tests are in [TRD 09](../trd/09-
 - **[Approved]** When a grant expires or is revoked, the account returns to Free and keeps all its data.
 - **[Approved]** Both plans keep the same limits as today (§8). Export, deletion and reactivation never depend on the plan.
 - **[Approved]** The owner's export includes the current plan and the retained grant periods. It never includes staff identities, ticket references or internal notes.
-- **[Approved]** No capability is Premium yet. Plan-based enforcement and payments are outside this phase.
-- **[Proposed]** The first Premium feature: cartridges (vocabulary packs) delivered by the server, so the plan can actually be enforced ([TRD 10](../trd/10-server-delivered-cartridges.md)).
+- **[Approved, TRD 10 amendment]** Premium server cartridges require the effective plan at database time for every download and new install/update. Both plans can read signed-in catalog metadata. One Free starter stays bundled for offline guest use. Use synthetic server fixtures until real classification is supplied.
+- **[Approved]** Installation copies words into owned vocabulary through the existing quota. Installed words remain usable offline and syncable after downgrade. Explicit updates only add new entries; stable identities and durable installation state preserve edits/deletions and safe retries. Watermarks participate in export/purge.
+- **[Approved]** Versioned immutable content is published through an audited operator CLI. Client rollout precedes removing real Premium content from future bundles. Previously published bundles and Git history cannot be made private retroactively. Payments remain outside this phase.
 - **[Open]** Which other features are Premium (rest of Q-L4).
 
 ---
@@ -369,7 +373,7 @@ Approved by Nin on 2026-11-15. API, storage and tests are in [TRD 09](../trd/09-
 |---|---|---|
 | Q-L1 | Deletion grace period and retention | Phase 2 |
 | Q-L3 | Audit retention | Phase 5 |
-| Q-L4 | Premium feature list (limits resolved: same for both plans; first feature proposed in TRD 10) | Phase 6 |
+| Q-L4 | Premium feature list (limits resolved: same for both plans; first feature approved in TRD 10; real content classification pending) | Phase 6 |
 
 ## 13. Phase 1 acceptance criteria
 

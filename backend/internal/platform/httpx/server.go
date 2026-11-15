@@ -208,9 +208,11 @@ const (
 	CodeLastSuperAdmin           = "last_super_admin"
 	CodeEntitlementConflict      = "entitlement_conflict"
 	CodeInvalidExpiry            = "invalid_expiry"
+	CodePlanRequired             = "plan_required"
 )
 
 var titles = map[string]string{
+	CodePlanRequired:             "Premium is required to download this cartridge.",
 	CodeSyncUnavailable:          "Sync is not available right now.",
 	CodeSyncResetRequired:        "This device must download a new snapshot before syncing.",
 	CodeSequenceGap:              "A change is missing before this request.",

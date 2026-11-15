@@ -19,7 +19,7 @@ import (
 )
 
 var expectedTables = []string{
-	"account_export_chunks", "account_operations", "audit_events", "deletion_ledger", "email_changes", "email_outbox", "entitlement_grants", "erased_addresses",
+	"account_export_chunks", "account_operations", "audit_events", "cartridge_entries", "cartridge_installations", "cartridge_versions", "cartridges", "deletion_ledger", "email_changes", "email_outbox", "entitlement_grants", "erased_addresses",
 	"learning_mutations", "learning_sync_control", "learning_sync_heads", "learning_sync_writers", "otp_challenges", "otp_cooldowns",
 	"rate_limit_counters", "rbac_bootstrap", "refresh_tokens_consumed", "sessions", "users", "vocabulary_items",
 }
@@ -34,7 +34,7 @@ var expectedIndexes = []string{ // sorted, as publicNames returns them; 00007 ad
 }
 
 // latestVersion is the number of the newest migration file.
-const latestVersion = 14
+const latestVersion = 15
 
 func publicNames(t *testing.T, d *pgtest.DB, query string) []string {
 	t.Helper()
@@ -135,7 +135,7 @@ func TestMigrations_AreUpOnlyAndOrdered(t *testing.T) {
 	files, _ := fs.Glob(migrations.FS, "*.sql")
 	want := []string{"00001_users.sql", "00002_otp.sql", "00003_sessions.sql",
 		"00004_email_outbox.sql", "00005_audit_events.sql", "00006_rate_limit_counters.sql",
-		"00007_cleanup_indexes.sql", "00008_session_management.sql", "00009_account_profile_email_change.sql", "00010_account_lifecycle.sql", "00011_learning_sync.sql", "00012_rbac_admin.sql", "00013_rbac_bootstrap_marker.sql", "00014_entitlements.sql"}
+		"00007_cleanup_indexes.sql", "00008_session_management.sql", "00009_account_profile_email_change.sql", "00010_account_lifecycle.sql", "00011_learning_sync.sql", "00012_rbac_admin.sql", "00013_rbac_bootstrap_marker.sql", "00014_entitlements.sql", "00015_cartridges.sql"}
 	requireNames(t, files, want)
 	for _, f := range files {
 		raw, _ := fs.ReadFile(migrations.FS, f)

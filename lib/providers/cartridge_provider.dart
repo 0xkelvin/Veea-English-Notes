@@ -1,138 +1,381 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
+import 'package:sqflite/sqflite.dart';
+import '../data/cartridges/cartridge_api.dart';
 import '../data/cartridges_data.dart';
+import '../data/local/app_database.dart';
+import '../data/local/sqlite_vocabulary_repository.dart';
+import '../data/remote/api_client.dart';
 import '../models/cartridge.dart';
+import '../services/sync_service.dart';
 import 'vocabulary_provider.dart';
 
-enum IngestMode {
-  full, // Imports all words immediately for today
-  dailySprint, // Spreads 5 words per day into future dates
-}
+enum IngestMode { full, dailySprint }
 
-/// Manages career DLC cartridges and their installation into the user's notebook.
+/// Bundled starter plus account-scoped, durable server installation attempts (TRD 10).
 class CartridgeProvider extends ChangeNotifier {
-  CartridgeProvider() {
-    _loadState();
+  CartridgeProvider({this.repository, this.api, this.sync}) {
+    ready = refreshLocal();
   }
-
-  static const _kInstalledKey = 'veea_installed_cartridges';
-  final Set<String> _installedIds = {};
-  bool _initialized = false;
-
-  bool get isInitialized => _initialized;
-
-  bool isInstalled(String cartridgeId) => _installedIds.contains(cartridgeId);
-
-  List<Cartridge> get availableCartridges => CartridgesData.allCartridges;
-
+  late final Future<void> ready;
+  final SqliteVocabularyRepository? repository;
+  final CartridgeApi? api;
+  final SyncService? sync;
+  String? _owner;
+  final Set<String> _installed = {};
+  List<CartridgeMetadata> catalog = [];
+  bool isInitialized = false, busy = false;
+  String? message;
   bool _disposed = false;
-
+  List<Cartridge> get availableCartridges => CartridgesData.allCartridges;
+  String? get loadedOwner => _owner;
+  bool isInstalled(String id) => _installed.contains(id);
   @override
   void dispose() {
     _disposed = true;
     super.dispose();
   }
 
-  Future<void> _loadState() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final list = prefs.getStringList(_kInstalledKey) ?? [];
-      _installedIds.addAll(list);
-    } catch (_) {
-      // Graceful fallback for test or mock environments
-    }
-    if (_disposed) return;
-    _initialized = true;
-    notifyListeners();
+  void _changed() {
+    if (!_disposed) notifyListeners();
   }
 
-  /// Installs all words in a cartridge into the user's SQLite vocabulary notebook.
+  Future<String> _current() async =>
+      await repository?.notebookOwner() ?? AppDatabase.guestWorkspace;
+  Future<void> refreshLocal() async {
+    final owner = await _current();
+    if (_owner != owner) {
+      catalog = [];
+      _installed.clear();
+      _owner = owner;
+    }
+    if (repository != null) {
+      final rows = await repository!.database.query(
+        'cartridge_local_state',
+        where: 'owner_id = ? AND installed_version > 0',
+        whereArgs: [owner],
+      );
+      if (await _current() != owner) return;
+      _installed
+        ..clear()
+        ..addAll(rows.map((r) => r['cartridge_id']! as String));
+    }
+    isInitialized = true;
+    _changed();
+  }
+
+  Future<void> refreshCatalog() async {
+    await ready;
+    await refreshLocal();
+    if (api == null || _owner == AppDatabase.guestWorkspace) return;
+    final owner = _owner;
+    try {
+      final rows = await api!.catalog();
+      if (await _current() != owner) return;
+      catalog = rows;
+    } on Object catch (_) {
+      message =
+          'Catalog unavailable. Installed words and the Free starter work offline.';
+    }
+    _changed();
+  }
+
+  Future<void> _same(String owner) async {
+    if (await _current() != owner) {
+      throw const ApiException('The notebook changed. Open the library again.');
+    }
+  }
+
+  Future<Map<String, Object?>?> pending(String id) async {
+    if (repository == null) return null;
+    final rows = await repository!.database.query(
+      'cartridge_local_state',
+      where: 'owner_id = ? AND cartridge_id = ?',
+      whereArgs: [await _current(), id],
+    );
+    return rows.isEmpty ? null : rows.single;
+  }
+
+  Future<void> _save(
+    String owner,
+    String id,
+    Map<String, Object?> values,
+  ) async {
+    await repository!.database.transaction((tx) async {
+      final rows = await tx.query(
+        'app_metadata',
+        where: 'key = ?',
+        whereArgs: ['notebook_owner'],
+      );
+      final current = rows.isEmpty
+          ? AppDatabase.guestWorkspace
+          : rows.single['value'];
+      if (current != owner) {
+        throw const ApiException(
+          'The notebook changed. Open the library again.',
+        );
+      }
+      await tx.insert('cartridge_local_state', {
+        'owner_id': owner,
+        'cartridge_id': id,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      await tx.update(
+        'cartridge_local_state',
+        values,
+        where: 'owner_id = ? AND cartridge_id = ?',
+        whereArgs: [owner, id],
+      );
+    });
+  }
+
+  Future<Map<String, Object?>> refreshCapacity() async {
+    final owner = await _current();
+    final result = await api!.capacity();
+    await _same(owner);
+    return result;
+  }
+
+  /// Explicit confirmation only. Unknown attempts retain their original epoch/version/body
+  /// across restart; they are resolved by the server watermark, never by a new writer identity.
+  Future<int> installServer(
+    CartridgeMetadata pack, {
+    Map<String, Object?>? confirmedCapacity,
+  }) async {
+    final confirmCapacity = confirmedCapacity != null;
+    await ready;
+    if (repository == null || api == null) return 0;
+    final owner = await _current();
+    if (busy) return 0;
+    if (owner == AppDatabase.guestWorkspace) {
+      throw const ApiException('Sign in to install server packs.');
+    }
+    busy = true;
+    message = null;
+    _changed();
+    try {
+      var saved = await pending(pack.id);
+      await _same(owner);
+      if (saved?['blocked'] == 1) {
+        throw const ApiException(
+          'This pre-restore installation needs review. It will not be replayed automatically.',
+        );
+      }
+      var body = saved?['pending_body'] as String?;
+      var version = saved?['pending_version'] as int? ?? pack.version;
+      if (body != null &&
+          saved?['needs_confirmation'] == 1 &&
+          !confirmCapacity) {
+        throw const ApiException(
+          'Capacity changed. Review capacity and confirm again.',
+        );
+      }
+      if (body == null) {
+        // New installs download with current authorization. Accepted unknown retries must be
+        // resolvable after downgrade too, so they go straight to their durable receipt check.
+        await api!.download(pack.id, version);
+        await _same(owner);
+        if (sync != null && !await sync!.synchronise()) {
+          throw const ApiException(
+            'Sync is not ready. Settle pending vocabulary changes before installing.',
+          );
+        }
+        final st = await api!.capacity();
+        await _same(owner);
+        body = jsonEncode({
+          'epoch': st['epoch'],
+          'capacity_basis': {
+            'live_words': st['live_words'],
+            'content_bytes': st['content_bytes'],
+          },
+        });
+        await _save(owner, pack.id, {
+          'pending_body': body,
+          'pending_version': version,
+          'pending_unknown': 0,
+          'needs_confirmation': 0,
+        });
+      } else if (confirmCapacity) {
+        final st = confirmedCapacity;
+        await _same(owner);
+        final old = (jsonDecode(body) as Map).cast<String, Object?>();
+        // The epoch of an uncertain attempt is immutable, including after restore.
+        old['capacity_basis'] = {
+          'live_words': st['live_words'],
+          'content_bytes': st['content_bytes'],
+        };
+        body = jsonEncode(old);
+        await _save(owner, pack.id, {
+          'pending_body': body,
+          'needs_confirmation': 0,
+        });
+      }
+      final earlierUnknown = saved?['pending_unknown'] == 1;
+      // Conservative crash marker, written before any bytes leave this device.
+      await _save(owner, pack.id, {'pending_unknown': 1});
+      Map<String, Object?> result;
+      try {
+        result = await api!.install(pack.id, version, body);
+      } on ApiException catch (e) {
+        await _same(owner);
+        final unknown =
+            earlierUnknown ||
+            e is OfflineException ||
+            e.statusCode == null ||
+            (e.statusCode ?? 0) >= 500;
+        if (e.code == 'capacity_changed') {
+          await _save(owner, pack.id, {
+            'needs_confirmation': 1,
+            'pending_unknown': unknown ? 1 : 0,
+          });
+          final st = await api!.capacity();
+          await _same(owner);
+          message =
+              'Capacity changed: ${st['live_words']} words and ${st['content_bytes']} bytes used. Review and confirm again.';
+        } else if (e.code == 'sync_reset_required') {
+          await _save(owner, pack.id, {'blocked': 1});
+          message =
+              'A database restore requires review. This installation will not be replayed.';
+        } else if (!unknown) {
+          await _save(owner, pack.id, {
+            'pending_body': null,
+            'pending_version': null,
+            'pending_unknown': 0,
+          });
+        }
+        rethrow;
+      }
+      await _same(owner);
+      await _save(owner, pack.id, {
+        'installed_version': result['installed_version'],
+        'pending_body': null,
+        'pending_version': null,
+        'pending_unknown': 0,
+        'needs_confirmation': 0,
+      });
+      _installed.add(pack.id);
+      final caughtUp = sync == null || await sync!.synchronise();
+      await _same(owner);
+      message = caughtUp
+          ? 'Pack installed. Your words remain available after downgrade.'
+          : 'Installation saved. Connect and sync to finish loading the words.';
+      await refreshCatalog();
+      return result['added']! as int;
+    } on ApiException catch (e) {
+      message ??= e.code == 'plan_required'
+          ? 'Premium is required for this download or update. Installed words stay available.'
+          : e is OfflineException
+          ? 'Outcome not confirmed. Retry the saved installation when online.'
+          : e.message;
+      rethrow;
+    } finally {
+      busy = false;
+      _changed();
+    }
+  }
+
   Future<int> installCartridge(
-    String cartridgeId, {
+    String id, {
     required VocabularyProvider vocabProvider,
     IngestMode mode = IngestMode.full,
     DateTime? baseDate,
   }) async {
-    final cartridge = CartridgesData.allCartridges.firstWhere(
-      (c) => c.id == cartridgeId,
-      orElse: () => CartridgesData.siliconValleyTech,
-    );
-
-    final now = baseDate ?? DateTime.now();
-    final todayStr = DateFormat('yyyy-MM-dd').format(now);
-
-    int installedCount = 0;
-
-    for (var i = 0; i < cartridge.words.length; i++) {
-      final cw = cartridge.words[i];
-
-      String targetDateStr = todayStr;
-      DateTime targetDateTime = now;
-
-      if (mode == IngestMode.dailySprint) {
-        final dayOffset = i ~/ 5; // 5 words per day
-        targetDateTime = now.add(Duration(days: dayOffset));
-        targetDateStr = DateFormat('yyyy-MM-dd').format(targetDateTime);
-      }
-
-      final vocabWord = cw.toVocabularyWord(
-        date: targetDateStr,
-        now: targetDateTime,
-        cartridgeTitle: cartridge.title,
-      );
-
-      // Check if word is already present before inserting
-      final exists = (await vocabProvider.matchingWords(cw.word)).isNotEmpty;
-
-      if (!exists) {
-        await vocabProvider.insertWord(vocabWord);
-        if (vocabProvider.lastError == null) installedCount++;
-      }
+    await ready;
+    final repo =
+        repository ??
+        (vocabProvider.repository is SqliteVocabularyRepository
+            ? vocabProvider.repository as SqliteVocabularyRepository
+            : null);
+    if (repo == null) throw StateError('a persistent notebook is required');
+    final owner = await repo.notebookOwner() ?? AppDatabase.guestWorkspace;
+    final pack = availableCartridges.firstWhere((c) => c.id == id);
+    if (busy) return 0;
+    busy = true;
+    _changed();
+    try {
+      // One SQLite transaction: words and the receipt survive or roll back together.
+      final count = await repo.database.transaction((tx) async {
+        final receipts = await tx.query(
+          'cartridge_local_state',
+          where: 'owner_id = ? AND cartridge_id = ? AND installed_version > 0',
+          whereArgs: [owner, id],
+        );
+        if (receipts.isNotEmpty) return 0;
+        final rows = await tx.query(
+          'app_metadata',
+          where: 'key = ?',
+          whereArgs: ['notebook_owner'],
+        );
+        if ((rows.isEmpty
+                ? AppDatabase.guestWorkspace
+                : rows.single['value']) !=
+            owner) {
+          throw StateError('notebook changed');
+        }
+        var n = 0;
+        final now = baseDate ?? DateTime.now();
+        for (var i = 0; i < pack.words.length; i++) {
+          final date = mode == IngestMode.dailySprint
+              ? now.add(Duration(days: i ~/ 5))
+              : now;
+          final word = pack.words[i].toVocabularyWord(
+            date: DateFormat('yyyy-MM-dd').format(date),
+            now: date,
+            cartridgeTitle: pack.title,
+          );
+          // Stable IDs include tombstones; an explicit update must not recreate a deletion.
+          if ((await tx.query(
+            'words',
+            columns: ['id'],
+            where: 'id = ?',
+            whereArgs: [word.id],
+          )).isNotEmpty) {
+            continue;
+          }
+          final duplicate = await tx.query(
+            'words',
+            columns: ['id'],
+            where: 'lower(word) = lower(?) AND is_deleted = 0',
+            whereArgs: [word.word],
+          );
+          if (duplicate.isNotEmpty) continue;
+          await tx.insert('words', word.toDbMap());
+          n++;
+        }
+        await tx.insert('cartridge_local_state', {
+          'owner_id': owner,
+          'cartridge_id': id,
+          'installed_version': 1,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        return n;
+      });
+      _owner = owner;
+      _installed.add(id);
+      await vocabProvider.init();
+      return count;
+    } finally {
+      busy = false;
+      _changed();
     }
-
-    _installedIds.add(cartridgeId);
-    await _saveState();
-    notifyListeners();
-
-    return installedCount;
   }
 
-  /// Uninstalls cartridge words from the user's notebook.
+  /// Legacy removal keeps the receipt: deleting owned words never enables a replay.
   Future<int> uninstallCartridge(
-    String cartridgeId, {
+    String id, {
     required VocabularyProvider vocabProvider,
   }) async {
-    final cartridge = CartridgesData.allCartridges.firstWhere(
-      (c) => c.id == cartridgeId,
-      orElse: () => CartridgesData.siliconValleyTech,
-    );
-
-    int removedCount = 0;
-    final cartridgeWordKeys = cartridge.words
-        .map((w) => w.word.toLowerCase())
-        .toSet();
-
-    for (final w in vocabProvider.words.toList()) {
-      if (cartridgeWordKeys.contains(w.word.toLowerCase()) &&
-          w.tags.contains('tech-career')) {
-        await vocabProvider.deleteWord(w.id);
-        removedCount++;
+    final pack = availableCartridges.firstWhere((c) => c.id == id);
+    var n = 0;
+    for (final w in pack.words) {
+      final key = w
+          .toVocabularyWord(date: '2026-01-01', now: DateTime(2026))
+          .id;
+      for (final owned
+          in vocabProvider.words.where((v) => v.id == key).toList()) {
+        await vocabProvider.deleteWord(owned.id);
+        n++;
       }
     }
-
-    _installedIds.remove(cartridgeId);
-    await _saveState();
-    notifyListeners();
-
-    return removedCount;
-  }
-
-  Future<void> _saveState() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList(_kInstalledKey, _installedIds.toList());
-    } catch (_) {}
+    return n;
   }
 }

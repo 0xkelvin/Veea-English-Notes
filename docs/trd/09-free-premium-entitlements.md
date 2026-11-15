@@ -1,9 +1,9 @@
 # TRD 09 — Free/Premium Entitlements
 
-**Status:** v1.0. Nin approved the decisions on 2026-11-15. Plan management is implemented and locally verified (§11). No capability is gated by plan, and there are no payments.
+**Status:** v1.0. Nin approved the decisions on 2026-11-15. Plan management is implemented and locally verified (§11). The original delivery gated no capability; TRD 10 now adds Premium server cartridge downloads and new installs/updates. There are no payments.
 **Date:** 2026-11-15
 **Audience:** Backend, console and Flutter engineers, QA.
-**Follow-up:** [TRD 10](10-server-delivered-cartridges.md), server-delivered cartridges as the proposed first Premium feature.
+**Follow-up:** [TRD 10](10-server-delivered-cartridges.md), server-delivered cartridges, the approved first Premium feature.
 
 ## 1. Decisions (Nin, 2026-11-15)
 
@@ -12,7 +12,7 @@ These replace the v0.1 draft's open items E1 to E5. They are recorded in Product
 | ID | Decision |
 |---|---|
 | E1 | Free and Premium are two plans, **separate from RBAC**. Premium is granted manually by staff. When a grant expires or is revoked, the account returns to Free and keeps all its data. |
-| E2 | **Plan management only.** No capability is gated by plan in this change. Server-delivered cartridges are the *proposed* first Premium feature (TRD 10). Payments and plan-based enforcement are out of scope. |
+| E2 | **Plan management only.** No capability is gated by plan in this change. Server-delivered cartridges were proposed as the first Premium feature; the subsequent approved TRD 10 adds their download/new-install/update enforcement. Payments remain out of scope. |
 | E3 | The TRD 05 limits stay **identical for both plans**: 50,000 live words, 64 MiB of content, 8 KiB per word, 20 sync writers. Export, deletion and reactivation access is unchanged and independent of plan. |
 | E4 | Admins manage grants for User accounts; Super Admins for every other account; **nobody manages their own plan**. Every change needs a fixed reason code and a validated ticket reference. A grant must end at most 366 days after it is made. |
 | E5 | The owner export includes the effective plan and the retained grant periods. It excludes staff identifiers, ticket references, reason codes and internal audit metadata. Retention and size limits are explicit (§4), and the worst-case export bound is re-verified (§7). Grant history is part of the account purge. |
@@ -31,7 +31,7 @@ Approved inputs that still hold:
 | Everything that exists today (account, sessions, profile, email change, vocabulary sync at the TRD 05 limits, devices) | Yes | Yes, with the same limits |
 | Export, deletion, deactivation, reactivation (TRD 04) | Yes | Yes. Never gated, on any plan, in any state |
 | Admin console and RBAC (TRD 06, TRD 07) | By role only | By role only |
-| Premium-only capabilities | — | None yet (TRD 10 proposes cartridges) |
+| Premium server cartridge downloads and new installs/updates (TRD 10 amendment) | `403 plan_required` | Yes, at database time. Already installed owned words remain usable and syncable on both plans |
 
 ## 3. Model
 
@@ -70,9 +70,9 @@ Approved inputs that still hold:
 
 ## 5. Checks and effects
 
-- **No capability check exists** (E2). The plan is readable by the owner and staff, and nothing refuses a request because of it.
+- **Original scope (E2):** plan management itself introduced no capability check. TRD 10 now checks the effective plan on each server cartridge download and new install/update; completed installation retries remain harmless after downgrade. Existing sync and data-rights operations are not gated.
 - **Effect timing:** a grant or revocation is effective for every read that starts after its commit; expiry happens at `ends_at` by database clock.
-- **Downgrade** (revocation or expiry) returns the account to Free. Because the limits are identical, nothing is refused, hidden, truncated or deleted: sync, export and deletion behave exactly as before (TRD 05 and TRD 04 suites unchanged).
+- **Downgrade** (revocation or expiry) returns the account to Free. Because the limits are identical, owned data is not hidden, truncated or deleted: sync, export and deletion behave exactly as before; TRD 10 refuses only new Premium downloads/installs/updates (TRD 05 and TRD 04 suites unchanged).
 - **Account states:** suspension, deactivation and reinstatement never change grants, and the expiry clock keeps running. A pending-deletion account refuses plan changes (`409 status_conflict`); the purge removes its grants.
 
 ## 6. API (OpenAPI `1.7.0-trd09`)
@@ -187,7 +187,6 @@ Updated existing tests for the additive contract: `manage_plan` in the TRD 06 ma
   The TRD 07 console ignores unknown actions and supports the new plan actions and fields (§5b of that TRD); its 10 real-Go E2E tests pass (verification below). A client that rejects unknown enum values must be updated. Nothing in this repository does.
 - **No unresolved contract conflict.**
 - **Open:**
-  - the first gated capability (TRD 10);
   - payments.
 
 ## 11. Verification record — 2026-11-15

@@ -1,5 +1,5 @@
-// Command admin holds operator-only account administration (TRD 06 §4.3). Today it has one
-// subcommand, bootstrap-super-admin, which promotes an existing active, verified account. It
+// Command admin holds operator-only account administration (TRD 06 §4.3) and immutable
+// cartridge publishing (TRD 10). bootstrap-super-admin promotes an active, verified account. It
 // never runs on API startup, never creates accounts, never sets passwords and never prints an
 // email address. Break-glass recovery exists only here, never in the HTTP API.
 package main
@@ -23,6 +23,7 @@ import (
 
 const usage = `usage: admin bootstrap-super-admin (--user-id UUID | --email ADDRESS)
              [--mode first|break_glass] [--reason-code CODE] [--ticket-ref REF]
+  admin publish-cartridge --file FILE --ticket-ref REF
   (reads VEEA_DATABASE_URL)
   first        (default) only when no active Super Admin exists
   break_glass  recovery when every Super Admin is unreachable; needs --reason-code
@@ -46,6 +47,9 @@ var bootstrapper = func(ctx context.Context, url string, req admin.BootstrapRequ
 }
 
 func run(ctx context.Context, args []string, getenv func(string) string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "publish-cartridge" {
+		return publishCartridge(ctx, args[1:], getenv, stdout, stderr)
+	}
 	req, code := parse(args, stderr)
 	if code != 0 {
 		return code

@@ -162,3 +162,14 @@ The new migration adds an account-binding constraint; check old non-signin OTP
 rows for null user IDs before applying it. Support/contact URLs and the privacy
 policy still need the team's real values. No public account launch has been
 performed by this branch.
+
+## TRD 10 cartridge rollout amendment (2026-11-15)
+
+The learner catalog now offers one bundled Free offline starter and signed-in server pack
+metadata. Synthetic Free/Premium fixtures are development-only pending Nin's real classification.
+Deploy migration 00015 and API/CLI before the Flutter client. Keep the vocabulary/install gate
+closed until TRD 05 device/deployment checks and the operator decision. Verify staging plan
+expiry/refusal, persistent retry after restart, offline installed words after downgrade and
+account isolation/deletion. Only then publish approved real content and remove Premium content
+from future bundles; historical public bundles and Git history remain public. TRD 10 §8 is the
+release checklist; payments are separate.

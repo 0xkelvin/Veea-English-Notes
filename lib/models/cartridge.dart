@@ -1,3 +1,4 @@
+import 'package:uuid/uuid.dart';
 import '../widgets/pixel/pixel_icon.dart';
 import 'part_of_speech.dart';
 import 'vocabulary_word.dart';
@@ -37,7 +38,7 @@ class CartridgeWord {
     String? cartridgeTitle,
   }) {
     return VocabularyWord.create(
-      id: id,
+      id: const Uuid().v5(Namespace.url.value, 'veea:bundled-cartridge:$id'),
       word: word,
       meaning: meaning,
       date: date,

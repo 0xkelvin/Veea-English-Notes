@@ -887,6 +887,11 @@ class SqliteVocabularyRepository implements VocabularyRepository {
     await _db.transaction((txn) async {
       final openOwner = await _owner(txn);
       final owner = accountId ?? openOwner;
+      await txn.delete(
+        'cartridge_local_state',
+        where: 'owner_id = ?',
+        whereArgs: [owner ?? AppDatabase.guestWorkspace],
+      );
       if (owner != null && owner != openOwner) {
         await txn.delete(
           'account_workspaces',

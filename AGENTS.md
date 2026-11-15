@@ -67,8 +67,14 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
   §15.2 pass. `learning.AppendCanonical` is the only encoder for quota and export sizes.
   Free/Premium plans (TRD 09) are `backend/internal/entitlements/` (reads, export section) and
   `admin.ChangePlan` (the only grant writer). Plans are not roles. Evaluate plans only through
-  `entitlement_premium_until()` at database time. Both plans share the TRD 05 limits, and no
-  capability is gated yet. Export schema 3 includes the plan; keep staff IDs and tickets out of it.
+  `entitlement_premium_until()` at database time. Both plans share the TRD 05 limits, and TRD 10 gates new Premium cartridge downloads/installs only. Export schema 3 includes the plan; keep staff IDs and tickets out of it.
+  Server-delivered cartridges (TRD 10) use migration 00015 and `learning/cartridges.go`:
+  immutable shared PostgreSQL versions, audited `bin/admin publish-cartridge --file FILE --ticket-ref REF`,
+  and owner installation watermarks. Install reuses TRD 05 import admission/apply under L4c and stays
+  behind its closed gate. Entry IDs are stable and versions cumulative, so updates only add new entries.
+  Watermarks are exported and explicitly purged. Flutter's `CartridgeProvider` keeps pending requests
+  in owner-scoped SQLite `cartridge_local_state`; never replace an uncertain request's version/epoch.
+  Only the Free starter is offered bundled; server fixtures are synthetic pending real classification.
   Alert rules (TRD 08) are `backend/monitoring/prometheus/veea-alerts.yml`, tested by
   `make test-alerts` (promtool) and `go test ./monitoring` (names must exist in the registry).
   Edit scenarios in `gen_tests.py`, not the generated `veea-alerts.test.yml`. Renaming a metric or

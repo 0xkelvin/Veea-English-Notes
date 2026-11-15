@@ -1350,7 +1350,7 @@ class _CartridgeLibrarySection extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'CAREER & TECH CARTRIDGES',
+                      'VOCABULARY CARTRIDGES',
                       style: theme.textTheme.labelSmall?.copyWith(
                         fontWeight: FontWeight.bold,
                         letterSpacing: 0.5,
@@ -1358,7 +1358,7 @@ class _CartridgeLibrarySection extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Curated vocabulary for PR reviews & FAANG standups',
+                      'Free offline starter and server-delivered packs',
                       style: TextStyle(fontSize: 11, color: palette.inkMuted),
                     ),
                   ],
@@ -1388,8 +1388,8 @@ class _CartridgeLibrarySection extends StatelessWidget {
           const SizedBox(height: PixelMetrics.space3),
           PixelButton(
             label: isInstalled
-                ? 'Manage Tech Cartridge'
-                : 'Explore Tech Cartridge',
+                ? 'Open Cartridge Library'
+                : 'Explore Cartridges',
             glyph: PixelGlyph.gamepad,
             filled: !isInstalled,
             expand: true,

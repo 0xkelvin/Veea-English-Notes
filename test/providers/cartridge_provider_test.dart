@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:veea_english_app/data/local/sqlite_vocabulary_repository.dart';
 import 'package:veea_english_app/providers/cartridge_provider.dart';
@@ -16,7 +15,6 @@ void main() {
   final today = DateTime(2026, 8, 29, 10);
 
   setUp(() async {
-    SharedPreferences.setMockInitialValues({});
     repo = await SqliteVocabularyRepository.open(
       path: inMemoryDatabasePath,
       now: () => today,
@@ -24,7 +22,7 @@ void main() {
     vocabProvider = VocabularyProvider(repo, now: () => today);
     await vocabProvider.init();
 
-    cartridgeProvider = CartridgeProvider();
+    cartridgeProvider = CartridgeProvider(repository: repo);
   });
 
   tearDown(() => repo.close());
@@ -33,24 +31,18 @@ void main() {
     test(
       'installs cartridge words in full mode into VocabularyProvider',
       () async {
-        expect(
-          cartridgeProvider.isInstalled('silicon_valley_tech_vol1'),
-          isFalse,
-        );
+        expect(cartridgeProvider.isInstalled('free_starter'), isFalse);
 
         final count = await cartridgeProvider.installCartridge(
-          'silicon_valley_tech_vol1',
+          'free_starter',
           vocabProvider: vocabProvider,
           mode: IngestMode.full,
           baseDate: today,
         );
 
         expect(count, greaterThan(0));
-        expect(
-          cartridgeProvider.isInstalled('silicon_valley_tech_vol1'),
-          isTrue,
-        );
-        expect(vocabProvider.words.any((w) => w.word == 'idempotent'), isTrue);
+        expect(cartridgeProvider.isInstalled('free_starter'), isTrue);
+        expect(vocabProvider.words.any((w) => w.word == 'resilient'), isTrue);
       },
     );
 
@@ -58,26 +50,23 @@ void main() {
       'installs cartridge words in dailySprint mode scheduling across dates',
       () async {
         final count = await cartridgeProvider.installCartridge(
-          'silicon_valley_tech_vol1',
+          'free_starter',
           vocabProvider: vocabProvider,
           mode: IngestMode.dailySprint,
           baseDate: today,
         );
 
         expect(count, greaterThan(0));
-        expect(
-          cartridgeProvider.isInstalled('silicon_valley_tech_vol1'),
-          isTrue,
-        );
+        expect(cartridgeProvider.isInstalled('free_starter'), isTrue);
 
         final dates = await repo.datesWithWords();
-        expect(dates.length, greaterThan(1));
+        expect(dates.length, 1); // the five-word starter fits one sprint day
       },
     );
 
     test('uninstalls cartridge words cleanly', () async {
       await cartridgeProvider.installCartridge(
-        'silicon_valley_tech_vol1',
+        'free_starter',
         vocabProvider: vocabProvider,
         mode: IngestMode.full,
         baseDate: today,
@@ -86,14 +75,14 @@ void main() {
       expect(vocabProvider.words.isNotEmpty, isTrue);
 
       final removed = await cartridgeProvider.uninstallCartridge(
-        'silicon_valley_tech_vol1',
+        'free_starter',
         vocabProvider: vocabProvider,
       );
 
       expect(removed, greaterThan(0));
       expect(
-        cartridgeProvider.isInstalled('silicon_valley_tech_vol1'),
-        isFalse,
+        cartridgeProvider.isInstalled('free_starter'),
+        isTrue, // receipt survives removal so a retry cannot resurrect deletions
       );
     });
   });

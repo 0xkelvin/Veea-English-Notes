@@ -1,10 +1,10 @@
 openapi: 3.0.3
 info:
   title: Veea English Notes — Accounts API
-  version: 1.7.0-trd09
+  version: 1.8.0-trd10
   description: |
     Email authentication and account foundation (TRD 01 §5), plus session management (TRD 02), account lifecycle (TRD 04),
-    vocabulary sync (TRD 05), RBAC user administration (TRD 06) and Free/Premium plans (TRD 09). This document is normative for the
+    vocabulary sync (TRD 05), RBAC user administration (TRD 06) Free/Premium plans (TRD 09) and server-delivered cartridges (TRD 10). This document is normative for the
     Go service in `backend/`: every route the router registers is listed here, and the
     integration suite validates every response it receives against it.
 
@@ -1180,6 +1180,110 @@ paths:
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "500": { $ref: "#/components/responses/InternalError" }
 
+  /v1/cartridges:
+    get:
+      tags: [learning]
+      operationId: cartridgeCatalog
+      summary: Latest Free and Premium metadata for the signed-in account (TRD 10).
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unauthorized, rate_limited, internal_error]
+      responses:
+        "200":
+          description: Metadata only, ordered by ID, no query parameters.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [cartridges]
+                properties:
+                  cartridges:
+                    type: array
+                    maxItems: 16
+                    items: { $ref: "#/components/schemas/CartridgeMetadata" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/cartridges/{cartridge_id}/versions/{version}/content:
+    get:
+      tags: [learning]
+      operationId: cartridgeContent
+      summary: Immutable content; Premium authorized at database time on every download.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: cartridge_id, in: path, required: true, schema: { type: string } }
+        - { name: version, in: path, required: true, schema: { type: string } }
+      x-error-codes: [invalid_request, unauthorized, plan_required, not_found, rate_limited, internal_error]
+      responses:
+        "200":
+          description: Exact published JSON, Cache-Control no-store.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CartridgeDocument" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/CartridgePlanRequired" }
+        "404": { $ref: "#/components/responses/AdminNotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/cartridges/{cartridge_id}/versions/{version}/install:
+    post:
+      tags: [learning]
+      operationId: cartridgeInstall
+      summary: Atomic quota-checked vocabulary import; durable per-account version watermark.
+      description: |
+        Explicit install/update creates only entries first appearing after installed_version.
+        Earlier edited/deleted entries remain untouched, including after compaction. A completed
+        retry returns the current watermark without a plan or capacity recheck and adds nothing.
+        New installs require download authorization. Epoch mismatch is never automatically replayed.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: cartridge_id, in: path, required: true, schema: { type: string } }
+        - { name: version, in: path, required: true, schema: { type: string } }
+      x-error-codes: [invalid_request, unauthorized, plan_required, not_found, capacity_changed, sync_reset_required, unsupported_media_type, payload_too_large, rate_limited, sync_unavailable, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [epoch, capacity_basis]
+              properties:
+                epoch: { type: string, format: uuid }
+                capacity_basis:
+                  type: object
+                  additionalProperties: false
+                  required: [live_words, content_bytes]
+                  properties:
+                    live_words: { type: integer, minimum: 0 }
+                    content_bytes: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: Current installation, including a completed retry.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [installed_version, added, head_revision]
+                properties:
+                  installed_version: { type: integer, minimum: 1 }
+                  added: { type: integer, minimum: 0, maximum: 200 }
+                  head_revision: { type: integer, minimum: 0 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/CartridgePlanRequired" }
+        "404": { $ref: "#/components/responses/AdminNotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410": { $ref: "#/components/responses/SyncReset" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/SyncUnavailable" }
+
 components:
   securitySchemes:
     rightsAuth:
@@ -1414,6 +1518,12 @@ components:
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
+    CartridgePlanRequired:
+      description: Premium is required for this download or new install/update.
+      x-codes: [plan_required]
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
     Forbidden:
       description: "`account_unavailable` or `invalid_current_password`."
       x-codes: [account_unavailable, invalid_current_password]
@@ -1494,6 +1604,38 @@ components:
           schema: { $ref: "#/components/schemas/Problem" }
 
   schemas:
+    CartridgeMetadata:
+      type: object
+      additionalProperties: false
+      required: [id, title, version, required_plan, word_count, sha256, installed_version]
+      properties:
+        id: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,47}$' }
+        title: { type: string, minLength: 1, maxLength: 100 }
+        version: { type: integer, minimum: 1, maximum: 2147483647 }
+        required_plan: { type: string, enum: [free, premium] }
+        word_count: { type: integer, minimum: 1, maximum: 200 }
+        sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        installed_version: { type: integer, minimum: 0, maximum: 2147483647 }
+    CartridgeDocument:
+      type: object
+      additionalProperties: false
+      required: [id, title, version, required_plan, entries]
+      properties:
+        id: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,47}$' }
+        title: { type: string, minLength: 1, maxLength: 100 }
+        version: { type: integer, minimum: 1, maximum: 2147483647 }
+        required_plan: { type: string, enum: [free, premium] }
+        entries:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: object
+            additionalProperties: false
+            required: [entry_id, content]
+            properties:
+              entry_id: { type: string, format: uuid }
+              content: { $ref: "#/components/schemas/VocabularyContent" }
     EmailInput:
       type: string
       description: Trimmed, then parsed and normalized as TRD 3.2. Compared case-insensitively (AC-8).
@@ -1612,6 +1754,7 @@ components:
     ErrorCode:
       type: string
       enum:
+        - plan_required
         - sync_unavailable
         - sync_reset_required
         - sequence_gap
@@ -1746,6 +1889,17 @@ components:
             preferred_language: { type: string, enum: [en, vi] }
             time_zone: { type: string }
             daily_goal: { type: integer }
+        cartridge_installations:
+          type: array
+          maxItems: 16
+          description: TRD 10 account installation watermarks; absent in older schema-3 artifacts.
+          items:
+            type: object
+            additionalProperties: false
+            required: [cartridge_id, installed_version]
+            properties:
+              cartridge_id: { type: string, maxLength: 48 }
+              installed_version: { type: integer, minimum: 1, maximum: 2147483647 }
         entitlements:
           type: object
           additionalProperties: false

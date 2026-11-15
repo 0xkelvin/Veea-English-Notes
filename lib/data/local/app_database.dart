@@ -31,7 +31,7 @@ class AppDatabase {
   static const String gateProgressTable = 'gate_round_progress';
 
   /// Bump this and add a branch to [_upgrade] whenever the schema changes.
-  static const int version = 13;
+  static const int version = 14;
 
   /// Opens the database, creating or migrating the schema as needed.
   ///
@@ -68,6 +68,7 @@ class AppDatabase {
     await _createAccountWorkspaces(db);
     await _createLearningSync(db);
     await _createSyncRetryFences(db);
+    await _createCartridgeState(db);
   }
 
   static Future<void> _upgrade(Database db, int from, int to) async {
@@ -90,6 +91,21 @@ class AppDatabase {
     if (from < 11) await _createAccountWorkspaces(db);
     if (from < 12) await _createLearningSync(db);
     if (from < 13) await _createSyncRetryFences(db);
+    if (from < 14) await _createCartridgeState(db);
+  }
+
+  static Future<void> _createCartridgeState(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS cartridge_local_state (
+        owner_id TEXT NOT NULL, cartridge_id TEXT NOT NULL,
+        installed_version INTEGER NOT NULL DEFAULT 0,
+        pending_version INTEGER, pending_body TEXT,
+        pending_unknown INTEGER NOT NULL DEFAULT 0,
+        needs_confirmation INTEGER NOT NULL DEFAULT 0,
+        blocked INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (owner_id, cartridge_id)
+      )
+    ''');
   }
 
   /// Archive key of the guest notebook in `account_workspaces` (TRD 05 §9.1).

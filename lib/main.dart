@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import 'core/config/app_config.dart';
 import 'data/local/legacy_import.dart';
+import 'data/cartridges/cartridge_api.dart';
 import 'data/feedback_repository.dart';
 import 'providers/feedback_provider.dart';
 import 'data/local/sqlite_vocabulary_repository.dart';
@@ -101,6 +102,11 @@ Future<void> main() async {
     runApp(
       VeeaEnglishApp(
         vocabulary: vocabulary,
+        cartridges: CartridgeProvider(
+          repository: repository,
+          api: GoCartridgeApi(apiClient),
+          sync: sync,
+        ),
         auth: auth,
         sync: sync,
         pronunciation: pronunciation,
@@ -160,6 +166,7 @@ class VeeaEnglishApp extends StatefulWidget {
     this.widgetProvider,
     this.appGateProvider,
     this.feedback,
+    this.cartridges,
   });
 
   final VocabularyProvider vocabulary;
@@ -170,6 +177,7 @@ class VeeaEnglishApp extends StatefulWidget {
   final WidgetProvider? widgetProvider;
   final AppGateProvider? appGateProvider;
   final FeedbackProvider? feedback;
+  final CartridgeProvider? cartridges;
 
   @override
   State<VeeaEnglishApp> createState() => _VeeaEnglishAppState();
@@ -399,7 +407,16 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
           create: (_) => widget.widgetProvider ?? (WidgetProvider()..init()),
         ),
         ChangeNotifierProvider(create: (_) => PetProvider()..init()),
-        ChangeNotifierProvider(create: (_) => CartridgeProvider()),
+        ChangeNotifierProvider(
+          create: (_) =>
+              widget.cartridges ??
+              CartridgeProvider(
+                repository:
+                    widget.vocabulary.repository is SqliteVocabularyRepository
+                    ? widget.vocabulary.repository as SqliteVocabularyRepository
+                    : null,
+              ),
+        ),
         ChangeNotifierProvider(create: (_) => CommutePlaylistService()..init()),
         Provider<PronunciationService>.value(value: widget.pronunciation),
       ],

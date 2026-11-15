@@ -2,8 +2,8 @@
 // roles: a role never grants a plan and a plan never grants an administrative permission.
 //
 // This package only reads. Grants are written by the admin service (manual grants, TRD 09 §6)
-// and removed by retention cleanup and the TRD 04 purge. No capability is gated by plan yet
-// (TRD 09 decision E2); both plans have the same TRD 05 limits (E3).
+// and removed by retention cleanup and the TRD 04 purge. TRD 10 gates new Premium cartridge
+// downloads/installs; both plans retain the same TRD 05 vocabulary limits (E3).
 package entitlements
 
 import (

@@ -51,6 +51,8 @@ Sources inspected: [migrations](../../backend/migrations/README.md), [account pe
 
 There are no Go learning-content, export-artifact, deletion-job, receipt or restoration-ledger tables in this baseline. Do not confuse Rust `cloud/` tables or Flutter SQLite with data already migrated to Go.
 
+**TRD 10 amendment (2026-11-15):** `cartridge_installations` is owner product data, exported as pack ID/version watermarks (at most 16) and explicitly deleted in purge step 2. Shared immutable catalog/version/entry rows survive account purge. Owned installed words use the existing vocabulary export/purge. SQLite pending install requests and bundled receipts are keyed by account ID and cleared only for the confirmed deleted owner; same-email re-registration starts independent.
+
 **[Proposed future participation]** Vocabulary/notes, definitions/examples and attachments, collections/decks/cartridges, review history/schedules and progress, preferences, owner-specific AI content, sync cursors/revisions/tombstones, feedback containing personal content, and future entitlement records must each declare export fields, owner key, deletion behavior and external copies before shipping. Shared dictionary/catalog content is not deleted because one user referenced it; delete their relationships and private derived content. Preserve tombstones only as needed for the deletion protocol, never as an undeclared permanent copy of learning content. New user-owned tables should cascade from `users` and appear in export/deletion acceptance tests. Offline-only data never uploaded cannot appear in a server export.
 
 ## 3. Proposed state model, actors and access
