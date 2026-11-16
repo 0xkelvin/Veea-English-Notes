@@ -278,6 +278,7 @@ Never commit the env file or put values in shell history/logs. Keep application 
 keys and required old key versions with the durable database; do not regenerate on restart.
 
 ```sh
+docker network inspect veea-camera_default >/dev/null # Existing Veea-camera network must exist
 make backend-prod-config         # Validate without printing secrets
 make backend-prod-build          # Build the configured tagged api/migrate/admin image
 make backend-prod-up             # Use prebuilt image, wait for DB -> migrate -> grants -> API
@@ -303,10 +304,29 @@ roles. Perform planned SQL/secret rotation instead. This layout cannot adopt an 
 existing database volume without a reviewed role/grant migration.
 
 PostgreSQL publishes **no host port**. API defaults to `127.0.0.1:28386`, metrics to
-`127.0.0.1:29090`; configure a host HTTPS reverse proxy and internal Prometheus. Block the
-public `/v1/admin/` prefix and serve the admin console only on the approved operator ingress.
-Use `VEEA_TRUSTED_PROXIES` only for the real trusted proxy path. Container-internal DB transport
-is confined to the single-host Docker bridge; external database transport requires TLS design.
+`127.0.0.1:29090` for host checks and internal Prometheus. The API also joins the external
+Docker network `veea-camera_default` with alias `veea-production-api`, reusing the same
+ingress network as the legacy Rust backend. The containerized Nginx in `Veea-camera` already
+uses that project's default network and proxies to `http://veea-production-api:18386`.
+PostgreSQL, the migrator and permissions job stay on this project's default network; only the
+API joins both. The camera project owns `veea-camera_default`; backend Compose does not create
+or remove it. On a fresh server, run `docker compose up --no-start --no-deps nginx` from
+`Veea-camera` to create its network/container without starting Nginx before the backend is
+available. Keep the camera project name `veea-camera`; changing it changes the default network
+name. Preserve the existing backend project name, env file and database volume.
+
+Start the backend and pass `backend-prod-health` before starting Nginx or reloading its updated
+upstream configuration. No Nginx Compose network change is required. After later API container
+replacements, validate and reload Nginx so its upstream address is refreshed. All other
+upstream names in the shared Nginx config must also resolve on its attached networks.
+See `Veea-camera/nginx/README.md` for proxy-side commands.
+
+HTTPS termination remains an operator configuration: the existing Nginx stack exposes port
+80 only. Before public traffic, configure TLS and block both `/v1/admin` and the public
+`/v1/admin/` prefix; serve the admin console only on the approved operator ingress. Use
+`VEEA_TRUSTED_PROXIES` only for the real trusted proxy path, accounting for any upstream TLS
+proxy when forwarding scheme and client IP. Container-internal DB transport is confined to
+the single-host Docker bridge; external database transport requires TLS design.
 
 This is production orchestration, **not completed production acceptance**. Before traffic,
 complete [the staging checklist](../docs/staging-verification.md): actual release image/commit,
