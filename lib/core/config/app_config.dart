@@ -41,6 +41,26 @@ class AppConfig {
     }());
   }
 
+  /// Vocabulary never leaves the device in the first paid release.
+  /// Account and purchase services remain independent of this setting.
+  static const bool isVocabularySyncEnabled = false;
+
+  /// The exact non-consumable ID from App Store Connect. Empty fails closed.
+  static const String _appleProProductId = String.fromEnvironment(
+    'VEEA_APPLE_PRO_PRODUCT_ID',
+  );
+
+  static String? _appleProductOverride;
+  static String get appleProProductId =>
+      _appleProductOverride ?? _appleProProductId;
+  @visibleForTesting
+  static void overrideAppleProduct(String? product) {
+    assert(() {
+      _appleProductOverride = product;
+      return true;
+    }());
+  }
+
   static const String zaloCommunityUrl = String.fromEnvironment(
     'VEEA_ZALO_COMMUNITY_URL',
   );

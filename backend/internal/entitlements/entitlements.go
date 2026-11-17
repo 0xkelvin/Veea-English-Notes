@@ -57,6 +57,9 @@ func Effective(ctx context.Context, q *sqlc.Queries, user uuid.UUID) (Plan, erro
 	if err != nil {
 		return Plan{}, fmt.Errorf("entitlements: effective: %w", err)
 	}
+	if row.Lifetime {
+		return Plan{Name: Premium, CheckedAt: row.CheckedAt.UTC()}, nil
+	}
 	return planOf(row.Premium, row.PremiumUntil, row.CheckedAt), nil
 }
 
@@ -65,6 +68,9 @@ func At(ctx context.Context, q *sqlc.Queries, user uuid.UUID, at time.Time) (Pla
 	row, err := q.EntitlementAt(ctx, sqlc.EntitlementAtParams{UserID: user, At: at})
 	if err != nil {
 		return Plan{}, fmt.Errorf("entitlements: at: %w", err)
+	}
+	if row.Lifetime {
+		return Plan{Name: Premium, CheckedAt: at.UTC()}, nil
 	}
 	return planOf(row.Premium, row.PremiumUntil, at), nil
 }
@@ -75,4 +81,13 @@ func planOf(premium bool, until, at time.Time) Plan {
 	}
 	u := until.UTC()
 	return Plan{Name: Premium, ExpiresAt: &u, CheckedAt: at.UTC()}
+}
+
+// ManualEffective keeps staff grants independent of the lifetime Apple entitlement.
+func ManualEffective(ctx context.Context, q *sqlc.Queries, user uuid.UUID) (Plan, error) {
+	row, err := q.EffectiveManualEntitlement(ctx, user)
+	if err != nil {
+		return Plan{}, err
+	}
+	return planOf(row.Premium, row.PremiumUntil, row.CheckedAt), nil
 }

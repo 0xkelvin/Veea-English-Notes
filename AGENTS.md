@@ -191,3 +191,15 @@ Treat these as blocking when reviewing or changing the backend or sync/auth clie
   not Go configuration and must not be loaded by tooling.
 - Simulators and unsigned builds do not prove Screen Time enforcement; see the README
   Verification section for the signed-device checks.
+
+## First paid release (TRD 11, 2026-11-17)
+
+Production keeps one offline device notebook across account changes (`accountNotebooks:false`).
+Account deletion keeps those local words; the separate opt-in sync adapters keep their legacy
+account isolation/purge tests. `AppConfig.isVocabularySyncEnabled=false` disables word transport
+and remote cartridge installs. Do not re-enable by flipping a flag without a reviewed ownership
+migration and user consent. Payment routes must authenticate, revalidate the acting session under
+L3 user then L4a session locks, verify fresh Apple data, and enforce account-token/environment
+ownership. Sandbox and production use separate databases and a matching `apple_iap_control`.
+Payments are disabled by default; never simulate paid success in production. Full purge removes
+Apple rows, export includes five retained proof periods, manual grants remain independent.

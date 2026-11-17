@@ -19,6 +19,15 @@ final class NativeScreenTimeManager {
     #endif
   }
 
+  private var hasPro: Bool { ProPurchaseManager.shared.isPro }
+
+  func reconcilePlan(preferredApplicationID: String? = nil) {
+    guard ProPurchaseManager.shared.isReady, !hasPro else { return }
+    let stopped = try? NativeGateStore.shared().update({ NativeGatePlanPolicy.applyFreePlan(to: &$0, preferredApplicationID: preferredApplicationID ?? $0.pendingChallenge?.applicationID) },
+      apply: { NativeGateShielding.apply($0) })
+    if let stopped, !stopped.isEmpty { DeviceActivityCenter().stopMonitoring(stopped.map { DeviceActivityName($0) }) }
+  }
+
   func status() -> [String: Any] {
     let approved = AuthorizationCenter.shared.authorizationStatus == .approved
     let store = try? NativeGateStore.shared()
@@ -36,13 +45,14 @@ final class NativeScreenTimeManager {
       "enabled": active,
       "configured": configured,
       "error": storageError ? "Protection settings could not be read. Turn protection off to reset them." : "",
-      "passMinutes": NativeGatePolicy.normalizedPassMinutes(state.passMinutes),
+      "hasPro": hasPro,
+      "passMinutes": NativeGatePlanPolicy.duration(NativeGatePolicy.normalizedPassMinutes(state.passMinutes), pro: hasPro),
       "applications": state.applications.enumerated().map { index, app in
         ["id": "native:\(app.id)", "label": "Protected app \(index + 1)",
          "lockEnabled": state.isApplicationLockEnabled(app.id),
          "unlockedUntil": state.passes[app.id]?.expiresAt.timeIntervalSince1970 ?? 0,
-         "passMinutes": state.unlockMinutes(for: app.id),
-         "customPassMinutes": state.applicationMinutes[app.id].map { $0 as Any } ?? NSNull()] as [String: Any]
+         "passMinutes": hasPro ? state.unlockMinutes(for: app.id) : NativeGatePlanPolicy.duration(state.passMinutes, pro: false),
+         "customPassMinutes": (hasPro ? state.applicationMinutes[app.id] : nil).map { $0 as Any } ?? NSNull()] as [String: Any]
       }
     ]
   }
@@ -63,8 +73,10 @@ final class NativeScreenTimeManager {
       guard NativeGatePolicy.supportedPassMinutes.contains(minutes) else {
         throw NativeGateError.invalidDuration
       }
+      try NativeGatePlanPolicy.requireDuration(minutes, pro: hasPro)
       try store.update({ state in
         try NativeGatePolicy.validateApplicationCount(state.applications.count)
+        try NativeGatePlanPolicy.requireAppCount(state.applications.count, pro: hasPro)
         guard !state.applications.isEmpty else { throw NativeGateError.unknownApplication }
         try state.setAllApplicationLocks(true)
         state.passMinutes = minutes
@@ -82,6 +94,7 @@ final class NativeScreenTimeManager {
   }
 
   func setDuration(_ minutes: Int) throws {
+    try NativeGatePlanPolicy.requireDuration(minutes, pro: hasPro)
     guard NativeGatePolicy.supportedPassMinutes.contains(minutes) else {
       throw NativeGateError.invalidDuration
     }
@@ -95,10 +108,14 @@ final class NativeScreenTimeManager {
     guard let id = NativeGatePolicy.applicationID(from: target) else {
       throw NativeGateError.unknownApplication
     }
+    guard ProPurchaseManager.shared.isReady else { throw NativeGateError.unavailable }
+    reconcilePlan(preferredApplicationID:id)
     let store = try NativeGateStore.shared()
+    let state = try store.read()
+    let effectiveMinutes = hasPro ? state.unlockMinutes(for: id) : NativeGatePlanPolicy.duration(state.passMinutes, pro: false)
     let center = DeviceActivityCenter()
     _ = try NativeGateGrantCoordinator(store: store).grant(
-      applicationID: id,
+      applicationID: id, minutes: effectiveMinutes,
       startMonitoring: { name, start, expiry in
         let schedule = DeviceActivitySchedule(
           intervalStart: NativeGatePolicy.scheduleComponents(for: start),
@@ -122,6 +139,7 @@ final class NativeScreenTimeManager {
   }
 
   func setApplicationDuration(target: String, minutes: Int?) throws {
+    if minutes != nil && !hasPro { throw NativeGatePlanError.proRequired }
     guard let id = NativeGatePolicy.applicationID(from: target) else {
       throw NativeGateError.unknownApplication
     }
@@ -144,7 +162,11 @@ final class NativeScreenTimeManager {
       throw NativeGateError.unknownApplication
     }
     let activity = try NativeGateStore.shared().update({ state in
-      if enabled { try NativeGatePolicy.validateApplicationCount(state.applications.count) }
+      if enabled {
+        try NativeGatePolicy.validateApplicationCount(state.applications.count)
+        let active = state.applications.filter { state.isApplicationLockEnabled($0.id) || $0.id == id }.count
+        try NativeGatePlanPolicy.requireAppCount(active, pro: hasPro)
+      }
       return try state.setApplicationLockEnabled(enabled, for: id)
     }, apply: { NativeGateShielding.apply($0) })
     if let activity { DeviceActivityCenter().stopMonitoring([DeviceActivityName(activity)]) }
@@ -177,7 +199,7 @@ final class NativeScreenTimeManager {
     let selection = FamilyActivitySelection()
     var initial = selection
     initial.applicationTokens = Set(state.applications.compactMap(NativeGateShielding.token))
-    let view = NativeGatePicker(initialSelection: initial, onSave: { [weak self] tokens in
+    let view = NativeGatePicker(initialSelection: initial, maximumApps: hasPro ? NativeGatePolicy.maximumApplications : 1, onSave: { [weak self] tokens in
       do {
         try self?.saveSelection(tokens)
         self?.dismissPresentation { completion(.success(true)) }
@@ -206,6 +228,7 @@ final class NativeScreenTimeManager {
 
   private func saveSelection(_ tokens: Set<ApplicationToken>) throws {
     try NativeGatePolicy.validateApplicationCount(tokens.count)
+    try NativeGatePlanPolicy.requireAppCount(tokens.count, pro: hasPro)
     let removedActivities = try NativeGateStore.shared().update({ state -> [String] in
       let old = state.applications
       state.applications = try tokens.map { token in
@@ -243,24 +266,26 @@ final class NativeScreenTimeManager {
 @available(iOS 16.0, *)
 private struct NativeGatePicker: View {
   @State var selection: FamilyActivitySelection
+  let maximumApps: Int
   let onSave: (Set<ApplicationToken>) -> Void
   let onCancel: () -> Void
 
-  init(initialSelection: FamilyActivitySelection, onSave: @escaping (Set<ApplicationToken>) -> Void,
+  init(initialSelection: FamilyActivitySelection, maximumApps: Int, onSave: @escaping (Set<ApplicationToken>) -> Void,
        onCancel: @escaping () -> Void) {
     _selection = State(initialValue: initialSelection)
+    self.maximumApps = maximumApps
     self.onSave = onSave
     self.onCancel = onCancel
   }
 
   var hasCategoriesOrWebsites: Bool { !selection.categoryTokens.isEmpty || !selection.webDomainTokens.isEmpty }
-  var tooManyApplications: Bool { selection.applicationTokens.count > NativeGatePolicy.maximumApplications }
+  var tooManyApplications: Bool { selection.applicationTokens.count > maximumApps }
   var invalidSelection: Bool { hasCategoriesOrWebsites || tooManyApplications }
 
   var body: some View {
     NavigationStack {
       VStack {
-        Text(tooManyApplications ? "Choose up to 50 individual apps." : hasCategoriesOrWebsites ? "Choose individual apps, not entire categories or websites." : "Select the individual apps you want to protect.")
+        Text(tooManyApplications ? (maximumApps == 1 ? "Free includes one app lock. Choose one app, or get Pro in Veea to add more." : "Choose up to 50 individual apps.") : hasCategoriesOrWebsites ? "Choose individual apps, not entire categories or websites." : "Select the individual apps you want to protect.")
           .font(.callout).padding().foregroundStyle(invalidSelection ? Color.red : Color.secondary)
         FamilyActivityPicker(selection: $selection)
       }

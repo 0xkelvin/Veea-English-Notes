@@ -22,13 +22,20 @@ enum LoadStatus { loading, ready, failed }
 /// previous implementation mutated its in-memory list before awaiting the
 /// write, which left memory and disk out of step whenever a write failed.
 class VocabularyProvider extends ChangeNotifier {
-  VocabularyProvider(this._repository, {DateTime Function()? now, Uuid? uuid})
-    : _now = now ?? DateTime.now,
-      _uuid = uuid ?? const Uuid() {
+  VocabularyProvider(
+    this._repository, {
+    DateTime Function()? now,
+    Uuid? uuid,
+    this.deviceNotebook = false,
+  }) : _now = now ?? DateTime.now,
+       _uuid = uuid ?? const Uuid() {
     _selectedDate = _dayOnly(_now());
   }
 
   final VocabularyRepository _repository;
+
+  /// Offline release backups are portable device data, independent of sign-in.
+  final bool deviceNotebook;
   final DateTime Function() _now;
   final Uuid _uuid;
 
@@ -313,12 +320,18 @@ class VocabularyProvider extends ChangeNotifier {
 
   /// Exports all saved words to formatted JSON string without truncation.
   Future<String> exportBackupJson() async {
-    return BackupService.exportNotebookJson(_repository);
+    return BackupService.exportNotebookJson(
+      _repository,
+      deviceNotebook: deviceNotebook,
+    );
   }
 
   /// Exports all saved words to standard RFC 4180 CSV string without truncation.
   Future<String> exportBackupCsv() async {
-    return BackupService.exportNotebookCsv(_repository);
+    return BackupService.exportNotebookCsv(
+      _repository,
+      deviceNotebook: deviceNotebook,
+    );
   }
 
   /// Previews changes that would be made by importing [text].
@@ -326,6 +339,7 @@ class VocabularyProvider extends ChangeNotifier {
     return BackupService.previewBackup(
       rawContent: text,
       repository: _repository,
+      deviceNotebook: deviceNotebook,
     );
   }
 
@@ -334,6 +348,7 @@ class VocabularyProvider extends ChangeNotifier {
     final result = await BackupService.importBackupText(
       rawContent: text,
       repository: _repository,
+      deviceNotebook: deviceNotebook,
       now: _now,
       uuid: _uuid,
     );

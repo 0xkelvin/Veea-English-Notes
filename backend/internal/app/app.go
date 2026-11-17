@@ -4,6 +4,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log/slog"
@@ -29,18 +30,21 @@ import (
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db/sqlc"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/httpx"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/metrics"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/purchases"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/ratelimit"
 )
 
 // Options are the handler's dependencies. Keys come from config.Config.
 type Options struct {
-	Pool           *pgxpool.Pool
-	ReadyTimeout   time.Duration
-	Logger         *slog.Logger
-	EmailHMACKeys  [][]byte
-	OTPKeys        [][]byte
-	OutboxKeys     []notify.Key
-	TrustedProxies []netip.Prefix
+	AppleVerifier    purchases.Verifier
+	AppleEnvironment string
+	Pool             *pgxpool.Pool
+	ReadyTimeout     time.Duration
+	Logger           *slog.Logger
+	EmailHMACKeys    [][]byte
+	OTPKeys          [][]byte
+	OutboxKeys       []notify.Key
+	TrustedProxies   []netip.Prefix
 
 	// Hasher hashes and verifies passwords. Nil means an identity.Hasher with the approved
 	// parameters. Tests wrap the real hasher to count Argon2id runs.
@@ -139,7 +143,11 @@ func New(o Options) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	auth := &httpapi.Handlers{Signup: signupSvc, Signin: signinSvc, Password: passwordSvc, Sessions: sessions,
+	billing := purchases.New(o.Pool, o.AppleVerifier, o.AppleEnvironment, o.OnTxRetry)
+	if err := billing.CheckEnvironment(context.Background()); err != nil {
+		return nil, err
+	}
+	auth := &httpapi.Handlers{Purchases: billing, Signup: signupSvc, Signin: signinSvc, Password: passwordSvc, Sessions: sessions,
 		Account:   account.New(o.Pool, otpSvc, outbox, m, o.OnTxRetry),
 		Lifecycle: lifecycle.New(o.Pool, otpSvc, keyring, emailHMAC, m, o.OnTxRetry),
 		Learning:  learning.New(o.Pool, m, o.OnTxRetry),

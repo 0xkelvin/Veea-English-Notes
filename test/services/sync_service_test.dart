@@ -61,6 +61,35 @@ void main() {
 
   tearDown(() => repo.close());
 
+  test(
+    'offline release never uploads pending words even after account resume',
+    () async {
+      final local = SyncService(
+        repository: repo,
+        api: api,
+        networkEnabled: false,
+      );
+      await repo.insert(
+        VocabularyWord.create(
+          id: 'offline',
+          word: 'private',
+          meaning: 'local only',
+          date: '2026-08-18',
+          now: today,
+        ),
+      );
+      local.resumeForAccount('account-a');
+      expect(await local.synchronise(), isFalse);
+      expect(api.pushes, isEmpty);
+      expect((await repo.exportAll()).single.word, 'private');
+      await local.suspend();
+      local.resumeForAccount('account-b');
+      expect(await local.synchronise(), isFalse);
+      expect(api.pushes, isEmpty);
+      local.dispose();
+    },
+  );
+
   VocabularyWord makeWord({
     required String id,
     String word = 'resilient',

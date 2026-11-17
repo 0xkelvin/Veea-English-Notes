@@ -10,6 +10,7 @@ import DeviceActivity
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  private var proPurchaseChannel: FlutterMethodChannel?
   private var appGateChannel: FlutterMethodChannel?
   private var pendingColdStartTarget: String?
 
@@ -83,6 +84,36 @@ import DeviceActivity
       binaryMessenger: messenger
     )
     self.appGateChannel = channel
+
+    let purchases = FlutterMethodChannel(name: "app.veea.english/purchases", binaryMessenger: messenger)
+    self.proPurchaseChannel = purchases
+    purchases.setMethodCallHandler { call, result in
+      guard #available(iOS 16.0, *) else { result(FlutterMethodNotImplemented); return }
+      Task { @MainActor in
+        let manager = ProPurchaseManager.shared
+        manager.onChange = { purchases.invokeMethod("onProChanged", arguments: nil) }
+        do {
+          switch call.method {
+          case "configure":
+            let state = try await manager.configure(call.arguments as? [String: Any] ?? [:])
+            NativeScreenTimeManager.shared.reconcilePlan()
+            result(state)
+          case "purchase": result(try await manager.purchase())
+          case "restore": result(try await manager.restore())
+          case "recordVerification":
+            let args = call.arguments as? [String: Any] ?? [:]
+            await manager.recordVerification(args["transactionID"] as? String ?? "", revoked: args["revoked"] as? Bool ?? false)
+            result(nil)
+          case "finish":
+            await manager.finish((call.arguments as? [String: Any])?["transactionID"] as? String ?? "")
+            result(nil)
+          default: result(FlutterMethodNotImplemented)
+          }
+        } catch {
+          result(FlutterError(code: "PURCHASE_ERROR", message: error.localizedDescription, details: nil))
+        }
+      }
+    }
 
     channel.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
       guard let self = self else {
@@ -232,7 +263,7 @@ import DeviceActivity
   }
 
   private func screenTimeError(_ error: Error) -> FlutterError {
-    FlutterError(code: "SCREEN_TIME_ERROR", message: error.localizedDescription, details: nil)
+    FlutterError(code: error is NativeGatePlanError ? "PRO_REQUIRED" : "SCREEN_TIME_ERROR", message: error.localizedDescription, details: nil)
   }
 
   private func activeRootViewController() -> UIViewController? {

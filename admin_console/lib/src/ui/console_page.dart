@@ -445,7 +445,10 @@ class UserDetailPane extends StatelessWidget {
           'Role changed': fmt(d.roleChangedAt),
           'Effective plan': planLabels[d.plan] ?? d.plan,
           'Plan expiry (UTC)':
-              d.planExpiresAt?.toIso8601String() ?? 'No active Premium grant',
+              d.planExpiresAt?.toIso8601String() ??
+              (d.plan == 'premium'
+                  ? 'No expiry · Apple lifetime purchase'
+                  : 'No active Premium grant'),
           'Live sessions': '${d.liveSessions}',
           'Last seen': fmt(d.lastSeenAt),
         }),
@@ -694,7 +697,9 @@ class _Actions extends StatelessWidget {
           OutlinedButton.icon(
             key: const Key('action-revoke-premium'),
             icon: const Icon(Icons.remove_circle_outline),
-            label: const Text('Revoke Premium'),
+            label: Text(
+              u.planExpiresAt == null ? 'Clear manual grant' : 'Revoke Premium',
+            ),
             onPressed: c.mutating || c.detailLoad != Load.loaded
                 ? null
                 : () => _plan(context, false),
@@ -730,16 +735,24 @@ class _Actions extends StatelessWidget {
     final request = await _ask(
       context,
       ActionDialog(
-        title: grant ? 'Grant Premium?' : 'Revoke Premium?',
+        title: grant
+            ? 'Grant Premium?'
+            : confirmed.planExpiresAt == null
+            ? 'Clear manual grant?'
+            : 'Revoke Premium?',
         target: confirmed.email,
         reasonKind: grant ? 'premium_grant' : 'premium_revoke',
-        confirmLabel: grant ? 'Grant Premium' : 'Revoke Premium',
+        confirmLabel: grant
+            ? 'Grant Premium'
+            : confirmed.planExpiresAt == null
+            ? 'Clear manual grant'
+            : 'Revoke Premium',
         requireTicket: true,
         requireExpiry: grant,
         destructive: !grant,
         effect: grant
             ? 'Premium starts when saved and ends at the expiry you choose. An existing grant is replaced. Roles, sessions, data and current limits stay the same.'
-            : 'The account returns to Free immediately. Roles, sessions, data and current limits stay the same.',
+            : 'Any manual grant ends immediately. A verified Apple lifetime purchase remains active; Apple manages its refunds. Roles, sessions, data and current limits stay the same.',
       ),
     );
     if (request != null) {

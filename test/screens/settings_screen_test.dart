@@ -151,24 +151,29 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('SettingsScreen renders cloud sync form when cloud is enabled', (
-    tester,
-  ) async {
-    AppConfig.overrideBaseUrl('https://example.test');
-    addTearDown(() => AppConfig.overrideBaseUrl(null));
+  testWidgets(
+    'SettingsScreen keeps words offline when account service is enabled',
+    (tester) async {
+      AppConfig.overrideBaseUrl('https://example.test');
+      addTearDown(() => AppConfig.overrideBaseUrl(null));
 
-    tester.view.physicalSize = const Size(600, 3500);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+      tester.view.physicalSize = const Size(600, 3500);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(buildApp(const SettingsScreen()));
-    // Finish the real SQLite work started by the cloud settings' frame callback.
-    await tester.runAsync(() => syncService.refreshPendingCount());
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(buildApp(const SettingsScreen()));
+      // Finish the real SQLite work started by the cloud settings' frame callback.
+      await tester.runAsync(() => syncService.refreshPendingCount());
+      await tester.pumpAndSettle();
 
-    expect(find.text('Settings'), findsOneWidget);
-    expect(find.text('SIGN IN TO SYNC'), findsOneWidget);
-    expect(find.text('EMAIL OR PHONE'), findsOneWidget);
-  });
+      expect(find.text('Settings'), findsOneWidget);
+      expect(find.text('SIGN IN TO SYNC'), findsNothing);
+      expect(
+        find.text('Your words are stored on this device.'),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('settings_account')), findsOneWidget);
+    },
+  );
 }

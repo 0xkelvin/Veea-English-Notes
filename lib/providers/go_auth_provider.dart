@@ -18,21 +18,32 @@ class GoAuthProvider extends AuthProvider {
     required GoApiClient client,
     required super.repository,
     required super.sync,
+    this.accountNotebooks = true,
   }) : goApi = authApi,
        store = tokens,
        _repo = repository,
        _sync = sync,
+       _goClient = client,
        super(client: client) {
     client.onSessionExpired = _expired;
     // Only the Go transport's generation-fenced callback may end a session.
     // A late sync result for a closed notebook must not log out its successor.
     _sync.onSessionExpired = null;
   }
+
+  /// False in the offline release: authentication never switches or erases
+  /// the device notebook. Kept for explicit future opt-in sync and its tests.
+  final bool accountNotebooks;
+  Future<String?> _activateNotebook(String? owner) =>
+      accountNotebooks ? _repo.activateNotebook(owner) : _repo.notebookOwner();
   final GoAuthApi goApi;
   final GoTokenStore store;
   final VocabularyRepository _repo;
   final SyncService _sync;
+  final GoApiClient _goClient;
   GoSession? _session;
+  String? _purchaseOwner;
+  String? get purchaseOwner => _purchaseOwner;
   GoDeletionReceipt? _receipt;
   AccountProfile? _accountProfile;
   bool _working = false;
@@ -93,6 +104,7 @@ class GoAuthProvider extends AuthProvider {
     final intent = ++_intent;
     await _notebook(() async {
       await _sync.suspend();
+      _purchaseOwner = await store.readPurchaseOwner();
       _receipt = await store.readReceipt();
       final saved = await store.readSession();
       if (saved?.refreshState == 'ready') {
@@ -105,6 +117,10 @@ class GoAuthProvider extends AuthProvider {
         }
       }
       if (intent != _intent) return;
+      if (_session != null) {
+        _purchaseOwner = _session!.userId;
+        await store.savePurchaseOwner(_purchaseOwner!);
+      }
       final pendingForSession =
           _receipt?.submitted == true &&
           _receipt?.userId == _session?.userId &&
@@ -113,7 +129,7 @@ class GoAuthProvider extends AuthProvider {
         await store.clearIf(_session!.generation);
         _session = null;
       }
-      await _repo.activateNotebook(_session?.userId);
+      await _activateNotebook(_session?.userId);
       if (_session != null && !pendingForSession) {
         _sync.resumeForAccount(_session!.userId);
       }
@@ -185,7 +201,7 @@ class GoAuthProvider extends AuthProvider {
     try {
       await _notebook(() async {
         await _sync.suspend();
-        await _repo.activateNotebook(null);
+        await _activateNotebook(null);
       });
       final result = await request();
       if (intent != _intent) return false;
@@ -197,10 +213,13 @@ class GoAuthProvider extends AuthProvider {
       }
       return await _notebook(() async {
         if (intent != _intent) return false;
-        await _repo.activateNotebook(result.accountId);
+        await _activateNotebook(result.accountId);
         if (intent != _intent) return false;
         final saved = await store.establish(result.response);
         if (intent != _intent) return false;
+        await store.savePurchaseOwner(saved.userId);
+        if (intent != _intent) return false;
+        _purchaseOwner = saved.userId;
         _session = saved;
         _accountProfile = AccountProfile.fromJson(
           (result.response['user']! as Map).cast<String, Object?>(),
@@ -213,7 +232,7 @@ class GoAuthProvider extends AuthProvider {
         _error = e.message;
         await _notebook(() async {
           await _sync.suspend();
-          await _repo.activateNotebook(null);
+          await _activateNotebook(null);
         });
       }
       return false;
@@ -227,6 +246,12 @@ class GoAuthProvider extends AuthProvider {
 
   void _expired() {
     ++_intent;
+    // Preserve verified local ownership only for an unknown transport outcome.
+    // A definite server rejection must not retain a suspended/deleted account.
+    if (!_goClient.lastExpiryWasUnknown) {
+      _purchaseOwner = null;
+      unawaited(store.clearPurchaseOwner());
+    }
     _session = null;
     _accountProfile = null;
     _working = false;
@@ -235,7 +260,7 @@ class GoAuthProvider extends AuthProvider {
     unawaited(
       _notebook(() async {
         await _sync.suspend();
-        await _repo.activateNotebook(null);
+        await _activateNotebook(null);
       }).then((_) => notifyListeners()),
     );
     notifyListeners();
@@ -244,6 +269,8 @@ class GoAuthProvider extends AuthProvider {
   @override
   Future<void> signOut() async {
     ++_intent;
+    _purchaseOwner = null;
+    await store.clearPurchaseOwner();
     _working = false;
     final logout = goApi
         .logout(); // invalidates credentials before its HTTP call
@@ -251,7 +278,7 @@ class GoAuthProvider extends AuthProvider {
     _accountProfile = null;
     final closed = _notebook(() async {
       await _sync.suspend();
-      await _repo.activateNotebook(null);
+      await _activateNotebook(null);
     });
     notifyListeners();
     await closed;
@@ -271,11 +298,13 @@ class GoAuthProvider extends AuthProvider {
     } finally {
       if (old != null && await store.clearIf(old.generation)) {
         ++_intent;
+        _purchaseOwner = null;
+        await store.clearPurchaseOwner();
         _session = null;
         _accountProfile = null;
         await _notebook(() async {
           await _sync.suspend();
-          await _repo.activateNotebook(null);
+          await _activateNotebook(null);
         });
         notifyListeners();
       }
@@ -375,7 +404,7 @@ class GoAuthProvider extends AuthProvider {
         await store.clearIf(current!.generation);
         _session = null;
         _accountProfile = null;
-        await _notebook(() => _repo.activateNotebook(null));
+        await _notebook(() => _activateNotebook(null));
       }
       return await _pollReceipt() == DeletionOutcome.deleted;
     } finally {
@@ -454,7 +483,11 @@ class GoAuthProvider extends AuthProvider {
           _accountProfile = null;
           await _sync.suspend();
         }
-        await _repo.deleteAll(accountId: receipt.userId);
+        if (_purchaseOwner == receipt.userId) {
+          _purchaseOwner = null;
+          await store.clearPurchaseOwner();
+        }
+        if (accountNotebooks) await _repo.deleteAll(accountId: receipt.userId);
       });
       _receipt = _receipt!.withValues({'locally_cleared': true});
       await store.saveReceipt(_receipt!);

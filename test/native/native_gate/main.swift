@@ -354,3 +354,39 @@ precondition(try! store.read().enabled == false)
 precondition(NativeGatePolicy.applicationID(from: "native:\(appA.id)") == appA.id)
 precondition(NativeGatePolicy.applicationID(from: "native:bad-id") == nil)
 print("Native gate policy, persistence, handoff, scheduling-failure, stale-callback, and cross-process lock tests passed")
+
+// Plan enforcement is native, independent of paywall widgets.
+try NativeGatePlanPolicy.requireAppCount(1, pro: false)
+do { try NativeGatePlanPolicy.requireAppCount(2, pro: false); preconditionFailure("Free must refuse a second app") }
+catch NativeGatePlanError.proRequired {}
+try NativeGatePlanPolicy.requireAppCount(50, pro: true)
+for minutes in [5, 15, 30] { try NativeGatePlanPolicy.requireDuration(minutes, pro: false) }
+do { try NativeGatePlanPolicy.requireDuration(7, pro: false); preconditionFailure("Custom time needs Pro") }
+catch NativeGatePlanError.proRequired {}
+precondition(NativeGatePlanPolicy.duration(7, pro: false) == 15)
+precondition(NativeGatePlanPolicy.duration(7, pro: true) == 7)
+var downgrade = NativeGateState()
+downgrade.applications = [appA, appB]
+try downgrade.setAllApplicationLocks(true)
+downgrade.applicationMinutes = [appB.id: 7]
+downgrade.passes[appB.id] = aggregatePass
+let stoppedByPlan = NativeGatePlanPolicy.applyFreePlan(to: &downgrade)
+precondition(stoppedByPlan == [aggregatePass.activityName])
+precondition(downgrade.isApplicationLockEnabled(appA.id))
+precondition(!downgrade.isApplicationLockEnabled(appB.id))
+precondition(downgrade.applications == [appA, appB])
+precondition(downgrade.applicationMinutes[appB.id] == 7)
+precondition(NativeGatePlanPolicy.applyFreePlan(to: &downgrade).isEmpty)
+// OFF and removal always remain possible after a downgrade.
+_ = try downgrade.setApplicationLockEnabled(false, for: appA.id)
+_ = try downgrade.removeApplication(appB.id)
+precondition(!downgrade.enabled)
+print("Free/Pro native limits, retained selections, safe downgrade, and unconditional removal checks passed")
+
+var preferredFree = NativeGateState()
+preferredFree.applications = [appA,appB]
+try preferredFree.setAllApplicationLocks(true)
+_ = NativeGatePlanPolicy.applyFreePlan(to:&preferredFree,preferredApplicationID:appB.id)
+precondition(preferredFree.isApplicationLockEnabled(appB.id))
+precondition(!preferredFree.isApplicationLockEnabled(appA.id))
+print("Free downgrade keeps the current challenge app when available")

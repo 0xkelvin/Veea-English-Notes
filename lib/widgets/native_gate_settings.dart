@@ -9,6 +9,8 @@ import '../screens/app_gate_screen.dart';
 import 'native_application_label.dart';
 import 'pixel/pixel_box.dart';
 import 'unlock_time_sheet.dart';
+import '../providers/pro_provider.dart';
+import '../screens/pro_screen.dart';
 
 class NativeGateSettings extends StatefulWidget {
   const NativeGateSettings({
@@ -78,6 +80,10 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
 
   void _reportFailure(BuildContext context, bool success) {
     if (success || !context.mounted || gate.nativeError == null) return;
+    if (gate.nativeRequiresPro) {
+      ProScreen.open(context);
+      return;
+    }
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(gate.nativeError!)));
@@ -96,6 +102,14 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
     NativeGateApplication? app,
   ]) async {
     final status = gate.nativeStatus;
+    ProProvider? pro;
+    try {
+      pro = context.read<ProProvider>();
+    } catch (_) {}
+    if (app != null && pro?.hasPro == false) {
+      await ProScreen.open(context);
+      return;
+    }
     final choice = await showUnlockTimeSheet(
       context,
       currentMinutes: app == null
@@ -103,6 +117,8 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
           : status.durationFor(app.id),
       defaultMinutes: app == null ? null : status.passMinutes,
       usesDefault: app != null && app.customPassMinutes == null,
+      allowCustom: pro?.hasPro ?? true,
+      onGetPro: () => ProScreen.open(context),
       applicationLabel: app == null
           ? null
           : NativeApplicationLabel(application: app),
@@ -192,6 +208,7 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
             'Choose your apps and how long each stays unlocked after reviewing your words.',
           ),
           const SizedBox(height: 20),
+          const _PlanSummary(),
           if (!status.available)
             const _SettingsCard(
               child: Text(
@@ -471,4 +488,37 @@ class _SettingsCard extends StatelessWidget {
       child: child,
     ),
   );
+}
+
+class _PlanSummary extends StatelessWidget {
+  const _PlanSummary();
+  @override
+  Widget build(BuildContext context) {
+    ProProvider? pro;
+    try {
+      pro = context.watch<ProProvider>();
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(
+          pro.hasPro ? 'Pro · Multiple app locks' : 'Free · One app lock',
+        ),
+        subtitle: Text(
+          pro.hasPro
+              ? 'Choose a different unlock time for each app.'
+              : 'Choose 5, 15 or 30 minutes. Pro adds more apps and custom times. Extra locks are paused on Free; your selections are kept.',
+        ),
+        trailing: pro.hasPro
+            ? null
+            : TextButton(
+                onPressed: () => ProScreen.open(context),
+                child: const Text('Get Pro'),
+              ),
+      ),
+    );
+  }
 }

@@ -1,5 +1,7 @@
 import '../providers/go_auth_provider.dart';
 import 'sync_review_screen.dart';
+import 'pro_screen.dart';
+import '../providers/pro_provider.dart';
 import '../widgets/app_locks_settings_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -69,7 +71,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _offeringImport = false;
 
   Future<void> _offerImport() async {
-    if (!mounted || _offeringImport || _authForImport?.isSignedIn != true) {
+    if (!AppConfig.isVocabularySyncEnabled ||
+        !mounted ||
+        _offeringImport ||
+        _authForImport?.isSignedIn != true) {
       return;
     }
     if (_authForImport!.isBusy || _authForImport!.blocksCloudSync) return;
@@ -231,11 +236,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: ListTile(
                         key: const Key('settings_account'),
                         leading: const Icon(Icons.account_circle_outlined),
-                        title: const Text('Account and backup'),
+                        title: const Text('Account'),
                         subtitle: Text(
                           AppConfig.isCloudEnabled
                               ? (context.read<AuthProvider>() is GoAuthProvider
-                                    ? 'Email sign-in and your notebook'
+                                    ? 'Email sign-in and account settings'
                                     : 'Phone sign-in and your notebook')
                               : 'Coming soon · Your notebook stays on this device',
                         ),
@@ -249,7 +254,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                   const SizedBox(height: PixelMetrics.space4),
-                  if (!AppConfig.isCloudEnabled)
+                  const _ProSettingsLink(),
+                  const SizedBox(height: PixelMetrics.space4),
+                  if (!AppConfig.isVocabularySyncEnabled ||
+                      !AppConfig.isCloudEnabled)
                     const _Notice(
                       lines: [
                         'Your words are stored on this device.',
@@ -328,7 +336,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const _DailyReminderSection(),
                   const SizedBox(height: PixelMetrics.space5),
 
-                  if (context.watch<AuthProvider>().isSignedIn &&
+                  if (AppConfig.isVocabularySyncEnabled &&
+                      context.watch<AuthProvider>().isSignedIn &&
                       context.read<SyncService>().learningEngine != null)
                     ListTile(
                       title: const Text('Sync review and guest import'),
@@ -1613,7 +1622,7 @@ class _DataBackupSection extends StatelessWidget {
         Text('Backup and restore', style: theme.textTheme.titleSmall),
         const SizedBox(height: PixelMetrics.space2),
         Text(
-          'Keep a copy of your words or bring back a previous backup. Account backup words wait in Sync review for capacity selection and confirmation. Guest backups open only while signed out.',
+          'Keep a copy of your words or bring back a previous backup. Your notebook stays on this device, whether you are signed in or not.',
           style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: PixelMetrics.space3),
@@ -1842,6 +1851,30 @@ class _AppGateSettingsSectionState extends State<_AppGateSettingsSection> {
         );
         await gateProvider.prepareChallenge();
       },
+    );
+  }
+}
+
+class _ProSettingsLink extends StatelessWidget {
+  const _ProSettingsLink();
+  @override
+  Widget build(BuildContext context) {
+    ProProvider? pro;
+    try {
+      pro = context.watch<ProProvider>();
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
+    return PixelBox(
+      padding: EdgeInsets.zero,
+      child: ListTile(
+        key: const Key('settings_pro'),
+        leading: const Icon(Icons.auto_awesome_outlined),
+        title: Text(pro.hasPro ? 'Veea Pro · Active' : 'Veea Pro'),
+        subtitle: const Text('More app locks · One-time purchase'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => ProScreen.open(context),
+      ),
     );
   }
 }

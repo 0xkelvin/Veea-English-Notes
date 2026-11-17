@@ -104,7 +104,7 @@ type signupEnv struct {
 	errorBodies []string // every 4xx and 5xx body, for the hygiene check
 }
 
-func newSignupEnv(t *testing.T, rules *ratelimit.Rules) *signupEnv {
+func newSignupEnv(t *testing.T, rules *ratelimit.Rules, configure ...func(*app.Options)) *signupEnv {
 	t.Helper()
 	d, q := migratedDB(t)
 	h, err := identity.NewHasher(identity.HasherConfig{Params: identity.Params{MemoryKiB: 64, Time: 1, Threads: 1, SaltLen: 16, KeyLen: 32}})
@@ -120,13 +120,17 @@ func newSignupEnv(t *testing.T, rules *ratelimit.Rules) *signupEnv {
 	// The same redacting handler as cmd/api, so the hygiene checks see production logging.
 	log := slog.New(logging.NewRedactingHandler(slog.NewJSONHandler(env.logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	outboxKeys := []notify.Key{{ID: 1, Key: outboxKey1}}
-	handler, err := app.New(app.Options{
+	options := app.Options{
 		Pool: d.Pool, ReadyTimeout: time.Second, Logger: log,
 		EmailHMACKeys: [][]byte{bytes.Repeat([]byte{0x42}, 32)}, // same key as testEmailHMAC
 		OTPKeys:       [][]byte{otpTestKey}, OutboxKeys: outboxKeys,
 		Hasher: env.hasher, Rules: rules, Random: env.random,
 		OnTxRetry: func(string) { env.retries.Add(1) }, Metrics: env.metrics,
-	})
+	}
+	for _, fn := range configure {
+		fn(&options)
+	}
+	handler, err := app.New(options)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -4,6 +4,7 @@ import '../models/native_gate_status.dart';
 import '../providers/app_gate_provider.dart';
 import 'native_application_label.dart';
 import 'pixel/pixel_box.dart';
+import '../screens/pro_screen.dart';
 
 /// Settings overview; app selection and time rules live on the management page.
 class AppLocksSettingsSection extends StatelessWidget {
@@ -20,6 +21,10 @@ class AppLocksSettingsSection extends StatelessWidget {
   Future<void> _run(BuildContext context, Future<bool> operation) async {
     final success = await operation;
     final error = gate?.nativeError;
+    if (!success && gate?.nativeRequiresPro == true && context.mounted) {
+      await ProScreen.open(context);
+      return;
+    }
     if (!success && error != null && context.mounted) {
       ScaffoldMessenger.of(
         context,

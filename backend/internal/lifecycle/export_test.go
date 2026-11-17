@@ -85,6 +85,11 @@ func TestExportHeaderWorstCaseWithEntitlements(t *testing.T) {
 	if len(section)-beforeCartridges != 1612 {
 		t.Fatalf("cartridge section bound changed: %d", len(section)-beforeCartridges)
 	}
+	proofs := make([]sqlc.ListAccountApplePurchasesRow, 5)
+	for i := range proofs {
+		proofs[i] = sqlc.ListAccountApplePurchasesRow{ProductID: strings.Repeat("z", 100), Environment: "Production", PurchasedAt: far.Add(999999 * time.Nanosecond), RevokedAt: func() *time.Time { t := far.Add(999999 * time.Nanosecond); return &t }()}
+	}
+	section = entitlements.AppendApplePurchases(section, proofs)
 	h, err := exportHeader(far, 9_223_372_036_854_775_807, u, section)
 	if err != nil {
 		t.Fatal(err)

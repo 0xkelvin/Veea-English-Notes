@@ -11,6 +11,7 @@ import (
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity/accounts"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/learning"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/lifecycle"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/purchases"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"log/slog"
 	"net/http"
@@ -34,6 +35,7 @@ import (
 
 // Handlers serves the auth endpoints.
 type Handlers struct {
+	Purchases *purchases.Service
 	Pool      *pgxpool.Pool // read-only owner queries (GET /v1/me/entitlements)
 	Admin     *admin.Service
 	Lifecycle *lifecycle.Service
@@ -65,6 +67,7 @@ func (h *Handlers) Mount(mux httpx.Router) {
 	mux.HandleFunc("POST /v1/auth/token/refresh", h.refresh)
 	mux.HandleFunc("POST /v1/auth/logout", h.authenticated(h.logout))
 	mux.HandleFunc("GET /v1/me", h.authenticated(h.me))
+	mux.HandleFunc("POST /v1/me/purchases/apple", h.authenticated(h.applePurchase))
 	mux.HandleFunc("GET /v1/me/entitlements", h.authenticated(h.meEntitlements))
 	mux.HandleFunc("GET /v1/cartridges", h.authenticated(h.cartridgeCatalog))
 	mux.HandleFunc("GET /v1/cartridges/{cartridge_id}/versions/{version}/content", h.authenticated(h.cartridgeContent))

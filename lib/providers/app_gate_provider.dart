@@ -34,6 +34,7 @@ class AppGateProvider extends ChangeNotifier {
   NativeGateStatus _nativeStatus = const NativeGateStatus();
   bool _nativeBusy = false;
   String? _nativeError;
+  bool nativeRequiresPro = false;
   List<VocabularyWord> _notebook = const [];
   Map<String, int> _wordTurns = {};
   final Set<String> _submittingApps = {};
@@ -157,11 +158,13 @@ class AppGateProvider extends ChangeNotifier {
     if (_nativeBusy) return false;
     _nativeBusy = true;
     _nativeError = null;
+    nativeRequiresPro = false;
     notifyListeners();
     try {
       await operation();
       return true;
     } on PlatformException catch (error) {
+      nativeRequiresPro = error.code == 'PRO_REQUIRED';
       _nativeError =
           error.message ??
           'Screen Time could not be updated. Please try again.';

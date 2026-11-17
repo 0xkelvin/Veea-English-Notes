@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type AccountExportChunk struct {
@@ -41,6 +42,25 @@ type AccountOperation struct {
 	EmailDigests       [][]byte
 	SchemaVersion      *int16
 	ArtifactPlainBytes *int64
+}
+
+type AppleIapControl struct {
+	Singleton   bool
+	Environment string
+}
+
+type AppleProPurchase struct {
+	OriginalTransactionID string
+	TransactionID         string
+	UserID                uuid.UUID
+	AppAccountToken       uuid.UUID
+	ProductID             string
+	Environment           string
+	PurchasedAt           time.Time
+	RevokedAt             *time.Time
+	RevocationReason      pgtype.Int4
+	VerifiedAt            time.Time
+	AppleSignedAt         time.Time
 }
 
 type AuditEvent struct {

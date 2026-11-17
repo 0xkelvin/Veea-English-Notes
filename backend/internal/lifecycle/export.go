@@ -117,6 +117,11 @@ func (s *Service) exportOnce(ctx context.Context, conn *pgxpool.Conn, id uuid.UU
 	}
 	section := entitlements.AppendExport(nil, plan, grants, snapshotAt)
 	section = learning.AppendCartridgeInstallations(section, installations)
+	purchases, err := q.ListAccountApplePurchases(ctx, sqlc.ListAccountApplePurchasesParams{UserID: u.ID, MaxRows: 5})
+	if err != nil {
+		return "", err
+	}
+	section = entitlements.AppendApplePurchases(section, purchases)
 	header, err := exportHeader(snapshotAt, head.Revision, u, section)
 	if err != nil {
 		return "", err

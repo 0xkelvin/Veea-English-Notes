@@ -208,10 +208,16 @@ const (
 	CodeLastSuperAdmin           = "last_super_admin"
 	CodeEntitlementConflict      = "entitlement_conflict"
 	CodeInvalidExpiry            = "invalid_expiry"
+	CodePurchaseUnavailable      = "purchase_unavailable"
+	CodePurchaseInvalid          = "purchase_invalid"
+	CodePurchaseOwnership        = "purchase_ownership_conflict"
 	CodePlanRequired             = "plan_required"
 )
 
 var titles = map[string]string{
+	CodePurchaseUnavailable:      "Purchase verification is temporarily unavailable.",
+	CodePurchaseInvalid:          "Apple could not verify this purchase for this app.",
+	CodePurchaseOwnership:        "This purchase belongs to a different Veea account.",
 	CodePlanRequired:             "Premium is required to download this cartridge.",
 	CodeSyncUnavailable:          "Sync is not available right now.",
 	CodeSyncResetRequired:        "This device must download a new snapshot before syncing.",

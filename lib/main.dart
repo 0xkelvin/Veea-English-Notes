@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'core/config/app_config.dart';
+import 'data/pro_repository.dart';
+import 'providers/pro_provider.dart';
 import 'data/local/legacy_import.dart';
 import 'data/cartridges/cartridge_api.dart';
 import 'data/feedback_repository.dart';
@@ -44,23 +46,30 @@ Future<void> main() async {
     await LegacyImport(repository).runIfNeeded();
     final pronunciation = PronunciationService(repository.database);
 
-    final vocabulary = VocabularyProvider(repository);
+    final vocabulary = VocabularyProvider(
+      repository,
+      deviceNotebook: !AppConfig.isVocabularySyncEnabled,
+    );
     await vocabulary.init();
 
     final tokens = GoTokenStore();
     final apiClient = GoApiClient(tokens: tokens);
     final sync = SyncService(
       repository: repository,
-      learningEngine: SyncEngine(
-        db: repository.database,
-        api: LearningSyncApi(
-          client: GoLearningHttpClient(apiClient),
-          baseUrl: AppConfig.apiBaseUrl,
-          accessToken: tokens.readAccessToken,
-        ),
-      ),
+      networkEnabled: AppConfig.isVocabularySyncEnabled,
+      learningEngine: AppConfig.isVocabularySyncEnabled
+          ? SyncEngine(
+              db: repository.database,
+              api: LearningSyncApi(
+                client: GoLearningHttpClient(apiClient),
+                baseUrl: AppConfig.apiBaseUrl,
+                accessToken: tokens.readAccessToken,
+              ),
+            )
+          : null,
     );
     final auth = GoAuthProvider(
+      accountNotebooks: AppConfig.isVocabularySyncEnabled,
       authApi: GoAuthApi(client: apiClient, tokens: tokens),
       tokens: tokens,
       client: apiClient,
@@ -90,6 +99,13 @@ Future<void> main() async {
       ),
     );
 
+    final pro = ProProvider(
+      auth: auth,
+      repository: ProRepository(client: apiClient),
+    );
+    // Resolve the device's verified entitlement before any challenge can grant
+    // access. This uses cached StoreKit data and does not wait on the account API.
+    await pro.initializeDevice();
     final themeProvider = ThemeProvider();
     await themeProvider.init();
 
@@ -104,10 +120,13 @@ Future<void> main() async {
         vocabulary: vocabulary,
         cartridges: CartridgeProvider(
           repository: repository,
-          api: GoCartridgeApi(apiClient),
+          api: AppConfig.isVocabularySyncEnabled
+              ? GoCartridgeApi(apiClient)
+              : null,
           sync: sync,
         ),
         auth: auth,
+        pro: pro,
         sync: sync,
         pronunciation: pronunciation,
         themeProvider: themeProvider,
@@ -143,7 +162,11 @@ Future<void> _startBackgroundWork({
 
     await ReminderNotificationService.instance.initialize();
 
-    if (!AppConfig.isCloudEnabled || !auth.isSignedIn) return;
+    if (!AppConfig.isVocabularySyncEnabled ||
+        !AppConfig.isCloudEnabled ||
+        !auth.isSignedIn) {
+      return;
+    }
 
     await sync.refreshPendingCount();
     if (await sync.synchronise()) {
@@ -167,10 +190,12 @@ class VeeaEnglishApp extends StatefulWidget {
     this.appGateProvider,
     this.feedback,
     this.cartridges,
+    this.pro,
   });
 
   final VocabularyProvider vocabulary;
   final AuthProvider auth;
+  final ProProvider? pro;
   final SyncService sync;
   final PronunciationService pronunciation;
   final ThemeProvider? themeProvider;
@@ -198,6 +223,10 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
   int _accountViewVersion = 0;
   Timer? _syncDebounce;
 
+  void _proChanged() {
+    if (mounted) unawaited(_appGateProvider.refreshNativeScreenTime());
+  }
+
   void _authChanged() {
     final owner = widget.auth.accountId;
     if (owner == _lastAccount) return;
@@ -217,7 +246,17 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
   }
 
   void _wordsChanged() {
-    if (!widget.auth.isSignedIn || !AppConfig.isCloudEnabled) return;
+    // Learning rules must see newly saved words even while fully offline.
+    unawaited(
+      _appGateProvider.prepareChallenge().catchError((Object error) {
+        debugPrint('Could not refresh learning words: $error');
+      }),
+    );
+    if (!AppConfig.isVocabularySyncEnabled ||
+        !widget.auth.isSignedIn ||
+        !AppConfig.isCloudEnabled) {
+      return;
+    }
     _syncDebounce?.cancel();
     _syncDebounce = Timer(const Duration(seconds: 2), () async {
       await widget.sync.refreshPendingCount();
@@ -226,7 +265,8 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
   }
 
   Future<void> _syncNotebook() async {
-    if (!widget.auth.isSignedIn ||
+    if (!AppConfig.isVocabularySyncEnabled ||
+        !widget.auth.isSignedIn ||
         !AppConfig.isCloudEnabled ||
         widget.auth.blocksCloudSync) {
       return;
@@ -301,6 +341,8 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
         widget.appGateProvider ??
         (AppGateProvider(repository: widget.vocabulary.repository)..init());
     _lastAccount = widget.auth.accountId;
+    widget.pro?.addListener(_proChanged);
+    unawaited(widget.pro?.refresh() ?? Future.value());
     widget.auth.addListener(_authChanged);
     widget.vocabulary.addListener(_wordsChanged);
     unawaited(widget.feedback?.activate(_lastAccount) ?? Future.value());
@@ -344,6 +386,7 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
 
   Future<void> _handleAppResume() async {
     widget.vocabulary.refreshWidgetData();
+    unawaited(widget.pro?.refresh() ?? Future.value());
     await _appGateProvider.refreshNativeScreenTime();
     try {
       await _appGateProvider.prepareChallenge();
@@ -385,6 +428,8 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
     _friendChallengeService.dispose();
     _lifecycleListener.dispose();
     _ttsService.dispose();
+    widget.pro?.removeListener(_proChanged);
+    widget.pro?.dispose();
     super.dispose();
   }
 
@@ -394,6 +439,8 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
       providers: [
         ChangeNotifierProvider.value(value: widget.vocabulary),
         ChangeNotifierProvider.value(value: widget.auth),
+        if (widget.pro != null)
+          ChangeNotifierProvider.value(value: widget.pro!),
         if (widget.feedback != null)
           ChangeNotifierProvider.value(value: widget.feedback!),
         ChangeNotifierProvider.value(value: widget.sync),

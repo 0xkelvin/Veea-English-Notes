@@ -367,3 +367,22 @@ func TestMaintenanceDatabaseURLValidationAndRedaction(t *testing.T) {
 		t.Fatal("invalid maintenance URL not safely rejected")
 	}
 }
+
+func TestApplePurchaseConfigurationFailsClosedAndRedactsKeys(t *testing.T) {
+	cfg, err := Load(with(nil))
+	if err != nil || cfg.AppleVerifier != nil {
+		t.Fatalf("default billing must be disabled: %v", err)
+	}
+	cfg, err = Load(with(map[string]string{"VEEA_APPLE_IAP_ENABLED": "false", "VEEA_APPLE_IAP_PRIVATE_KEY": "private-synthetic-value"}))
+	if err != nil || cfg.AppleVerifier != nil {
+		t.Fatal("explicit disabled ignored")
+	}
+	_, err = Load(with(map[string]string{"VEEA_APPLE_IAP_ENABLED": "true", "VEEA_APPLE_IAP_PRIVATE_KEY": "private-synthetic-value"}))
+	if err == nil || strings.Contains(err.Error(), "private-synthetic-value") {
+		t.Fatal("invalid purchase config accepted or exposed secret")
+	}
+	_, err = Load(with(map[string]string{"VEEA_APPLE_IAP_ENABLED": "yes"}))
+	if err == nil {
+		t.Fatal("invalid billing switch accepted")
+	}
+}
