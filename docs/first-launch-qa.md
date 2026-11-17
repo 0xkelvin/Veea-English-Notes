@@ -2,6 +2,10 @@
 
 Candidate branch: `feat/first-launch-native-accounts`.
 
+Historical client/native evidence. The former phone backend has been retired;
+current account/server acceptance follows [staging verification](staging-verification.md).
+Obsolete server check rows have been removed; remaining results are historical.
+
 ## Scope and review
 
 Claude CLI supplied the initial UX/account design review, implemented the core
@@ -31,8 +35,6 @@ also led to eagerly mounted, scrollable account forms.
 | `flutter analyze --no-pub` | No issues |
 | `flutter test --no-pub` | **544 passed**, including visual goldens |
 | Focused phone lifecycle / account UI | **34 passed**; included in total above |
-| `cargo test --lib` in `cloud` | **79 passed** |
-| Opt-in PostgreSQL integration suite | **6 passed, 0 ignored**, disposable local PostgreSQL 16 |
 | `bash tool/test_native_screen_time.sh` | Portable native and compatibility checks passed |
 | Runner Swift type checking | Passed against the installed iOS 27.2 device SDK |
 | iOS release Dart/AOT + assets assembly | Passed, arm64 App.framework built |

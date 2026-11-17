@@ -1,9 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:veea_english_app/models/account_identifier.dart';
 
-/// These rules mirror `Identifier::parse` and `PhoneNumber` on the server.
-/// If one side changes, the app will start accepting input the API rejects,
-/// so the cases here are deliberately the same ones the Rust tests cover.
+/// These rules preserve identifier parsing for compatibility callers.
+/// Production Go email authentication uses its own client and contract.
 void main() {
   group('email', () {
     test('is recognised and lowercased', () {

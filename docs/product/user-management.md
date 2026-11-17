@@ -44,7 +44,7 @@ This document says *what* the product does and how we know it works. API endpoin
 Veea English Notes is an offline-first vocabulary app. It stays fully usable without an account. An account exists so a learner can keep their notebook across devices and recover it.
 
 - **[Approved]** The new backend uses Go and PostgreSQL as a modular monolith.
-- **[Approved]** The existing Rust backend is local-only. API contracts, schema and migrations may be redesigned from scratch.
+- **[Approved]** The retired prototype was local-only. Go API contracts, schema and migrations were redesigned independently; Go is now the only supported backend.
 - **[Approved]** Flutter will be rebuilt after the backend. Existing Flutter contracts do not constrain this design.
 - **[Proposed]** The app remains usable signed-out. An account is required only for cloud features (sync, multi-device, entitlements).
 - **[Approved]** Payments are deferred. Entitlements are modeled, but no purchase flow is in scope.

@@ -22,7 +22,7 @@ The console adds no API, schema or authorization rule. **The Go API is the autho
 
 - The only frontend is the Flutter mobile app at the repository root. Its `web/` folder holds icons only (no `index.html`), so the app has never been built for the web.
 - The Go client in `lib/data/remote/go/` keeps sessions in platform secure storage, with durable generation and in-flight markers built for a phone that must survive restarts.
-- There is no web deployment anywhere in the repository. The only container setup is the Rust `cloud/` Dockerfile and docker-compose stack.
+- At the design baseline there was no web deployment. The supported backend now uses `backend/Dockerfile` and the local/production Compose files; admin deployment follows §3.1.
 - The Go service sends **no CORS headers**, and it serves only the API.
 - An existing pattern runs Dart tests against the real Go router: `TestFlutterGo_EndToEnd` plus `scripts/test-flutter-go.sh`.
 

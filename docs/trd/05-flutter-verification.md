@@ -72,7 +72,7 @@ VEEA_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:54329/postgres \
 
 ## Flutter → Go integration closeout — 2026-11-15
 
-The previous Go identity/lifecycle client blocker is **resolved for the sign-in, session, deletion and sync flows in this closeout**. Production `main()` now constructs `GoTokenStore`, `GoApiClient`, `GoAuthApi` and `GoAuthProvider`. Settings' account entry selects the Go email UI. The older Rust adapters and phone screens remain for explicit legacy callers/tests; the production Go path neither calls their endpoints nor adopts their credentials.
+The previous Go identity/lifecycle client blocker is **resolved for the sign-in, session, deletion and sync flows in this closeout**. Production `main()` now constructs `GoTokenStore`, `GoApiClient`, `GoAuthApi` and `GoAuthProvider`. Settings' account entry selects the Go email UI. The older compatibility adapters and phone screens remain for explicit legacy callers/tests; the production Go path neither calls their endpoints nor adopts their credentials.
 
 ### Contracts implemented
 

@@ -26,7 +26,7 @@ No product decision remains open; §16 lists implementation blockers.
 
 | Requirement | Source |
 |---|---|
-| The new backend is Go and PostgreSQL. The Rust backend is local-only, and its contracts, schema and migrations may be redesigned | Product Doc §1 **[Approved]** |
+| The supported backend is Go and PostgreSQL. Contracts, schema and migrations were redesigned independently of the retired prototype | Product Doc §1 **[Approved]** |
 | Flutter is rebuilt after the backend; existing Flutter contracts do not constrain this design | Product Doc §1 **[Approved]** |
 | One account has one stable `user_id`, independent of email and sign-in method | Product Doc §2 goal 1; TRD 04 §1 approved baseline |
 | Learning data syncs per account with no cross-user leakage | Product Doc §2 goal 4 |
@@ -35,7 +35,7 @@ No product decision remains open; §16 lists implementation blockers.
 | Export only the owner's product data that exists today. Downloads expire after 24 h and are invalidated when deletion is accepted | TRD 04 §1.1 **[Approved]** |
 | Retention: backups/WAL 30 days, restoration ledger 90 days. The deletion ledger is replayed on restore before traffic | TRD 04 §1.1, §12.5 **[Approved]** |
 | Every protected Go route uses `authenticated`; a changed route updates `backend/api/openapi.yaml` in the same change; metrics count after commit with fixed labels; a new user-owned table is purged, and exported if it is product data | AGENTS.md |
-| Idempotency keys are authenticated first and scoped by user; there is no router-wide replay layer | AGENTS.md review rules (N1 precedent) |
+| Idempotency keys are authenticated first and scoped by user; there is no router-wide replay layer | AGENTS.md review rules |
 
 ### 1.2 Decisions (D1–D10, 2026-11-14) **[Decided]**
 
@@ -61,13 +61,15 @@ This pass also amends [TRD 04 §6.3](04-account-lifecycle-data-rights.md#63-old-
 
 The TRD 04 §12.5 restore runbook is extended by §8.2 below. [Product Doc v0.3](../product/user-management.md) §8 states the product rules and resolves Q-L2. This TRD holds the protocol.
 
-## 2. Learning data that exists today **[Existing fact]**
+## 2. Learning data baseline before this implementation
 
-The Go backend has no learning-data tables (migrations 00001–00010). TRD 04 export contains account and profile fields only.
+This section records the pre-TRD 05 baseline (migrations 00001–00010). Migration
+00011 and the later implementation sections supersede it: Go now owns learning
+sync, export and purge. The retired prototype is no longer shipped.
 
 ### 2.1 Flutter device data
 
-| Data | Where | Content | Synced today (Rust prototype) |
+| Data | Where | Content | Synced by retired prototype |
 |---|---|---|---|
 | Vocabulary entry | SQLite `words` ([`app_database.dart`](../../lib/data/local/app_database.dart), schema version 11) | Client UUID `id`, `word`, `meaning`, `pronunciation`, `part_of_speech`, `source`, `examples` and `tags` (JSON lists), capture `date`, `created_at`, `updated_at` (client clock), `is_deleted`, `is_dirty`, `synced_at`, derived search text | Content and tombstone |
 | Gate review progress | `words.srs_stage`, `next_review_at`, `last_reviewed_at`, `last_gate_failed` | Per-word gate stage and schedule | No |
@@ -80,7 +82,8 @@ The Go backend has no learning-data tables (migrations 00001–00010). TRD 04 ex
 
 ### 2.2 Gaps this design closes
 
-The Rust prototype is in `cloud/` ([`word_repository_pg.rs`](../../cloud/src/infrastructure/persistence/postgres/word_repository_pg.rs)). Between it and today's Flutter client:
+The retired prototype and its former Flutter path had the following gaps.
+The Go design below closes them; these are historical findings, not current Go behavior:
 1. **Silent adoption.** On a device's first sign-in, `activateNotebook` adopts the guest notebook into the account without asking ([`sqlite_vocabulary_repository.dart`](../../lib/data/local/sqlite_vocabulary_repository.dart)).
 2. **Client-clock winners.** Conflicts are decided by last write on the client's `updated_at`.
 3. **Global IDs.** The globally unique primary key refuses an ID owned by another account, which reveals that it exists.
@@ -473,7 +476,7 @@ Only `guest_created` words are eligible for import into an account. Rules:
 **Data already on a device.** When the rebuilt app first migrates the pre-rebuild local database, **every row is `legacy_untagged` unless positive guest provenance exists.** The pre-rebuild schema records no provenance, so in practice every migrated word is `legacy_untagged`. That includes:
 - words in the unowned notebook that arrived through an untagged backup imported before the upgrade: nothing distinguishes them from words typed in;
 - words of an account notebook whose `notebook_owner` marker was cleared at sign-out (the old `activateNotebook(null)` path): they look unowned but may belong to an account;
-- words in a notebook owned by a pre-Go (Rust-era) account, which has no Go identity.
+- words in a notebook owned by a pre-Go account, which has no Go identity.
 
 They open in the guest notebook and are never offered for import (D10).
 

@@ -1,7 +1,7 @@
 # Veea English Notes
 
 Offline-first Flutter vocabulary app (iOS/Android) plus the optional Go account/sync backend
-in `backend/`; legacy Rust remains in `cloud/` for maintenance. The app is fully usable with no server; cloud is enabled only when
+in `backend/`, the only supported backend. The app is fully usable with no server; cloud is enabled only when
 built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_config.dart`).
 
 ## Where things are
@@ -9,8 +9,10 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
 **Flutter app** (repo root, `pubspec.yaml`)
 - `lib/main.dart` entry; `lib/{models,providers,screens,services,widgets,core,arcade_sdk}`.
 - Local data: `lib/data/local/` (SQLite schema/migrations in `app_database.dart`).
-- Cloud client: `lib/data/remote/` (`api_client`, `auth_api`, `vocabulary_api`, `token_store`),
-  `lib/services/sync_service.dart`, `lib/providers/auth_provider.dart`.
+- Go client: `lib/data/remote/go/`, sync transport in `lib/data/remote/`,
+  `lib/services/sync_service.dart`, `lib/providers/go_auth_provider.dart`.
+  Shared base interfaces and compatibility adapters remain in `lib/data/remote/`
+  and `lib/providers/auth_provider.dart`.
 - Tests mirror `lib/` under `test/`; goldens in `test/golden/`; Swift tests in `test/native/`.
 - Native iOS Screen Time code: `ios/` (Runner plus three extension targets). See `README.md`.
 
@@ -26,15 +28,7 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
 - Tests: `cd admin_console && flutter analyze && flutter test`; against real Go:
   `make -C backend test-flutter-admin` (Docker for the disposable PostgreSQL).
 
-**Rust backend** (`cloud/`, `cloud/Cargo.toml`, edition 2024)
-- `cloud/src/main.rs` / `lib.rs`; wiring in `bootstrap/app_state.rs`.
-- Routes: `interfaces/http/router.rs`; handlers in `interfaces/http/handlers/`;
-  OpenAPI in `interfaces/http/openapi.rs`.
-- Logic: `application/{identity,vocabulary}`; SQL: `infrastructure/persistence/postgres/`.
-- Schema: `cloud/migrations/` (run automatically on startup).
-- Integration tests: `cloud/tests/account_data_integration.rs`.
-
-**Go backend** (`backend/`, the default local service; legacy Rust remains separately available; see
+**Go backend** (`backend/`, the only supported backend; see
 `docs/trd/01-email-authentication-account-foundation.md` and `backend/README.md`)
 - So far: config, pgx pool, `/healthz`, `/readyz`, `cmd/migrate`, a disposable-PostgreSQL test
   harness, migrations 00001 to 00015 (`backend/migrations/`) and sqlc queries
@@ -103,12 +97,9 @@ built with `--dart-define=VEEA_API_BASE_URL=...` (see `lib/core/config/app_confi
 - Commands (from `backend/`): `make check` (no database), `make test-db-up`,
   `make test-integration`, `make test-db-down`. Integration tests need Docker and refuse
   any non-local `VEEA_TEST_DATABASE_URL`.
-- The Rust rules below apply to `cloud/` only. The Go service follows TRD 01.
 
-**Backend conventions** (layering, errors, naming, SQL/migration style, tests) live in
-`cloud/.github/copilot-instructions.md` and `cloud/.github/instructions/*.md`. That is the
-source of truth; do not duplicate it here. Where it disagrees with the code, trust the code
-(for example it describes `jwt_auth`/`role_guard` middleware that `router.rs` does not mount).
+Backend conventions and contracts are defined in the Go TRDs, `backend/README.md`,
+`backend/api/openapi.yaml` and the implementation.
 
 ## Staging readiness
 
@@ -125,7 +116,7 @@ locally tested; shared storage, scheduling, key custody and freshness monitoring
 
 ## Commands
 
-Run from the repo root for Flutter and from `cloud/` for Rust (`make -C cloud <target>` also works).
+Run from the repo root for Flutter and from `backend/` for Go (`make -C backend <target>` also works).
 
 | Purpose | Command | Needs locally |
 |---|---|---|
@@ -136,22 +127,19 @@ Run from the repo root for Flutter and from `cloud/` for Rust (`make -C cloud <t
 | Admin console lint/tests | `cd admin_console && flutter analyze && flutter test` | Flutter SDK |
 | Admin console vs real Go | `make -C backend test-flutter-admin` | Flutter SDK, Go, Docker |
 | Unsigned iOS build | `flutter build ios --release --no-codesign` | macOS, Xcode (not run; from README) |
-| Rust format | `cargo fmt -- --check` | Rust toolchain |
-| Rust lint (CI) | `make clippy` | Rust toolchain **and `cmake`** (`--all-features` builds `rdkafka`) |
-| Rust unit tests (CI) | `make test` | Rust toolchain **and `cmake`** |
-| Rust unit tests, no cmake | `cargo test` (default features) | Rust toolchain only; no DB or Redis |
-| Rust integration tests | `VEEA_TEST_DATABASE_URL=<disposable local db> cargo test --test account_data_integration -- --ignored` | Local Postgres (not run; from the test file header) |
+| Go build | `go build ./...` (from `backend/`) | Go SDK matching `backend/go.mod` |
+| Go unit tests | `go test ./...` (from `backend/`) | Go SDK |
+| Go race tests | `go test -race ./...` (from `backend/`) | Go SDK and C compiler |
 | Local Go backend stack | `make backend-up`, `make backend-down`, `make backend-logs`, `make backend-ps`, `make backend-migrate-status` (root or `make -C backend`) | Docker Compose, openssl |
 | Flutter with Go | `make run-cloud` after `make backend-up` | Flutter SDK; resolves running Go port |
-| Legacy Rust stack | `make rust-backend-up`, `make rust-backend-run`, `make rust-backend-down` | Docker, Rust toolchain |
 
 `make backend-down` preserves the Go volume; `backend-down-v` explicitly deletes it.
 Compose orchestration is in `backend/Makefile`; root targets delegate there. Use the same
 `COMPOSE_PROJECT_NAME` / `COMPOSE_ENV_FILE` overrides on every call; relative env paths are
 always backend-relative. `backend-env` generates private Go keys once and never overwrites.
-`backend-run` is a detached Go startup alias; Rust foreground runs require `rust-backend-run`.
-Existing Go test scripts use separate disposable services/ports. CI for `cloud/` is
-`cloud/.github/workflows/ci.yml` (fmt, clippy, test); there is no CI for Flutter tests.
+`backend-run` is a detached Go startup alias. Existing Go test scripts use separate
+disposable services/ports. Android build CI is `.github/workflows/build-apk.yml`;
+there is no CI for Flutter tests or Go checks. Run the documented local checks.
 
 Production Docker uses the separate `backend/compose.production.yaml` and `backend-prod-*`
 Make targets (root delegates to backend). It uses Resend without Mailpit, a private
@@ -163,53 +151,43 @@ backup/ledger custody and release gates remain operator responsibilities, never 
 local Compose verification. Never point local tests at a deployed production database.
 
 Baseline as of 2026-11-10 on `main` (check before blaming your change):
-`cargo fmt -- --check` and `cargo clippy` already fail (e.g. `phone_auth.rs`
-`delete_verified_account` has 9 arguments), and 5 tests in `test/golden/screens_golden_test.dart`
-fail with pixel diffs on one macOS machine. Do not regenerate goldens or reformat unrelated
-files to hide these.
+5 tests in `test/golden/screens_golden_test.dart` fail with pixel diffs on one macOS
+machine. Do not regenerate goldens or reformat unrelated files to hide these.
 
 ## Review rules
 
-Treat these as blocking when reviewing or changing `cloud/` or the sync/auth client code.
+Treat these as blocking when reviewing or changing the backend or sync/auth client.
 
-- **Authentication.** Protected routes are not layered in `router.rs`; each handler must take
-  the `AuthUser` extractor, and admin handlers must check `ctx.is_admin()` themselves. A new
-  route that skips both is public. Refresh tokens belong in `token_store.dart` (secure storage),
+- **Authentication.** Protected Go routes use `authenticated`; admin routes also use
+  `requireStaff` and revalidate authorization under lock. Account-rights capabilities
+  are the explicit exception described above. Refresh tokens stay in secure storage,
   never SharedPreferences, logs or fixtures.
-- **Resource ownership.** Every read or write of user data is scoped by the authenticated
-  `user_id` from `AuthUser`, never by an ID taken from the body or path alone. In
-  `word_repository_pg.rs`, upserts guard `ON CONFLICT ... WHERE words.user_id = EXCLUDED.user_id`
-  and foreign word IDs are rejected; keep that when touching sync.
-- **Account deletion.** Needs a fresh verified code, removes owned data via `ON DELETE CASCADE`,
-  and leaves a receipt so a client that lost the response can confirm (`/auth/deletion-receipt`,
-  `PendingDeletion` in `auth_api.dart`/`token_store.dart`). New user-owned tables must cascade
-  from `users` and be covered by deletion and export.
-- **Migrations.** Add a new file with `make -C cloud migrate-add name=...`; never edit an applied
-  one. Use `IF NOT EXISTS`, and do not drop a column in the same release that removes its code.
-  Migrations run on startup, so check they are safe against existing data. The Flutter SQLite
-  schema in `app_database.dart` has its own versioned migrations; keep the two separate.
-- **Retry-sensitive writes.** Assume any request can be repeated or its response lost: OTP
-  verify, phone change, deletion, `/vocabulary/sync`, feedback. Sync uses per-owner
-  `sync_revision` cursors, so do not break ordering or tombstones. The router mounts no
-  `Idempotency-Key` layer (N1: it replayed cached responses before `AuthUser` ran). Do not
-  re-mount `middleware/idempotency.rs` router-wide; any per-handler version must authenticate
-  first and scope its key by user, method and path.
-- **Auth or sync contract changes.** Review both sides in the same change. Backend:
-  `interfaces/http/handlers/{auth,phone_auth,vocabulary,account}_handler.rs`, the matching
-  `application/` command, and `openapi.rs`. Flutter: `lib/data/remote/*.dart`,
-  `lib/services/sync_service.dart`, `lib/providers/auth_provider.dart`, plus their tests.
-  Also update `docs/account-feedback-rollout.md` if the user-visible flow changes.
+- **Resource ownership.** Scope every user-data read/write by the authenticated owner,
+  never solely by an ID in the body or path. Plans are separate from staff roles.
+- **Account deletion.** Use the TRD 04 fresh-mailbox proof, durable jobs and receipt
+  contract. New owned tables must participate in purge and, for product data, export.
+  Unknown outcomes and generic 401/404 responses never justify wiping local notebooks.
+- **Migrations.** Add a new Go migration; never edit an applied one. Run it through
+  `cmd/migrate` before deployment. Regenerate and verify SQLC after query/schema changes.
+  Flutter SQLite has its own versioned migrations in `app_database.dart`.
+- **Retry-sensitive writes.** Preserve owner-scoped revisions, queues, tombstones and
+  unknown outcomes. Authenticate before any idempotency replay and scope replay by
+  user, method and path; never add a router-wide unauthenticated replay layer.
+- **Auth or sync contracts.** Review `backend/api/openapi.yaml`, matching Go handlers
+  and domain modules, Flutter's `lib/data/remote/go/` and sync transports,
+  `lib/services/sync_service.dart`, `lib/providers/go_auth_provider.dart` and their
+  tests together. Update `docs/account-feedback-rollout.md` if the user flow changes.
 
 ## Verification and data hygiene
 
-- Verify against local services only: the Go Compose stack in `backend/`, legacy `cloud/`, or a disposable
+- Verify against local services only: the Go Compose stack in `backend/` or a disposable
   local Postgres, and `--dart-define=VEEA_API_BASE_URL=http://localhost:18386`. Never point a
   test, script or app build at a deployed server.
-- Use synthetic fixtures (fake phone numbers, stub OTP delivery as in
-  `account_data_integration.rs`, generated UUIDs).
+- Use synthetic fixtures (example.test email addresses, fake OTP delivery and generated UUIDs).
 - Keep credentials and production user data out of prompts, logs, fixtures and commits.
-  `cloud/.env` is gitignored and may hold real secrets: do not read or paste it. Copy
-  `cloud/.env.example` (`make rust-backend-env`) for Rust; `make backend-env` generates independent
-  throwaway Go keys in gitignored `backend/.env`. Never read or print existing deployment secrets.
+  `make backend-env` generates independent local Go keys in gitignored `backend/.env`.
+  Never read or print existing deployment secrets. Retired service credentials, if
+  present locally, are archived under gitignored `.local/retired-backend/`; they are
+  not Go configuration and must not be loaded by tooling.
 - Simulators and unsigned builds do not prove Screen Time enforcement; see the README
   Verification section for the signed-device checks.

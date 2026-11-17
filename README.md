@@ -49,7 +49,7 @@ Veea English is open source and extensible! Anyone can build and contribute a cu
 - **Automatic IPA Pronunciation & Offline Dictionary**: Bundled 126,000-word offline dictionary with text-to-speech audio reading.
 - **Unicode Diacritic-Insensitive Search**: Fast SQLite search folding Vietnamese diacritics (e.g. typing `kien cuong` finds `kiên cường`).
 - **6 Retro Pixel Themes**: *Paper Light, Night Dark, GameBoy Matrix Green, Cyberpunk Neon, OLED True Black, System Default*.
-- **Offline-First & Optional Go Backend**: usable without an account or server; Go provides accounts and vocabulary sync. The sync/install rollout gate ships closed. The legacy Rust service remains under `cloud/` for maintenance.
+- **Offline-First & Optional Go Backend**: usable without an account or server; Go provides accounts and vocabulary sync. The sync/install rollout gate ships closed. Golang is the only supported backend.
 
 ---
 
@@ -74,12 +74,15 @@ flutter pub get
 flutter run
 ```
 
-### Local Go Backend (default)
+### Local Go Backend
 
 Needs Docker with Compose v2+ and `openssl`. From the repository root:
 
 ```sh
-make backend-up                 # Generate local keys once, build Go, migrate, wait for health
+make backend-env                # Generate local database/HMAC/OTP/outbox keys once
+# Complete the email settings described below in the private backend/.env first.
+make backend-config             # Validate the selected configuration without printing secrets
+make backend-up                 # Build Go, migrate, wait for health
 make backend-migrate-status     # Expected: current_version=15 pending=0
 make backend-health             # Go /healthz and /readyz
 make backend-ps                 # Includes successful one-shot migrator
@@ -95,6 +98,12 @@ All host ports bind to `127.0.0.1`: API **18386**, PostgreSQL **54328**, metrics
 Mailpit inbox **8026**, SMTP **1026**. See [backend setup and email smoke](backend/README.md#local-docker-compose).
 Keep the generated keys with the volume. Sync stays disabled; this is local setup, not release approval.
 
+The checked-in local Compose currently selects **Resend** and requires `VEEA_EMAIL_FROM`
+and `VEEA_RESEND_API_KEY` in the private env file; the key generator does not supply them.
+Mailpit runs, but the API does not send to it in this configuration. For synthetic,
+local-only email testing use the SMTP test harness in [backend testing](backend/README.md#commands).
+Do not use real delivery credentials for automated verification.
+
 For another local project, pass the same `COMPOSE_PROJECT_NAME` and `COMPOSE_ENV_FILE` to every
 command. Relative env paths are always relative to `backend/`; absolute private paths also work.
 Port overrides are in [the safe example](backend/.env.example). `APP_PORT=18387` remains a Make
@@ -102,22 +111,24 @@ alias for the Go API host port unless `VEEA_GO_HTTP_PORT` is explicitly set. `ru
 launches Flutter only; start the stack first. It resolves the running Go port automatically,
 or accepts an explicit `API_BASE_URL=http://localhost:18387`.
 
-| Existing command | Default behavior now | Legacy Rust equivalent |
-|---|---|---|
-| `backend-env` | Generate `backend/.env` once | `rust-backend-env` copies `cloud/.env.example` only if missing |
-| `backend-up` | Build/start Go API + migration + PostgreSQL + Mailpit | `rust-backend-up` starts Rust PostgreSQL/Redis/NATS |
-| `backend-run` | Alias for `backend-up`, **detached** | `rust-backend-run` runs Cargo in the foreground |
-| `backend-health` | Go `/healthz` and `/readyz` | `rust-backend-health` checks `/health/ready` |
-| `backend-down` | Stop Go; keep its named database volume | `rust-backend-down` |
-| `backend-down-v` | Explicitly **delete the selected Go project's volume** | `rust-backend-down-v` deletes legacy Rust volumes |
-| `run-cloud` | Flutter against running Go (or explicit API URL) | This target does not start a server; Rust maintenance uses the explicit commands above |
+| Command | Behavior |
+|---|---|
+| `backend-env` | Generate `backend/.env` keys once |
+| `backend-up` / `backend-run` | Build/start Go API, migration, PostgreSQL and Mailpit, detached |
+| `backend-health` | Check Go `/healthz` and `/readyz` |
+| `backend-down` | Stop the selected project and keep its database volume |
+| `backend-config` | Validate Compose without printing secrets |
+| `backend-logs` / `backend-ps` | Inspect logs and service status |
+| `backend-migrate-status` / `backend-url` | Inspect migration status and the running API URL |
+| `run-cloud` | Launch Flutter against the running Go API |
 
-New `backend-logs`, `backend-ps`, `backend-migrate-status`, `backend-config` and `backend-url`
-are also available from either directory. The Go and Rust projects/volumes are separate;
-existing Rust data is not migrated or deleted by this command remapping. Stop any old server
-using the same API port before starting Go. Existing `cloud/` CI/deployment and Go disposable
-test-service scripts remain unchanged. Switching API URLs does not make Go/Rust account or
-sync contracts interchangeable.
+The explicit `backend-down-v` command deletes the selected local database volume;
+use ordinary `backend-down` to preserve data. Retirement of the previous service
+does not convert or delete its Docker volumes, databases or running containers.
+Existing private service settings, if present locally during cleanup, are retained
+under gitignored `.local/retired-backend/` and are never loaded by Go. Existing account
+credentials and sync cursors from that service are incompatible with Go; there is no
+automatic data migration. Preserve local notebooks and sign in through the Go email UI.
 
 ### Production Docker with Resend
 
@@ -145,8 +156,20 @@ These commands do not open sync or publish content.
 ### Run Tests
 
 ```bash
-# Run unit, widget, and arcade SDK test suite (481 tests)
+# Flutter analysis, unit, widget, and arcade SDK tests
+flutter analyze
 flutter test
+
+# Go checks, from backend/ (requires the Go SDK version in go.mod)
+cd backend
+go build ./...
+go test ./...
+go test -race ./...
+make check                      # Formatting, vet and unit tests
+# Optional disposable PostgreSQL integration suite (Docker required)
+make test-db-up
+make test-integration
+make test-db-down               # Discards only that disposable test database
 ```
 
 ---
@@ -281,14 +304,15 @@ in `android/app/src/main/AndroidManifest.xml`, enable the Dart flag and rebuild.
 Native widget capabilities/signing must be configured for the chosen Apple
 Developer team.
 
-### Accounts and feedback (prepared; service connection pending)
+### Optional accounts and feedback
 
-Phone OTP account screens, separate local account notebooks, safer word sync,
-and an offline feedback outbox are implemented. The default build stays local
-until Nin's existing API and OTP service are connected. The optional Zalo button
-is hidden until a Veea group link is configured. See
-[account and feedback rollout](docs/account-feedback-rollout.md) for the user flow,
-server setup, desktop data contract and remaining integration checks.
+Configured builds use the Go email signup/sign-in, session and account-rights APIs.
+The default build stays offline. Vocabulary sync and server cartridge installation
+remain behind the closed rollout gate. Feedback remains saved on the device when
+no compatible delivery service is available; the Go API has no feedback routes.
+The optional Zalo button stays hidden until a valid group link is configured. See
+[account and feedback rollout](docs/account-feedback-rollout.md) for current
+contracts, local verification and remaining device/deployment checks.
 
 ## Team handoff
 
@@ -299,7 +323,7 @@ Apple signing configuration, completed changes and remaining service setup.
 
 Branch: `feat/first-launch-native-accounts`. Every Open is excluded from this
 launch. See [native protection and duration policy](docs/first-launch-native-protection.md),
-[phone account/backend rollout](docs/account-feedback-rollout.md) and
+[account/backend rollout](docs/account-feedback-rollout.md) and
 [executed QA and remaining device checks](docs/first-launch-qa.md).
 
 The guided Shortcut implementation remains in Git history/source for later work;

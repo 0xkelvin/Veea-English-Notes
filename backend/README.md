@@ -1,10 +1,10 @@
 # Veea backend (Go)
 
-Go modular monolith on PostgreSQL. It replaces the Rust service in `cloud/`
-(TRD 01 R9); both live in the repo until `cloud/` is retired. It includes TRD 01's email signup (OTP and password), OTP and password sign-in, sessions with
+Go modular monolith on PostgreSQL, the only supported backend (TRD 01 R9). It includes TRD 01's email signup (OTP and password), OTP and password sign-in, sessions with
 refresh rotation, first-password set, change and reset, the encrypted email outbox,
 audit events, rate limits, the cleanup jobs, the metrics listener, TRD 02 session management and TRD 03 profile/email change. The schema is
-migrations 00001 through 00015. Resend is selected for production email (TRD 01 R12); Mailpit remains the local default.
+migrations 00001 through 00015. Resend is selected for production email (TRD 01 R12) and by the current local Compose.
+Local test harnesses explicitly select SMTP with Mailpit.
 
 Staging readiness through migration **00015**: [`docs/staging-verification.md`](../docs/staging-verification.md).
 Local evidence runner: `scripts/verify-staging-local.sh`; isolated logical restore drill: `scripts/test-restore-drill.sh`.
@@ -135,6 +135,9 @@ are decoded strictly: unknown fields are `400 invalid_request`. A local run with
 ```sh
 make check                    # gofmt, vet, unit tests; no database needed
 make build                    # bin/api, bin/migrate and bin/admin
+go build ./...                # all packages
+go test ./...                 # unit tests
+go test -race ./...           # race checks (requires a C compiler)
 make test-db-up               # disposable PostgreSQL in Docker on 127.0.0.1:54329
 make test-integration         # integration tests against it
 make test-db-down
@@ -149,7 +152,12 @@ Migrations run as a separate step before a deploy, never on API startup.
 
 This is the default local backend. The root Makefile delegates `backend-*` here; there is one
 Compose implementation. Needs Docker with Compose v2+ and `openssl`; no host Go SDK is needed.
-Run the following from the repository root, or use `make -C backend <same-target>`:
+Run the following from the repository root, or use `make -C backend <same-target>`.
+The current `compose.yaml` selects `VEEA_EMAIL_SENDER=resend` and requires private
+`VEEA_EMAIL_FROM` and `VEEA_RESEND_API_KEY` values. `backend-env` generates only database
+and cryptographic keys; add the email settings before config/startup. Do not use
+real delivery credentials in automated checks. For local-only SMTP integration use
+`make -C backend test-flutter-go` or the disposable integration harness below.
 
 ```sh
 make backend-env                 # Optional: backend-up also generates private keys once
@@ -171,9 +179,9 @@ Use [`.env.example`](.env.example) for port overrides and key formats. If you pr
 the blank example, fill its keys yourself; setup deliberately never overwrites an existing file.
 
 `backend-run` now aliases detached `backend-up`. `backend-down-v` explicitly deletes this
-Go project's database volume; ordinary down preserves it. Legacy root commands are retained
-as `rust-backend-{env,up,run,health,down,down-v}`; see the [old-to-new mapping](../README.md#local-go-backend-default).
-No Rust volume/data conversion occurs. Root `run-cloud` remains a Flutter launch, defaults to
+Go project's database volume; ordinary down preserves it. See the
+[root commands](../README.md#local-go-backend). Removing the retired service does not
+convert or delete its existing database volumes. Root `run-cloud` remains a Flutter launch, defaults to
 the running Go stack's published URL, and requires startup first unless `API_BASE_URL` is
 explicit. An explicit `APP_PORT` is a compatibility alias for `VEEA_GO_HTTP_PORT` when the latter
 is not explicitly set. The backend health/URL targets discover the actual published port.
@@ -216,29 +224,29 @@ The existing test scripts keep their separate 54329/1025/8025 ports and containe
 intentionally shares Mailpit's network namespace (`network_mode: service:mailpit`): its SMTP
 address remains **127.0.0.1:1025**, preserving the sender's loopback-only security contract.
 Consequently the API/metrics port mappings live on the Mailpit service. PostgreSQL remains
-reachable as `postgres:5432` inside that namespace. Compose fixes the sender to local SMTP;
-no Resend credential is needed or forwarded.
+reachable as `postgres:5432` inside that namespace. The checked-in Compose currently
+selects Resend, so Mailpit does not receive API mail. The SMTP address applies only
+when SMTP is selected explicitly in a separate local configuration.
 
-Email smoke (also needs Python 3; prints only a message count, never an OTP):
+For a local-only SMTP smoke, use the disposable harness (from `backend/`):
 
 ```sh
-curl -fsS -o /dev/null -w 'signup start: %{http_code}\n' \
-  -H 'Content-Type: application/json' \
-  --data "{\"email\":\"compose-smoke-$(date +%s)@example.test\"}" \
-  http://127.0.0.1:18386/v1/auth/signup/otp/start
-# Expected: 202. Allow a few seconds for the outbox worker, then:
-curl -fsS http://127.0.0.1:8026/api/v1/messages | \
-  python3 -c 'import json,sys; n=json.load(sys.stdin)["total"]; assert n>0; print("Mailpit messages:", n)'
+make test-flutter-go  # Real Go router, disposable PostgreSQL and local Mailpit; synthetic fixtures
 ```
 
-Read the synthetic inbox at `http://127.0.0.1:8026` if needed. `docker compose down` followed
+This harness supplies its own throwaway keys and SMTP configuration. It does not
+use the Compose Resend settings or open the rollout gate.
+
+The Compose Mailpit inbox is at `http://127.0.0.1:8026`; it receives no API mail while
+Resend is selected. `docker compose down` followed
 by `docker compose up -d --wait` preserves PostgreSQL data; keep `.env` and its keys too so
 existing encrypted outbox data remains decryptable. Mailpit itself is ephemeral. `down -v`
 deliberately removes this project's local database volume; use it only when discarding that
 project's data. For isolated verification use a unique `-p <project>` on **every** command,
 a private `--env-file`, and unused loopback ports. Never use `down -v` on another project.
 
-Verified locally on 2026-11-15 with Docker 29.9.3 / Compose 5.7.0: config and image build
+Historical SMTP configuration evidence (not a claim about current Resend wiring):
+verified locally on 2026-11-15 with Docker 29.9.3 / Compose 5.7.0: config and image build
 passed; 24 disposable smoke assertions passed, including migration-failure startup blocking,
 15/0 migration status, health/readiness 200, non-root binaries, app mail in Mailpit and database
 persistence across normal down/up with migration replay applying 0. Sync stayed false.
@@ -251,8 +259,7 @@ were private and unchanged on repeat setup, `APP_PORT` reached the actual publis
 config/status/health/logs worked from both directories, OTP delivery succeeded, and root down
 followed by backend `backend-run` preserved the database identity/probe/outbox with 15/0 status
 and migration replay applying 0. `run-cloud` routing was checked with a Flutter command stub,
-not a device launch. Default-target and explicit Rust mappings were checked without starting
-Rust. The selected disposable project/image was removed through `backend-down-v` and scoped
+not a device launch. The selected disposable project/image was removed through `backend-down-v` and scoped
 image cleanup; existing test containers remained running. `make -C backend check` passed.
 
 ## Production Docker (Resend, no Mailpit)
@@ -305,8 +312,7 @@ existing database volume without a reviewed role/grant migration.
 
 PostgreSQL publishes **no host port**. API defaults to `127.0.0.1:28386`, metrics to
 `127.0.0.1:29090` for host checks and internal Prometheus. The API also joins the external
-Docker network `veea-camera_default` with alias `veea-production-api`, reusing the same
-ingress network as the legacy Rust backend. The containerized Nginx in `Veea-camera` already
+Docker network `veea-camera_default` with alias `veea-production-api` for shared ingress. The containerized Nginx in `Veea-camera` already
 uses that project's default network and proxies to `http://veea-production-api:18386`.
 PostgreSQL, the migrator and permissions job stay on this project's default network; only the
 API joins both. The camera project owns `veea-camera_default`; backend Compose does not create

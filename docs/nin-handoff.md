@@ -1,5 +1,7 @@
 # Veea implementation handoff — 7 November 2026
 
+Historical handoff: client/native evidence below is not a current backend setup guide.
+
 Review branch: `feat/veea-user-flows-20261107`. Includes the accumulated app and cloud work plus upstream `8569dd0` (`feat: Update app version`). Main is left unchanged for review.
 
 ## Included
@@ -28,16 +30,17 @@ All three new extensions now use the same team and App Group as Runner, with bun
 
 Confirm this is the intended Veea team, register the extension identifiers and enable Family Controls and the App Group for all four targets. Regenerate profiles as needed. Distribution capability approval and signed physical-device enforcement still need verification. No certificates, profiles, secrets or user notebook backups are included in this branch. The paused widget target stays removed as in upstream.
 
-## Existing services to connect
+## Current backend handoff
 
-Nin needs to supply the public API origin and the existing OTP provider name. Keep provider credentials in server settings. Twilio Verify is only a prepared optional adapter; no provider purchase or switch has been made.
-
-Follow [account and feedback rollout](account-feedback-rollout.md) for environment settings, API contracts, migrations `20261107000008` and `20261107000009`, deployment coordination, feedback retention and real-device checks. Protocol 2 needs all vocabulary-writing API nodes upgraded before clients are enabled.
+The phone-service setup from this historical handoff is retired. Go is the only
+supported backend. Follow [account and feedback rollout](account-feedback-rollout.md),
+[backend setup](../backend/README.md) and [staging verification](staging-verification.md)
+for email accounts, migration 00015, deployment and remaining device checks. Sync stays closed.
 
 No Zalo group exists yet. Its app button stays hidden until a valid Veea group link is supplied. The desktop client and cross-device learning/protection settings are outside the current implementation.
 
 ## Validation
 
-Before upstream integration: Flutter analyzer clean; 481 Flutter tests passed; 79 Rust unit tests passed; 14 Shortcut access checks and native policy/persistence/handoff/scheduling/locking checks passed. Two PostgreSQL integration tests are explicitly ignored pending a disposable database. See the rollout document for their command.
+Before upstream integration: Flutter analyzer clean; 481 Flutter tests passed; 14 Shortcut access checks and native policy/persistence/handoff/scheduling/locking checks passed. Obsolete server checks from this historical handoff are no longer supported; use the current Go verification commands.
 
 After integration: dependency resolution succeeded on Flutter 3.44.6 / Dart 3.12.2, analyzer is clean, all 481 Flutter tests and the native policy checks passed again. Dependency constraints from upstream are retained; the lockfile is regenerated for this SDK. Xcode project parsing succeeds with Runner, tests and all three Screen Time targets. The unsigned iOS build could not complete because access to the system Swift package cache was unavailable, so a full build with Nin’s setup is still required. Extension versions now inherit the app’s generated Flutter version/build settings. Live OTP delivery, deployed API behavior, two-device sync and the paid-team native protection flow remain unverified until the service and signing setup is available.

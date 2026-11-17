@@ -2,8 +2,12 @@
 
 **Prepared by:** Senior Product Engineering / SaaS Product Analysis pass
 **Date:** 2026-08-30
-**Scope:** Full-repo read-only inspection — Flutter client (`lib/`), Rust cloud backend (`cloud/`), iOS/Android native widget extensions, and supporting assets/tests. No code was modified to produce this report.
+**Scope:** Full-repo read-only inspection — Flutter client (`lib/`), the account/sync backend, iOS/Android native widget extensions, and supporting assets/tests. No code was modified to produce this report.
 
+> Historical product snapshot. Backend references were updated on 2026-11-17 after
+> service retirement. Original UI counts and feature findings are not a current audit;
+> use the Go TRDs and staging checklist for current backend capabilities.
+>
 > This document is written so that another engineer or AI agent can understand the entire product — what it does, how it's built, and where the money isn't yet — without re-reading the codebase.
 
 ---
@@ -29,7 +33,7 @@ On top of capture, it solves a second, harder problem: **retention**. A raw word
 2. **Retain** — the app resurfaces due words via SM-2 spaced repetition, streak pressure, and a daily home-screen/lock-screen widget.
 3. **Reinforce** — the user replays captured vocabulary through arcade mini-games or a hands-free "commute audio" TTS playlist.
 4. **Expand** — the user can bulk-import a themed vocabulary set ("cartridge") instead of hand-typing every word.
-5. **Persist across devices (optional)** — a user who creates a cloud account gets their notebook synced across phones via a self-hosted Rust backend.
+5. **Persist across devices (optional)** — a user who creates a cloud account gets their notebook synced across phones via the optional Go backend, subject to the closed sync rollout gate.
 
 ### What is the current value proposition?
 
@@ -91,10 +95,10 @@ Each feature below lists: purpose, user flow, frontend files, backend/API touchp
 ### 2.6 Cloud Account & Cross-Device Sync
 - **Purpose:** Optional account creation so the same vocabulary notebook is available on multiple devices. Entirely opt-in — the app is fully functional signed-out.
 - **User flow:** See §3.1/§3.2 journeys below.
-- **Frontend:** `lib/providers/auth_provider.dart`, `lib/services/sync_service.dart`, `lib/data/remote/{api_client,auth_api,vocabulary_api,token_store}.dart`.
-- **Backend/API:** Full Rust/Axum REST API — `/api/v1/auth/register|login|refresh|logout`, `/api/v1/users/me` (get/delete), `/api/v1/users/me/password`, `/api/v1/users/me/identifier`, `/api/v1/users/me/export`, `/api/v1/vocabulary/sync`, `/api/v1/vocabulary/words`, `/api/v1/admin/users*`.
-- **DB entities:** Postgres `users`, `refresh_tokens`, `words`, plus `outbox_events`/`inbox_messages`/`idempotency_records` (infrastructure tables, not user-facing data).
-- **External services:** PostgreSQL 17, Redis 7 (rate limiting/idempotency), NATS (event bus, feature-flagged Kafka alternative).
+- **Frontend:** Production `lib/providers/go_auth_provider.dart`, `lib/data/remote/go/` and `lib/services/sync_service.dart`; shared base interfaces remain for compatibility.
+- **Backend/API:** Go `/v1/` email authentication, sessions, profile, account rights, learning, entitlements, cartridges and staff administration. The current contract is `backend/api/openapi.yaml`; the former `/api/v1/` server is retired.
+- **DB entities:** Account/session, lifecycle, learning and entitlement tables are defined in `backend/migrations/`; the former prototype schema is not used by Go.
+- **External services:** PostgreSQL 17 and the configured email sender. Go does not require Redis, NATS or Kafka.
 - **Monetization potential:** **NOT SUITABLE FOR MONETIZATION as a gate on its own** (charging for basic account/sync would be unusual and user-hostile for a notes app), but cloud infrastructure is the **prerequisite plumbing** for every server-enforced paid tier described in §7 — entitlements, quotas, and receipt validation would all be built on top of this identity system.
 
 ### 2.7 Automatic IPA Pronunciation & Offline Dictionary
@@ -193,29 +197,11 @@ Each feature below lists: purpose, user flow, frontend files, backend/API touchp
 
 ### 3.1 Registration / Login
 
-```mermaid
-sequenceDiagram
-    actor User
-    participant App as Flutter App
-    participant Auth as AuthProvider
-    participant API as Rust Cloud API
-    participant DB as Postgres (users)
-
-    User->>App: Enter identifier (email or E.164 phone) + password
-    App->>Auth: signIn() / register()
-    Auth->>API: POST /api/v1/auth/login or /register
-    API->>DB: Validate / create user (Argon2id hash)
-    API-->>Auth: access_token + refresh_token
-    Auth->>App: store tokens (flutter_secure_storage)
-    Auth->>App: AuthState = signedIn
-    App->>App: SyncService.resetCursor() + synchronise()
-    App->>User: Local notebook merges with server copy
-```
-
-Notes:
-- The app is **fully usable signed-out** — this journey is entirely optional, gated by whether a build was compiled with `VEEA_API_BASE_URL` (`AppConfig.isCloudEnabled`).
-- One `identifier` field auto-detects email vs. phone; phone numbers must be E.164 (`+` prefixed) — a bare local-format number is rejected to avoid guessing the wrong country.
-- On a 401, `ApiClient` transparently refreshes the access token once and replays the request; concurrent 401s share one in-flight refresh to avoid a refresh race.
+The optional production account path now uses `GoAuthProvider` and email OTP or
+password authentication. Signup verifies the mailbox before issuing opaque session
+tokens. Tokens remain in secure storage and rotate atomically. Owner identity is
+the server UUID. Sign-out opens guest; import is consented and account caches remain
+isolated. Sync/install rollout stays closed. See [Flutter integration](../trd/05-flutter-verification.md).
 
 ### 3.2 Onboarding (first run)
 
@@ -315,8 +301,10 @@ flowchart TD
 
 ### 3.8 Teacher/Admin Features
 
-- **Admin role exists at the backend only**: `UserRole::Admin` (`cloud/src/domain/identity/value_objects/user_role.rs`) gates `GET /api/v1/admin/users` (list all users, paginated) and `PUT /api/v1/admin/users/:id/role` (change a user's role) via `role_guard` middleware.
-- **No admin UI exists in the Flutter app** — these endpoints are only reachable via direct API calls (e.g. `curl`), not through any screen.
+- **Staff administration:** Go RBAC is in `backend/internal/admin/`, with authenticated
+  `/v1/admin/*` routes and server-authoritative allowed actions.
+- **Admin UI:** `admin_console/` is a separate Flutter web package with in-memory
+  credentials and operator-network deployment requirements (TRD 07).
 - **No teacher-specific concept exists anywhere** — no classrooms, no assigning cartridges/word lists to students, no shared/managed vocabulary sets, no student progress dashboards. This is a complete gap, not a partial one (see §8).
 
 ---
@@ -330,17 +318,18 @@ flowchart TD
 - **Design system:** Custom pixel-art widget kit (`PixelButton`, `PixelBox`, `PixelField`, `PixelIcon`, `PixelHeatmap`, `PixelBadgesGrid`, etc.) plus a bundled variable font (Handjet, for Vietnamese-diacritic-complete pixel typography) and a dedicated Arcade SDK for the 9 mini-games.
 - **Platforms targeted:** iOS, Android, macOS, Linux, Windows, and Web build folders all exist (`ios/`, `android/`, `macos/`, `linux/`, `windows/`, `web/`), but native widget work (WidgetKit/AppWidget) is iOS+Android only.
 
-### Backend — Rust cloud microservice (`cloud/`)
-- **Purpose:** Optional identity + vocabulary-sync service; the mobile app is fully functional without it.
-- **Architecture style:** DDD + Hexagonal/Clean Architecture + CQRS + Transactional Outbox + Idempotent Consumer, explicitly documented in `cloud/README.md`.
-- **Stack:** Rust (edition 2024), **Axum 0.8** (HTTP) + Tower middleware, **SQLx 0.8** over **PostgreSQL 17**, **Redis 7** (rate limiting, idempotency cache), messaging via **NATS** (default) or **Kafka** (feature-flagged, `rdkafka`), **Argon2id** password hashing, **JWT** (access + refresh) via `jsonwebtoken`, OpenTelemetry/OTLP tracing.
-- **Bounded contexts implemented:** `identity` (users, auth, roles) and `vocabulary` (word sync). **No `billing`, `subscription`, `payment`, or `entitlement` bounded context exists.**
-- **API surface:** documented in full in §2.6; also self-describes via `GET /api/v1/openapi.json` / `/api/openapi.json`.
+### Backend — Go modular monolith (`backend/`)
+- **Purpose:** Optional accounts, lifecycle and vocabulary sync; the app works offline.
+- **Stack:** Go (version pinned in `backend/go.mod`), PostgreSQL 17, pgx, SQLC,
+  Argon2id, opaque rotating sessions, encrypted email outbox, redacted logs and Prometheus metrics.
+- **Modules:** Identity, authentication, account/profile, lifecycle, learning,
+  entitlements, cartridges and staff administration. Payments remain separate.
+- **Contract:** `backend/api/openapi.yaml`; see `backend/README.md` for commands.
 
 ### Database
 - **Client (SQLite, `lib/data/local/app_database.dart`):** schema version 4, tables `words`, `pronunciations` (reference data, never synced), `srs_reviews` (FK → `words`, cascade delete). Full migration history (v1→v2 rebuild for sync bookkeeping, v2→v3 adds pronunciations, v3→v4 adds SRS) is implemented and covered by tests running against real SQLite (`sqflite_common_ffi`).
-- **Server (PostgreSQL, `cloud/migrations/`):** `users` (email and/or E.164 phone, `CHECK` constraint requires at least one), `refresh_tokens`, `words` (server mirror, `user_id`-scoped, tombstone deletes, dual timestamps — client `updated_at` for conflict resolution, server `server_updated_at` as the sync cursor), `outbox_events`, `inbox_messages`, `idempotency_records`.
-- **Sync protocol:** client-generated UUIDs, last-write-wins on `updated_at`, tombstone deletes, server-clock pull cursor, push+pull combined in one round trip (`POST /vocabulary/sync`) — full rationale documented in `cloud/README.md`.
+- **Server (PostgreSQL):** `backend/migrations/00001` through `00015`; SQLC queries and generated pgx code remain in `backend/internal/platform/db/`. Migration runs before API startup.
+- **Sync protocol:** TRD 05 owner-scoped revisions, field conflict rules, durable mutation sequences, epochs and explicit import consent. Vocabulary/install rollout ships closed.
 
 ### Authentication
 - Email-or-phone single-identifier accounts, Argon2id hashing, JWT access + opaque refresh tokens (SHA-256-hashed at rest), automatic refresh-on-401 with request replay, password-change revokes all sessions, account deletion is immediate/permanent with cascading deletes. Two roles only: `user`, `admin` — no fine-grained permissions, scopes, or teams.
@@ -353,7 +342,7 @@ flowchart TD
 - Cloud: PostgreSQL for structured data. **No object/blob storage (S3-equivalent) exists** — there is nothing to store one, since no feature handles user-uploaded media (no photo capture, no audio recording/upload).
 
 ### Analytics
-**None exist.** No analytics SDK (Firebase Analytics, Amplitude, Mixpanel, PostHog, Segment, etc.), no crash reporting (Sentry, Crashlytics), and no product telemetry of any kind was found in `pubspec.yaml` or anywhere in `lib/`. The Rust backend has structured logging/tracing/OpenTelemetry for operational observability only (not product analytics).
+**None exist.** No analytics SDK (Firebase Analytics, Amplitude, Mixpanel, PostHog, Segment, etc.), no crash reporting (Sentry, Crashlytics), and no product telemetry of any kind was found in `pubspec.yaml` or anywhere in `lib/`. The Go backend has redacted structured logs and Prometheus metrics for operational observability (not product analytics).
 
 ### Payment
 **None exist.** No `in_app_purchase`, no Stripe/RevenueCat/Paddle SDK, no payment endpoint on the backend. See §5 for full detail.
@@ -362,20 +351,20 @@ flowchart TD
 **None exist.** No transactional email (welcome, password reset, receipt) is sent anywhere — password reset isn't even a flow that exists (change-password requires knowing the current password; there's no "forgot password" recovery path). No push notification service (FCM/APNs) is integrated; the only "notification"-adjacent feature is the local, non-pushed home-screen widget rotation and an unimplemented "daily reminder" toggle in Settings (the toggle exists in `WidgetProvider` state but no scheduled local notification was found wired to it).
 
 ### Infrastructure / Deployment
-- **Backend:** Dockerized (`cloud/Dockerfile`, multi-stage build), `docker-compose.yml` for local dev (app + Postgres 17 + Redis 7 + NATS with JetStream), runs on port 18386 by default, migrations auto-run on startup via SQLx. CI exists for the backend only (`cloud/.github/workflows/ci.yml`: format check, clippy, full test suite against real Postgres/Redis services).
-- **Client:** No CI/CD pipeline was found for the Flutter app itself (no app-level GitHub Actions workflow, no Fastlane, no App Store Connect/Play Console automation config) — building and releasing the mobile app currently appears to be a manual process. `Makefile` at the repo root wraps some dev commands.
+- **Backend:** `backend/Dockerfile`, `backend/compose.yaml` for local development, and `backend/compose.production.yaml` for production. Run migrations separately before the Go API. See `backend/README.md`; local verification does not establish deployment readiness.
+- **Client:** Android build CI is `.github/workflows/build-apk.yml`. The root Makefile wraps Flutter development commands. No Go or Flutter test CI is configured; run the documented local checks.
 - **Build-time configuration:** `AppConfig` reads `VEEA_API_BASE_URL` via `--dart-define` at compile time; empty by default (app ships local-only unless explicitly built against a server).
 
 ---
 
 ## 5. Current Monetization Capability
 
-A repo-wide search (`lib/`, `cloud/src/`) for subscription/payment/billing/entitlement/premium/quota/trial/coupon/referral/ad/credit keywords found **no functioning monetization infrastructure**. Specifically:
+The original repo-wide search for subscription/payment/billing/entitlement/premium/quota/trial/coupon/referral/ad/credit keywords found **no functioning monetization infrastructure**. Specifically:
 
 | Capability | Status | Evidence |
 |---|---|---|
 | Subscription | ❌ Does not exist | No subscription model, no plan/tier enum, no recurring-billing concept anywhere in client or server code. |
-| Payment | ❌ Does not exist | No `in_app_purchase`, Stripe, RevenueCat, Paddle, or any payment SDK/dependency in `pubspec.yaml` or `Cargo.toml`. No payment endpoint on the backend router (`cloud/src/interfaces/http/router.rs` — full endpoint list has no `/payments`, `/billing`, `/subscriptions`). |
+| Payment | ❌ Does not exist | No `in_app_purchase`, Stripe, RevenueCat, Paddle, or any payment SDK/dependency in `pubspec.yaml` or `backend/go.mod`. The Go contract in `backend/api/openapi.yaml` has no payment processing endpoint. |
 | Plans/Tiers | ❌ Does not exist | No "free/pro/premium" concept in the `User` domain entity or anywhere in the client. |
 | Entitlements | ❌ Does not exist | No feature-gating/entitlement-check logic anywhere. The one place a price is shown (Cartridge Library, §2.13) performs **zero** entitlement check before installing content. |
 | Feature flags | ❌ Does not exist | No remote-config or feature-flag SDK/system (e.g. LaunchDarkly, Firebase Remote Config, GrowthBook) found. |
@@ -479,8 +468,8 @@ What's missing for this to become a commercial SaaS product, organized by area:
 | Arcade SDK | `lib/arcade_sdk/**` |
 | Pixel design system | `lib/core/theme/**`, `lib/widgets/pixel/**` |
 | Cartridge content | `lib/data/cartridges_data.dart`, `lib/models/cartridge.dart` |
-| Rust backend | `cloud/src/**`, architecture doc `cloud/README.md` |
-| Postgres migrations | `cloud/migrations/*.sql` |
+| Go backend | `backend/internal/**`, architecture and commands in `backend/README.md` |
+| Postgres migrations | `backend/migrations/*.sql` |
 | Native iOS widget | `ios/WordOfDayWidget/WordOfDayWidget.swift` |
 | Native Android widget | `android/app/src/main/res/{layout,xml}/word_of_day_widget*` |
 | Community game guide | `CONTRIBUTING_GAMES.md` |

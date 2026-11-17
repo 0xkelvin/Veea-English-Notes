@@ -8,7 +8,7 @@ import '../token_store.dart';
 import '../api_client.dart';
 
 /// One secure-storage value contains identity, BOTH tokens and rotation state.
-/// Go credentials never fall back to Rust JWTs or an email-derived owner.
+/// Go credentials never fall back to legacy JWTs or an email-derived owner.
 class GoSession {
   GoSession(Map<String, Object?> data) : data = Map.unmodifiable(data);
   final Map<String, Object?> data;

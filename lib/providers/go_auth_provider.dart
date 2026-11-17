@@ -9,8 +9,8 @@ import '../data/vocabulary_repository.dart';
 import '../services/sync_service.dart';
 import 'auth_provider.dart';
 
-/// Production Go account coordinator. The inherited Rust adapter remains for
-/// legacy-only callers/tests; this implementation never calls its flows.
+/// Production Go account coordinator. The inherited compatibility adapter
+/// remains for legacy-only callers/tests; this implementation never calls its flows.
 class GoAuthProvider extends AuthProvider {
   GoAuthProvider({
     required GoAuthApi super.authApi,

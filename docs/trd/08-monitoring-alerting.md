@@ -44,7 +44,7 @@ Prometheus adds `job` and `instance` to every series, and `up` per target. The d
 
 ## 3. Stack and conventions
 
-- **No monitoring stack exists in the repository.** There is no Prometheus, Alertmanager or Grafana configuration. The only deployment asset is the Rust `cloud/` docker-compose. The Go service already speaks the Prometheus exposition format, so the rules are a standard **Prometheus rule file**: [`backend/monitoring/prometheus/veea-alerts.yml`](../../backend/monitoring/prometheus/veea-alerts.yml). Any Prometheus-compatible ruler can load it unchanged (Prometheus, or a Mimir or Thanos ruler).
+- **No monitoring stack exists in the repository.** There is no Prometheus, Alertmanager or Grafana configuration. The supported deployment assets are the Go local and production Compose files in `backend/`. The Go service already speaks the Prometheus exposition format, so the rules are a standard **Prometheus rule file**: [`backend/monitoring/prometheus/veea-alerts.yml`](../../backend/monitoring/prometheus/veea-alerts.yml). Any Prometheus-compatible ruler can load it unchanged (Prometheus, or a Mimir or Thanos ruler).
 - **Scrape convention (deployment requirement):**
   - job name `veea-api`;
   - one target per API instance, scraping `VEEA_METRICS_ADDR` at `/metrics`;

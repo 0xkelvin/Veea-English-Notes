@@ -1,6 +1,7 @@
 # Veea English Notes — Monetization Sequence
 
-**Status:** proposal, for review
+**Status:** historical proposal, for review. Backend references updated on 2026-11-17;
+original product counts and commercial assumptions are not a current implementation audit.
 **Author:** drafted with Claude Code from a read of the repo at `3df0efd` (2026-08-29)
 
 ---
@@ -21,7 +22,7 @@ cost — cheapest question first.
 | Asset | State |
 | --- | --- |
 | Flutter app | 78 Dart files, ~22,000 LOC, 195 tests across 26 files |
-| Rust backend (`cloud/`) | 148 files, ~7,800 LOC — identity commands, outbox/inbox, idempotency records, refresh-token rotation into the platform keychain |
+| Go backend (`backend/`) | Supported account/session, lifecycle, sync, entitlement and cartridge modules; see `backend/README.md` |
 | Offline pronunciation dictionary | 126,052 entries, gzipped IPA, bundled |
 | Arcade SDK | Real extension point (`ArcadeRegistry`, `ArcadeCrtScreen`, starter template); 9 games ship against it |
 | Design identity | Handjet pixel font w/ full Vietnamese diacritics, 6 retro themes, CRT treatment |
@@ -51,7 +52,7 @@ This is production-grade infrastructure most solo projects never reach.
 1. **Move cartridge content out of the public MIT repo.** Most irreversible item on the
    list, so it goes first. Every entry written into a public MIT repo is one given away.
    Keep the app and Arcade SDK MIT — that is the marketing. Content goes private and is
-   delivered from the existing Rust service behind an entitlement check.
+   delivered from the Go service behind an entitlement check.
 2. **Correct the three false README claims** (300+ terms, OCR scanner, AI wizard). Either
    build them or rename them honestly. The repo is public; anyone who verifies and finds
    a 10x overstatement is gone for good.
@@ -103,8 +104,8 @@ writing done on spec.
 - **B2C converted** → finish the 300 entries; add 2–3 further cartridges (IELTS-for-devs,
   Japanese-market IT English, Business English). Prefer lifetime pricing over subscription;
   it converts better in this market.
-- **B2B bit** → seat licensing and an admin view on the Rust backend. Users and
-  `change_user_role.rs` already exist, so this is closer than a polished consumer funnel.
+- **B2B bit** → seat licensing and an admin view on the Go backend. User and role
+  administration already exists in `backend/internal/admin/`; seat licensing remains separate work.
   Ten companies × 100 seats × $4/seat/month ≈ $4k MRR, with materially lower churn than
   consumer.
 - **Neither converted** → the content is not the product. Stop and rethink before

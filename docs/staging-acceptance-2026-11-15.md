@@ -13,7 +13,7 @@ receivers or infrastructure retention configuration was supplied or found in the
 configuration. No `VEEA_*`, Resend, staging, Prometheus or Alertmanager environment variable
 names were present. Do not interpret this as evidence that the infrastructure does not exist.
 Prerequisite questions were sent to Nin; independent local checks continued. No deployed
-test target was guessed, and no deployment secrets or `cloud/.env` were read.
+test target was guessed, and no deployment or retired-service secrets were read.
 
 Private evidence root: `/tmp/veea-staging-acceptance-20261115`. Files there are temporary local
 artifacts, not durable release-ticket attachments. Copy sanitized results/digests to the

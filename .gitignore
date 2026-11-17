@@ -47,9 +47,9 @@ app.*.map.json
 *.keystore
 **/key.properties
 
-# Cloud
-/target
+# Private environment files and retired service credentials
 .env
+/.local/retired-backend/
 /backend/.env.tmp.*
 # Diff artifacts written by failing golden tests.
 test/golden/failures/

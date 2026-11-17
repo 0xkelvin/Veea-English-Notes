@@ -1,12 +1,10 @@
 .PHONY: help deps run run-cloud analyze test test-update-goldens check \
         backend-env backend-up backend-down backend-down-v backend-run \
         backend-health backend-config backend-logs backend-ps backend-migrate-status backend-url \
-        rust-backend-env rust-backend-up rust-backend-down rust-backend-down-v \
-        rust-backend-run rust-backend-health clean
+        clean
 
 .DEFAULT_GOAL := help
 
-APP_PORT ?= 18386
 API_BASE_URL ?=
 
 help: ## Show this help
@@ -62,26 +60,6 @@ backend-migrate-status: ## Show the Go migration version and pending count
 
 backend-url: ## Print the running Go API URL
 	+$(MAKE) --no-print-directory -s -C backend $@
-
-# ── Legacy Rust maintenance (explicit opt-in; cloud CI/deployment unchanged) ──
-
-rust-backend-env: ## Create legacy cloud/.env from its example, first time only
-	test -f cloud/.env || cp cloud/.env.example cloud/.env
-
-rust-backend-up: rust-backend-env ## Start legacy Rust PostgreSQL, Redis and NATS
-	cd cloud && docker compose up -d postgres redis nats
-
-rust-backend-run: ## Run the legacy Rust server with cargo (automatic Rust migrations)
-	cd cloud && APP_PORT=$(APP_PORT) cargo run
-
-rust-backend-health: ## Check legacy Rust readiness
-	curl localhost:$(APP_PORT)/health/ready
-
-rust-backend-down: ## Stop legacy Rust infrastructure, keeping its data
-	cd cloud && docker compose down
-
-rust-backend-down-v: ## Stop legacy Rust infrastructure and DELETE its local volumes
-	cd cloud && docker compose down -v
 
 # ── Checks ───────────────────────────────────────────────────────────────────
 
