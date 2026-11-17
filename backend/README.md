@@ -1,5 +1,8 @@
 # Veea backend (Go)
 
+Documentation navigation: [backend documentation index](docs/README.md) and
+[section-level content map and later-phase checklist](docs/content-map.md) (Phase 3.1, prepared for review).
+
 Go modular monolith on PostgreSQL, the only supported backend (TRD 01 R9). It includes TRD 01's email signup (OTP and password), OTP and password sign-in, sessions with
 refresh rotation, first-password set, change and reset, the encrypted email outbox,
 audit events, rate limits, the cleanup jobs, the metrics listener, TRD 02 session management and TRD 03 profile/email change. The schema is
