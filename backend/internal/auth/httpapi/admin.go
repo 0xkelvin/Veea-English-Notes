@@ -478,19 +478,41 @@ func (h *Handlers) adminChangePlan(w http.ResponseWriter, r *http.Request, p ses
 // meEntitlements is GET /v1/me/entitlements (TRD 09 §6.1): the caller's effective plan at
 // database time and the plan's limits. Owner only; no capability is gated yet.
 func (h *Handlers) meEntitlements(w http.ResponseWriter, r *http.Request, p session.Principal) {
+	h.writeMyEntitlements(w, r, p, nil)
+}
+func (h *Handlers) writeMyEntitlements(w http.ResponseWriter, r *http.Request, p session.Principal, revoked *bool) {
 	if r.URL.RawQuery != "" || r.URL.ForceQuery {
 		h.fail(w, r, httpx.ErrBadRequest)
 		return
+	}
+	verificationPending := false
+	var manualFallback *entitlements.Plan
+	if h.Purchases != nil && revoked == nil {
+		if err := h.Purchases.Reconcile(r.Context(), p); err != nil {
+			manual, manualErr := entitlements.ManualEffective(r.Context(), sqlc.New(h.Pool), p.UserID)
+			if manualErr != nil || manual.Name != entitlements.Premium {
+				h.purchaseFailure(w, r, err)
+				return
+			}
+			manualFallback = &manual
+			verificationPending = true
+		}
 	}
 	plan, err := entitlements.Effective(r.Context(), sqlc.New(h.Pool), p.UserID)
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
+	if manualFallback != nil {
+		plan = *manualFallback
+	}
 	httpx.WriteJSON(w, http.StatusOK, struct {
-		Plan          string              `json:"plan"`
-		PlanExpiresAt *time.Time          `json:"plan_expires_at"`
-		Limits        entitlements.Limits `json:"limits"`
-		CheckedAt     time.Time           `json:"checked_at"`
-	}{plan.Name, plan.ExpiresAt, entitlements.LimitsFor(plan.Name), plan.CheckedAt})
+		ApplePurchaseAvailable      bool                `json:"apple_purchase_available,omitempty"`
+		PurchaseVerificationPending bool                `json:"purchase_verification_pending,omitempty"`
+		PurchaseRevoked             *bool               `json:"purchase_revoked,omitempty"`
+		Plan                        string              `json:"plan"`
+		PlanExpiresAt               *time.Time          `json:"plan_expires_at"`
+		Limits                      entitlements.Limits `json:"limits"`
+		CheckedAt                   time.Time           `json:"checked_at"`
+	}{h.Purchases.Available(), verificationPending, revoked, plan.Name, plan.ExpiresAt, entitlements.LimitsFor(plan.Name), plan.CheckedAt})
 }

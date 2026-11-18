@@ -14,14 +14,18 @@ acceptance is implied by local checks.
   `GoAuthProvider`; Settings selects Go email authentication. Signup verifies an
   email code; sign-in supports email OTP or password. Tokens are opaque, rotated
   as a pair and held in secure storage. Account ownership uses the server UUID.
-- Sign-out opens the guest notebook. Account caches, queued edits and installation
-  requests stay isolated. Import requires consent; old credentials, notebooks and
-  cursors are never silently adopted into a Go account. Same-email registration
-  after purge has a new UUID.
+- First paid release: one notebook stays on this phone through sign-in, sign-out
+  and account switching. Authentication manages the account and Pro only; word
+  sync and remote cartridge installs are disabled. Prior workspace archives remain
+  on the device without a silent merge. Device backups are portable local files.
+  Same-email registration after purge has a new account UUID and cannot silently
+  claim another account’s purchase. See [TRD 11](trd/11-apple-pro-purchases.md).
 - TRD 04 mailbox-proven account rights use action-scoped operation capabilities.
   A lost deletion response is reconciled through its durable receipt; generic
-  401/404 responses never justify clearing local data. Only confirmed deletion
-  clears the recorded account's cache and queue.
+  401/404 responses never justify clearing local data. Confirmed online account deletion clears the account session and purchase link;
+  device notebook words remain. The deletion dialog explains this and the lack of
+  automatic purchase transfer to a new account. Legacy opt-in sync adapters retain
+  their separately tested account-cache deletion contract.
 - Compatibility adapters, phone screens and their tests remain in Flutter because
   Go implementations share base interfaces with them. They do not provide a
   supported server or an alternate production account path.

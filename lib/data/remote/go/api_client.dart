@@ -62,8 +62,12 @@ class GoApiClient extends ApiClient {
     }
   }
 
-  Future<Never> _expire(GoSession expected) async {
-    if (await store.clearIf(expected.generation)) onSessionExpired?.call();
+  bool lastExpiryWasUnknown = false;
+  Future<Never> _expire(GoSession expected, {bool unknown = false}) async {
+    if (await store.clearIf(expected.generation)) {
+      lastExpiryWasUnknown = unknown;
+      onSessionExpired?.call();
+    }
     throw const FreshSignInRequired();
   }
 
@@ -111,7 +115,7 @@ class GoApiClient extends ApiClient {
           .timeout(_timeout);
     } on Exception {
       await store.refuseRefresh(expected, unknown: true);
-      return _expire(expected);
+      return _expire(expected, unknown: true);
     }
     await _same(expected);
     if (response.statusCode == 429 ||
@@ -123,7 +127,7 @@ class GoApiClient extends ApiClient {
     }
     if (response.statusCode != 200) {
       await store.refuseRefresh(expected, unknown: response.statusCode != 401);
-      return _expire(expected);
+      return _expire(expected, unknown: response.statusCode != 401);
     }
     try {
       final body = decode(response);
@@ -140,10 +144,10 @@ class GoApiClient extends ApiClient {
       rethrow;
     } on ApiException {
       await store.refuseRefresh(expected, unknown: true);
-      return _expire(expected);
+      return _expire(expected, unknown: true);
     } on Exception {
       await store.refuseRefresh(expected, unknown: true);
-      return _expire(expected);
+      return _expire(expected, unknown: true);
     }
   }
 

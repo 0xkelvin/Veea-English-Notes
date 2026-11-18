@@ -10,7 +10,19 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const appleIAPEnvironment = `-- name: AppleIAPEnvironment :one
+SELECT environment FROM apple_iap_control WHERE singleton
+`
+
+func (q *Queries) AppleIAPEnvironment(ctx context.Context) (string, error) {
+	row := q.db.QueryRow(ctx, appleIAPEnvironment)
+	var environment string
+	err := row.Scan(&environment)
+	return environment, err
+}
 
 const cleanupEntitlementGrants = `-- name: CleanupEntitlementGrants :execrows
 DELETE FROM entitlement_grants WHERE id IN (
@@ -71,7 +83,8 @@ const effectiveEntitlement = `-- name: EffectiveEntitlement :one
 
 SELECT CAST(t.at AS timestamptz) AS checked_at,
     CAST(e.until IS NOT NULL AS boolean) AS premium,
-    CAST(COALESCE(e.until, 'epoch') AS timestamptz) AS premium_until
+    CAST(COALESCE(e.until = 'infinity'::timestamptz, false) AS boolean) AS lifetime,
+    CAST(CASE WHEN e.until IS NULL OR e.until = 'infinity'::timestamptz THEN 'epoch'::timestamptz ELSE e.until END AS timestamptz) AS premium_until
 FROM (SELECT clock_timestamp() AS at) AS t
 CROSS JOIN LATERAL (SELECT entitlement_premium_until($1::uuid, t.at) AS until) AS e
 `
@@ -79,22 +92,54 @@ CROSS JOIN LATERAL (SELECT entitlement_premium_until($1::uuid, t.at) AS until) A
 type EffectiveEntitlementRow struct {
 	CheckedAt    time.Time
 	Premium      bool
+	Lifetime     bool
 	PremiumUntil time.Time
 }
 
-// Queries for Free/Premium entitlements (TRD 09). Plans are separate from roles. Only the admin
-// service writes grants; the TRD 04 purge and cleanup delete them.
+// Queries for Free/Premium entitlements (TRD 09, TRD 11). Plans are separate from roles.
+// Only the admin service writes manual grants; only the purchases service writes Apple Pro
+// purchases; the TRD 04 purge and cleanup remove/detach them.
 // The effective plan at database time, read at request time. One instant for the whole statement.
 func (q *Queries) EffectiveEntitlement(ctx context.Context, userID uuid.UUID) (EffectiveEntitlementRow, error) {
 	row := q.db.QueryRow(ctx, effectiveEntitlement, userID)
 	var i EffectiveEntitlementRow
+	err := row.Scan(
+		&i.CheckedAt,
+		&i.Premium,
+		&i.Lifetime,
+		&i.PremiumUntil,
+	)
+	return i, err
+}
+
+const effectiveManualEntitlement = `-- name: EffectiveManualEntitlement :one
+SELECT CAST(t.at AS timestamptz) AS checked_at,
+    CAST(g.ends_at IS NOT NULL AS boolean) AS premium,
+    CAST(COALESCE(g.ends_at, 'epoch') AS timestamptz) AS premium_until
+FROM (SELECT clock_timestamp() AS at) AS t
+LEFT JOIN entitlement_grants g
+    ON g.user_id = $1::uuid AND g.closed_at IS NULL AND g.starts_at <= t.at AND t.at < g.ends_at
+`
+
+type EffectiveManualEntitlementRow struct {
+	CheckedAt    time.Time
+	Premium      bool
+	PremiumUntil time.Time
+}
+
+// The active manual grant at database time, used by admin.ChangePlan so manual grants and Apple
+// Pro purchases stay independent.
+func (q *Queries) EffectiveManualEntitlement(ctx context.Context, userID uuid.UUID) (EffectiveManualEntitlementRow, error) {
+	row := q.db.QueryRow(ctx, effectiveManualEntitlement, userID)
+	var i EffectiveManualEntitlementRow
 	err := row.Scan(&i.CheckedAt, &i.Premium, &i.PremiumUntil)
 	return i, err
 }
 
 const entitlementAt = `-- name: EntitlementAt :one
 SELECT CAST(e.until IS NOT NULL AS boolean) AS premium,
-    CAST(COALESCE(e.until, 'epoch') AS timestamptz) AS premium_until
+    CAST(COALESCE(e.until = 'infinity'::timestamptz, false) AS boolean) AS lifetime,
+    CAST(CASE WHEN e.until IS NULL OR e.until = 'infinity'::timestamptz THEN 'epoch'::timestamptz ELSE e.until END AS timestamptz) AS premium_until
 FROM (SELECT entitlement_premium_until($1::uuid, $2::timestamptz) AS until) AS e
 `
 
@@ -105,6 +150,7 @@ type EntitlementAtParams struct {
 
 type EntitlementAtRow struct {
 	Premium      bool
+	Lifetime     bool
 	PremiumUntil time.Time
 }
 
@@ -112,7 +158,7 @@ type EntitlementAtRow struct {
 func (q *Queries) EntitlementAt(ctx context.Context, arg EntitlementAtParams) (EntitlementAtRow, error) {
 	row := q.db.QueryRow(ctx, entitlementAt, arg.UserID, arg.At)
 	var i EntitlementAtRow
-	err := row.Scan(&i.Premium, &i.PremiumUntil)
+	err := row.Scan(&i.Premium, &i.Lifetime, &i.PremiumUntil)
 	return i, err
 }
 
@@ -142,6 +188,90 @@ func (q *Queries) InsertEntitlementGrant(ctx context.Context, arg InsertEntitlem
 		arg.TicketRef,
 	)
 	return err
+}
+
+const listAccountApplePurchases = `-- name: ListAccountApplePurchases :many
+SELECT product_id, environment, purchased_at, revoked_at
+FROM apple_pro_purchases
+WHERE user_id = $1::uuid
+ORDER BY purchased_at DESC, original_transaction_id ASC
+LIMIT $2::int
+`
+
+type ListAccountApplePurchasesParams struct {
+	UserID  uuid.UUID
+	MaxRows int32
+}
+
+type ListAccountApplePurchasesRow struct {
+	ProductID   string
+	Environment string
+	PurchasedAt time.Time
+	RevokedAt   *time.Time
+}
+
+// The owner export (TRD 11): product metadata and timestamps only, bounded by max_rows.
+func (q *Queries) ListAccountApplePurchases(ctx context.Context, arg ListAccountApplePurchasesParams) ([]ListAccountApplePurchasesRow, error) {
+	rows, err := q.db.Query(ctx, listAccountApplePurchases, arg.UserID, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAccountApplePurchasesRow{}
+	for rows.Next() {
+		var i ListAccountApplePurchasesRow
+		if err := rows.Scan(
+			&i.ProductID,
+			&i.Environment,
+			&i.PurchasedAt,
+			&i.RevokedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listApplePurchasesForVerification = `-- name: ListApplePurchasesForVerification :many
+SELECT transaction_id, environment, verified_at, revoked_at FROM apple_pro_purchases
+WHERE user_id = $1
+ORDER BY environment, original_transaction_id
+`
+
+type ListApplePurchasesForVerificationRow struct {
+	TransactionID string
+	Environment   string
+	VerifiedAt    time.Time
+	RevokedAt     *time.Time
+}
+
+func (q *Queries) ListApplePurchasesForVerification(ctx context.Context, userID uuid.UUID) ([]ListApplePurchasesForVerificationRow, error) {
+	rows, err := q.db.Query(ctx, listApplePurchasesForVerification, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListApplePurchasesForVerificationRow{}
+	for rows.Next() {
+		var i ListApplePurchasesForVerificationRow
+		if err := rows.Scan(
+			&i.TransactionID,
+			&i.Environment,
+			&i.VerifiedAt,
+			&i.RevokedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listRetainedEntitlementGrants = `-- name: ListRetainedEntitlementGrants :many
@@ -194,6 +324,78 @@ func (q *Queries) ListRetainedEntitlementGrants(ctx context.Context, arg ListRet
 	return items, nil
 }
 
+const lockAppleProPurchaseByOriginalID = `-- name: LockAppleProPurchaseByOriginalID :one
+SELECT original_transaction_id, transaction_id, user_id, app_account_token, product_id, environment, purchased_at, revoked_at, revocation_reason, verified_at, apple_signed_at FROM apple_pro_purchases WHERE environment = $1 AND original_transaction_id = $2 FOR UPDATE
+`
+
+type LockAppleProPurchaseByOriginalIDParams struct {
+	Environment           string
+	OriginalTransactionID string
+}
+
+func (q *Queries) LockAppleProPurchaseByOriginalID(ctx context.Context, arg LockAppleProPurchaseByOriginalIDParams) (AppleProPurchase, error) {
+	row := q.db.QueryRow(ctx, lockAppleProPurchaseByOriginalID, arg.Environment, arg.OriginalTransactionID)
+	var i AppleProPurchase
+	err := row.Scan(
+		&i.OriginalTransactionID,
+		&i.TransactionID,
+		&i.UserID,
+		&i.AppAccountToken,
+		&i.ProductID,
+		&i.Environment,
+		&i.PurchasedAt,
+		&i.RevokedAt,
+		&i.RevocationReason,
+		&i.VerifiedAt,
+		&i.AppleSignedAt,
+	)
+	return i, err
+}
+
+const lockAppleProPurchaseByTransactionID = `-- name: LockAppleProPurchaseByTransactionID :one
+SELECT original_transaction_id, transaction_id, user_id, app_account_token, product_id, environment, purchased_at, revoked_at, revocation_reason, verified_at, apple_signed_at FROM apple_pro_purchases WHERE environment = $1 AND transaction_id = $2 FOR UPDATE
+`
+
+type LockAppleProPurchaseByTransactionIDParams struct {
+	Environment   string
+	TransactionID string
+}
+
+func (q *Queries) LockAppleProPurchaseByTransactionID(ctx context.Context, arg LockAppleProPurchaseByTransactionIDParams) (AppleProPurchase, error) {
+	row := q.db.QueryRow(ctx, lockAppleProPurchaseByTransactionID, arg.Environment, arg.TransactionID)
+	var i AppleProPurchase
+	err := row.Scan(
+		&i.OriginalTransactionID,
+		&i.TransactionID,
+		&i.UserID,
+		&i.AppAccountToken,
+		&i.ProductID,
+		&i.Environment,
+		&i.PurchasedAt,
+		&i.RevokedAt,
+		&i.RevocationReason,
+		&i.VerifiedAt,
+		&i.AppleSignedAt,
+	)
+	return i, err
+}
+
+const pruneAccountApplePurchases = `-- name: PruneAccountApplePurchases :exec
+DELETE FROM apple_pro_purchases WHERE user_id = $1::uuid AND (environment, original_transaction_id) IN (
+    SELECT environment, original_transaction_id FROM apple_pro_purchases
+    WHERE user_id = $1::uuid
+    ORDER BY purchased_at DESC, environment, original_transaction_id
+    OFFSET 5
+)
+`
+
+// Keep five recent ownership proofs. Older purchases can be restored from Apple,
+// whose account token, rather than a retained database tombstone, fences ownership.
+func (q *Queries) PruneAccountApplePurchases(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, pruneAccountApplePurchases, userID)
+	return err
+}
+
 const pruneEntitlementHistory = `-- name: PruneEntitlementHistory :exec
 DELETE FROM entitlement_grants WHERE id IN (
     SELECT g.id FROM entitlement_grants g
@@ -212,4 +414,80 @@ type PruneEntitlementHistoryParams struct {
 func (q *Queries) PruneEntitlementHistory(ctx context.Context, arg PruneEntitlementHistoryParams) error {
 	_, err := q.db.Exec(ctx, pruneEntitlementHistory, arg.UserID, arg.Keep)
 	return err
+}
+
+const purgeAccountApplePurchases = `-- name: PurgeAccountApplePurchases :exec
+DELETE FROM apple_pro_purchases WHERE user_id = $1
+`
+
+func (q *Queries) PurgeAccountApplePurchases(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, purgeAccountApplePurchases, userID)
+	return err
+}
+
+const upsertAppleProPurchase = `-- name: UpsertAppleProPurchase :one
+INSERT INTO apple_pro_purchases (
+    original_transaction_id, transaction_id, user_id, app_account_token,
+    product_id, environment, purchased_at, revoked_at, revocation_reason, verified_at, apple_signed_at
+) VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7, $8, $9, clock_timestamp(), $10
+)
+ON CONFLICT (environment, original_transaction_id) DO UPDATE SET
+    transaction_id    = EXCLUDED.transaction_id,
+    product_id        = EXCLUDED.product_id,
+    environment       = EXCLUDED.environment,
+    purchased_at      = EXCLUDED.purchased_at,
+    revoked_at = CASE WHEN EXCLUDED.apple_signed_at > apple_pro_purchases.apple_signed_at
+      OR (EXCLUDED.apple_signed_at = apple_pro_purchases.apple_signed_at AND EXCLUDED.revoked_at IS NOT NULL)
+      THEN EXCLUDED.revoked_at ELSE apple_pro_purchases.revoked_at END,
+    revocation_reason = CASE WHEN EXCLUDED.apple_signed_at > apple_pro_purchases.apple_signed_at
+      OR (EXCLUDED.apple_signed_at = apple_pro_purchases.apple_signed_at AND EXCLUDED.revoked_at IS NOT NULL)
+      THEN EXCLUDED.revocation_reason ELSE apple_pro_purchases.revocation_reason END,
+    apple_signed_at = GREATEST(apple_pro_purchases.apple_signed_at,EXCLUDED.apple_signed_at),
+    verified_at       = clock_timestamp()
+RETURNING original_transaction_id, transaction_id, user_id, app_account_token, product_id, environment, purchased_at, revoked_at, revocation_reason, verified_at, apple_signed_at
+`
+
+type UpsertAppleProPurchaseParams struct {
+	OriginalTransactionID string
+	TransactionID         string
+	UserID                uuid.UUID
+	AppAccountToken       uuid.UUID
+	ProductID             string
+	Environment           string
+	PurchasedAt           time.Time
+	RevokedAt             *time.Time
+	RevocationReason      pgtype.Int4
+	AppleSignedAt         time.Time
+}
+
+func (q *Queries) UpsertAppleProPurchase(ctx context.Context, arg UpsertAppleProPurchaseParams) (AppleProPurchase, error) {
+	row := q.db.QueryRow(ctx, upsertAppleProPurchase,
+		arg.OriginalTransactionID,
+		arg.TransactionID,
+		arg.UserID,
+		arg.AppAccountToken,
+		arg.ProductID,
+		arg.Environment,
+		arg.PurchasedAt,
+		arg.RevokedAt,
+		arg.RevocationReason,
+		arg.AppleSignedAt,
+	)
+	var i AppleProPurchase
+	err := row.Scan(
+		&i.OriginalTransactionID,
+		&i.TransactionID,
+		&i.UserID,
+		&i.AppAccountToken,
+		&i.ProductID,
+		&i.Environment,
+		&i.PurchasedAt,
+		&i.RevokedAt,
+		&i.RevocationReason,
+		&i.VerifiedAt,
+		&i.AppleSignedAt,
+	)
+	return i, err
 }

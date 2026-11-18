@@ -269,11 +269,12 @@ paths:
       operationId: getMyEntitlements
       summary: The caller's effective plan and limits (TRD 09 §6.1).
       description: |
-        Evaluated at database time when read: Premium while a manual grant is active (until `plan_expires_at`,
-        exclusive), otherwise Free. Plans are separate from roles. Both plans have the same TRD 05 limits, and
-        no capability is gated by plan yet; export, deletion and reactivation never depend on the plan.
+        Premium while an independent manual grant or recently verified lifetime Apple purchase is active.
+        A lifetime purchase has null plan_expires_at. Stored Apple proofs are reconciled after five minutes;
+        Apple outages return an unknown outcome (503), never a fabricated downgrade. Separate from roles.
+        Both plans keep the same learning limits; export, deletion and reactivation are always available.
       security: [{ bearerAuth: [] }]
-      x-error-codes: [invalid_request, unauthorized, rate_limited, internal_error]
+      x-error-codes: [invalid_request, unauthorized, rate_limited, purchase_invalid, purchase_unavailable, purchase_ownership_conflict, internal_error]
       responses:
         "200":
           description: The effective plan.
@@ -287,6 +288,64 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "500": { $ref: "#/components/responses/InternalError" }
+        "503":
+          x-codes: [purchase_unavailable]
+          description: Existing Apple purchase cannot currently be reconciled.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "409":
+          x-codes: [purchase_ownership_conflict]
+          description: Stored purchase proof no longer matches this account.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /v1/me/purchases/apple:
+    post:
+      tags: [account]
+      operationId: verifyMyAppleProPurchase
+      summary: Verify a one-time Apple Pro purchase and link it to the signed-in account.
+      description: |
+        Fresh Apple Server API verification; client flags and receipts are not trusted. The signed
+        appAccountToken must match the authenticated account UUID. Sandbox and production use separate
+        databases and a matching database environment gate. Disabled by default. Idempotent retries.
+        A revoked purchase is committed and returns 200 with purchase_revoked true and the resulting
+        plan; independent manual grants are preserved. No query parameters or vocabulary content.
+      security: [{ bearerAuth: [] }]
+      x-error-codes: [invalid_request, unauthorized, rate_limited, purchase_invalid, purchase_unavailable, purchase_ownership_conflict, unsupported_media_type, internal_error]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [transaction_id]
+              properties:
+                transaction_id: { type: string, pattern: '^[0-9]{1,64}$' }
+      responses:
+        "200":
+          description: Verified purchase outcome and effective plan, including any independent manual grant.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Entitlements" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          x-codes: [purchase_ownership_conflict]
+          description: Purchase belongs to a different Veea account; no transfer occurs.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503":
+          x-codes: [purchase_unavailable]
+          description: Disabled or Apple verification unavailable. Retry-After is 60 seconds.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
   /v1/me/profile:
     put:
       tags: [account]
@@ -1495,7 +1554,7 @@ components:
         Cache-Control: { $ref: "#/components/headers/Cache-Control" }
     BadRequest:
       description: "`invalid_request`, `invalid_email`, `invalid_code` or `code_attempts_exceeded`."
-      x-codes: [invalid_request, invalid_email, invalid_code, code_attempts_exceeded, invalid_expiry]
+      x-codes: [purchase_invalid, invalid_request, invalid_email, invalid_code, code_attempts_exceeded, invalid_expiry]
       headers:
         X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
       content:
@@ -1754,6 +1813,9 @@ components:
     ErrorCode:
       type: string
       enum:
+        - purchase_invalid
+        - purchase_unavailable
+        - purchase_ownership_conflict
         - plan_required
         - sync_unavailable
         - sync_reset_required
@@ -1889,6 +1951,19 @@ components:
             preferred_language: { type: string, enum: [en, vi] }
             time_zone: { type: string }
             daily_goal: { type: integer }
+        apple_purchases:
+          type: array
+          maxItems: 5
+          description: TRD 11 five retained Apple purchase proof periods; absent in older artifacts.
+          items:
+            type: object
+            additionalProperties: false
+            required: [product_id, environment, purchased_at, revoked_at]
+            properties:
+              product_id: { type: string, maxLength: 100 }
+              environment: { type: string, enum: [Sandbox, Production] }
+              purchased_at: { $ref: "#/components/schemas/Timestamp" }
+              revoked_at: { type: string, format: date-time, nullable: true }
         cartridge_installations:
           type: array
           maxItems: 16
@@ -2249,6 +2324,9 @@ components:
             live_words: { type: integer, enum: [50000] }
             content_bytes: { type: integer, enum: [67108864] }
             writers: { type: integer, enum: [20] }
+        apple_purchase_available: { type: boolean, description: True only when server Apple verification is configured. Clients must require true before starting a payment. }
+        purchase_verification_pending: { type: boolean, description: Independent manual access remains active while Apple verification is unavailable. Do not start a new payment. }
+        purchase_revoked: { type: boolean, description: Present only after Apple verification. False for an active proof; true after a committed revocation. }
         checked_at: { $ref: "#/components/schemas/Timestamp" }
     AdminPlanRequest:
       type: object

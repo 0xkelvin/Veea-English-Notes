@@ -283,4 +283,20 @@ void main() {
       expect(user.audit, isEmpty);
     },
   );
+  testWidgets('Apple lifetime expiry and manual-only revocation are explicit', (
+    t,
+  ) async {
+    user
+      ..plan = 'premium'
+      ..planExpiresAt = null;
+    await boot(t, b, admin.email);
+    await openUser(t, user);
+    expect(find.text('No expiry · Apple lifetime purchase'), findsOneWidget);
+    expect(find.text('Clear manual grant'), findsOneWidget);
+    await openPlan(t, grant: false);
+    expect(
+      find.textContaining('Apple lifetime purchase remains active'),
+      findsOneWidget,
+    );
+  });
 }

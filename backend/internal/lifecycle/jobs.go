@@ -200,6 +200,9 @@ func (s *Service) runJob(ctx context.Context, conn *pgxpool.Conn, id uuid.UUID, 
 			if err := q.DeleteCartridgeInstallations(ctx, u.ID); err != nil {
 				return err
 			}
+			if err := q.PurgeAccountApplePurchases(ctx, u.ID); err != nil {
+				return err
+			}
 			if err := q.DeleteAccountEntitlementGrants(ctx, u.ID); err != nil { // TRD 09, at most 50 rows
 				return err
 			}

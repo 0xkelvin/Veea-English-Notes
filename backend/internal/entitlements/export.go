@@ -1,6 +1,7 @@
 package entitlements
 
 import (
+	"encoding/json"
 	"strconv"
 	"time"
 
@@ -85,4 +86,25 @@ func appendTime(b []byte, t *time.Time) []byte {
 	b = append(b, '"')
 	b = t.UTC().AppendFormat(b, learning.ExportTime)
 	return append(b, '"')
+}
+
+// AppendApplePurchases exports the five retained account-owned proof periods.
+// Apple transaction IDs and verification internals are never sent to other users.
+func AppendApplePurchases(b []byte, rows []sqlc.ListAccountApplePurchasesRow) []byte {
+	if len(rows) > 5 {
+		rows = rows[:5]
+	}
+	type entry struct {
+		Product     string     `json:"product_id"`
+		Environment string     `json:"environment"`
+		Purchased   time.Time  `json:"purchased_at"`
+		Revoked     *time.Time `json:"revoked_at"`
+	}
+	out := make([]entry, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, entry{r.ProductID, r.Environment, r.PurchasedAt.UTC(), r.RevokedAt})
+	}
+	encoded, _ := json.Marshal(out)
+	b = append(b, `,"apple_purchases":`...)
+	return append(b, encoded...)
 }

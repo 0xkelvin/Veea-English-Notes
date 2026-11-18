@@ -19,6 +19,7 @@ class SyncService extends ChangeNotifier {
     required VocabularyRepository repository,
     VocabularyApi? api,
     this.learningEngine,
+    this.networkEnabled = true,
     DateTime Function()? now,
   }) : _repository = repository,
        _api = api,
@@ -35,6 +36,9 @@ class SyncService extends ChangeNotifier {
   final VocabularyRepository _repository;
   final VocabularyApi? _api;
   final SyncEngine? learningEngine;
+
+  /// Production disables vocabulary transport independently of account services.
+  final bool networkEnabled;
   VoidCallback? onSessionExpired;
   final DateTime Function() _now;
 
@@ -102,7 +106,9 @@ class SyncService extends ChangeNotifier {
   /// Returns true when everything reconciled. Concurrent calls are ignored
   /// rather than queued — the next scheduled run will catch up.
   Future<bool> synchronise() {
-    if (_suspended || _activeRun != null) return Future.value(false);
+    if (!networkEnabled || _suspended || _activeRun != null) {
+      return Future.value(false);
+    }
     return _activeRun = _synchronise().whenComplete(() => _activeRun = null);
   }
 

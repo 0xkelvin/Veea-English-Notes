@@ -38,7 +38,7 @@ func (s *Service) ChangePlan(ctx context.Context, p session.Principal, targetID 
 			return ErrTargetNotPermitted
 		}
 		q := sqlc.New(tx)
-		cur, err := entitlements.Effective(ctx, q, t.ID) // database time, now
+		cur, err := entitlements.ManualEffective(ctx, q, t.ID) // database time, now
 		if err != nil {
 			return err
 		}

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/appleiap"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/otp"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/notify"
@@ -21,6 +22,8 @@ import (
 
 // Config is the validated runtime configuration.
 type Config struct {
+	AppleVerifier          *appleiap.Verifier
+	AppleEnvironment       string
 	HTTPAddr               string
 	DatabaseURL            string
 	MaintenanceDatabaseURL string
@@ -178,6 +181,21 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		errs = append(errs, aerr)
 	}
 
+	if enabled := get("VEEA_APPLE_IAP_ENABLED", "false"); enabled == "true" {
+		cfg.AppleEnvironment = get("VEEA_APPLE_IAP_ENVIRONMENT", "")
+		verifier, err := appleiap.New(appleiap.Config{
+			IssuerID: get("VEEA_APPLE_IAP_ISSUER_ID", ""), KeyID: get("VEEA_APPLE_IAP_KEY_ID", ""),
+			PrivateKey: get("VEEA_APPLE_IAP_PRIVATE_KEY", ""), BundleID: get("VEEA_APPLE_IAP_BUNDLE_ID", ""),
+			Environment: cfg.AppleEnvironment, ProductIDs: strings.Split(get("VEEA_APPLE_IAP_PRODUCT_IDS", ""), ","),
+		})
+		if err != nil {
+			errs = append(errs, errors.New("Apple IAP configuration is incomplete or invalid"))
+		} else {
+			cfg.AppleVerifier = verifier
+		}
+	} else if enabled != "false" {
+		errs = append(errs, errors.New("VEEA_APPLE_IAP_ENABLED must be true or false"))
+	}
 	if len(errs) > 0 {
 		return Config{}, errors.Join(errs...)
 	}

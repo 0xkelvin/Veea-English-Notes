@@ -72,20 +72,27 @@ class BackupService {
   }
 
   static Future<String> exportNotebookJson(
-    VocabularyRepository repository,
-  ) async => exportToJson(
+    VocabularyRepository repository, {
+    bool deviceNotebook = false,
+  }) async => exportToJson(
     await repository.exportAll(),
-    userId: await repository.notebookOwner(),
+    userId: deviceNotebook ? null : await repository.notebookOwner(),
+    deviceNotebook: deviceNotebook,
     provenances: await _provenances(repository),
   );
 
   static Future<String> exportNotebookCsv(
-    VocabularyRepository repository,
-  ) async {
-    final owner = await repository.notebookOwner();
+    VocabularyRepository repository, {
+    bool deviceNotebook = false,
+  }) async {
+    final owner = deviceNotebook ? null : await repository.notebookOwner();
     final source = {
       'source': {
-        'kind': owner == null ? 'guest' : 'account',
+        'kind': deviceNotebook
+            ? 'device'
+            : owner == null
+            ? 'guest'
+            : 'account',
         'user_id': ?owner,
       },
       'provenances': await _provenances(repository),
@@ -106,8 +113,12 @@ class BackupService {
 
   static Future<Map<String, String>> _checkSource(
     String text,
-    VocabularyRepository repository,
-  ) async {
+    VocabularyRepository repository, {
+    bool deviceNotebook = false,
+  }) async {
+    // This is an explicit user-selected local file restore, never a cloud merge.
+    // Imported device backups are not tagged as eligible guest-created sync data.
+    if (deviceNotebook) return {'*': 'legacy_untagged'};
     final metadata = _metadata(text);
     final source = metadata?['source'];
     final owner = await repository.notebookOwner();
@@ -145,12 +156,17 @@ class BackupService {
   static String exportToJson(
     List<VocabularyWord> words, {
     String? userId,
+    bool deviceNotebook = false,
     Map<String, String> provenances = const {},
   }) {
     final payload = {
       'version': 2,
       'source': {
-        'kind': userId == null ? 'guest' : 'account',
+        'kind': deviceNotebook
+            ? 'device'
+            : userId == null
+            ? 'guest'
+            : 'account',
         'user_id': ?userId,
       },
       'exportedAt': DateTime.now().toUtc().toIso8601String(),
@@ -239,6 +255,7 @@ class BackupService {
   static Future<BackupPreviewResult> previewBackup({
     required String rawContent,
     required VocabularyRepository repository,
+    bool deviceNotebook = false,
   }) async {
     final text = rawContent.trim();
     if (text.isEmpty) {
@@ -253,7 +270,7 @@ class BackupService {
 
     List<_ParsedWordEntry> parsedEntries;
     try {
-      await _checkSource(text, repository);
+      await _checkSource(text, repository, deviceNotebook: deviceNotebook);
       if (text.startsWith('{') || text.startsWith('[')) {
         parsedEntries = _parseJson(text);
       } else {
@@ -338,6 +355,7 @@ class BackupService {
     required VocabularyRepository repository,
     DateTime Function()? now,
     Uuid uuid = const Uuid(),
+    bool deviceNotebook = false,
   }) async {
     final text = rawContent.trim();
     if (text.isEmpty) {
@@ -353,7 +371,11 @@ class BackupService {
     List<_ParsedWordEntry> parsedEntries;
     Map<String, String> provenance;
     try {
-      provenance = await _checkSource(text, repository);
+      provenance = await _checkSource(
+        text,
+        repository,
+        deviceNotebook: deviceNotebook,
+      );
       if (text.startsWith('{') || text.startsWith('[')) {
         parsedEntries = _parseJson(text);
       } else {

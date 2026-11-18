@@ -85,8 +85,8 @@ class _GoAccountScreenState extends State<GoAccountScreen> {
         title: const Text('Permanently delete account?'),
         content: const Text(
           'Access ends immediately after confirmation. There is no grace period. '
-          'This account’s notebook will be removed from this device after the server confirms acceptance. '
-          'Other accounts and guest words are kept. Data cleanup targets 24 hours; the email remains reserved until it finishes.',
+          'Your online account and Pro purchase link will be deleted. Purchases cannot automatically transfer to a new account. '
+          'Your notebook stays on this phone. Data cleanup targets 24 hours; the email remains reserved until it finishes.',
         ),
         actions: [
           TextButton(
@@ -200,7 +200,7 @@ class _GoAccountScreenState extends State<GoAccountScreen> {
     final busy = account.isBusy;
     final challenge = _challenge;
     return Scaffold(
-      appBar: AppBar(title: const Text('Account and backup')),
+      appBar: AppBar(title: const Text('Account')),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
@@ -214,19 +214,20 @@ class _GoAccountScreenState extends State<GoAccountScreen> {
           else if (account.isSignedIn) ...[
             Text(account.identifier ?? '', key: const Key('go_account_email')),
             const Text(
-              'Signing out opens your separate guest notebook. Account words and pending edits stay with this account.',
+              'Your notebook stays on this phone when you sign in or out. Your account manages Pro access. Export a backup before moving your words to another phone.',
             ),
-            FilledButton(
-              onPressed: busy
-                  ? null
-                  : () async {
-                      await context.read<SyncService>().synchronise();
-                      if (context.mounted) {
-                        await context.read<VocabularyProvider>().init();
-                      }
-                    },
-              child: const Text('Sync now'),
-            ),
+            if (AppConfig.isVocabularySyncEnabled)
+              FilledButton(
+                onPressed: busy
+                    ? null
+                    : () async {
+                        await context.read<SyncService>().synchronise();
+                        if (context.mounted) {
+                          await context.read<VocabularyProvider>().init();
+                        }
+                      },
+                child: const Text('Sync now'),
+              ),
             OutlinedButton(
               onPressed: busy ? null : _devices,
               child: const Text('Signed-in devices'),
@@ -246,15 +247,17 @@ class _GoAccountScreenState extends State<GoAccountScreen> {
               onPressed: busy ? null : _logoutAll,
               child: const Text('Sign out all devices'),
             ),
-            if (context.read<SyncService>().learningEngine case final engine?)
-              OutlinedButton(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => SyncReviewScreen(engine: engine),
+            if (AppConfig.isVocabularySyncEnabled &&
+                context.read<SyncService>().learningEngine != null)
+              if (context.read<SyncService>().learningEngine case final engine?)
+                OutlinedButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => SyncReviewScreen(engine: engine),
+                    ),
                   ),
+                  child: const Text('Sync review and local import'),
                 ),
-                child: const Text('Sync review and local import'),
-              ),
             TextButton(
               key: const Key('go_delete_start'),
               onPressed: busy

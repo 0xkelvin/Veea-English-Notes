@@ -10,7 +10,13 @@ import 'package:veea_english_app/services/sync_service.dart';
 import 'secure_storage.dart';
 
 class GoAccountStack {
-  GoAccountStack(this.repo, this.secure, String base, {http.Client? network}) {
+  GoAccountStack(
+    this.repo,
+    this.secure,
+    String base, {
+    http.Client? network,
+    bool accountNotebooks = true,
+  }) {
     store = GoTokenStore(storage: secure);
     client = GoApiClient(tokens: store, baseUrl: base, httpClient: network);
     api = GoAuthApi(client: client, tokens: store);
@@ -22,8 +28,13 @@ class GoAccountStack {
         accessToken: store.readAccessToken,
       ),
     );
-    sync = SyncService(repository: repo, learningEngine: engine);
+    sync = SyncService(
+      repository: repo,
+      learningEngine: engine,
+      networkEnabled: accountNotebooks,
+    );
     auth = GoAuthProvider(
+      accountNotebooks: accountNotebooks,
       authApi: api,
       tokens: store,
       client: client,

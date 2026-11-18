@@ -214,5 +214,21 @@ class GoTokenStore extends TokenStore {
   Future<void> saveReceipt(GoDeletionReceipt receipt) => _locked(
     () => _secure.write(key: receiptKey, value: jsonEncode(receipt.data)),
   );
+  // A purchase identity is not a session or API credential. It only scopes
+  // StoreKit's cryptographically verified local entitlement during an outage.
+  static const purchaseOwnerKey = 'auth.go.purchase-owner.v1';
+  Future<String?> readPurchaseOwner() => _locked(() async {
+    final value = await _secure.read(key: purchaseOwnerKey);
+    return value != null &&
+            RegExp(
+              r'^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$',
+            ).hasMatch(value)
+        ? value
+        : null;
+  });
+  Future<void> savePurchaseOwner(String owner) =>
+      _locked(() => _secure.write(key: purchaseOwnerKey, value: owner));
+  Future<void> clearPurchaseOwner() =>
+      _locked(() => _secure.delete(key: purchaseOwnerKey));
   Future<void> clearReceipt() => _secure.delete(key: receiptKey);
 }

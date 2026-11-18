@@ -25,6 +25,7 @@ import (
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/httpx"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/logging"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/metrics"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/purchases"
 )
 
 func main() {
@@ -92,7 +93,12 @@ func run() error {
 		waitWorker()
 	}()
 
+	var appleVerifier purchases.Verifier
+	if cfg.AppleVerifier != nil {
+		appleVerifier = cfg.AppleVerifier
+	}
 	handler, err := app.New(app.Options{
+		AppleVerifier: appleVerifier, AppleEnvironment: cfg.AppleEnvironment,
 		Pool: pool, ReadyTimeout: cfg.ReadyTimeout, Logger: log,
 		EmailHMACKeys: cfg.EmailHMACKeys, OTPKeys: cfg.OTPKeys, OutboxKeys: cfg.OutboxKeys,
 		TrustedProxies: cfg.TrustedProxies, Metrics: m, Argon2: cfg.Argon2,
