@@ -54,13 +54,29 @@ make backend-down  # Preserves PostgreSQL data and keys
 make -C backend test-flutter-go
 ```
 
-Go migrations run through `cmd/migrate` before API startup. The schema is currently
-migrations 00001–00015. Preserve the database volume and associated keys across
+Go migrations run through `cmd/migrate` before API startup. Check `backend/migrations` for the current schema; the Apple purchase
+implementation includes migration 00016. Preserve the database volume and associated keys across
 restarts. Production uses separate Compose/env/roles; its ingress, independent
 ledger custody, retention, email delivery and release gates require operator
 verification. See [backend production instructions](../backend/README.md#production-docker-resend-no-mailpit).
 
 ## Feedback
+
+Current free-first launch provides local drafts and explicit Share/Copy, with an
+optional email composer only for a validated `VEEA_SUPPORT_EMAIL`. Share handoff
+never proves receipt and never marks a saved report sent. App details are opt-in
+and limited to version/platform/screen; no notebook contents, account IDs or
+credentials are automatically included. Screenshots are chosen explicitly.
+
+`VEEA_FEEDBACK_DELIVERY_ENABLED` defaults off independently of the account API.
+Do not enable it against Go without implementing its own supported feedback
+contract. The account-only build must make no legacy config/feedback requests.
+Configure `VEEA_PRIVACY_POLICY_URL` with the real public HTTPS policy and
+`VEEA_ZALO_COMMUNITY_URL` only after a Veea community exists. Missing settings
+keep those external actions hidden; the in-app privacy notice remains readable
+offline. Public support/operator/policy details have been requested from Nin and
+are still pending verification.
+
 
 Flutter retains its local feedback outbox, diagnostics allowlist, optional contact
 field and screenshot support. Reports persist before transmission, and retries

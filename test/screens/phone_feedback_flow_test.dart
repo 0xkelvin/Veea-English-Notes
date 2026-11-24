@@ -174,7 +174,10 @@ void main() {
       expect(find.text('Phone verified'), findsOneWidget);
       expect(await tokens.readAccountId(), 'account-A');
       await tester.ensureVisible(find.text('Sign out'));
-      await tester.tap(find.text('Sign out'));
+      await tester.runAsync(() async {
+        await tester.tap(find.text('Sign out'));
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      });
       await settle(tester);
       expect(auth.isSignedIn, false);
       expect(find.byKey(const Key('account_phone')), findsOneWidget);
@@ -204,8 +207,14 @@ void main() {
       expect(feedback.reports, hasLength(1));
       expect(feedback.reports.single.queued, true);
       expect(auth.isSignedIn, false);
-      await tester.ensureVisible(find.text('Waiting to send'));
-      expect(find.text('Waiting to send'), findsOneWidget);
+      await tester.ensureVisible(find.text('Saved on this device · Not sent'));
+      expect(find.text('Saved on this device · Not sent'), findsOneWidget);
+      expect(
+        find.byKey(ValueKey('share_report_${feedback.reports.single.id}')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('email_support_draft')), findsNothing);
+      expect(find.byKey(const Key('feedback_zalo_community')), findsNothing);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },

@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -9,6 +12,7 @@ import 'package:veea_english_app/providers/vocabulary_provider.dart';
 import 'package:veea_english_app/screens/word_editor_screen.dart';
 import 'package:veea_english_app/services/pronunciation_service.dart';
 import 'package:veea_english_app/services/tts_service.dart';
+import 'package:veea_english_app/services/word_suggestion_service.dart';
 
 void main() {
   sqfliteFfiInit();
@@ -20,6 +24,7 @@ void main() {
   final today = DateTime(2026, 8, 18, 10);
 
   setUp(() async {
+    WordSuggestionService.clearCache();
     repo = await SqliteVocabularyRepository.open(
       path: inMemoryDatabasePath,
       now: () => today,
@@ -47,6 +52,68 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+  testWidgets(
+    'online lookup sends only the chosen word after explicit approval',
+    (tester) async {
+      final requests = <Uri>[];
+      final client = MockClient((request) async {
+        requests.add(request.url);
+        return http.Response.bytes(
+          utf8.encode(
+            jsonEncode([
+              [
+                ["như mê cung", "labyrinthine", null, null, 1],
+              ],
+            ]),
+          ),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      });
+      addTearDown(client.close);
+      await tester.pumpWidget(wrap(WordEditorScreen(suggestionClient: client)));
+      await settle(tester);
+      await tester.enterText(find.byType(TextField).first, 'labyrinthine');
+      await settle(tester);
+      expect(requests, isEmpty);
+      await tester.ensureVisible(
+        find.byKey(const Key('online_meaning_lookup')),
+      );
+      await tester.tap(find.byKey(const Key('online_meaning_lookup')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Google Translate'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(requests, isEmpty);
+      await tester.tap(find.byKey(const Key('online_meaning_lookup')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('approve_online_lookup')));
+      await settle(tester);
+      expect(requests, hasLength(1));
+      expect(requests.single.queryParameters['q'], 'labyrinthine');
+      expect(find.textContaining('như mê cung'), findsWidgets);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets('typing another word clears the previous meaning suggestion', (
+    tester,
+  ) async {
+    await tester.pumpWidget(wrap(const WordEditorScreen()));
+    await settle(tester);
+    await tester.enterText(find.byType(TextField).first, 'solution');
+    await settle(tester);
+    expect(find.byKey(const Key('suggested_meaning_text')), findsOneWidget);
+    await tester.enterText(
+      find.byType(TextField).first,
+      'unknownwordwithoutmeaning',
+    );
+    await settle(tester);
+    expect(find.byKey(const Key('suggested_meaning_text')), findsNothing);
+    expect(find.byKey(const Key('online_meaning_lookup')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
 
   testWidgets(
     'Typing "solution" suggests "giải pháp" and NOUN without showing "kiên cường"',
@@ -95,7 +162,7 @@ void main() {
 
       // Should display suggested meaning pill
       expect(find.byKey(const Key('use_meaning_suggestion')), findsWidgets);
-      expect(find.textContaining('kiên cường'), findsWidgets);
+      expect(find.textContaining('Kiên cường'), findsWidgets);
 
       // Part of speech header should display suggested ADJECTIVE
       await tester.tap(find.byKey(const Key('word_editor_more_details')));
@@ -110,7 +177,10 @@ void main() {
       final meaningField = tester.widget<TextField>(
         find.byType(TextField).at(1),
       );
-      expect(meaningField.controller?.text, contains('kiên cường'));
+      expect(
+        meaningField.controller?.text.toLowerCase(),
+        contains('kiên cường'),
+      );
     },
   );
 

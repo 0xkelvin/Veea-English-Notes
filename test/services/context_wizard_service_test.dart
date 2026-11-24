@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:veea_english_app/data/cartridges_data.dart';
 import 'package:veea_english_app/models/part_of_speech.dart';
 import 'package:veea_english_app/services/context_wizard_service.dart';
 
@@ -31,25 +32,47 @@ void main() {
       );
     });
 
-    test('generates specialized output for career cartridge terms', () {
-      final result = ContextWizardService.generate('idempotent');
+    test('unoffered career content stays out of the context dictionary', () {
+      expect(
+        CartridgesData.siliconValleyTech.words.any(
+          (word) => word.word == 'idempotent',
+        ),
+        isTrue,
+      );
+      expect(
+        CartridgesData.allCartridges.any(
+          (pack) => pack.words.any((word) => word.word == 'idempotent'),
+        ),
+        isFalse,
+      );
+      final result = ContextWizardService.generate(
+        'idempotent',
+        partOfSpeech: PartOfSpeech.adjective,
+      );
       expect(result.word, 'idempotent');
-      expect(result.sentences.length, greaterThanOrEqualTo(2));
-      expect(
-        result.sentences.any((s) => s.domain.contains('PR & CODE REVIEW')),
-        isTrue,
+      expect(result.partOfSpeech, PartOfSpeech.adjective);
+      expect(result.sentences.length, 3);
+      final unoffered = CartridgesData.siliconValleyTech.words.firstWhere(
+        (word) => word.word == 'idempotent',
       );
       expect(
-        result.sentences.any((s) => s.sentence.toLowerCase().contains('idempotent')),
-        isTrue,
+        result.sentences.any(
+          (s) =>
+              s.sentence == unoffered.prExample ||
+              s.sentence == unoffered.standupExample,
+        ),
+        isFalse,
       );
       expect(
-        result.collocations.any((c) => c.contains('idempotent')),
+        result.sentences.any(
+          (s) => s.sentence.toLowerCase().contains('idempotent'),
+        ),
         isTrue,
       );
+      expect(result.collocations.any((c) => c.contains('idempotent')), isTrue);
       expect(
         result.nuances.any((n) => n.synonym == 'Interview Context'),
-        isTrue,
+        isFalse,
       );
     });
 

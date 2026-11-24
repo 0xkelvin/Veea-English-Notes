@@ -11,6 +11,7 @@ import 'pixel/pixel_box.dart';
 import 'unlock_time_sheet.dart';
 import '../providers/pro_provider.dart';
 import '../screens/pro_screen.dart';
+import '../core/config/app_config.dart';
 
 class NativeGateSettings extends StatefulWidget {
   const NativeGateSettings({
@@ -80,7 +81,7 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
 
   void _reportFailure(BuildContext context, bool success) {
     if (success || !context.mounted || gate.nativeError == null) return;
-    if (gate.nativeRequiresPro) {
+    if (gate.nativeRequiresPro && !AppConfig.isFreeLaunch) {
       ProScreen.open(context);
       return;
     }
@@ -106,7 +107,7 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
     try {
       pro = context.read<ProProvider>();
     } catch (_) {}
-    if (app != null && pro?.hasPro == false) {
+    if (!AppConfig.isFreeLaunch && app != null && pro?.hasPro == false) {
       await ProScreen.open(context);
       return;
     }
@@ -117,7 +118,7 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
           : status.durationFor(app.id),
       defaultMinutes: app == null ? null : status.passMinutes,
       usesDefault: app != null && app.customPassMinutes == null,
-      allowCustom: pro?.hasPro ?? true,
+      allowCustom: AppConfig.isFreeLaunch || (pro?.hasPro ?? true),
       onGetPro: () => ProScreen.open(context),
       applicationLabel: app == null
           ? null
@@ -495,6 +496,7 @@ class _PlanSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     ProProvider? pro;
+    if (AppConfig.isFreeLaunch) return const SizedBox.shrink();
     try {
       pro = context.watch<ProProvider>();
     } catch (_) {

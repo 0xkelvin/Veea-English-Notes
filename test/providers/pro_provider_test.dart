@@ -52,6 +52,9 @@ class TestPro extends ProRepository {
   int configurations = 0;
   int purchased = 0, restored = 0, claims = 0, finished = 0;
   bool offline = false;
+  final Map<String, ApiException> claimErrors = {};
+  final List<String> claimedIds = [];
+  final List<String> finishedIds = [];
   Completer<Map<String, Object?>>? waiting;
   @override
   void listen() {}
@@ -97,7 +100,9 @@ class TestPro extends ProRepository {
   @override
   Future<Map<String, Object?>> claim(String owner, String id) async {
     claims++;
+    claimedIds.add(id);
     if (offline) throw const OfflineException();
+    if (claimErrors[id] case final error?) throw error;
     return claimResult;
   }
 
@@ -114,6 +119,7 @@ class TestPro extends ProRepository {
   @override
   Future<void> finish(String id) async {
     finished++;
+    finishedIds.add(id);
   }
 }
 
@@ -123,6 +129,7 @@ void main() {
   late TestPro repo;
   late ProProvider pro;
   setUp(() {
+    AppConfig.overrideFreeLaunch(false);
     AppConfig.overrideBaseUrl('http://localhost');
     AppConfig.overrideAppleProduct('app.test.pro');
     auth = TestAuth();
@@ -130,11 +137,51 @@ void main() {
     pro = ProProvider(auth: auth, repository: repo);
   });
   tearDown(() {
+    AppConfig.overrideFreeLaunch(null);
     pro.dispose();
     auth.dispose();
     AppConfig.overrideBaseUrl(null);
     AppConfig.overrideAppleProduct(null);
   });
+  test(
+    'free launch blocks checkout without inventing purchase ownership',
+    () async {
+      AppConfig.overrideFreeLaunch(null);
+      expect(AppConfig.isFreeLaunch, isTrue);
+      await pro.purchase();
+      expect(repo.purchased, 0);
+      expect(repo.configurations, 0);
+      expect(pro.canPurchase, isFalse);
+      expect(pro.hasPro, isFalse);
+      expect(pro.hasLifetime, isFalse);
+      expect(pro.message, contains('No purchase is needed'));
+    },
+  );
+  test('free launch starts without a configured Apple product', () async {
+    AppConfig.overrideFreeLaunch(null);
+    AppConfig.overrideAppleProduct('');
+    await pro.initializeDevice();
+    await pro.refresh();
+    expect(repo.configurations, 0);
+    expect(repo.purchased, 0);
+    expect(pro.hasPro, isFalse);
+    expect(pro.message, isNull);
+  });
+  test(
+    'free launch preserves restoration of earlier owned purchases',
+    () async {
+      AppConfig.overrideFreeLaunch(null);
+      repo.state = const ProStoreState(hasPro: true, transactions: ['earlier']);
+      auth.select('a');
+      await Future<void>.delayed(Duration.zero);
+      await pro.restore();
+      expect(repo.restored, 1);
+      expect(repo.purchased, 0);
+      expect(repo.finishedIds, everyElement('earlier'));
+      expect(pro.hasPro, isTrue);
+      expect(pro.canPurchase, isFalse);
+    },
+  );
   test('signed out cannot buy or restore', () async {
     await pro.purchase();
     await pro.restore();
@@ -143,6 +190,44 @@ void main() {
     expect(pro.hasPro, isFalse);
     expect(pro.message, contains('Sign in'));
   });
+  test(
+    'a refused transaction does not block another owned transaction',
+    () async {
+      repo.state = const ProStoreState(
+        hasPro: true,
+        transactions: ['refused', 'owned'],
+      );
+      repo.claimErrors['refused'] = const ApiException(
+        'Not accepted',
+        statusCode: 400,
+        code: 'purchase_invalid',
+      );
+      auth.select('a');
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.claimedIds, ['refused', 'owned']);
+      expect(repo.finished, 1);
+      expect(repo.finishedIds, ['owned']);
+      expect(pro.hasPro, isTrue);
+      expect(pro.message, contains('verification was not accepted'));
+      expect(pro.message, isNot(contains('when you are online')));
+    },
+  );
+  test(
+    'ownership refusal explains the account link rather than connectivity',
+    () async {
+      repo.state = const ProStoreState(hasPro: true, transactions: ['123']);
+      repo.claimErrors['123'] = const ApiException(
+        'Not accepted',
+        statusCode: 409,
+        code: 'purchase_ownership',
+      );
+      auth.select('a');
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.finished, 0);
+      expect(pro.message, contains('original purchase'));
+      expect(pro.message, isNot(contains('when you are online')));
+    },
+  );
   test(
     'verified owner purchase stays usable offline and is not finished before cloud confirmation',
     () async {

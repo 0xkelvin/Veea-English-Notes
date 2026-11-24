@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:http/http.dart' as http;
 
 import '../core/config/app_config.dart';
 import '../core/theme/pixel_metrics.dart';
@@ -45,13 +46,18 @@ class WordDraft {
 /// the keyboard on small phones, and the form now has more fields than a
 /// sheet can show at once.
 class WordEditorScreen extends StatefulWidget {
-  const WordEditorScreen({super.key, this.existing}) : draft = null;
+  const WordEditorScreen({super.key, this.existing, this.suggestionClient})
+    : draft = null;
 
-  const WordEditorScreen.draft({super.key, required this.draft})
-    : existing = null;
+  const WordEditorScreen.draft({
+    super.key,
+    required this.draft,
+    this.suggestionClient,
+  }) : existing = null;
 
   final VocabularyWord? existing;
   final WordDraft? draft;
+  final http.Client? suggestionClient;
 
   bool get isEditing => existing != null && existing!.id.trim().isNotEmpty;
 
@@ -139,6 +145,9 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
   /// showing the pronunciation of a word that has since been edited.
   int _lookupToken = 0;
   int _suggestionToken = 0;
+  bool _onlineLookupBusy = false;
+  bool _onlineConsentOpen = false;
+  String? _onlineLookupMessage;
 
   String get _meaningHint {
     if (_suggestedMeaning != null && _suggestedMeaning!.isNotEmpty) {
@@ -230,6 +239,7 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
 
   /// Automatically looks up Vietnamese meaning suggestions and part of speech.
   Future<void> _refreshSuggestions(String rawWord) async {
+    ++_suggestionToken;
     final clean = rawWord.trim();
     if (clean.length < 2) {
       if (!mounted) return;
@@ -243,7 +253,6 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
       return;
     }
 
-    final token = ++_suggestionToken;
     final provider = context.read<VocabularyProvider>();
 
     // 1. Instant local/cache suggestion (0ms)
@@ -251,32 +260,82 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
       clean,
       userWords: provider.words,
     );
-    if (fast != null && mounted && token == _suggestionToken) {
+    if (mounted) {
       setState(() {
-        _suggestedMeaning = fast.meaning;
-        _suggestedPartOfSpeech = fast.partOfSpeech;
-        if (!_partOfSpeechIsManual && fast.partOfSpeech != null) {
-          _partOfSpeech = fast.partOfSpeech;
+        _onlineLookupMessage = null;
+        _suggestedMeaning = fast?.meaning;
+        _suggestedPartOfSpeech = fast?.partOfSpeech;
+        if (!_partOfSpeechIsManual && fast?.partOfSpeech != null) {
+          _partOfSpeech = fast!.partOfSpeech;
         }
       });
     }
+  }
 
-    // 2. Async enrichment (e.g. online translation if not already in local dict)
-    if (fast?.meaning == null || fast!.meaning!.isEmpty) {
-      final suggestion = await WordSuggestionService.suggest(
-        clean,
-        userWords: provider.words,
+  Future<void> _lookupOnline() async {
+    final word = _word.text.trim();
+    if (_onlineLookupBusy || _onlineConsentOpen || word.length < 2) return;
+    _onlineConsentOpen = true;
+    bool? approved;
+    try {
+      approved = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Look up this word online?'),
+          content: Text(
+            'Send “$word” to Google Translate and, if needed, MyMemory to suggest a Vietnamese meaning? Your saved notebook and examples are not sent.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              key: const Key('approve_online_lookup'),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Look up this word'),
+            ),
+          ],
+        ),
       );
-
+    } finally {
+      _onlineConsentOpen = false;
+    }
+    if (approved != true || !mounted || _word.text.trim() != word) return;
+    final token = ++_suggestionToken;
+    final words = context.read<VocabularyProvider>().words;
+    setState(() {
+      _onlineLookupBusy = true;
+      _onlineLookupMessage = null;
+    });
+    try {
+      final suggestion = await WordSuggestionService.suggest(
+        word,
+        userWords: words,
+        allowOnline: true,
+        client: widget.suggestionClient,
+      );
       if (!mounted || token != _suggestionToken) return;
       setState(() {
-        _suggestedMeaning = suggestion?.meaning ?? fast?.meaning;
-        _suggestedPartOfSpeech = suggestion?.partOfSpeech ?? fast?.partOfSpeech;
-
+        _suggestedMeaning = suggestion?.meaning;
+        _suggestedPartOfSpeech = suggestion?.partOfSpeech;
+        if (_suggestedMeaning == null || _suggestedMeaning!.isEmpty) {
+          _onlineLookupMessage =
+              'No online meaning was found. You can enter your own meaning.';
+        }
         if (!_partOfSpeechIsManual && _suggestedPartOfSpeech != null) {
           _partOfSpeech = _suggestedPartOfSpeech;
         }
       });
+    } catch (_) {
+      if (mounted && token == _suggestionToken) {
+        setState(
+          () => _onlineLookupMessage =
+              'Could not look up this word. You can try again or enter its meaning.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _onlineLookupBusy = false);
     }
   }
 
@@ -670,6 +729,23 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                         ],
                       ),
                     ),
+                  ],
+                  if (_word.text.trim().length >= 2 &&
+                      _meaning.text.trim().isEmpty &&
+                      (_suggestedMeaning == null ||
+                          _suggestedMeaning!.isEmpty)) ...[
+                    TextButton.icon(
+                      key: const Key('online_meaning_lookup'),
+                      onPressed: _onlineLookupBusy ? null : _lookupOnline,
+                      icon: const Icon(Icons.language),
+                      label: Text(
+                        _onlineLookupBusy
+                            ? 'Looking up…'
+                            : 'Look up meaning online',
+                      ),
+                    ),
+                    if (_onlineLookupMessage != null)
+                      Text(_onlineLookupMessage!),
                   ],
                   const SizedBox(height: PixelMetrics.space4),
                   ExpansionTile(

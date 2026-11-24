@@ -57,7 +57,7 @@ class ProRepository {
         'serverUntil': serverUntil.millisecondsSinceEpoch / 1000,
       'clearServer': clearServer,
       'serverLifetime': ?serverLifetime,
-      'loadProduct': loadProduct,
+      'loadProduct': loadProduct && !AppConfig.isFreeLaunch,
     }),
   );
   Future<ProStoreState> purchase() async => ProStoreState.fromMap(

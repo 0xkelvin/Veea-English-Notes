@@ -11,6 +11,18 @@ import 'package:flutter/foundation.dart';
 class AppConfig {
   AppConfig._();
 
+  // The first public release offers all learning and app-lock controls free.
+  // Reintroducing sales requires a reviewed learning-value product decision.
+  static bool? _freeLaunchOverride;
+  static bool get isFreeLaunch => _freeLaunchOverride ?? true;
+  @visibleForTesting
+  static void overrideFreeLaunch(bool? value) {
+    assert(() {
+      _freeLaunchOverride = value;
+      return true;
+    }());
+  }
+
   /// Compiled-in default.
   ///
   /// Empty by default: with no server configured the app stays fully local,
@@ -41,7 +53,8 @@ class AppConfig {
     }());
   }
 
-  /// Vocabulary never leaves the device in the first paid release.
+  /// The saved notebook is not uploaded. Explicit online word lookups are
+  /// separate, user-approved requests to translation providers.
   /// Account and purchase services remain independent of this setting.
   static const bool isVocabularySyncEnabled = false;
 
@@ -61,12 +74,166 @@ class AppConfig {
     }());
   }
 
-  static const String zaloCommunityUrl = String.fromEnvironment(
+  static const String _compiledZaloCommunityUrl = String.fromEnvironment(
     'VEEA_ZALO_COMMUNITY_URL',
   );
+  static String? _zaloCommunityUrlOverride;
+  static String get zaloCommunityUrl =>
+      _zaloCommunityUrlOverride ?? _compiledZaloCommunityUrl;
+  @visibleForTesting
+  static void overrideZaloCommunityUrl(String? value) {
+    assert(() {
+      _zaloCommunityUrlOverride = value;
+      return true;
+    }());
+  }
+
+  /// Optional external HTTPS privacy policy URL supplied at build time.
+  /// Empty by default so builds never point to an unverified address.
+  static const String _compiledPrivacyPolicyUrl = String.fromEnvironment(
+    'VEEA_PRIVACY_POLICY_URL',
+  );
+  static String? _privacyPolicyUrlOverride;
+  static Uri? get privacyPolicyUri => parseTrustedHttpsUrl(
+    _privacyPolicyUrlOverride ?? _compiledPrivacyPolicyUrl,
+  );
+  static String? get privacyPolicyUrl => privacyPolicyUri?.toString();
+  @visibleForTesting
+  static void overridePrivacyPolicyUrl(String? value) {
+    assert(() {
+      _privacyPolicyUrlOverride = value;
+      return true;
+    }());
+  }
+
+  /// Optional support mailbox supplied at build time.
+  /// Empty by default so builds never advertise an unverified support email.
+  static const String _compiledSupportEmail = String.fromEnvironment(
+    'VEEA_SUPPORT_EMAIL',
+  );
+  static String? _supportEmailOverride;
+  static String? get supportEmail =>
+      parseSupportEmail(_supportEmailOverride ?? _compiledSupportEmail);
+  @visibleForTesting
+  static void overrideSupportEmail(String? value) {
+    assert(() {
+      _supportEmailOverride = value;
+      return true;
+    }());
+  }
+
+  /// Explicit build flag for legacy remote feedback delivery (`/client/config`
+  /// and `/feedback`). Defaults to false because the Go account backend does
+  /// not expose those routes.
+  static const bool _compiledFeedbackDeliveryEnabled = bool.fromEnvironment(
+    'VEEA_FEEDBACK_DELIVERY_ENABLED',
+  );
+  static bool? _feedbackDeliveryOverride;
+  static bool get isFeedbackDeliveryEnabled =>
+      isCloudEnabled &&
+      (_feedbackDeliveryOverride ?? _compiledFeedbackDeliveryEnabled);
+  @visibleForTesting
+  static void overrideFeedbackDelivery(bool? value) {
+    assert(() {
+      _feedbackDeliveryOverride = value;
+      return true;
+    }());
+  }
+
+  /// Validates an externally configured HTTPS URL.
+  ///
+  /// Rejects non-HTTPS schemes, embedded credentials, explicit ports, raw IPs,
+  /// localhost, control/whitespace characters, and path traversal segments.
+  static Uri? parseTrustedHttpsUrl(String? raw) {
+    if (raw == null) return null;
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty ||
+        RegExp(r'[\s\x00-\x1F\x7F]').hasMatch(trimmed) ||
+        RegExp(
+          r'/(?:\.|%2e){1,2}(?:/|[?#]|$)',
+          caseSensitive: false,
+        ).hasMatch(trimmed) ||
+        trimmed.contains('\\')) {
+      return null;
+    }
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null ||
+        uri.scheme != 'https' ||
+        !uri.hasAuthority ||
+        uri.host.isEmpty ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasPort) {
+      return null;
+    }
+    // Reject empty userinfo form such as https://@example.test/privacy.
+    final afterScheme = trimmed.substring('https://'.length);
+    final authorityEnd = afterScheme.indexOf(RegExp(r'[/?#]'));
+    final rawAuthority = authorityEnd == -1
+        ? afterScheme
+        : afterScheme.substring(0, authorityEnd);
+    if (rawAuthority.contains('@')) return null;
+
+    if (!_isValidPublicHost(uri.host)) return null;
+
+    final lowerRawPath = uri.path.toLowerCase();
+    if (uri.pathSegments.any((segment) => segment == '..' || segment == '.') ||
+        lowerRawPath.contains('%2e')) {
+      return null;
+    }
+    return uri;
+  }
+
+  /// Validates a configured support email address for safe `mailto:` handoff.
+  ///
+  /// Rejects whitespace, control characters, multiple recipients, and URI
+  /// delimiters that could inject query parameters or mail headers.
+  static String? parseSupportEmail(String? raw) {
+    if (raw == null) return null;
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty ||
+        trimmed.length > 254 ||
+        RegExp(r'[\s\x00-\x1F\x7F?&,:;/\\<>"()\[\]]').hasMatch(trimmed)) {
+      return null;
+    }
+    final parts = trimmed.split('@');
+    if (parts.length != 2) return null;
+    final local = parts[0];
+    final domain = parts[1].toLowerCase();
+    if (local.isEmpty ||
+        local.length > 64 ||
+        local.startsWith('.') ||
+        local.endsWith('.') ||
+        local.contains('..') ||
+        !RegExp(r'^[A-Za-z0-9._+-]+$').hasMatch(local)) {
+      return null;
+    }
+    if (!_isValidPublicHost(domain)) return null;
+    return '$local@$domain';
+  }
+
+  static bool _isValidPublicHost(String host) {
+    final lower = host.toLowerCase();
+    if (lower.isEmpty ||
+        lower.length > 253 ||
+        lower == 'localhost' ||
+        !lower.contains('.') ||
+        lower.startsWith('.') ||
+        lower.endsWith('.') ||
+        lower.contains('..')) {
+      return false;
+    }
+    final labels = lower.split('.');
+    final labelPattern = RegExp(r'^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$');
+    for (final label in labels) {
+      if (!labelPattern.hasMatch(label)) return false;
+    }
+    // Final TLD label must be purely alphabetic (rejects IPv4 literals).
+    return RegExp(r'^[a-z]{2,63}$').hasMatch(labels.last);
+  }
+
   static const String appVersion = String.fromEnvironment(
     'VEEA_APP_VERSION',
-    defaultValue: '1.0.2',
+    defaultValue: '2.3.0',
   );
 
   /// Temporarily paused. Restore native widget registration/embedding too

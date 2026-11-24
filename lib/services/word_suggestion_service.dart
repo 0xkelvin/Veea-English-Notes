@@ -102,8 +102,9 @@ class WordSuggestionService {
   }
 
   /// Flag for querying remote translation endpoint when meaning is missing from local dictionary.
-  /// Enabled by default so that users get Vietnamese meaning suggestions as words are typed.
-  static bool allowOnlineTranslation = true;
+  /// Disabled by default. A user must explicitly approve an online lookup;
+  /// typing or detecting clipboard content must not send text to a provider.
+  static bool allowOnlineTranslation = false;
 
   /// Full async suggestion: checks local sources, and if meaning is missing
   /// and online translation is enabled/allowed, queries online dictionary.

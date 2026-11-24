@@ -139,7 +139,8 @@ class FeedbackProvider extends ChangeNotifier {
 
   Future<void> refresh() async {
     if (_delivery != null) return _delivery;
-    if (!AppConfig.isCloudEnabled) {
+    communityUrl = trustedZaloCommunity(AppConfig.zaloCommunityUrl);
+    if (!AppConfig.isFeedbackDeliveryEnabled) {
       await _reload(_owner);
       return;
     }

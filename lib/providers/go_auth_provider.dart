@@ -351,7 +351,12 @@ class GoAuthProvider extends AuthProvider {
     final owner = accountId;
     try {
       final user = await goApi.profile();
-      if (accountId != owner || user.id != owner || user.email == null) {
+      if (accountId != owner || user.id != owner) {
+        return false;
+      }
+      if (user.email == null || user.email!.trim().isEmpty) {
+        _error =
+            'Could not confirm your account email. Sign in again before requesting deletion.';
         return false;
       }
       final receipt = await goApi.startDelete(user.email!, owner!);

@@ -111,6 +111,39 @@ void main() {
       expect(find.text('Daily reminder'), findsOneWidget);
       expect(find.text('Backup and restore'), findsOneWidget);
       expect(find.text('Help and feedback'), findsOneWidget);
+      expect(find.byKey(const Key('settings_privacy_policy')), findsOneWidget);
+      expect(find.text('Privacy policy'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'SettingsScreen opens offline Privacy policy and safe fallback feedback dialog',
+    (tester) async {
+      tester.view.physicalSize = const Size(600, 3500);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(buildApp(const SettingsScreen()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('settings_privacy_policy')));
+      await tester.pumpAndSettle();
+      expect(find.text('How Veea handles your data'), findsOneWidget);
+      expect(find.text('Your words stay on this device'), findsOneWidget);
+      expect(find.textContaining('Google Translate'), findsOneWidget);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('settings_feedback')));
+      await tester.pumpAndSettle();
+      expect(find.text('Share feedback'), findsOneWidget);
+      expect(find.text('Email support'), findsNothing);
+      expect(find.textContaining('support@veea.app'), findsNothing);
+      expect(find.textContaining('Total Words'), findsNothing);
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
     },
   );
 

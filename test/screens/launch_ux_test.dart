@@ -13,6 +13,7 @@ import 'package:veea_english_app/core/theme/pixel_theme.dart';
 import 'package:veea_english_app/data/feedback_repository.dart';
 import 'package:veea_english_app/providers/feedback_provider.dart';
 import 'package:veea_english_app/screens/phone_account_screen.dart';
+import 'package:veea_english_app/screens/privacy_policy_screen.dart';
 import 'package:veea_english_app/screens/feedback_screen.dart';
 import 'package:veea_english_app/data/local/sqlite_vocabulary_repository.dart';
 import 'package:veea_english_app/data/remote/api_client.dart';
@@ -218,6 +219,7 @@ void main() {
     'settings': () => const SettingsScreen(),
     'account': () => const AccountScreen(),
     'feedback': () => const FeedbackScreen(),
+    'privacy_policy': () => const PrivacyPolicyScreen(),
     'protection': () => const AppProtectionScreen(),
     'learning_rules': () => LearningRulesScreen(gate: gate),
     'practice_picker': () =>

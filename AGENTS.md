@@ -203,3 +203,20 @@ L3 user then L4a session locks, verify fresh Apple data, and enforce account-tok
 ownership. Sandbox and production use separate databases and a matching `apple_iap_control`.
 Payments are disabled by default; never simulate paid success in production. Full purge removes
 Apple rows, export includes five retained proof periods, manual grants remain independent.
+
+## First public launch: free first (2026-11-24)
+
+The owner chose a free first release. `AppConfig.isFreeLaunch` and
+`NativeGateReleasePolicy.isFreeLaunch` are true: learning, multiple app locks
+(existing 50-app safety limit), custom default durations and per-app durations
+require no purchase or sign-in. Do not reintroduce Pro checks for Screen Time
+controls or fabricate purchased ownership to make them free. New checkout and
+product loading are disabled; preserve verified earlier-purchase restore and
+account/environment isolation. Future paid learning value needs a new decision.
+
+Account-only Go builds must not call retired config/feedback routes.
+`VEEA_FEEDBACK_DELIVERY_ENABLED` defaults off independently of the API URL.
+Feedback uses local drafts and explicit share/copy; a share handoff is not proof
+of receipt. Support email, public HTTPS privacy-policy URL and Zalo community
+must be real team-provided destinations, never invented. See
+`docs/app-store-submission.md` and `docs/account-feedback-rollout.md`.

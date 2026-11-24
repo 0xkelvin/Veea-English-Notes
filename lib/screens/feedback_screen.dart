@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
+
 import '../core/config/app_config.dart';
+import '../data/feedback_repository.dart';
 import '../providers/feedback_provider.dart';
+import '../services/feedback_service.dart';
 import '../widgets/pixel/pixel_box.dart';
 
 class FeedbackScreen extends StatefulWidget {
@@ -17,8 +19,9 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   final _message = TextEditingController(), _contact = TextEditingController();
   final _form = GlobalKey<FormState>();
   String _kind = 'bug';
-  bool _diagnostics = false, _picking = false;
+  bool _diagnostics = false, _picking = false, _handingOff = false;
   Uint8List? _screenshot;
+
   @override
   void initState() {
     super.initState();
@@ -34,6 +37,22 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     super.dispose();
   }
 
+  void _showSnackBar(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  FeedbackDraft _currentFormDraft() => FeedbackDraft(
+    kind: _kind,
+    message: _message.text.trim(),
+    contact: _contact.text.trim().isEmpty ? null : _contact.text.trim(),
+    includeDiagnostics: _diagnostics,
+    diagnostics: _diagnostics ? FeedbackService.defaultDiagnostics() : null,
+    screenshotBytes: _screenshot,
+  );
+
   Future<void> _pick() async {
     setState(() => _picking = true);
     try {
@@ -48,22 +67,12 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       final bytes = await image.readAsBytes();
       if (!mounted) return;
       if (bytes.length > 524288) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Choose a smaller screenshot, under 512 KB.'),
-          ),
-        );
+        _showSnackBar('Choose a smaller screenshot, under 512 KB.');
       } else {
         setState(() => _screenshot = bytes);
       }
     } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not open that photo. Please try another.'),
-          ),
-        );
-      }
+      _showSnackBar('Could not open that photo. Please try another.');
     } finally {
       if (mounted) setState(() => _picking = false);
     }
@@ -84,31 +93,102 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     _message.clear();
     _contact.clear();
     setState(() => _screenshot = null);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Feedback saved. Check its delivery status below.'),
-      ),
+    final hasSupportEmail = AppConfig.supportEmail != null;
+    _showSnackBar(
+      AppConfig.isFeedbackDeliveryEnabled
+          ? 'Feedback saved. Check its delivery status below.'
+          : hasSupportEmail
+          ? 'Feedback draft saved on this device. Use Share feedback, Email support, or Copy below when ready.'
+          : 'Feedback draft saved on this device. Use Share feedback or Copy below when ready.',
     );
     await feedback.refresh();
   }
 
-  Future<void> _community(String url) async {
-    final opened = await launchUrl(
-      Uri.parse(url),
-      mode: LaunchMode.externalApplication,
+  Future<void> _shareFormDraft(BuildContext anchorContext) async {
+    if (_handingOff || !_form.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
+    await _shareDraft(
+      _currentFormDraft(),
+      FeedbackService.resolveShareOrigin(anchorContext),
     );
-    if (!opened && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not open Zalo. Please try again later.'),
-        ),
+  }
+
+  Future<void> _emailFormDraft() async {
+    if (_handingOff || !_form.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
+    await _emailDraft(_currentFormDraft());
+  }
+
+  Future<void> _shareDraft(FeedbackDraft draft, Rect shareOrigin) async {
+    if (_handingOff) return;
+    setState(() => _handingOff = true);
+    try {
+      final result = await FeedbackService.shareDraft(
+        draft,
+        sharePositionOrigin: shareOrigin,
       );
+      _showSnackBar(result.message);
+    } finally {
+      if (mounted) setState(() => _handingOff = false);
     }
+  }
+
+  Future<void> _emailDraft(FeedbackDraft draft) async {
+    if (_handingOff) return;
+    setState(() => _handingOff = true);
+    try {
+      final result = await FeedbackService.openEmailDraft(draft);
+      _showSnackBar(result.message);
+    } finally {
+      if (mounted) setState(() => _handingOff = false);
+    }
+  }
+
+  Future<void> _copyDraft(FeedbackDraft draft) async {
+    final formatted = FeedbackService.formatDraft(
+      draft,
+      screenshotAttached: false,
+    );
+    await Clipboard.setData(ClipboardData(text: formatted));
+    _showSnackBar(
+      draft.hasScreenshot
+          ? 'Feedback text copied. Screenshot is not included in clipboard text.'
+          : 'Feedback copied',
+    );
+  }
+
+  Future<void> _community(String url) async {
+    final safeUrl = trustedZaloCommunity(url);
+    final opened = safeUrl != null
+        ? await FeedbackService.openTrustedUrl(Uri.parse(safeUrl))
+        : false;
+    if (!opened) {
+      _showSnackBar('Could not open Zalo. Please try again later.');
+    }
+  }
+
+  String _reportStatusLabel(FeedbackReport report, bool deliveryEnabled) {
+    if (report.queued && !deliveryEnabled) {
+      return 'Saved on this device · Not sent';
+    }
+    return report.statusLabel;
+  }
+
+  String? _draftMetaSummary(FeedbackDraft draft) {
+    final parts = <String>[
+      if (draft.includeDiagnostics) 'Includes app details',
+      if (draft.hasScreenshot) 'Includes screenshot',
+    ];
+    return parts.isEmpty ? null : parts.join(' · ');
   }
 
   @override
   Widget build(BuildContext context) {
     final feedback = context.watch<FeedbackProvider>();
+    final deliveryEnabled = AppConfig.isFeedbackDeliveryEnabled;
+    final supportEmail = AppConfig.supportEmail;
+    final communityUrl = trustedZaloCommunity(feedback.communityUrl);
+
     return Scaffold(
       appBar: AppBar(title: const Text('Help and feedback')),
       body: SafeArea(
@@ -124,11 +204,15 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
             const Text(
               'Report a problem or suggest something you’d love to see. No account needed.',
             ),
-            if (!AppConfig.isCloudEnabled)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Text(
-                  'Feedback delivery is coming soon. Saved feedback will send when it is available. You can copy or discard it below.',
+            if (!deliveryEnabled)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: PixelBox(
+                  child: Text(
+                    supportEmail != null
+                        ? 'Use Share feedback or Email support to send your message. Saving a draft keeps it on this phone.'
+                        : 'Save or copy a draft, or choose where to share it. Sharing does not send it directly to Veea. Find Veea’s support contact in the App Store listing.',
+                  ),
                 ),
               ),
             const SizedBox(height: 16),
@@ -180,9 +264,14 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                           ? 'Tell us what you want to do and why.'
                           : 'What were you doing, and what did you expect?',
                     ),
-                    validator: (v) => (v?.trim().runes.length ?? 0) < 5
-                        ? 'Please add a little more detail.'
-                        : null,
+                    validator: (v) {
+                      final length = v?.trim().runes.length ?? 0;
+                      if (length < 5) return 'Please add a little more detail.';
+                      if (length > 4000) {
+                        return 'Please shorten your message. Some emoji use more than one character.';
+                      }
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 8),
                   if (_screenshot != null) ...[
@@ -217,20 +306,23 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                   ),
                   const SizedBox(height: 8),
                   ExpansionTile(
+                    key: const Key('feedback_optional_details'),
                     tilePadding: EdgeInsets.zero,
                     title: const Text('Reply and app details'),
                     subtitle: const Text('Optional'),
                     children: [
                       TextFormField(
+                        key: const Key('feedback_contact'),
                         controller: _contact,
                         maxLength: 254,
                         decoration: const InputDecoration(
                           labelText: 'Contact (optional)',
-                          hintText: 'Email or Zalo number for a reply',
+                          hintText: 'Email or other contact for a reply',
                           border: OutlineInputBorder(),
                         ),
                       ),
                       CheckboxListTile(
+                        key: const Key('feedback_include_diagnostics'),
                         contentPadding: EdgeInsets.zero,
                         value: _diagnostics,
                         onChanged: feedback.busy
@@ -238,7 +330,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                             : (v) => setState(() => _diagnostics = v!),
                         title: const Text('Include app details'),
                         subtitle: const Text(
-                          'App version, platform and this screen. Your words and phone number are not included.',
+                          'App version, platform and this screen. Your words and account details are not included.',
                         ),
                       ),
                     ],
@@ -258,11 +350,33 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                     child: Text(
                       feedback.busy
                           ? 'Saving…'
-                          : AppConfig.isCloudEnabled
+                          : deliveryEnabled
                           ? 'Send feedback'
-                          : 'Save feedback on this device',
+                          : 'Save draft on this device',
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  Builder(
+                    builder: (buttonContext) => OutlinedButton.icon(
+                      key: const Key('share_feedback_draft'),
+                      onPressed: feedback.busy || _handingOff
+                          ? null
+                          : () => _shareFormDraft(buttonContext),
+                      icon: const Icon(Icons.share_outlined),
+                      label: const Text('Share feedback'),
+                    ),
+                  ),
+                  if (supportEmail != null) ...[
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      key: const Key('email_support_draft'),
+                      onPressed: feedback.busy || _handingOff
+                          ? null
+                          : _emailFormDraft,
+                      icon: const Icon(Icons.mail_outline),
+                      label: const Text('Email support'),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -272,77 +386,109 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 8),
+            const Text(
+              'Drafts are saved separately for each account and for guests. Signing in or out changes which drafts appear here.',
+            ),
+            const SizedBox(height: 8),
             if (feedback.reports.isEmpty)
-              const Text(
-                'Your reports, delivery status and replies will appear here.',
+              Text(
+                deliveryEnabled
+                    ? 'Your reports, delivery status and replies will appear here.'
+                    : 'Saved feedback drafts on this device will appear here so you can share, copy, or discard them.',
               ),
             for (final report in feedback.reports)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: PixelBox(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        report.kind == 'feature'
-                            ? 'Feature request'
-                            : report.kind == 'bug'
-                            ? 'Problem report'
-                            : 'Feedback',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(report.message),
-                      const SizedBox(height: 8),
-                      Text(
-                        report.statusLabel,
-                        style: Theme.of(context).textTheme.labelLarge,
-                      ),
-                      if (report.error != null && report.queued)
-                        Text(report.error!),
-                      if (report.reply?.isNotEmpty == true)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: Text('Veea: ${report.reply}'),
-                        ),
-                      Wrap(
-                        spacing: 12,
+              Builder(
+                builder: (context) {
+                  final draft = FeedbackDraft.fromReport(report);
+                  final meta = _draftMetaSummary(draft);
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: PixelBox(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          TextButton(
-                            onPressed: () async {
-                              await Clipboard.setData(
-                                ClipboardData(text: report.message),
-                              );
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Feedback copied'),
-                                  ),
-                                );
-                              }
-                            },
-                            child: const Text('Copy'),
+                          Text(
+                            FeedbackService.kindTitle(report.kind),
+                            style: Theme.of(context).textTheme.titleMedium,
                           ),
-                          if (report.queued && AppConfig.isCloudEnabled)
-                            TextButton(
-                              onPressed: feedback.refresh,
-                              child: const Text('Try sending again'),
+                          const SizedBox(height: 6),
+                          Text(report.message),
+                          if (meta != null) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              meta,
+                              style: Theme.of(context).textTheme.bodySmall,
                             ),
-                          if (report.queued)
-                            TextButton(
-                              onPressed: () => feedback.discard(report.id),
-                              child: const Text('Discard'),
+                          ],
+                          const SizedBox(height: 8),
+                          Text(
+                            _reportStatusLabel(report, deliveryEnabled),
+                            style: Theme.of(context).textTheme.labelLarge,
+                          ),
+                          if (report.error != null &&
+                              report.queued &&
+                              deliveryEnabled)
+                            Text(report.error!),
+                          if (report.reply?.isNotEmpty == true)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 12),
+                              child: Text('Veea: ${report.reply}'),
                             ),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              Builder(
+                                builder: (shareContext) => TextButton(
+                                  key: ValueKey('share_report_${report.id}'),
+                                  onPressed: _handingOff
+                                      ? null
+                                      : () => _shareDraft(
+                                          draft,
+                                          FeedbackService.resolveShareOrigin(
+                                            shareContext,
+                                          ),
+                                        ),
+                                  child: const Text('Share feedback'),
+                                ),
+                              ),
+                              if (supportEmail != null)
+                                TextButton(
+                                  key: ValueKey('email_report_${report.id}'),
+                                  onPressed: _handingOff
+                                      ? null
+                                      : () => _emailDraft(draft),
+                                  child: const Text('Email support'),
+                                ),
+                              TextButton(
+                                key: ValueKey('copy_report_${report.id}'),
+                                onPressed: () => _copyDraft(draft),
+                                child: const Text('Copy'),
+                              ),
+                              if (report.queued && deliveryEnabled)
+                                TextButton(
+                                  onPressed: feedback.refresh,
+                                  child: const Text('Try sending again'),
+                                ),
+                              if (report.queued)
+                                TextButton(
+                                  key: ValueKey('discard_report_${report.id}'),
+                                  onPressed: () => feedback.discard(report.id),
+                                  child: const Text('Discard'),
+                                ),
+                            ],
+                          ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
+                    ),
+                  );
+                },
               ),
-            if (feedback.communityUrl != null) ...[
+            if (communityUrl != null) ...[
               const SizedBox(height: 12),
               OutlinedButton.icon(
-                onPressed: () => _community(feedback.communityUrl!),
+                key: const Key('feedback_zalo_community'),
+                onPressed: () => _community(communityUrl),
                 icon: const Icon(Icons.groups_outlined),
                 label: const Text('Join the Veea Zalo community'),
               ),

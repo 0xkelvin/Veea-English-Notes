@@ -33,6 +33,7 @@ import 'cartridge_library_screen.dart';
 import 'word_editor_screen.dart';
 import 'learning_rules_screen.dart';
 import 'phone_account_screen.dart';
+import 'privacy_policy_screen.dart';
 import 'feedback_screen.dart';
 
 /// Unified Settings, Appearance, Stats, and Cloud Sync screen.
@@ -362,6 +363,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                   // Feedback & Bug Reporting Link
                   const _FeedbackSupportSection(),
+                  const SizedBox(height: PixelMetrics.space4),
+
+                  // Offline-readable Privacy Policy
+                  const _PrivacyPolicyLink(),
                 ],
               ),
             ),
@@ -1654,13 +1659,40 @@ class _DataBackupSection extends StatelessWidget {
   }
 }
 
+class _PrivacyPolicyLink extends StatelessWidget {
+  const _PrivacyPolicyLink();
+
+  @override
+  Widget build(BuildContext context) {
+    return PixelBox(
+      padding: EdgeInsets.zero,
+      child: Material(
+        type: MaterialType.transparency,
+        child: ListTile(
+          key: const Key('settings_privacy_policy'),
+          leading: const Icon(Icons.privacy_tip_outlined),
+          title: const Text('Privacy policy'),
+          subtitle: const Text(
+            'How Veea handles your words, accounts, and permissions',
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const PrivacyPolicyScreen(),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _FeedbackSupportSection extends StatelessWidget {
   const _FeedbackSupportSection();
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final provider = context.watch<VocabularyProvider>();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1668,12 +1700,13 @@ class _FeedbackSupportSection extends StatelessWidget {
         Text('Help and feedback', style: theme.textTheme.titleSmall),
         const SizedBox(height: PixelMetrics.space2),
         Text(
-          'Tell us what could work better, or get help with a problem.',
+          'Tell us what could work better, or get help with a problem. No account needed.',
           style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: PixelMetrics.space3),
         PixelButton(
-          label: 'SEND FEEDBACK / REPORT BUG',
+          key: const Key('settings_feedback'),
+          label: 'Share feedback / report bug',
           glyph: PixelGlyph.pencil,
           filled: true,
           expand: true,
@@ -1688,20 +1721,8 @@ class _FeedbackSupportSection extends StatelessWidget {
               );
               return;
             }
-            final launched = await FeedbackService.openFeedbackMail(
-              totalWords: provider.stats.totalWords,
-              streakDays: provider.stats.streakDays,
-            );
-            if (!launched && context.mounted) {
-              _openDialog(
-                context,
-                _FeedbackDialog(
-                  report: FeedbackService.generateReport(
-                    totalWords: provider.stats.totalWords,
-                    streakDays: provider.stats.streakDays,
-                  ),
-                ),
-              );
+            if (context.mounted) {
+              _openDialog(context, const _FeedbackDialog());
             }
           },
         ),
@@ -1711,21 +1732,32 @@ class _FeedbackSupportSection extends StatelessWidget {
 }
 
 class _FeedbackDialog extends StatefulWidget {
-  const _FeedbackDialog({required this.report});
-
-  final String report;
+  const _FeedbackDialog();
 
   @override
   State<_FeedbackDialog> createState() => _FeedbackDialogState();
 }
 
 class _FeedbackDialogState extends State<_FeedbackDialog> {
+  bool _includeDiagnostics = false;
   bool _copied = false;
+  String? _statusMessage;
+
+  FeedbackDraft get _draft => FeedbackDraft(
+    kind: 'other',
+    message: '[Describe your feedback, feature request, or bug here]',
+    includeDiagnostics: _includeDiagnostics,
+    diagnostics: _includeDiagnostics
+        ? FeedbackService.defaultDiagnostics()
+        : null,
+  );
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final theme = Theme.of(context);
+    final report = FeedbackService.formatDraft(_draft);
+    final supportEmail = AppConfig.supportEmail;
 
     return Dialog(
       backgroundColor: palette.paper,
@@ -1734,43 +1766,94 @@ class _FeedbackDialogState extends State<_FeedbackDialog> {
       ),
       child: Padding(
         padding: const EdgeInsets.all(PixelMetrics.space4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Help and feedback', style: theme.textTheme.titleSmall),
-            const SizedBox(height: PixelMetrics.space2),
-            Text(
-              'No default email app detected. You can copy the diagnostics template below and email us directly at support@veea.app:',
-              style: theme.textTheme.bodyMedium,
-            ),
-            const SizedBox(height: PixelMetrics.space3),
-            Container(
-              padding: const EdgeInsets.all(PixelMetrics.space3),
-              color: palette.surface,
-              child: Text(
-                widget.report,
-                style: TextStyle(fontSize: 12, color: palette.inkMuted),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Help and feedback', style: theme.textTheme.titleSmall),
+              const SizedBox(height: PixelMetrics.space2),
+              Text(
+                'Share or copy this feedback draft using your preferred app. '
+                'Your words and account details are not included.',
+                style: theme.textTheme.bodyMedium,
               ),
-            ),
-            const SizedBox(height: PixelMetrics.space4),
-            PixelButton(
-              label: _copied ? 'Copied to clipboard!' : 'Copy to clipboard',
-              glyph: PixelGlyph.cards,
-              filled: true,
-              expand: true,
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: widget.report));
-                setState(() => _copied = true);
-              },
-            ),
-            const SizedBox(height: PixelMetrics.space2),
-            PixelButton(
-              label: 'Close',
-              expand: true,
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ],
+              const SizedBox(height: PixelMetrics.space2),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _includeDiagnostics,
+                onChanged: (value) => setState(() {
+                  _includeDiagnostics = value ?? false;
+                  _copied = false;
+                }),
+                title: const Text('Include app details'),
+                subtitle: const Text('App version, platform and screen.'),
+              ),
+              const SizedBox(height: PixelMetrics.space2),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(PixelMetrics.space3),
+                color: palette.surface,
+                child: Text(
+                  report,
+                  style: TextStyle(fontSize: 12, color: palette.inkMuted),
+                ),
+              ),
+              if (_statusMessage != null) ...[
+                const SizedBox(height: PixelMetrics.space2),
+                Text(_statusMessage!, style: theme.textTheme.bodySmall),
+              ],
+              const SizedBox(height: PixelMetrics.space4),
+              Builder(
+                builder: (buttonContext) => PixelButton(
+                  label: 'Share feedback',
+                  glyph: PixelGlyph.cloud,
+                  filled: true,
+                  expand: true,
+                  onPressed: () async {
+                    final result = await FeedbackService.shareDraft(
+                      _draft,
+                      sharePositionOrigin: FeedbackService.resolveShareOrigin(
+                        buttonContext,
+                      ),
+                    );
+                    if (mounted) {
+                      setState(() => _statusMessage = result.message);
+                    }
+                  },
+                ),
+              ),
+              if (supportEmail != null) ...[
+                const SizedBox(height: PixelMetrics.space2),
+                PixelButton(
+                  label: 'Email support',
+                  expand: true,
+                  onPressed: () async {
+                    final result = await FeedbackService.openEmailDraft(_draft);
+                    if (mounted) {
+                      setState(() => _statusMessage = result.message);
+                    }
+                  },
+                ),
+              ],
+              const SizedBox(height: PixelMetrics.space2),
+              PixelButton(
+                label: _copied ? 'Copied to clipboard!' : 'Copy to clipboard',
+                glyph: PixelGlyph.cards,
+                expand: true,
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: report));
+                  setState(() => _copied = true);
+                },
+              ),
+              const SizedBox(height: PixelMetrics.space2),
+              PixelButton(
+                label: 'Close',
+                expand: true,
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1865,13 +1948,26 @@ class _ProSettingsLink extends StatelessWidget {
     } catch (_) {
       return const SizedBox.shrink();
     }
+    if (AppConfig.isFreeLaunch && !pro.hasLifetime && !pro.isConfigured) {
+      return const SizedBox.shrink();
+    }
     return PixelBox(
       padding: EdgeInsets.zero,
       child: ListTile(
         key: const Key('settings_pro'),
         leading: const Icon(Icons.auto_awesome_outlined),
-        title: Text(pro.hasPro ? 'Veea Pro · Active' : 'Veea Pro'),
-        subtitle: const Text('More app locks · One-time purchase'),
+        title: Text(
+          AppConfig.isFreeLaunch
+              ? 'Previous purchases'
+              : pro.hasPro
+              ? 'Veea Pro · Active'
+              : 'Veea Pro',
+        ),
+        subtitle: Text(
+          AppConfig.isFreeLaunch
+              ? 'Restore an earlier purchase record'
+              : 'More app locks · One-time purchase',
+        ),
         trailing: const Icon(Icons.chevron_right),
         onTap: () => ProScreen.open(context),
       ),

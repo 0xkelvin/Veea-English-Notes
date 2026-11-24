@@ -4,15 +4,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:veea_english_app/core/theme/pixel_theme.dart';
 import 'package:veea_english_app/data/local/sqlite_vocabulary_repository.dart';
 import 'package:veea_english_app/models/vocabulary_word.dart';
 import 'package:veea_english_app/providers/app_gate_provider.dart';
+import 'package:veea_english_app/providers/pro_provider.dart';
 import 'package:veea_english_app/services/app_gate_service.dart';
 import 'package:veea_english_app/widgets/app_locks_settings_section.dart';
 import 'package:veea_english_app/widgets/guided_protection_settings.dart';
+import '../providers/pro_provider_test.dart' show TestAuth, TestPro;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -23,6 +26,8 @@ void main() {
   final now = DateTime(2026, 11, 11, 14);
   late SqliteVocabularyRepository repo;
   late AppGateProvider gate;
+  late TestAuth auth;
+  late ProProvider pro;
   late List<MethodCall> calls;
   late Set<String> apps, paused;
   var enabled = true,
@@ -118,10 +123,14 @@ void main() {
     }
     gate = AppGateProvider(repository: repo, now: () => now);
     await gate.init();
+    auth = TestAuth();
+    pro = ProProvider(auth: auth, repository: TestPro());
     calls.clear();
   });
   tearDown(() async {
     gate.dispose();
+    pro.dispose();
+    auth.dispose();
     await repo.close();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
@@ -136,37 +145,40 @@ void main() {
     int totalWords = 3,
   }) async {
     await tester.pumpWidget(
-      RepaintBoundary(
-        key: const Key('locks_preview'),
-        child: MaterialApp(
-          debugShowCheckedModeBanner: false,
-          theme: dark ? PixelTheme.dark() : PixelTheme.light(),
-          builder: (context, child) => MediaQuery(
-            data: MediaQuery.of(
-              context,
-            ).copyWith(textScaler: TextScaler.linear(scale)),
-            child: child!,
-          ),
-          home: Scaffold(
-            appBar: AppBar(title: const Text('Settings')),
-            body: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Builder(
-                builder: (context) => AppLocksSettingsSection(
-                  gate: gate,
-                  totalWords: totalWords,
-                  onManage: () => Navigator.push(
-                    context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => Scaffold(
-                        appBar: AppBar(
-                          title: const Text('Manage Apps to Lock'),
-                        ),
-                        body: SingleChildScrollView(
-                          child: GuidedProtectionSettings(
-                            gate: gate,
-                            totalWords: 3,
-                            onAddWord: () {},
+      ChangeNotifierProvider<ProProvider>.value(
+        value: pro,
+        child: RepaintBoundary(
+          key: const Key('locks_preview'),
+          child: MaterialApp(
+            debugShowCheckedModeBanner: false,
+            theme: dark ? PixelTheme.dark() : PixelTheme.light(),
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: TextScaler.linear(scale)),
+              child: child!,
+            ),
+            home: Scaffold(
+              appBar: AppBar(title: const Text('Settings')),
+              body: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Builder(
+                  builder: (context) => AppLocksSettingsSection(
+                    gate: gate,
+                    totalWords: totalWords,
+                    onManage: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => Scaffold(
+                          appBar: AppBar(
+                            title: const Text('Manage Apps to Lock'),
+                          ),
+                          body: SingleChildScrollView(
+                            child: GuidedProtectionSettings(
+                              gate: gate,
+                              totalWords: 3,
+                              onAddWord: () {},
+                            ),
                           ),
                         ),
                       ),
@@ -310,6 +322,24 @@ void main() {
     expect(find.text('Default unlock time'), findsOneWidget);
     expect(find.text('15 min'), findsOneWidget);
     expect(find.text('Default · 5 min'), findsOneWidget);
+  });
+  testWidgets('guest without Pro can set default and per-app custom times', (
+    tester,
+  ) async {
+    expect(auth.isSignedIn, isFalse);
+    expect(pro.hasPro, isFalse);
+    await open(tester);
+    await tap(tester, find.text('Manage Apps to Lock'));
+    expect(find.text('Free · One app lock'), findsNothing);
+    for (final key in ['default_unlock_time', 'unlock_time_$a']) {
+      await tap(tester, find.byKey(ValueKey(key)));
+      expect(find.text('Custom time · Pro'), findsNothing);
+      await tap(tester, find.text('Custom time'));
+      expect(find.text('Access duration'), findsOneWidget);
+      expect(find.byKey(const Key('save_protection_duration')), findsOneWidget);
+      await tap(tester, find.text('Cancel'));
+    }
+    expect(tester.takeException(), isNull);
   });
   testWidgets('failed toggle keeps state and shows a visible error', (
     tester,
