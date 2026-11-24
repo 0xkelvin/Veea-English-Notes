@@ -53,6 +53,33 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> openDetails(WidgetTester tester) async {
+    // Dragging the form dismisses the keyboard and brings optional details
+    // above the pinned Save area, as it does on a small phone.
+    await tester.drag(find.byType(ListView).first, const Offset(0, -250));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('More details').hitTestable());
+    await tester.pumpAndSettle();
+  }
+
+  Future<TextField> meaningField(WidgetTester tester) async {
+    tester
+        .state<ScrollableState>(find.byType(Scrollable).first)
+        .position
+        .jumpTo(0);
+    await tester.pumpAndSettle();
+    final field = find.descendant(
+      of: find.byKey(const Key('word_editor_meaning')),
+      matching: find.byType(TextField),
+    );
+    await tester.scrollUntilVisible(
+      field,
+      100,
+      scrollable: find.byType(Scrollable).first,
+    );
+    return tester.widget<TextField>(field);
+  }
+
   testWidgets(
     'online lookup sends only the chosen word after explicit approval',
     (tester) async {
@@ -135,18 +162,18 @@ void main() {
       expect(find.textContaining('giải pháp'), findsWidgets);
 
       // Part of speech header should display suggested NOUN
-      await tester.tap(find.byKey(const Key('word_editor_more_details')));
-      await tester.pumpAndSettle();
+      await openDetails(tester);
       expect(find.text('GỢI Ý: NOUN'), findsOneWidget);
 
       // Tapping the suggestion pill fills the meaning field
+      await tester.ensureVisible(
+        find.byKey(const Key('use_meaning_suggestion')),
+      );
       await tester.tap(find.byKey(const Key('use_meaning_suggestion')));
       await settle(tester);
 
-      final meaningField = tester.widget<TextField>(
-        find.byType(TextField).at(1),
-      );
-      expect(meaningField.controller?.text, contains('giải pháp'));
+      final meaning = await meaningField(tester);
+      expect(meaning.controller?.text, contains('giải pháp'));
     },
   );
 
@@ -165,22 +192,19 @@ void main() {
       expect(find.textContaining('Kiên cường'), findsWidgets);
 
       // Part of speech header should display suggested ADJECTIVE
-      await tester.tap(find.byKey(const Key('word_editor_more_details')));
-      await tester.pumpAndSettle();
+      await openDetails(tester);
       expect(find.text('GỢI Ý: ADJECTIVE'), findsOneWidget);
 
       // Tapping the suggestion pill fills the meaning field
+      await tester.ensureVisible(
+        find.byKey(const Key('use_meaning_suggestion')),
+      );
       await tester.tap(find.byKey(const Key('use_meaning_suggestion')));
       await settle(tester);
 
       // Meaning field (second TextField) should now have the text
-      final meaningField = tester.widget<TextField>(
-        find.byType(TextField).at(1),
-      );
-      expect(
-        meaningField.controller?.text.toLowerCase(),
-        contains('kiên cường'),
-      );
+      final meaning = await meaningField(tester);
+      expect(meaning.controller?.text.toLowerCase(), contains('kiên cường'));
     },
   );
 
@@ -198,8 +222,7 @@ void main() {
     await tester.enterText(find.byType(TextField).at(1), 'nghĩa riêng');
     await settle(tester);
 
-    await tester.tap(find.byKey(const Key('word_editor_more_details')));
-    await tester.pumpAndSettle();
+    await openDetails(tester);
     expect(find.text('GỢI Ý: ADJECTIVE'), findsOneWidget);
 
     // User explicitly taps "NOUN"
@@ -225,17 +248,17 @@ void main() {
       await settle(tester);
 
       expect(find.textContaining('lựa chọn'), findsWidgets);
-      await tester.tap(find.byKey(const Key('word_editor_more_details')));
-      await tester.pumpAndSettle();
+      await openDetails(tester);
       expect(find.text('GỢI Ý: NOUN'), findsOneWidget);
 
+      await tester.ensureVisible(
+        find.byKey(const Key('use_meaning_suggestion')),
+      );
       await tester.tap(find.byKey(const Key('use_meaning_suggestion')));
       await settle(tester);
 
-      final meaningField = tester.widget<TextField>(
-        find.byType(TextField).at(1),
-      );
-      expect(meaningField.controller?.text, contains('lựa chọn'));
+      final meaning = await meaningField(tester);
+      expect(meaning.controller?.text, contains('lựa chọn'));
     },
   );
 }

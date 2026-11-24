@@ -62,13 +62,23 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Starter pack loaded: banner is gone, 5 words appear
+      // All five words are saved; the lazy list only builds visible cards.
       expect(find.text('Welcome to Veea'), findsNothing);
-      expect(find.byType(WordRow), findsNWidgets(5));
-      expect(find.text('resilient'), findsOneWidget);
-      expect(find.text('bottleneck'), findsOneWidget);
-      expect(find.text('trade-off'), findsOneWidget);
-      expect(find.text('serendipity'), findsOneWidget);
+      expect(
+        vocabProvider.words.map((word) => word.word),
+        containsAll([
+          'resilient',
+          'bottleneck',
+          'trade-off',
+          'serendipity',
+          'pragmatic',
+        ]),
+      );
+      await tester.scrollUntilVisible(
+        find.text('pragmatic'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('pragmatic'), findsOneWidget);
       expect(vocabProvider.stats.totalWords, 5);
     },

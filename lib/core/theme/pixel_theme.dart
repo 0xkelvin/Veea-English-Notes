@@ -69,8 +69,11 @@ class PixelTheme {
 
   static ThemeData dark({
     TypographyMode typographyMode = TypographyMode.hybrid,
-  }) =>
-      _build(PixelPalette.dark, Brightness.dark, typographyMode: typographyMode);
+  }) => _build(
+    PixelPalette.dark,
+    Brightness.dark,
+    typographyMode: typographyMode,
+  );
 
   static ThemeData matrixGreen({
     TypographyMode typographyMode = TypographyMode.hybrid,
@@ -144,12 +147,7 @@ class PixelTheme {
         height: 1.3,
         letterSpacing: -0.1,
       ),
-      titleSmall: _readableStyle(
-        15,
-        FontWeight.w600,
-        palette.ink,
-        height: 1.3,
-      ),
+      titleSmall: _readableStyle(15, FontWeight.w600, palette.ink, height: 1.3),
       bodyLarge: _readableStyle(
         sizeBody,
         FontWeight.w400,
@@ -210,8 +208,77 @@ class PixelTheme {
         onSecondary: palette.onAccent,
         surface: palette.surface,
         onSurface: palette.ink,
+        onSurfaceVariant: palette.inkMuted,
+        outline: palette.inkFaint,
+        outlineVariant: palette.border,
         error: palette.danger,
         onError: palette.onAccent,
+      ),
+      appBarTheme: AppBarTheme(
+        backgroundColor: palette.paper,
+        foregroundColor: palette.ink,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        titleTextStyle: textTheme.titleLarge,
+      ),
+      listTileTheme: ListTileThemeData(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        minLeadingWidth: 24,
+        horizontalTitleGap: 12,
+        iconColor: palette.inkMuted,
+        titleTextStyle: textTheme.bodyLarge?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
+        subtitleTextStyle: textTheme.bodySmall?.copyWith(
+          color: palette.inkMuted,
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: palette.surface,
+        contentPadding: const EdgeInsets.all(16),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: palette.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: palette.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: palette.accent, width: 1.5),
+        ),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: palette.surface,
+        surfaceTintColor: Colors.transparent,
+        showDragHandle: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size(44, 48),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(minimumSize: const Size(44, 44)),
+      ),
+      expansionTileTheme: ExpansionTileThemeData(
+        backgroundColor: palette.surface,
+        collapsedBackgroundColor: palette.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        collapsedShape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+        ),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        childrenPadding: const EdgeInsets.all(16),
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: palette.surface,

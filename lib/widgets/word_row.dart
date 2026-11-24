@@ -40,20 +40,20 @@ class WordRow extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         child: Container(
           margin: const EdgeInsets.symmetric(
-            horizontal: PixelMetrics.space3,
+            horizontal: PixelMetrics.space4,
             vertical: PixelMetrics.space2,
           ),
           padding: const EdgeInsets.all(PixelMetrics.space4),
           decoration: BoxDecoration(
             color: palette.surface,
-            borderRadius: BorderRadius.circular(PixelMetrics.radius),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: palette.border,
               width: PixelMetrics.border,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
+                color: Colors.black.withValues(alpha: 0.025),
                 offset: const Offset(0, 4),
                 blurRadius: 12,
               ),
@@ -79,9 +79,8 @@ class WordRow extends StatelessWidget {
               Text(
                 word.meaning,
                 style: theme.textTheme.bodyLarge?.copyWith(
-                  fontWeight: FontWeight.w500,
-                  fontSize: 16,
-                  height: 1.4,
+                  fontWeight: FontWeight.w400,
+                  height: 1.45,
                 ),
               ),
 
@@ -141,10 +140,10 @@ class WordRow extends StatelessWidget {
                           border: Border.all(color: palette.border, width: 1),
                         ),
                         child: Text(
-                          'FROM ${source.toUpperCase()}',
+                          'From $source',
                           style: theme.textTheme.labelSmall?.copyWith(
-                            fontSize: 10.5,
-                            letterSpacing: 0.3,
+                            fontSize: 12,
+                            letterSpacing: 0,
                           ),
                         ),
                       ),
@@ -198,7 +197,7 @@ class _WordHeadline extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (dateLabel != null) ...[
-          Text(dateLabel!.toUpperCase(), style: theme.textTheme.labelSmall),
+          Text(dateLabel!, style: theme.textTheme.labelSmall),
           const SizedBox(height: PixelMetrics.space1),
         ],
         Wrap(
@@ -209,31 +208,24 @@ class _WordHeadline extends StatelessWidget {
             Text(
               word.word,
               style: theme.textTheme.titleLarge?.copyWith(
-                fontSize: 21,
+                fontSize: 24,
                 fontWeight: FontWeight.w700,
               ),
             ),
             if (word.partOfSpeech != null)
               _PartOfSpeechChip(partOfSpeech: word.partOfSpeech!),
-            if (pronunciation != null)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: palette.paper,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: palette.border, width: 1),
-                ),
-                child: Text(
-                  PronunciationService.format(pronunciation),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: palette.inkMuted,
-                  ),
-                ),
-              ),
           ],
         ),
+        if (pronunciation != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            PronunciationService.format(pronunciation),
+            style: theme.textTheme.bodyLarge?.copyWith(
+              fontSize: 15,
+              color: palette.inkMuted,
+            ),
+          ),
+        ],
       ],
     );
   }

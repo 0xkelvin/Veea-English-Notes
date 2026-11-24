@@ -25,12 +25,7 @@ class DateBar extends StatelessWidget {
         horizontal: PixelMetrics.space3,
         vertical: PixelMetrics.space2,
       ),
-      decoration: BoxDecoration(
-        color: palette.surface,
-        border: Border(
-          bottom: BorderSide(color: palette.border, width: PixelMetrics.border),
-        ),
-      ),
+      decoration: BoxDecoration(color: palette.paper),
       child: Row(
         children: [
           PixelIconButton(
@@ -42,6 +37,7 @@ class DateBar extends StatelessWidget {
             child: Semantics(
               button: true,
               label: 'Open calendar',
+              value: _label(selected, provider.isToday),
               excludeSemantics: true,
               onTap: () => _openCalendar(context, provider),
               child: InkWell(
@@ -51,18 +47,27 @@ class DateBar extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(
                     vertical: PixelMetrics.space2,
                   ),
-                  child: Column(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
-                        _label(selected, provider.isToday),
-                        style: theme.textTheme.titleMedium,
-                        textAlign: TextAlign.center,
+                      Icon(
+                        Icons.calendar_today_outlined,
+                        size: 16,
+                        color: palette.accent,
                       ),
-                      Text(
-                        'View calendar',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: palette.inkMuted,
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          _label(selected, provider.isToday),
+                          style: theme.textTheme.titleMedium,
+                          textAlign: TextAlign.center,
                         ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.expand_more,
+                        size: 18,
+                        color: palette.inkMuted,
                       ),
                     ],
                   ),
@@ -110,12 +115,7 @@ class StatusLine extends StatelessWidget {
         horizontal: PixelMetrics.space4,
         vertical: PixelMetrics.space2,
       ),
-      decoration: BoxDecoration(
-        color: palette.paper,
-        border: Border(
-          bottom: BorderSide(color: palette.border, width: PixelMetrics.border),
-        ),
-      ),
+      decoration: BoxDecoration(color: palette.paper),
       child: Wrap(
         spacing: PixelMetrics.space3,
         runSpacing: PixelMetrics.space1,

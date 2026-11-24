@@ -115,7 +115,7 @@ class _ContextWizardSheetState extends State<ContextWizardSheet> {
                 children: [
                   PixelIcon(PixelGlyph.wand, color: palette.accent, scale: 2),
                   const SizedBox(width: PixelMetrics.space2),
-                  Text('AI CONTEXT WIZARD', style: theme.textTheme.titleMedium),
+                  Text('Example ideas', style: theme.textTheme.titleMedium),
                   const Spacer(),
                   PixelIconButton(
                     glyph: PixelGlyph.shuffle,

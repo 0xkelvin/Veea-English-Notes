@@ -84,13 +84,8 @@ class AppLocksSettingsSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 12, bottom: 12),
-          child: Text(
-            'App locks',
-            style: theme.textTheme.titleMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Text('App locks', style: theme.textTheme.titleMedium),
         ),
         _LockCard(
           child: SwitchListTile.adaptive(

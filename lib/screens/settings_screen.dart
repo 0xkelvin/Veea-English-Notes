@@ -230,33 +230,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     },
                   ),
                   const SizedBox(height: PixelMetrics.space4),
-                  PixelBox(
-                    padding: EdgeInsets.zero,
-                    child: Material(
-                      type: MaterialType.transparency,
-                      child: ListTile(
-                        key: const Key('settings_account'),
-                        leading: const Icon(Icons.account_circle_outlined),
-                        title: const Text('Account'),
-                        subtitle: Text(
-                          AppConfig.isCloudEnabled
-                              ? (context.read<AuthProvider>() is GoAuthProvider
-                                    ? 'Email sign-in and account settings'
-                                    : 'Phone sign-in and your notebook')
-                              : 'Coming soon · Your notebook stays on this device',
-                        ),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const AccountScreen(),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: PixelMetrics.space4),
-                  const _ProSettingsLink(),
-                  const SizedBox(height: PixelMetrics.space4),
+                  const _SettingsSectionTitle('Notebook'),
                   if (!AppConfig.isVocabularySyncEnabled ||
                       !AppConfig.isCloudEnabled)
                     const _Notice(
@@ -276,7 +250,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               _Notice(
-                                lines: [auth.lastMessage!.toUpperCase()],
+                                lines: [auth.lastMessage!],
                                 tone: palette.accent,
                               ),
                               const SizedBox(height: PixelMetrics.space5),
@@ -303,7 +277,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                   ExpansionTile(
                     key: const Key('settings_progress_extras'),
-                    tilePadding: EdgeInsets.zero,
+                    tilePadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
                     title: const Text('Progress and extras'),
                     subtitle: const Text(
                       'Activity, milestones, and word collections',
@@ -361,6 +338,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const _DataBackupSection(),
                   const SizedBox(height: PixelMetrics.space5),
 
+                  const _SettingsSectionTitle('Your account'),
+                  PixelBox(
+                    padding: EdgeInsets.zero,
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: ListTile(
+                        key: const Key('settings_account'),
+                        leading: const Icon(Icons.account_circle_outlined),
+                        title: const Text('Account'),
+                        subtitle: Text(
+                          AppConfig.isCloudEnabled
+                              ? (context.read<AuthProvider>() is GoAuthProvider
+                                    ? 'Email sign-in and account settings'
+                                    : 'Phone sign-in and your notebook')
+                              : 'Coming soon · Your notebook stays on this device',
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const AccountScreen(),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: PixelMetrics.space4),
+                  const _ProSettingsLink(),
+                  const SizedBox(height: PixelMetrics.space4),
                   // Feedback & Bug Reporting Link
                   const _FeedbackSupportSection(),
                   const SizedBox(height: PixelMetrics.space4),
@@ -456,6 +461,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
 /// Backward compatibility alias.
 
+class _SettingsSectionTitle extends StatelessWidget {
+  const _SettingsSectionTitle(this.title);
+  final String title;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 8, bottom: 12),
+    child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+  );
+}
+
 class _TopBar extends StatelessWidget {
   const _TopBar({required this.onClose});
 
@@ -472,18 +487,15 @@ class _TopBar extends StatelessWidget {
         PixelMetrics.space2,
         PixelMetrics.space2,
       ),
-      decoration: BoxDecoration(
-        color: palette.surface,
-        border: Border(
-          bottom: BorderSide(color: palette.border, width: PixelMetrics.border),
-        ),
-      ),
+      decoration: BoxDecoration(color: palette.paper),
       child: Row(
         children: [
           Expanded(
             child: Text(
               'Settings',
-              style: Theme.of(context).textTheme.titleMedium,
+              style: Theme.of(
+                context,
+              ).textTheme.headlineMedium?.copyWith(fontSize: 24),
             ),
           ),
           PixelIconButton(
@@ -655,13 +667,14 @@ class _Notice extends StatelessWidget {
     final palette = context.palette;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(PixelMetrics.space3),
+      padding: tone == null
+          ? const EdgeInsets.symmetric(vertical: PixelMetrics.space2)
+          : const EdgeInsets.all(PixelMetrics.space3),
       decoration: BoxDecoration(
-        color: palette.surface,
-        border: Border.all(
-          color: tone ?? palette.border,
-          width: PixelMetrics.border,
-        ),
+        color: tone == null
+            ? Colors.transparent
+            : tone!.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(PixelMetrics.radiusLg),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -671,7 +684,7 @@ class _Notice extends StatelessWidget {
               line,
               style: Theme.of(
                 context,
-              ).textTheme.labelSmall?.copyWith(color: tone),
+              ).textTheme.bodySmall?.copyWith(color: tone ?? palette.inkMuted),
             ),
         ],
       ),
@@ -1559,7 +1572,7 @@ class _DailyReminderSectionState extends State<_DailyReminderSection> {
                       ],
                     ),
                   ),
-                  Switch(
+                  Switch.adaptive(
                     value: _settings.enabled,
                     activeThumbColor: palette.accent,
                     onChanged: _toggle,
@@ -1708,7 +1721,6 @@ class _FeedbackSupportSection extends StatelessWidget {
           key: const Key('settings_feedback'),
           label: 'Share feedback / report bug',
           glyph: PixelGlyph.pencil,
-          filled: true,
           expand: true,
           onPressed: () async {
             FeedbackProvider? feedback;

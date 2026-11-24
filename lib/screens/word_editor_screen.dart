@@ -588,7 +588,7 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
         child: Column(
           children: [
             _EditorTopBar(
-              title: widget.isEditing ? 'EDIT WORD' : 'NEW WORD',
+              title: widget.isEditing ? 'Edit word' : 'New word',
               onClose: () => Navigator.of(context).pop(),
               onDrop:
                   widget.isEditing &&
@@ -681,6 +681,7 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                     controller: _meaning,
                     label: 'What it means',
                     key: const Key('word_editor_meaning'),
+                    maxLines: 3,
                     hint: _meaningHint,
                     textCapitalization: TextCapitalization.sentences,
                     onChanged: (_) => setState(() {}),
@@ -750,7 +751,10 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                   const SizedBox(height: PixelMetrics.space4),
                   ExpansionTile(
                     key: const Key('word_editor_more_details'),
-                    tilePadding: EdgeInsets.zero,
+                    tilePadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
                     initiallyExpanded: widget.isEditing || widget.draft != null,
                     title: const Text('More details'),
                     subtitle: const Text(
@@ -792,11 +796,12 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                   ),
                   const SizedBox(height: PixelMetrics.space6),
                   if (widget.isEditing) ...[
-                    PixelButton(
-                      label: 'Delete this word',
-                      glyph: PixelGlyph.trash,
-                      danger: true,
-                      expand: true,
+                    TextButton.icon(
+                      label: const Text('Delete this word'),
+                      icon: const Icon(Icons.delete_outline),
+                      style: TextButton.styleFrom(
+                        foregroundColor: palette.danger,
+                      ),
                       onPressed: _delete,
                     ),
                     const SizedBox(height: PixelMetrics.space6),
@@ -886,8 +891,8 @@ class _PronunciationLine extends StatelessWidget {
             children: [
               Text(
                 isManual
-                    ? 'PRONUNCIATION · YOURS'
-                    : 'PRONUNCIATION · AUTOMATIC',
+                    ? 'Pronunciation · Custom'
+                    : 'Pronunciation · Automatic',
                 style: theme.textTheme.labelSmall,
               ),
               const SizedBox(height: 2),
@@ -1031,51 +1036,22 @@ class _PartOfSpeechPicker extends StatelessWidget {
           runSpacing: PixelMetrics.space2,
           children: [
             for (final value in PartOfSpeech.values)
-              GestureDetector(
-                // Tapping the current choice clears it, so the field stays
-                // optional without needing a separate "none" chip.
-                onTap: () => onSelected(selected == value ? null : value),
-                behavior: HitTestBehavior.opaque,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: PixelMetrics.space3,
-                    vertical: PixelMetrics.space2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: selected == value ? palette.accent : palette.surface,
-                    border: Border.all(
-                      color: selected == value
-                          ? palette.border
-                          : (suggested == value
-                                ? palette.accent.withValues(alpha: 0.6)
-                                : palette.border),
-                      width: PixelMetrics.border,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        value.label.toUpperCase(),
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: selected == value
-                              ? palette.onAccent
-                              : palette.ink,
-                          fontWeight: (selected == value || suggested == value)
-                              ? FontWeight.bold
-                              : FontWeight.normal,
-                        ),
-                      ),
-                      if (suggested == value && selected != value) ...[
-                        const SizedBox(width: 3),
-                        Text(
-                          '★',
-                          style: TextStyle(fontSize: 10, color: palette.accent),
-                        ),
-                      ],
-                    ],
-                  ),
+              ChoiceChip(
+                label: Text(value.label.toUpperCase()),
+                selected: selected == value,
+                selectedColor: palette.accent,
+                backgroundColor: palette.surface,
+                labelStyle: theme.textTheme.labelMedium?.copyWith(
+                  color: selected == value
+                      ? palette.onAccent
+                      : palette.inkMuted,
                 ),
+                shape: const StadiumBorder(),
+                side: BorderSide(
+                  color: suggested == value ? palette.accent : palette.border,
+                ),
+                showCheckmark: false,
+                onSelected: (_) => onSelected(selected == value ? null : value),
               ),
           ],
         ),
@@ -1100,50 +1076,21 @@ class _ExamplesSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final palette = context.palette;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
+        Text('Examples (optional)', style: theme.textTheme.labelMedium),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Expanded(
-              child: Text(
-                'THE SENTENCE YOU HEARD (OPTIONAL)',
-                style: theme.textTheme.labelSmall,
-              ),
+            TextButton.icon(
+              onPressed: onOpenWizard,
+              icon: const Icon(Icons.auto_awesome_outlined, size: 18),
+              label: const Text('Example ideas'),
             ),
-            const SizedBox(width: PixelMetrics.space2),
-            GestureDetector(
-              onTap: onOpenWizard,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                decoration: BoxDecoration(
-                  color: palette.accent,
-                  border: Border.all(color: palette.border, width: 1),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    PixelIcon(
-                      PixelGlyph.wand,
-                      color: palette.onAccent,
-                      scale: 1.2,
-                    ),
-                    const SizedBox(width: 3),
-                    Text(
-                      'AI WIZARD',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: palette.onAccent,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(width: 6),
             PixelIconButton(
               glyph: PixelGlyph.plus,
               semanticLabel: 'Add another sentence',
@@ -1193,7 +1140,7 @@ class _ErrorBanner extends StatelessWidget {
         children: [
           Expanded(
             child: Text(
-              message.toUpperCase(),
+              message,
               style: Theme.of(
                 context,
               ).textTheme.labelSmall?.copyWith(color: palette.onAccent),
@@ -1242,7 +1189,7 @@ class _PronunciationDialogState extends State<_PronunciationDialog> {
       backgroundColor: palette.surface,
       shape: RoundedRectangleBorder(
         side: BorderSide(color: palette.border, width: PixelMetrics.border),
-        borderRadius: BorderRadius.zero,
+        borderRadius: BorderRadius.circular(PixelMetrics.radiusLg),
       ),
       child: Padding(
         padding: const EdgeInsets.all(PixelMetrics.space4),
@@ -1298,7 +1245,7 @@ Future<bool> _confirmDelete(BuildContext context, String word) async {
       backgroundColor: palette.surface,
       shape: RoundedRectangleBorder(
         side: BorderSide(color: palette.border, width: PixelMetrics.border),
-        borderRadius: BorderRadius.zero,
+        borderRadius: BorderRadius.circular(PixelMetrics.radiusLg),
       ),
       child: Padding(
         padding: const EdgeInsets.all(PixelMetrics.space4),
@@ -1307,7 +1254,7 @@ Future<bool> _confirmDelete(BuildContext context, String word) async {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'DELETE "${word.toUpperCase()}"?',
+              'Delete "$word"?',
               style: Theme.of(dialogContext).textTheme.titleMedium,
             ),
             const SizedBox(height: PixelMetrics.space2),

@@ -31,7 +31,7 @@ class PixelBox extends StatelessWidget {
       padding: padding,
       decoration: BoxDecoration(
         color: fill,
-        borderRadius: BorderRadius.circular(PixelMetrics.radius),
+        borderRadius: BorderRadius.circular(PixelMetrics.radiusLg),
         border: Border.all(color: stroke, width: PixelMetrics.border),
         boxShadow: raised
             ? [

@@ -126,7 +126,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('ADDED "$word" TO TODAY'),
+        content: Text('Added "$word" to today'),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -222,12 +222,7 @@ class _TopBar extends StatelessWidget {
         horizontal: PixelMetrics.space4,
         vertical: PixelMetrics.space2,
       ),
-      decoration: BoxDecoration(
-        color: palette.surface,
-        border: Border(
-          bottom: BorderSide(color: palette.border, width: PixelMetrics.border),
-        ),
-      ),
+      decoration: BoxDecoration(color: palette.paper),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
@@ -236,7 +231,9 @@ class _TopBar extends StatelessWidget {
               'Notebook',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.titleMedium,
+              style: Theme.of(
+                context,
+              ).textTheme.headlineMedium?.copyWith(fontSize: 24),
             ),
           ),
           PixelIconButton(
@@ -302,6 +299,7 @@ class _BottomDock extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               Expanded(
+                flex: 4,
                 child: _DockItem(
                   glyph: PixelGlyph.headphones,
                   label: 'Listen',
@@ -317,11 +315,13 @@ class _BottomDock extends StatelessWidget {
               //   onTap: () => _open(context, const ArcadeScreen()),
               // ),
               Expanded(
+                flex: 5,
                 child: _HeroAddButton(
                   onTap: () => _open(context, const WordEditorScreen()),
                 ),
               ),
               Expanded(
+                flex: 4,
                 child: _DockItem(
                   glyph: PixelGlyph.cards,
                   label: 'Review',
@@ -345,44 +345,12 @@ class _HeroAddButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: PixelMetrics.space2,
-          vertical: PixelMetrics.space2,
-        ),
-        decoration: BoxDecoration(
-          color: palette.accent,
-          borderRadius: BorderRadius.circular(PixelMetrics.radiusPill),
-          boxShadow: [
-            BoxShadow(
-              color: palette.accent.withValues(alpha: 0.28),
-              offset: const Offset(0, 4),
-              blurRadius: 12,
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            PixelIcon(PixelGlyph.plus, color: palette.onAccent, scale: 1.8),
-            const SizedBox(height: PixelMetrics.space1),
-            Text(
-              'Add word',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                color: palette.onAccent,
-                letterSpacing: 0.4,
-              ),
-            ),
-          ],
-        ),
-      ),
+    return PixelButton(
+      label: 'Add word',
+      glyph: PixelGlyph.plus,
+      filled: true,
+      expand: true,
+      onPressed: onTap,
     );
   }
 }
@@ -410,9 +378,10 @@ class _DockItem extends StatelessWidget {
       value: badgeCount == null ? null : '$badgeCount words due',
       button: true,
       excludeSemantics: true,
-      child: GestureDetector(
+      onTap: onTap,
+      child: InkWell(
         onTap: onTap,
-        behavior: HitTestBehavior.opaque,
+        borderRadius: BorderRadius.circular(PixelMetrics.radiusSm),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           child: Column(
@@ -420,7 +389,7 @@ class _DockItem extends StatelessWidget {
             children: [
               Badge(
                 isLabelVisible: badgeCount != null,
-                backgroundColor: palette.danger,
+                backgroundColor: palette.accent,
                 textColor: palette.onAccent,
                 label: Text(
                   badgeCount != null && badgeCount! > 99
@@ -778,14 +747,7 @@ class _UndoBar extends StatelessWidget {
   }
 }
 
-/// Pushes a route without the platform slide/fade, which would look out of
-/// place against hard-edged blocks.
+/// Uses the platform transition and iOS back gesture for notebook destinations.
 void _open(BuildContext context, Widget screen) {
-  Navigator.of(context).push(
-    PageRouteBuilder<void>(
-      pageBuilder: (_, _, _) => screen,
-      transitionDuration: Duration.zero,
-      reverseTransitionDuration: Duration.zero,
-    ),
-  );
+  Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
 }
