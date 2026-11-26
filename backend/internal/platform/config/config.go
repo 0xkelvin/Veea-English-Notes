@@ -24,6 +24,7 @@ import (
 type Config struct {
 	AppleVerifier          *appleiap.Verifier
 	AppleEnvironment       string
+	AppleAllowSandbox      bool
 	HTTPAddr               string
 	DatabaseURL            string
 	MaintenanceDatabaseURL string
@@ -176,6 +177,14 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		errs = append(errs, fmt.Errorf("%s: %w", EnvMetricsAddr, err))
 	}
 
+	sandbox := get("VEEA_APPLE_IAP_ALLOW_SANDBOX", "false")
+	if sandbox != "true" && sandbox != "false" {
+		errs = append(errs, errors.New("VEEA_APPLE_IAP_ALLOW_SANDBOX must be true or false"))
+	}
+	cfg.AppleAllowSandbox = sandbox == "true"
+	if cfg.AppleAllowSandbox && get("VEEA_APPLE_IAP_ENABLED", "false") != "true" {
+		errs = append(errs, errors.New("Sandbox acknowledgement requires Apple IAP enabled"))
+	}
 	var aerr error
 	if cfg.Argon2, aerr = parseArgon2(get); aerr != nil {
 		errs = append(errs, aerr)
@@ -186,7 +195,7 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		verifier, err := appleiap.New(appleiap.Config{
 			IssuerID: get("VEEA_APPLE_IAP_ISSUER_ID", ""), KeyID: get("VEEA_APPLE_IAP_KEY_ID", ""),
 			PrivateKey: get("VEEA_APPLE_IAP_PRIVATE_KEY", ""), BundleID: get("VEEA_APPLE_IAP_BUNDLE_ID", ""),
-			Environment: cfg.AppleEnvironment, ProductIDs: strings.Split(get("VEEA_APPLE_IAP_PRODUCT_IDS", ""), ","),
+			AllowSandbox: cfg.AppleAllowSandbox, Environment: cfg.AppleEnvironment, ProductIDs: strings.Split(get("VEEA_APPLE_IAP_PRODUCT_IDS", ""), ","),
 		})
 		if err != nil {
 			errs = append(errs, errors.New("Apple IAP configuration is incomplete or invalid"))

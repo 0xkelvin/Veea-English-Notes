@@ -49,17 +49,17 @@ paid learning features require a new decision.
 GitHub's tracked app configuration contains no confirmed Pro product ID or public account API URL. GitHub cannot prove whether the App Store Connect product already exists; check that service separately.
 
 1. In App Store Connect, confirm the correct Veea app/team/bundle ID. Create or identify **one non-consumable** lifetime Pro product. Keep Family Sharing disabled for this first implementation; shared-family transaction ownership is intentionally not accepted. Complete its metadata and select the Vietnamese price.
-2. Set the app build values `VEEA_API_BASE_URL` (a dedicated staging API for testing) and `VEEA_APPLE_PRO_PRODUCT_ID` (the exact product ID). No provider/private keys go into the app or GitHub.
-3. On the staging server only, run migration 16, apply the updated database permissions, and explicitly set the dedicated staging database's `apple_iap_control.environment` to `Sandbox`. Its default is `Production`; the API refuses an enabled verifier/database environment mismatch. Use a separate production database.
-4. In the server's private configuration, set `VEEA_APPLE_IAP_ENABLED=true`, `VEEA_APPLE_IAP_ENVIRONMENT=Sandbox`, `VEEA_APPLE_IAP_ISSUER_ID`, `VEEA_APPLE_IAP_KEY_ID`, `VEEA_APPLE_IAP_PRIVATE_KEY` (Apple In-App Purchase P-256 private key), `VEEA_APPLE_IAP_BUNDLE_ID` and `VEEA_APPLE_IAP_PRODUCT_IDS` (the same SKU). Keep the existing email/account service working. Default/missing billing configuration does not allow checkout.
+2. For the final TestFlight/review candidate, set `VEEA_API_BASE_URL` to the public release API and `VEEA_APPLE_PRO_PRODUCT_ID` to the exact product ID. No provider/private keys go into the app or GitHub.
+3. Run migration 16 and apply the existing database permissions before deploying the billing API. Keep the release database's `apple_iap_control.environment` as `Production` (its default); do not switch it to Sandbox for review. This environment-handling fix adds no new migration.
+4. In the release server's private configuration, set `VEEA_APPLE_IAP_ENABLED=true`, `VEEA_APPLE_IAP_ENVIRONMENT=Production`, `VEEA_APPLE_IAP_ALLOW_SANDBOX=true`, `VEEA_APPLE_IAP_ISSUER_ID`, `VEEA_APPLE_IAP_KEY_ID`, `VEEA_APPLE_IAP_PRIVATE_KEY` (Apple In-App Purchase P-256 private key), `VEEA_APPLE_IAP_BUNDLE_ID` and `VEEA_APPLE_IAP_PRODUCT_IDS` (the same SKU). Keep the existing email/account service working. Default/missing billing configuration does not allow checkout. Deploy this backend before distributing the candidate.
 5. Build/upload through the paid Veea team with the existing Screen Time/App Groups entitlements. A personal-profile installation is not a valid substitute for this signed-device test.
-6. Production later uses `Production` server verification, the production database/environment gate, the production API URL and the same approved non-consumable product. Do not direct automated tests at deployed services.
+6. The release API acknowledges Apple review/TestFlight Sandbox purchases without storing test proofs or granting Production account Pro. If a dedicated staging API is used instead, give it a separate database pinned to `Sandbox`, `VEEA_APPLE_IAP_ENVIRONMENT=Sandbox` and `VEEA_APPLE_IAP_ALLOW_SANDBOX=false`. Follow [payment environment deployment and acceptance](payment-environments.md). Do not direct automated tests at deployed services.
 
 ## No-charge phone acceptance
 
 [Apple confirms that TestFlight purchases use sandbox and do not charge testers](https://developer.apple.com/in-app-purchase/). They do not become real purchases after App Store release. Xcode's local StoreKit simulation is separate and its transactions are deliberately not accepted by this production verifier.
 
-On a signed TestFlight build pointing at staging:
+On a signed TestFlight build pointing at its intended API (prefer the release API for the final review candidate):
 
 1. Start Free without an account: save words, Listen/Review, select an unlimited practice pool, protect one app and answer one word per unlock. Custom/default/per-app times stay free. A second active app or multiple words per unlock should explain Pro. Confirm OFF/remove/export always work.
 2. Sign in: the same words, dates and practice choices stay visible. Buy Pro using the sandbox payment sheet. Verify the account-linked Premium response, multiple apps and multiple words. Display the actual localized Apple price; Vietnam must be configured at 99,000 VND.

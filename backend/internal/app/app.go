@@ -36,15 +36,16 @@ import (
 
 // Options are the handler's dependencies. Keys come from config.Config.
 type Options struct {
-	AppleVerifier    purchases.Verifier
-	AppleEnvironment string
-	Pool             *pgxpool.Pool
-	ReadyTimeout     time.Duration
-	Logger           *slog.Logger
-	EmailHMACKeys    [][]byte
-	OTPKeys          [][]byte
-	OutboxKeys       []notify.Key
-	TrustedProxies   []netip.Prefix
+	AppleVerifier     purchases.Verifier
+	AppleEnvironment  string
+	AppleAllowSandbox bool
+	Pool              *pgxpool.Pool
+	ReadyTimeout      time.Duration
+	Logger            *slog.Logger
+	EmailHMACKeys     [][]byte
+	OTPKeys           [][]byte
+	OutboxKeys        []notify.Key
+	TrustedProxies    []netip.Prefix
 
 	// Hasher hashes and verifies passwords. Nil means an identity.Hasher with the approved
 	// parameters. Tests wrap the real hasher to count Argon2id runs.
@@ -143,7 +144,7 @@ func New(o Options) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	billing := purchases.New(o.Pool, o.AppleVerifier, o.AppleEnvironment, o.OnTxRetry)
+	billing := purchases.NewWithSandboxAcknowledgements(o.Pool, o.AppleVerifier, o.AppleEnvironment, o.AppleAllowSandbox, o.OnTxRetry)
 	if err := billing.CheckEnvironment(context.Background()); err != nil {
 		return nil, err
 	}

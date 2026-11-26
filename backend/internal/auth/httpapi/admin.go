@@ -20,6 +20,7 @@ import (
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity/accounts"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db/sqlc"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/httpx"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/purchases"
 )
 
 // mountAdmin registers the TRD 06 routes. Every one is authenticated, then requireStaff, then
@@ -480,14 +481,14 @@ func (h *Handlers) adminChangePlan(w http.ResponseWriter, r *http.Request, p ses
 func (h *Handlers) meEntitlements(w http.ResponseWriter, r *http.Request, p session.Principal) {
 	h.writeMyEntitlements(w, r, p, nil)
 }
-func (h *Handlers) writeMyEntitlements(w http.ResponseWriter, r *http.Request, p session.Principal, revoked *bool) {
+func (h *Handlers) writeMyEntitlements(w http.ResponseWriter, r *http.Request, p session.Principal, purchase *purchases.Outcome) {
 	if r.URL.RawQuery != "" || r.URL.ForceQuery {
 		h.fail(w, r, httpx.ErrBadRequest)
 		return
 	}
 	verificationPending := false
 	var manualFallback *entitlements.Plan
-	if h.Purchases != nil && revoked == nil {
+	if h.Purchases != nil && (purchase == nil || !purchase.Recorded) {
 		if err := h.Purchases.Reconcile(r.Context(), p); err != nil {
 			manual, manualErr := entitlements.ManualEffective(r.Context(), sqlc.New(h.Pool), p.UserID)
 			if manualErr != nil || manual.Name != entitlements.Premium {
@@ -506,7 +507,14 @@ func (h *Handlers) writeMyEntitlements(w http.ResponseWriter, r *http.Request, p
 	if manualFallback != nil {
 		plan = *manualFallback
 	}
+	var revoked, recorded *bool
+	var environment string
+	if purchase != nil {
+		revoked, recorded, environment = &purchase.Revoked, &purchase.Recorded, purchase.Environment
+	}
 	httpx.WriteJSON(w, http.StatusOK, struct {
+		PurchaseEnvironment         string              `json:"purchase_environment,omitempty"`
+		PurchaseRecorded            *bool               `json:"purchase_recorded,omitempty"`
 		ApplePurchaseAvailable      bool                `json:"apple_purchase_available,omitempty"`
 		PurchaseVerificationPending bool                `json:"purchase_verification_pending,omitempty"`
 		PurchaseRevoked             *bool               `json:"purchase_revoked,omitempty"`
@@ -514,5 +522,5 @@ func (h *Handlers) writeMyEntitlements(w http.ResponseWriter, r *http.Request, p
 		PlanExpiresAt               *time.Time          `json:"plan_expires_at"`
 		Limits                      entitlements.Limits `json:"limits"`
 		CheckedAt                   time.Time           `json:"checked_at"`
-	}{h.Purchases.Available(), verificationPending, revoked, plan.Name, plan.ExpiresAt, entitlements.LimitsFor(plan.Name), plan.CheckedAt})
+	}{environment, recorded, h.Purchases.Available(), verificationPending, revoked, plan.Name, plan.ExpiresAt, entitlements.LimitsFor(plan.Name), plan.CheckedAt})
 }

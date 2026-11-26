@@ -44,6 +44,14 @@ The runner removes inherited deployment DB/email secrets from its child environm
 
 Logs and backup/ledger files are private artifacts. Publish only counts, digests, fixed error codes, sanitized timing/metric series and redacted screenshots. Never attach raw tokens, OTPs, email bodies, mailbox addresses, environment dumps or provider secrets. Temporary synthetic dumps are deleted with the tagged test's temporary directory. Local service shutdown is optional and destructive to those disposable service contents: `backend/scripts/test-postgres.sh stop`, `backend/scripts/test-mailpit.sh stop`; do not stop another person's active test run.
 
+## Payment review/TestFlight addendum (26 November 2026)
+
+Follow [payment environment deployment and device acceptance](payment-environments.md).
+The final review candidate should use the intended release API: Production database
+and verifier plus explicitly enabled Sandbox acknowledgement. Test proofs never
+create production account entitlements. Dedicated Sandbox staging remains separate.
+Local verification is not evidence of signed TestFlight or App Review acceptance.
+
 ## 2. Ordered staging checklist (Nin executes)
 
 Fill `operator`, `UTC start/end`, `candidate/deployment`, `result`, `evidence link` and `follow-up` for every row in the release ticket. All boxes below remain unchecked by this local preparation. Use the deployment secret manager; never paste a URL/key/token into a recorded command. No integration test, local script or test-only control endpoint is pointed at staging.

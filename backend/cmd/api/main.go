@@ -98,7 +98,7 @@ func run() error {
 		appleVerifier = cfg.AppleVerifier
 	}
 	handler, err := app.New(app.Options{
-		AppleVerifier: appleVerifier, AppleEnvironment: cfg.AppleEnvironment,
+		AppleVerifier: appleVerifier, AppleEnvironment: cfg.AppleEnvironment, AppleAllowSandbox: cfg.AppleAllowSandbox,
 		Pool: pool, ReadyTimeout: cfg.ReadyTimeout, Logger: log,
 		EmailHMACKeys: cfg.EmailHMACKeys, OTPKeys: cfg.OTPKeys, OutboxKeys: cfg.OutboxKeys,
 		TrustedProxies: cfg.TrustedProxies, Metrics: m, Argon2: cfg.Argon2,

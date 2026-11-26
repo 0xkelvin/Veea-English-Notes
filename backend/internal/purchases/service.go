@@ -28,38 +28,67 @@ type Verifier interface {
 	Verify(context.Context, string) (appleiap.Transaction, error)
 }
 type Service struct {
-	pool        *pgxpool.Pool
-	tx          db.Tx
-	verifier    Verifier
-	environment string
+	pool         *pgxpool.Pool
+	tx           db.Tx
+	verifier     Verifier
+	environment  string
+	allowSandbox bool
 }
 
 func New(pool *pgxpool.Pool, verifier Verifier, environment string, retry func(string)) *Service {
-	return &Service{pool: pool, tx: db.Tx{Pool: pool, OnRetry: retry}, verifier: verifier, environment: environment}
+	return NewWithSandboxAcknowledgements(pool, verifier, environment, false, retry)
+}
+
+// NewWithSandboxAcknowledgements permits verified Sandbox acknowledgements on a
+// Production API without inserting test proofs or granting any server Premium.
+func NewWithSandboxAcknowledgements(pool *pgxpool.Pool, verifier Verifier, environment string, allowSandbox bool, retry func(string)) *Service {
+	return &Service{pool: pool, tx: db.Tx{Pool: pool, OnRetry: retry}, verifier: verifier, environment: environment, allowSandbox: allowSandbox}
 }
 func (s *Service) Claim(ctx context.Context, p session.Principal, id string) error {
 	_, err := s.VerifyAndClaim(ctx, p, id)
 	return err
 }
+
+// Outcome separates Apple verification from a durable account purchase. Sandbox
+// acknowledgements on Production are device-only; Environment is server-verified.
+type Outcome struct {
+	Revoked     bool
+	Environment string
+	Recorded    bool
+}
+
 func (s *Service) VerifyAndClaim(ctx context.Context, p session.Principal, id string) (bool, error) {
+	outcome, err := s.VerifyAndClaimOutcome(ctx, p, id)
+	return outcome.Revoked, err
+}
+
+func (s *Service) VerifyAndClaimOutcome(ctx context.Context, p session.Principal, id string) (Outcome, error) {
+	return s.verifyAndClaimOutcome(ctx, p, id, "")
+}
+
+func (s *Service) verifyAndClaimOutcome(ctx context.Context, p session.Principal, id, expectedEnvironment string) (Outcome, error) {
 	if s.verifier == nil {
-		return false, appleiap.ErrUnavailable
+		return Outcome{}, appleiap.ErrUnavailable
 	}
 	if !ValidTransactionID(id) {
-		return false, appleiap.ErrInvalid
+		return Outcome{}, appleiap.ErrInvalid
 	}
 	// External I/O never runs while database locks are held.
 	proof, err := s.verifier.Verify(ctx, id)
 	if err != nil {
-		return false, err
+		return Outcome{}, err
 	}
 	if proof.AccountToken != p.UserID {
-		return false, ErrOwnership
+		return Outcome{}, ErrOwnership
 	}
-	if proof.Environment != s.environment || proof.ID != id || proof.OriginalID == "" || proof.SignedAt.IsZero() {
-		return false, appleiap.ErrInvalid
+	if expectedEnvironment != "" && proof.Environment != expectedEnvironment {
+		return Outcome{}, appleiap.ErrInvalid
 	}
-	revoked := false
+	sandboxAck := s.allowSandbox && s.environment == appleiap.EnvProduction && proof.Environment == appleiap.EnvSandbox
+	if (proof.Environment != s.environment && !sandboxAck) || proof.ID != id || proof.OriginalID == "" || proof.SignedAt.IsZero() {
+		return Outcome{}, appleiap.ErrInvalid
+	}
+	outcome := Outcome{Environment: proof.Environment, Revoked: proof.RevokedAt != nil}
 	err = s.tx.Run(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		user, ok, err := accounts.LockForNoKeyUpdate(ctx, tx, p.UserID) // L3, before acting session L4a
 		if err != nil {
@@ -72,6 +101,11 @@ func (s *Service) VerifyAndClaim(ctx context.Context, p session.Principal, id st
 			return err
 		} else if !ok {
 			return session.ErrUnauthorized
+		}
+		// Revalidate identity even when no purchase row is written. Client flags
+		// never choose this path: only a freshly verified Apple Sandbox proof does.
+		if sandboxAck {
+			return nil
 		}
 		q := sqlc.New(tx)
 		previous, err := q.LockAppleProPurchaseByOriginalID(ctx, sqlc.LockAppleProPurchaseByOriginalIDParams{Environment: proof.Environment, OriginalTransactionID: proof.OriginalID})
@@ -89,12 +123,13 @@ func (s *Service) VerifyAndClaim(ctx context.Context, p session.Principal, id st
 		if err != nil {
 			return err
 		}
-		revoked = record.RevokedAt != nil
+		outcome.Revoked = record.RevokedAt != nil
+		outcome.Recorded = true
 		// A refund is a successful reconciliation: return the updated effective plan,
 		// including any independent manual grant, rather than rolling back revocation.
 		return q.PruneAccountApplePurchases(ctx, p.UserID)
 	})
-	return revoked, err
+	return outcome, err
 }
 
 // Reconcile refreshes old proofs before serving an owner plan. On Apple outages
@@ -120,7 +155,7 @@ func (s *Service) Reconcile(ctx context.Context, p session.Principal) error {
 		if row.Environment != s.environment || (row.RevokedAt != nil && time.Since(row.VerifiedAt) < 5*time.Minute) {
 			continue
 		}
-		revoked, err := s.VerifyAndClaim(ctx, p, row.TransactionID)
+		outcome, err := s.verifyAndClaimOutcome(ctx, p, row.TransactionID, row.Environment)
 		if err != nil {
 			if verificationError == nil {
 				verificationError = err
@@ -128,7 +163,7 @@ func (s *Service) Reconcile(ctx context.Context, p session.Principal) error {
 			continue
 		}
 		// One fresh active proof is sufficient; an obsolete Apple ID cannot block it.
-		if !revoked {
+		if !outcome.Revoked {
 			return nil
 		}
 	}
@@ -141,6 +176,9 @@ func (s *Service) Reconcile(ctx context.Context, p session.Principal) error {
 
 // CheckEnvironment refuses accidentally sharing sandbox purchase grants with a production API.
 func (s *Service) CheckEnvironment(ctx context.Context) error {
+	if s.allowSandbox && s.environment != appleiap.EnvProduction {
+		return errors.New("purchases: Sandbox acknowledgements require a Production database")
+	}
 	if s.verifier == nil {
 		return nil
 	}

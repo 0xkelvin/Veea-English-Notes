@@ -39,6 +39,16 @@ class ProRepository {
     : channel = channel ?? const MethodChannel('app.veea.english/purchases');
   final GoApiClient client;
   final MethodChannel channel;
+  String get _apiOrigin {
+    final uri = Uri.tryParse(AppConfig.apiBaseUrl);
+    return uri != null &&
+            (uri.scheme == 'http' || uri.scheme == 'https') &&
+            uri.hasAuthority
+        // Include the base path: staging and production can share a host.
+        ? '${uri.origin}${uri.path.replaceFirst(RegExp(r'/+$'), '')}'
+        : '';
+  }
+
   void Function()? onChange;
   void listen() => channel.setMethodCallHandler((call) async {
     if (call.method == 'onProChanged') onChange?.call();
@@ -52,6 +62,7 @@ class ProRepository {
   }) async => ProStoreState.fromMap(
     await channel.invokeMapMethod<dynamic, dynamic>('configure', {
       'productID': AppConfig.appleProProductId,
+      'apiOrigin': _apiOrigin,
       'accountID': owner,
       if (serverUntil != null)
         'serverUntil': serverUntil.millisecondsSinceEpoch / 1000,

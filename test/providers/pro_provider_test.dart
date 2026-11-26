@@ -49,9 +49,13 @@ class TestPro extends ProRepository {
   };
   Map<String, Object?> claimResult = {'plan': 'premium'};
   ProStoreState? purchaseResult;
+  void Function()? onPurchase;
   int configurations = 0;
   int purchased = 0, restored = 0, claims = 0, finished = 0;
   bool offline = false;
+  DateTime? lastServerUntil;
+  bool lastClearServer = false;
+  bool? lastServerLifetime;
   final Map<String, ApiException> claimErrors = {};
   final List<String> claimedIds = [];
   final List<String> finishedIds = [];
@@ -67,6 +71,9 @@ class TestPro extends ProRepository {
     bool loadProduct = true,
   }) async {
     configurations++;
+    lastServerUntil = serverUntil;
+    lastClearServer = clearServer;
+    lastServerLifetime = serverLifetime;
     return owner == null
         ? const ProStoreState()
         : ProStoreState(
@@ -88,6 +95,7 @@ class TestPro extends ProRepository {
   @override
   Future<ProStoreState> purchase() async {
     purchased++;
+    onPurchase?.call();
     return purchaseResult ?? state;
   }
 
@@ -182,6 +190,96 @@ void main() {
       expect(pro.canPurchase, isFalse);
     },
   );
+  test(
+    'Sandbox checkout succeeds with a Free production account plan',
+    () async {
+      repo.state = const ProStoreState(price: '99.000 ₫');
+      auth.select('owner-a');
+      await Future<void>.delayed(Duration.zero);
+      repo.onPurchase = () {
+        repo.state = const ProStoreState(
+          hasPro: true,
+          hasLifetime: true,
+          price: '99.000 ₫',
+          transactions: ['sandbox-new'],
+          pendingTransactions: ['sandbox-new'],
+        );
+      };
+      repo.claimResult = {
+        'plan': 'free',
+        'apple_purchase_available': true,
+        'purchase_environment': 'Sandbox',
+        'purchase_recorded': false,
+        'purchase_revoked': false,
+      };
+      await pro.purchase();
+      expect(repo.purchased, 1);
+      expect(repo.finishedIds, ['sandbox-new']);
+      expect(pro.hasPro, isTrue);
+      expect(repo.lastServerUntil, isNull);
+      expect(repo.lastClearServer, isTrue);
+      expect(pro.message, 'Pro is ready. Thank you for supporting Veea!');
+    },
+  );
+  test(
+    'Sandbox acknowledgement finishes without granting a server lease',
+    () async {
+      auth.select('owner-a');
+      await Future<void>.delayed(Duration.zero);
+      repo.state = const ProStoreState(
+        hasPro: true,
+        hasLifetime: true,
+        price: '99.000 ₫',
+        transactions: ['sandbox-1'],
+      );
+      repo.claimResult = {
+        'plan': 'free',
+        'apple_purchase_available': true,
+        'purchase_environment': 'Sandbox',
+        'purchase_recorded': false,
+        'purchase_revoked': false,
+      };
+      await pro.restore();
+      expect(repo.finishedIds, ['sandbox-1']);
+      expect(pro.hasPro, isTrue);
+      expect(pro.hasLifetime, isTrue);
+      expect(repo.lastServerUntil, isNull);
+      expect(repo.lastClearServer, isTrue);
+      expect(pro.message, 'Pro restored.');
+      // A later Production account read remains Free, without removing native
+      // ownership that StoreKit supplies only in this test installation.
+      await pro.refresh();
+      expect(pro.hasPro, isTrue);
+      expect(repo.lastServerUntil, isNull);
+      expect(repo.lastClearServer, isTrue);
+      repo.state = const ProStoreState();
+      await pro.refresh();
+      expect(pro.hasPro, isFalse);
+    },
+  );
+  test(
+    'Sandbox refund is acknowledged and removes device test ownership',
+    () async {
+      auth.select('owner-a');
+      await Future<void>.delayed(Duration.zero);
+      repo.state = const ProStoreState(
+        hasPro: true,
+        hasLifetime: true,
+        transactions: ['sandbox-refund'],
+      );
+      repo.claimResult = {
+        'plan': 'free',
+        'apple_purchase_available': true,
+        'purchase_environment': 'Sandbox',
+        'purchase_recorded': false,
+        'purchase_revoked': true,
+      };
+      await pro.restore();
+      expect(repo.finishedIds, ['sandbox-refund']);
+      expect(pro.hasPro, isFalse);
+      expect(repo.lastServerUntil, isNull);
+    },
+  );
   test('signed out cannot buy or restore', () async {
     await pro.purchase();
     await pro.restore();
@@ -252,7 +350,7 @@ void main() {
       expect(repo.restored, 1);
       expect(repo.claims, 1);
       expect(repo.finished, 1);
-      expect(pro.message, 'Pro restored to your account.');
+      expect(pro.message, 'Pro restored.');
     },
   );
   test('unknown outcome does not open the Apple payment sheet', () async {
@@ -453,6 +551,8 @@ void main() {
       expect(repo.purchased, 0);
       expect(pro.hasPro, isTrue);
       expect(pro.message, contains('temporarily unavailable'));
+      expect(repo.lastServerLifetime, isFalse);
+      expect(pro.hasLifetime, isFalse);
     },
   );
   test(
@@ -466,6 +566,25 @@ void main() {
       expect(repo.purchased, 0);
       expect(pro.purchasesReady, isFalse);
       expect(pro.message, contains('not available yet'));
+    },
+  );
+  test(
+    'finite manual fallback cannot inherit uncertain lifetime metadata',
+    () async {
+      repo.plan = {
+        'apple_purchase_available': true,
+        'plan': 'premium',
+        'plan_expires_at': DateTime.now()
+            .add(const Duration(hours: 1))
+            .toIso8601String(),
+        'purchase_verification_pending': true,
+      };
+      auth.select('owner-a');
+      await Future<void>.delayed(Duration.zero);
+      await pro.refresh();
+      expect(pro.hasPro, isTrue);
+      expect(pro.hasLifetime, isFalse);
+      expect(repo.lastServerLifetime, isFalse);
     },
   );
   test('uncertain Free response cannot create a paid offline lease', () async {

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		AAF017000000000000000001 /* ProPurchaseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAF017000000000000000002 /* ProPurchaseManager.swift */; };
+		AAF026000000000000000001 /* ProPurchasePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAF026000000000000000002 /* ProPurchasePolicy.swift */; };
 		CAA120000000000000000002 /* CheckVeeaGateIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAA110000000000000000002 /* CheckVeeaGateIntent.swift */; };
 		CAA120000000000000000001 /* GateAccessState.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAA110000000000000000001 /* GateAccessState.swift */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
@@ -83,6 +84,7 @@
 
 /* Begin PBXFileReference section */
 		AAF017000000000000000002 /* ProPurchaseManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProPurchaseManager.swift; sourceTree = "<group>"; };
+		AAF026000000000000000002 /* ProPurchasePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProPurchasePolicy.swift; sourceTree = "<group>"; };
 		CAA130000000000000000001 /* Extension.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Flutter/Extension.xcconfig; sourceTree = SOURCE_ROOT; };
 		CAA110000000000000000002 /* CheckVeeaGateIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckVeeaGateIntent.swift; sourceTree = "<group>"; };
 		CAA110000000000000000001 /* GateAccessState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GateAccessState.swift; sourceTree = "<group>"; };
@@ -222,6 +224,7 @@
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				DE5970BB7C86DE27E3FC5A8B /* NativeScreenTimeManager.swift */,
 				AAF017000000000000000002 /* ProPurchaseManager.swift */,
+				AAF026000000000000000002 /* ProPurchasePolicy.swift */,
 				CAA110000000000000000002 /* CheckVeeaGateIntent.swift */,
 				CAA110000000000000000001 /* GateAccessState.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
@@ -544,6 +547,7 @@
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				085B7B68DFC271F49F79B08D /* NativeScreenTimeManager.swift in Sources */,
 				AAF017000000000000000001 /* ProPurchaseManager.swift in Sources */,
+				AAF026000000000000000001 /* ProPurchasePolicy.swift in Sources */,
 				56F2021E0EB8FCED38FC1A19 /* NativeGateGrantCoordinator.swift in Sources */,
 				16095DC9B3388009D3B7F1DE /* NativeGateShielding.swift in Sources */,
 				C29417A382CC1D87C7B2CE5F /* NativeGateStore.swift in Sources */,
