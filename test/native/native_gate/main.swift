@@ -356,26 +356,28 @@ precondition(NativeGatePolicy.applicationID(from: "native:bad-id") == nil)
 print("Native gate policy, persistence, handoff, scheduling-failure, stale-callback, and cross-process lock tests passed")
 
 // Plan enforcement is native, independent of paywall widgets.
-// Production launch capability is independent of purchase ownership.
-precondition(NativeGateReleasePolicy.isFreeLaunch)
-let freeLaunchControls = NativeGateReleasePolicy.permitsAllLockControls(purchasedPro: false)
-precondition(freeLaunchControls)
-try NativeGatePlanPolicy.requireAppCount(50, pro: freeLaunchControls)
+// Free means one app; full access requires a verified purchase.
+precondition(!NativeGateReleasePolicy.isFreeLaunch)
+precondition(!NativeGateReleasePolicy.permitsAllLockControls(purchasedPro: false))
+precondition(NativeGateReleasePolicy.permitsAllLockControls(purchasedPro: true))
 for minutes in [5, 7, 47, 1440] {
-  try NativeGatePlanPolicy.requireDuration(minutes, pro: freeLaunchControls)
-  precondition(NativeGatePlanPolicy.duration(minutes, pro: freeLaunchControls) == minutes)
+  try NativeGatePlanPolicy.requireDuration(minutes, pro: false)
+  precondition(NativeGatePlanPolicy.duration(minutes, pro: false) == minutes)
 }
-print("Free launch permits multiple app locks and custom times without Pro ownership")
+for minutes in [0, 4, 1441] {
+  do { try NativeGatePlanPolicy.requireDuration(minutes, pro: false); preconditionFailure("Reject unsupported duration") }
+  catch NativeGateError.invalidDuration {}
+}
+print("Free includes one app; all supported default and per-app times remain free")
 
-// Retained historical policy remains covered for future separately reviewed work.
+// Count enforcement and downgrade preserve personal configuration.
 try NativeGatePlanPolicy.requireAppCount(1, pro: false)
 do { try NativeGatePlanPolicy.requireAppCount(2, pro: false); preconditionFailure("Free must refuse a second app") }
 catch NativeGatePlanError.proRequired {}
 try NativeGatePlanPolicy.requireAppCount(50, pro: true)
 for minutes in [5, 15, 30] { try NativeGatePlanPolicy.requireDuration(minutes, pro: false) }
-do { try NativeGatePlanPolicy.requireDuration(7, pro: false); preconditionFailure("Custom time needs Pro") }
-catch NativeGatePlanError.proRequired {}
-precondition(NativeGatePlanPolicy.duration(7, pro: false) == 15)
+try NativeGatePlanPolicy.requireDuration(7, pro: false)
+precondition(NativeGatePlanPolicy.duration(7, pro: false) == 7)
 precondition(NativeGatePlanPolicy.duration(7, pro: true) == 7)
 var downgrade = NativeGateState()
 downgrade.applications = [appA, appB]
@@ -402,3 +404,14 @@ _ = NativeGatePlanPolicy.applyFreePlan(to:&preferredFree,preferredApplicationID:
 precondition(preferredFree.isApplicationLockEnabled(appB.id))
 precondition(!preferredFree.isApplicationLockEnabled(appA.id))
 print("Free downgrade keeps the current challenge app when available")
+
+var earnedFree = NativeGateState()
+earnedFree.applications = [appA, appB]
+try earnedFree.setAllApplicationLocks(true)
+earnedFree.passes[appB.id] = aggregatePass
+_ = NativeGatePlanPolicy.applyFreePlan(to: &earnedFree, at: now)
+precondition(earnedFree.isApplicationLockEnabled(appB.id))
+precondition(earnedFree.passes[appB.id] == aggregatePass)
+precondition(!earnedFree.isApplicationLockEnabled(appA.id))
+precondition(earnedFree.shieldedApplicationIDs(at: now).isEmpty)
+print("Free downgrade preserves the earned pass when no challenge app is pending")

@@ -1991,23 +1991,28 @@ class _ProSettingsLink extends StatelessWidget {
     }
     return PixelBox(
       padding: EdgeInsets.zero,
-      child: ListTile(
-        key: const Key('settings_pro'),
-        leading: const Icon(Icons.auto_awesome_outlined),
-        title: Text(
-          AppConfig.isFreeLaunch
-              ? 'Previous purchases'
-              : pro.hasPro
-              ? 'Veea Pro · Active'
-              : 'Veea Pro',
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: BorderRadius.circular(PixelMetrics.radiusLg),
+        clipBehavior: Clip.antiAlias,
+        child: ListTile(
+          key: const Key('settings_pro'),
+          leading: const Icon(Icons.auto_awesome_outlined),
+          title: Text(
+            AppConfig.isFreeLaunch
+                ? 'Previous purchases'
+                : pro.hasPro
+                ? 'Veea Pro · Active'
+                : 'Veea Pro',
+          ),
+          subtitle: Text(
+            AppConfig.isFreeLaunch
+                ? 'Restore an earlier purchase record'
+                : 'More apps and words · One-time purchase',
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => ProScreen.open(context),
         ),
-        subtitle: Text(
-          AppConfig.isFreeLaunch
-              ? 'Restore an earlier purchase record'
-              : 'More app locks · One-time purchase',
-        ),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => ProScreen.open(context),
       ),
     );
   }

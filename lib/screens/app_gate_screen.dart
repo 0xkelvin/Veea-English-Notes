@@ -76,6 +76,16 @@ class _AppGateScreenState extends State<AppGateScreen>
   Timer? _accessTicker;
   AppGateProvider? _gateForDisposal;
 
+  int _requiredWordCount(AppGateProvider gate) => widget.previewMode
+      ? gate.requiredWords
+      : gate.requiredWordsForApp(_currentApp);
+
+  void _beginRoundIfLocked(AppGateProvider? gate) {
+    if (!widget.previewMode && gate?.unlockedUntilFor(_currentApp) == null) {
+      gate?.beginChallengeRound(_currentApp);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -104,6 +114,7 @@ class _AppGateScreenState extends State<AppGateScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _gateForDisposal = _maybeReadGateProvider(context);
+    _beginRoundIfLocked(_gateForDisposal);
     if (_currentWord == null && widget.initialWord == null) {
       final gateProvider = _maybeReadGateProvider(context);
       if (gateProvider != null && !widget.previewMode) {
@@ -218,7 +229,7 @@ class _AppGateScreenState extends State<AppGateScreen>
     final gate = _maybeReadGateProvider(context);
     if (!widget.previewMode &&
         gate != null &&
-        _solvedInRound >= gate.requiredWords) {
+        _solvedInRound >= _requiredWordCount(gate)) {
       return false;
     }
     return true;
@@ -248,6 +259,7 @@ class _AppGateScreenState extends State<AppGateScreen>
 
   @override
   void dispose() {
+    if (!widget.previewMode) _gateForDisposal?.endChallengeRound(_currentApp);
     if (_currentApp.startsWith('shortcut:') && !_unlocked) {
       final provider = _gateForDisposal;
       if (provider != null) {
@@ -272,6 +284,7 @@ class _AppGateScreenState extends State<AppGateScreen>
     try {
       VocabularyWord? word;
       final gateProvider = _maybeReadGateProvider(context);
+      _beginRoundIfLocked(gateProvider);
       final vocabProvider = _maybeReadVocabProvider(context);
       if (gateProvider != null) {
         word = await gateProvider.selectGateWord(
@@ -280,7 +293,7 @@ class _AppGateScreenState extends State<AppGateScreen>
         );
         if (word == null &&
             !widget.previewMode &&
-            _solvedInRound >= gateProvider.requiredWords) {
+            _solvedInRound >= _requiredWordCount(gateProvider)) {
           word = gateProvider.cachedGateWord(_currentApp, preview: true);
         }
       } else {
@@ -394,7 +407,9 @@ class _AppGateScreenState extends State<AppGateScreen>
 
       final gateProvider = _maybeReadGateProvider(context);
       final vocabProvider = _maybeReadVocabProvider(context);
-      final requiredWords = gateProvider?.requiredWords ?? 1;
+      final requiredWords = gateProvider == null
+          ? 1
+          : _requiredWordCount(gateProvider);
       final nextSolvedCount = _solvedInRound + 1;
       try {
         if (widget.previewMode) {
@@ -588,7 +603,9 @@ class _AppGateScreenState extends State<AppGateScreen>
                 gateProvider?.nativeStatus.durationFor(_currentApp) ?? 15,
           )
         : baseConfig;
-    final requiredWords = gateProvider?.requiredWords ?? config.wordsPerUnlock;
+    final requiredWords = gateProvider == null
+        ? config.wordsPerUnlock
+        : _requiredWordCount(gateProvider);
     final showUnlocked = _isNativeTarget && !widget.previewMode
         ? gateProvider?.unlockedUntilFor(_currentApp) != null
         : _unlocked;

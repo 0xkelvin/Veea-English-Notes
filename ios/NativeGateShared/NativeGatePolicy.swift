@@ -182,8 +182,8 @@ enum NativeGatePolicy {
 /// Product limits live beside the native protection policy so a platform-channel
 /// caller cannot bypass the Free plan through a second enable path.
 enum NativeGateReleasePolicy {
-  // Source-controlled launch decision, independent of StoreKit or sign-in.
-  static let isFreeLaunch = true
+  // Owner decision 2026-11-26: one free app; multiple apps require verified Pro.
+  static let isFreeLaunch = false
   static func permitsAllLockControls(purchasedPro: Bool) -> Bool {
     isFreeLaunch || purchasedPro
   }
@@ -191,29 +191,38 @@ enum NativeGateReleasePolicy {
 
 enum NativeGatePlanError: LocalizedError {
   case proRequired
+  case checkingPro
   var errorDescription: String? {
-    "Pro includes multiple app locks and custom unlock times. Free includes one app lock and 5, 15 or 30 minutes."
+    switch self {
+    case .proRequired:
+      return "Free includes one app lock and one word per unlock. Pro includes multiple app locks and more words per unlock. All unlock times are free."
+    case .checkingPro:
+      return "Checking your purchase. Please try again in a moment. Your free app lock remains available."
+    }
   }
 }
 
 enum NativeGatePlanPolicy {
-  static let freeMinutes = [5, 15, 30]
   static func duration(_ minutes: Int, pro: Bool) -> Int {
-    pro || freeMinutes.contains(minutes) ? minutes : 15
+    NativeGatePolicy.normalizedPassMinutes(minutes)
   }
   static func requireAppCount(_ count: Int, pro: Bool) throws {
     if !pro && count > 1 { throw NativeGatePlanError.proRequired }
   }
   static func requireDuration(_ minutes: Int, pro: Bool) throws {
-    if !pro && !freeMinutes.contains(minutes) { throw NativeGatePlanError.proRequired }
+    guard NativeGatePolicy.supportedPassMinutes.contains(minutes) else {
+      throw NativeGateError.invalidDuration
+    }
   }
   /// Keep selections and custom rules intact on downgrade. Pause extra locks;
   /// users can choose a different free app by turning the current one off.
-  static func applyFreePlan(to state: inout NativeGateState, preferredApplicationID: String? = nil) -> [String] {
+  static func applyFreePlan(to state: inout NativeGateState, preferredApplicationID: String? = nil, at now: Date = Date()) -> [String] {
     let active = state.applications.filter { state.isApplicationLockEnabled($0.id) }
     guard active.count > 1 else { return [] }
     var stopped: [String] = []
-    let keep = active.first { $0.id == preferredApplicationID } ?? active[0]
+    let withPass = active.filter { (state.passes[$0.id]?.expiresAt ?? .distantPast) > now }
+      .sorted { (state.passes[$0.id]?.expiresAt ?? .distantPast) > (state.passes[$1.id]?.expiresAt ?? .distantPast) }
+    let keep = active.first { $0.id == preferredApplicationID } ?? withPass.first ?? active[0]
     for app in active where app.id != keep.id {
       if let activity = try? state.setApplicationLockEnabled(false, for: app.id) { stopped.append(activity) }
     }

@@ -204,15 +204,30 @@ ownership. Sandbox and production use separate databases and a matching `apple_i
 Payments are disabled by default; never simulate paid success in production. Full purge removes
 Apple rows, export includes five retained proof periods, manual grants remain independent.
 
-## First public launch: free first (2026-11-24)
+## Current offer: one free app and word, one-time Pro (2026-11-26)
 
-The owner chose a free first release. `AppConfig.isFreeLaunch` and
-`NativeGateReleasePolicy.isFreeLaunch` are true: learning, multiple app locks
-(existing 50-app safety limit), custom default durations and per-app durations
-require no purchase or sign-in. Do not reintroduce Pro checks for Screen Time
-controls or fabricate purchased ownership to make them free. New checkout and
-product loading are disabled; preserve verified earlier-purchase restore and
-account/environment isolation. Future paid learning value needs a new decision.
+The owner explicitly replaced the 24 November free-first offer. Production
+`AppConfig.isFreeLaunch` and `NativeGateReleasePolicy.isFreeLaunch` are false.
+Free includes unlimited local vocabulary, dictionary, Listen, Review, custom
+lists, one app lock and one word per unlock. The practice pool remains unlimited
+and rotates. A single non-consumable Pro purchase enables BOTH multiple app locks
+(existing 50-app safety limit) and a configurable word count bounded by the pool.
+The target Vietnam price is 99,000 VND once, with no trial or subscription; show
+only StoreKit's actual localized price. Never invent a price or paid success.
+All default/custom/per-app unlock durations, pronunciation, OFF and removal are
+free. Preserve verified purchase ownership, account/environment isolation,
+refund handling and offline ownership. Sign in before checkout/restore; free
+usage does not require sign-in. Notebook transport remains disabled.
+
+Saved extra apps are paused on Free without deleting their selections/times;
+paid word-count preferences remain saved while the effective Free count is one.
+Restoring Pro does not silently re-enable paused locks; the user can turn them
+on again. Upgrading mid-challenge affects the next opening; closing releases
+the temporary target but retains saved answers. Downgrades immediately
+permit the one-word Free rule. Apple guideline 4.10 remains an unresolved review
+gate: educational positioning is not an exemption. Describe both paid benefits
+explicitly; do not hide them or claim Apple approval. See
+`docs/pro-99k-model.md` and `docs/app-store-submission.md`.
 
 Account-only Go builds must not call retired config/feedback routes.
 `VEEA_FEEDBACK_DELIVERY_ENABLED` defaults off independently of the API URL.
