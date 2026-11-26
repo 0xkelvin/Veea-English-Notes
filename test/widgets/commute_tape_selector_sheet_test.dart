@@ -20,6 +20,7 @@ void main() {
       id: 'w1',
       word: 'resilient',
       meaning: 'kiên cường',
+      pronunciation: '/rɪˈzɪliənt/',
       date: '2026-08-18',
       createdAt: DateTime(2026, 8, 18, 10),
       updatedAt: DateTime(2026, 8, 18, 10),
@@ -59,81 +60,191 @@ void main() {
     commuteService = AudioCommuteService(ttsService: TtsService());
   });
 
-  Widget wrap(Widget child) => MultiProvider(
-    providers: [
-      ChangeNotifierProvider.value(value: playlistService),
-      ChangeNotifierProvider.value(value: commuteService),
-    ],
-    child: MaterialApp(
-      theme: PixelTheme.light(),
-      home: Scaffold(body: child),
-    ),
-  );
+  tearDown(() {
+    commuteService.stop();
+    commuteService.dispose();
+  });
 
-  testWidgets(
-    'CommuteTapeSelectorSheet displays calendar and supports multi-day selection',
-    (tester) async {
-      tester.view.physicalSize = const Size(800, 1200);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-
-      await tester.pumpWidget(
-        wrap(
-          CommuteTapeSelectorSheet(
-            allWords: words,
-            commuteService: commuteService,
+  Widget wrap(Widget child, {double textScale = 1.0, bool dark = false}) =>
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: playlistService),
+          ChangeNotifierProvider.value(value: commuteService),
+        ],
+        child: MaterialApp(
+          theme: dark ? PixelTheme.dark() : PixelTheme.light(),
+          builder: (context, inner) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.linear(textScale)),
+            child: inner!,
           ),
+          home: Scaffold(body: child),
         ),
       );
+
+  Future<void> openViaModal(
+    WidgetTester tester, {
+    List<VocabularyWord>? wordList,
+    Size size = const Size(390, 844),
+    double textScale = 1.0,
+    bool dark = false,
+  }) async {
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      wrap(
+        Builder(
+          builder: (context) => Center(
+            child: TextButton(
+              onPressed: () => CommuteTapeSelectorSheet.show(
+                context,
+                allWords: wordList ?? words,
+                commuteService: commuteService,
+              ),
+              child: const Text('Open chooser'),
+            ),
+          ),
+        ),
+        textScale: textScale,
+        dark: dark,
+      ),
+    );
+    await tester.tap(find.text('Open chooser'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets(
+    'shows word list first with hidden calendar, single footer count, and selection controls',
+    (tester) async {
+      await openViaModal(tester);
+
+      // Clean sentence-case header & section labels; no legacy retro copy
+      expect(find.text('Choose words'), findsOneWidget);
+      expect(find.text('Words'), findsOneWidget);
+      expect(find.text('Saved lists'), findsOneWidget);
+      expect(find.text('COMMUTE TAPE SELECTOR ⏏️'), findsNothing);
+      expect(find.text('📅 BY DATE (MULTI-DAY)'), findsNothing);
+      expect(find.text('📼 CUSTOM PLAYLISTS'), findsNothing);
+
+      // Calendar stays collapsed until requested; word list is immediately visible
+      expect(find.byKey(const Key('listen_calendar_card')), findsNothing);
+      expect(find.text('resilient'), findsOneWidget);
+      expect(find.text('bottleneck'), findsOneWidget);
+
+      // Single authoritative selection count in sticky footer (default = newest date)
+      expect(find.byKey(const Key('listen_selected_count')), findsOneWidget);
+      expect(find.text('2 words selected'), findsOneWidget);
+
+      // Select all
+      await tester.tap(find.byKey(const Key('listen_select_all')));
+      await tester.pump();
+      expect(find.text('4 words selected'), findsOneWidget);
+
+      // Clear disables Play selection
+      await tester.tap(find.byKey(const Key('listen_clear_selection')));
+      await tester.pump();
+      expect(find.text('0 words selected'), findsOneWidget);
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.byKey(const Key('listen_play_selection')),
+            )
+            .onPressed,
+        isNull,
+      );
+
+      // Individual word checkbox & date group header checkbox
+      await tester.tap(find.byKey(const ValueKey('listen_word_w1')));
+      await tester.pump();
+      expect(find.text('1 word selected'), findsOneWidget);
+
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('listen_date_2026-08-17')),
+        80,
+        scrollable: find
+            .descendant(
+              of: find.byKey(const Key('listen_words_scroll')),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await tester.tap(find.byKey(const ValueKey('listen_date_2026-08-17')));
+      await tester.pump();
+      expect(find.text('2 words selected'), findsOneWidget);
+
+      // Confirm starts playback with the exact selected records
+      await tester.tap(find.byKey(const Key('listen_play_selection')));
+      await tester.pump();
+
+      expect(commuteService.isPlaying, isTrue);
+      expect(commuteService.totalWords, 2);
+      expect(
+        commuteService.playlist.map((w) => w.id),
+        unorderedEquals(['w1', 'w3']),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('preserves active playback selection when reopened', (
+    tester,
+  ) async {
+    commuteService.startPlayback([words[2], words[3]], autoplay: false);
+
+    await openViaModal(tester);
+
+    expect(find.text('2 words selected'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('listen_play_selection')));
+    await tester.pump();
+
+    expect(commuteService.totalWords, 2);
+    expect(
+      commuteService.playlist.map((w) => w.id),
+      unorderedEquals(['w3', 'w4']),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'collapsible calendar supports multi-day selection and disables days without words',
+    (tester) async {
+      await openViaModal(tester, size: const Size(800, 1200));
+
+      // Expand calendar deliberately
+      await tester.tap(find.byKey(const Key('listen_calendar_toggle')));
       await tester.pumpAndSettle();
 
-      // Verify Title and Tabs
-      expect(find.text('COMMUTE TAPE SELECTOR ⏏️'), findsOneWidget);
-      expect(find.text('📅 BY DATE (MULTI-DAY)'), findsOneWidget);
-      expect(find.text('📼 CUSTOM PLAYLISTS'), findsOneWidget);
+      expect(find.byKey(const Key('listen_calendar_card')), findsOneWidget);
+      expect(find.text('August 2026'), findsOneWidget);
+      expect(find.text('Today'), findsOneWidget);
 
-      // Verify Calendar header & actions
-      expect(find.text('MONTH 8 / 2026'), findsOneWidget);
-      expect(find.text('TODAY'), findsOneWidget);
-      expect(find.text('ALL WORDS'), findsOneWidget);
-      expect(find.text('CLEAR'), findsOneWidget);
+      // Day 15 has no words -> rendered as text but not interactive InkWell
+      expect(find.text('15'), findsOneWidget);
+      expect(find.widgetWithText(InkWell, '15'), findsNothing);
 
-      // Verify Weekday row
-      expect(find.text('MO'), findsOneWidget);
-      expect(find.text('SA'), findsOneWidget);
-      expect(find.text('SU'), findsOneWidget);
+      // Days 16, 17, 18 have words -> interactive InkWells
+      expect(find.widgetWithText(InkWell, '16'), findsOneWidget);
+      expect(find.widgetWithText(InkWell, '17'), findsOneWidget);
+      expect(find.widgetWithText(InkWell, '18'), findsOneWidget);
 
-      // Verify Dates are rendered in list
-      expect(find.text('DATE 2026-08-18'), findsOneWidget);
-      expect(find.text('DATE 2026-08-17'), findsOneWidget);
-      expect(find.text('DATE 2026-08-16'), findsOneWidget);
-
-      // Tap 'ALL WORDS' preset
-      await tester.tap(find.text('ALL WORDS'));
+      // Clear then multi-select day 18 and day 17
+      await tester.tap(find.byKey(const Key('listen_clear_selection')));
       await tester.pump();
-      expect(find.text('SELECTED: 4 WORDS'), findsWidgets);
+      expect(find.text('0 words selected'), findsOneWidget);
 
-      // Tap 'CLEAR'
-      await tester.tap(find.text('CLEAR'));
+      await tester.tap(find.widgetWithText(InkWell, '18'));
       await tester.pump();
-      expect(find.text('SELECTED: 0 WORDS'), findsWidgets);
+      expect(find.text('2 words selected'), findsOneWidget);
 
-      // Toggle day 18 on calendar (cell with text '18')
-      final day18Finder = find.widgetWithText(InkWell, '18');
-      expect(day18Finder, findsOneWidget);
-      await tester.tap(day18Finder);
+      await tester.tap(find.widgetWithText(InkWell, '17'));
       await tester.pump();
-      expect(find.text('SELECTED: 2 WORDS'), findsWidgets);
+      expect(find.text('3 words selected'), findsOneWidget);
 
-      // Toggle day 17 on calendar (cell with text '17') - multi-day selection
-      final day17Finder = find.widgetWithText(InkWell, '17');
-      expect(day17Finder, findsOneWidget);
-      await tester.tap(day17Finder);
-      await tester.pump();
-      expect(find.text('SELECTED: 3 WORDS'), findsWidgets);
-
-      // Tap play selection
-      await tester.tap(find.text('▶ PLAY NOW'));
+      await tester.tap(find.byKey(const Key('listen_play_selection')));
       await tester.pump();
 
       expect(commuteService.totalWords, 3);
@@ -141,130 +252,239 @@ void main() {
         commuteService.playlist.map((w) => w.word),
         containsAll(['resilient', 'bottleneck', 'paradigm']),
       );
+      expect(tester.takeException(), isNull);
     },
   );
 
   testWidgets(
-    'CommuteTapeSelectorSheet grays down days without words on calendar',
+    'Saved lists tab supports editing, playing, deleting, and saving from Words',
     (tester) async {
-      tester.view.physicalSize = const Size(800, 1200);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
+      await playlistService.createPlaylist('Tech Interview', ['w1', 'w3']);
+      await openViaModal(tester, size: const Size(800, 1200));
 
-      await tester.pumpWidget(
-        wrap(
-          CommuteTapeSelectorSheet(
-            allWords: words,
-            commuteService: commuteService,
-          ),
-        ),
-      );
+      // Switch to Saved lists
+      await tester.tap(find.byKey(const Key('listen_tab_saved_lists')));
       await tester.pumpAndSettle();
 
-      // Day 15 has 0 words -> should NOT be an InkWell (disabled/grayed down)
-      expect(find.widgetWithText(InkWell, '15'), findsNothing);
-      // But text '15' is present inside the calendar grid
-      expect(find.text('15'), findsOneWidget);
+      expect(find.text('Tech Interview'), findsOneWidget);
+      expect(find.text('Play (2)'), findsOneWidget);
 
-      // Days 16, 17, 18 have words -> they are interactive InkWells
-      expect(find.widgetWithText(InkWell, '16'), findsOneWidget);
-      expect(find.widgetWithText(InkWell, '17'), findsOneWidget);
-      expect(find.widgetWithText(InkWell, '18'), findsOneWidget);
+      // Edit existing list
+      await tester.tap(find.byTooltip('Edit list'));
+      await tester.pumpAndSettle();
+      expect(find.text('Edit list'), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const Key('listen_list_name_field')),
+        'System Design',
+      );
+      await tester.pump();
+      await tester.tap(find.text('bottleneck'));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('listen_list_save_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('System Design'), findsOneWidget);
+      expect(find.text('Play (3)'), findsOneWidget);
+
+      // Play saved list
+      await tester.tap(find.text('Play (3)'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(commuteService.isPlaying, isTrue);
+      expect(commuteService.totalWords, 3);
+      expect(commuteService.playlistTitle, 'System Design');
+      expect(
+        commuteService.playlist.map((w) => w.id),
+        unorderedEquals(['w1', 'w2', 'w3']),
+      );
+      commuteService.stop();
+
+      // Reopen and delete saved list
+      await tester.tap(find.text('Open chooser'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('listen_tab_saved_lists')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Delete list'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('System Design'), findsNothing);
+      expect(find.text('No saved lists yet'), findsOneWidget);
+
+      // Save current selection from Words tab as a new list
+      await tester.tap(find.byKey(const Key('listen_tab_words')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('listen_save_as_list')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Save as list'), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const Key('listen_save_list_name_field')),
+        'Daily Mix',
+      );
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Daily Mix'), findsOneWidget);
+      expect(playlistService.playlists, hasLength(1));
+      expect(playlistService.playlists.first.name, 'Daily Mix');
+      expect(
+        playlistService.playlists.first.wordIds,
+        unorderedEquals(['w1', 'w2', 'w3']),
+      );
+      expect(tester.takeException(), isNull);
     },
   );
 
-  testWidgets('CommuteTapeSelectorSheet supports custom playlist tab', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(800, 1200);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-
-    // Pre-seed a playlist
-    await playlistService.createPlaylist('Tech Interview', ['w1', 'w3']);
-
-    await tester.pumpWidget(
-      wrap(
-        CommuteTapeSelectorSheet(
-          allWords: words,
-          commuteService: commuteService,
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    // Switch to custom playlist tab
-    await tester.tap(find.text('📼 CUSTOM PLAYLISTS'));
-    await tester.pumpAndSettle();
-
-    // Verify seeded playlist is shown
-    expect(find.text('TECH INTERVIEW'), findsOneWidget);
-    expect(
-      find.text(
-        '2 WORDS • CREATED ${DateTime.now().toString().split(' ').first}',
-      ),
-      findsOneWidget,
-    );
-
-    // Tap play custom playlist
-    await tester.tap(find.text('▶ PLAY THIS TAPE (2 WORDS)'));
-    await tester.pump();
-
-    expect(commuteService.totalWords, 2);
-    expect(commuteService.playlistTitle, 'TECH INTERVIEW');
-    expect(
-      commuteService.playlist.map((w) => w.word),
-      containsAll(['resilient', 'paradigm']),
-    );
-  });
-
   testWidgets(
-    'Tapping CREATE + opens _PlaylistEditorSheet without ListTile/Material assertions',
+    'creating a saved list keeps Save footer reachable with keyboard on 320px screen',
     (tester) async {
-      tester.view.physicalSize = const Size(800, 1200);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
+      await openViaModal(tester, size: const Size(320, 568));
 
-      await tester.pumpWidget(
-        wrap(
-          CommuteTapeSelectorSheet(
-            allWords: words,
-            commuteService: commuteService,
-          ),
+      await tester.tap(find.byKey(const Key('listen_tab_saved_lists')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('listen_new_list_button')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('listen_list_editor_sheet')),
+          matching: find.text('New list'),
         ),
+        findsOneWidget,
       );
+
+      // Simulate on-screen keyboard while naming the list
+      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+      addTearDown(tester.view.resetViewInsets);
       await tester.pumpAndSettle();
 
-      // Switch to custom playlist tab
-      await tester.tap(find.text('📼 CUSTOM PLAYLISTS'));
-      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('listen_list_name_field')),
+        'Commute Mix',
+      );
+      await tester.pump();
 
-      // Tap 'CREATE +' button
-      await tester.tap(find.text('CREATE +'));
-      await tester.pumpAndSettle();
-
-      // Verify Playlist Editor Sheet opened
-      expect(find.text('CREATE NEW PLAYLIST'), findsOneWidget);
-      expect(find.text('Playlist name'), findsOneWidget);
-
-      // Verify CheckboxListTiles rendered for words without assertions
-      expect(find.text('resilient'), findsOneWidget);
-      expect(find.text('bottleneck'), findsOneWidget);
-
-      // Toggle word selection
+      final editorScrollable = find
+          .descendant(
+            of: find.byKey(const Key('listen_list_editor_scroll')),
+            matching: find.byType(Scrollable),
+          )
+          .first;
+      await tester.scrollUntilVisible(
+        find.text('resilient').hitTestable(),
+        80,
+        scrollable: editorScrollable,
+      );
       await tester.tap(find.text('resilient'));
       await tester.pump();
 
-      // Enter title
-      await tester.enterText(find.byType(TextField).first, 'My Custom Tape');
-      await tester.pump();
+      // Sticky Save button stays visible and tappable above the keyboard
+      final saveButton = find.byKey(const Key('listen_list_save_button'));
+      expect(saveButton.hitTestable(), findsOneWidget);
+      expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
 
-      // Save playlist
-      await tester.tap(find.text('SAVE PLAYLIST 💾'));
+      await tester.tap(saveButton);
       await tester.pumpAndSettle();
 
-      // Verify playlist was saved and displayed
-      expect(find.text('MY CUSTOM TAPE'), findsOneWidget);
+      expect(find.text('Commute Mix'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final layout in [
+    (
+      name: '320px at 200% text scale',
+      size: const Size(320, 568),
+      scale: 2.0,
+      dark: false,
+    ),
+    (name: 'landscape', size: const Size(740, 360), scale: 1.0, dark: false),
+    (name: 'dark mode', size: const Size(390, 844), scale: 1.0, dark: true),
+  ]) {
+    testWidgets('renders without overflow on ${layout.name}', (tester) async {
+      await playlistService.createPlaylist('Commute Favorites', ['w1', 'w2']);
+
+      await openViaModal(
+        tester,
+        size: layout.size,
+        textScale: layout.scale,
+        dark: layout.dark,
+      );
+
+      expect(find.text('Choose words'), findsOneWidget);
+      expect(
+        find.byKey(const Key('listen_play_selection')).hitTestable(),
+        findsOneWidget,
+      );
+
+      // Expand calendar on this layout and verify clean rendering
+      final calendarToggle = find.byKey(const Key('listen_calendar_toggle'));
+      await tester.scrollUntilVisible(
+        calendarToggle.hitTestable(),
+        80,
+        scrollable: find
+            .descendant(
+              of: find.byKey(const Key('listen_words_scroll')),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await tester.tap(calendarToggle);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('listen_calendar_card')), findsOneWidget);
+
+      // Switch to Saved lists on this layout
+      await tester.tap(find.byKey(const Key('listen_tab_saved_lists')));
+      await tester.pumpAndSettle();
+      expect(find.text('Commute Favorites'), findsOneWidget);
+
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets(
+    'uses lazy list rendering for large notebooks and preserves search selection',
+    (tester) async {
+      final largeNotebook = [
+        for (var i = 0; i < 500; i++)
+          VocabularyWord(
+            id: 'w$i',
+            word: 'word $i',
+            meaning: 'meaning $i',
+            date: '2026-08-18',
+            createdAt: DateTime(2026, 8, 18),
+            updatedAt: DateTime(2026, 8, 18),
+          ),
+      ];
+
+      await openViaModal(tester, wordList: largeNotebook);
+
+      expect(find.byType(Checkbox).evaluate().length, lessThan(40));
+
+      await tester.tap(find.byKey(const Key('listen_clear_selection')));
+      await tester.pump();
+      expect(find.text('0 words selected'), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const Key('listen_word_search')),
+        'word 499',
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('listen_word_w499')),
+          matching: find.text('word 499'),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('listen_word_w499')));
+      await tester.pump();
+      expect(find.text('1 word selected'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     },
   );
 }
