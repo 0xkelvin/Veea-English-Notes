@@ -31,7 +31,7 @@ class AppDatabase {
   static const String gateProgressTable = 'gate_round_progress';
 
   /// Bump this and add a branch to [_upgrade] whenever the schema changes.
-  static const int version = 14;
+  static const int version = 15;
 
   /// Opens the database, creating or migrating the schema as needed.
   ///
@@ -69,6 +69,7 @@ class AppDatabase {
     await _createLearningSync(db);
     await _createSyncRetryFences(db);
     await _createCartridgeState(db);
+    await _createOnlineMeanings(db);
   }
 
   static Future<void> _upgrade(Database db, int from, int to) async {
@@ -92,6 +93,19 @@ class AppDatabase {
     if (from < 12) await _createLearningSync(db);
     if (from < 13) await _createSyncRetryFences(db);
     if (from < 14) await _createCartridgeState(db);
+    if (from < 15) await _createOnlineMeanings(db);
+  }
+
+  static Future<void> _createOnlineMeanings(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS online_meaning_cache (
+        word TEXT PRIMARY KEY NOT NULL,
+        meaning TEXT NOT NULL,
+        part_of_speech TEXT,
+        provider TEXT NOT NULL,
+        saved_at TEXT NOT NULL
+      )
+    ''');
   }
 
   static Future<void> _createCartridgeState(DatabaseExecutor db) async {

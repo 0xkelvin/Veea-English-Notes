@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import 'core/config/app_config.dart';
 import 'data/pro_repository.dart';
+import 'data/word_suggestion_store.dart';
 import 'providers/pro_provider.dart';
 import 'data/local/legacy_import.dart';
 import 'data/cartridges/cartridge_api.dart';
@@ -34,6 +35,7 @@ import 'services/reminder_notification_service.dart';
 import 'services/sync_service.dart';
 import 'services/tts_service.dart';
 import 'services/widget_service.dart';
+import 'services/word_suggestion_service.dart';
 import 'widgets/pixel/pixel_field.dart';
 import 'widgets/word_drop_overlay.dart';
 import 'widgets/native_application_label.dart';
@@ -43,6 +45,9 @@ Future<void> main() async {
 
   try {
     final repository = await SqliteVocabularyRepository.open();
+    WordSuggestionService.configureLocalStore(
+      SqliteWordSuggestionStore(repository.database),
+    );
     await LegacyImport(repository).runIfNeeded();
     final pronunciation = PronunciationService(repository.database);
 

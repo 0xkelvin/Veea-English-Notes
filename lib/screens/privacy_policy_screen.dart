@@ -73,6 +73,11 @@ class PrivacyPolicyScreen extends StatelessWidget {
               paragraphs: [
                 'Typing a word or copying text to your clipboard does not '
                     'automatically send words to external services.',
+                'The bundled English–Vietnamese dictionary works offline. '
+                    'Successful online lookup results are saved on this phone '
+                    'for later offline use. They stay outside account sync. '
+                    'You can clear them in Settings → Offline dictionary '
+                    'without deleting your notebook.',
                 'Only when you explicitly choose to look up a word online does '
                     'Veea send the word or phrase you entered to a third-party translation or '
                     'dictionary service (such as Google Translate or MyMemory) '

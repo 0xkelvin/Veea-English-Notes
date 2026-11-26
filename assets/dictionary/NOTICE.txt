@@ -1,0 +1,43 @@
+Veea English offline English–Vietnamese dictionary
+
+Copyright: Vietnamese Wiktionary contributors.
+Source: https://vi.wiktionary.org/
+Extracted by Kaikki / Wiktextract (Tatu Ylonen and contributors):
+https://kaikki.org/viwiktionary/rawdata.html
+
+Licence: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0).
+https://creativecommons.org/licenses/by-sa/4.0/
+A full copy is included in CC-BY-SA-4.0.txt.
+
+This bundled adaptation and the database contents are also provided under
+CC BY-SA 4.0. The data licence applies to this dictionary data, separately from
+the application's code and from your own notebook or private saved lookups.
+No endorsement by Wiktionary, Wikimedia, Kaikki or its contributors is implied.
+
+Snapshot: viwiktionary dump 2026-10-02, Kaikki extraction 2026-11-03;
+retrieved 2026-11-26. Version: viwiktionary-20261002-v1.
+110,986 normalized English headwords with short Vietnamese meanings.
+
+Changes: selected English entries with Vietnamese glosses; normalized keys;
+kept up to two short senses; mapped part-of-speech labels; omitted examples,
+audio and other fields; converted to a separate read-only SQLite database.
+The original source is community edited. Suggestions may need correction or
+refinement for the context in which you encountered a word.
+
+Attribution for each entry: source_title is retained in the SQLite database.
+Its original entry and contributor history are available at:
+https://vi.wiktionary.org/wiki/<source_title> (spaces replaced by underscores).
+Veea shows an Original dictionary entry link with suggestions from this data.
+
+The modified database, source manifest and reproducible converter are available
+without DRM or extra restrictions at:
+https://github.com/0xkelvin/Veea-English-Notes/tree/main/assets/dictionary
+https://github.com/0xkelvin/Veea-English-Notes/blob/main/tool/build_english_vietnamese_dictionary.py
+The public source dump and checksums are recorded in manifest.json. Older
+source snapshots may cease to be hosted by Kaikki; retain the pinned snapshot
+if you need a byte-for-byte rebuild.
+
+This dictionary's free redistribution permission does not imply permission to
+redistribute cached results returned by separate online translation providers.
+Those private results are stored locally only, under the user's control, and
+are not merged into or distributed with this public dictionary.

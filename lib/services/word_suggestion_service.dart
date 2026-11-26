@@ -2,63 +2,111 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../data/cartridges_data.dart';
+import '../data/word_suggestion_store.dart';
+import '../models/word_suggestion.dart';
+export '../models/word_suggestion.dart';
 import '../models/part_of_speech.dart';
 import '../models/vocabulary_word.dart';
 
-/// Data class holding suggestion details for an English word.
-class WordSuggestion {
-  const WordSuggestion({
-    required this.word,
-    this.meaning,
-    this.partOfSpeech,
-    this.source,
-  });
-
-  final String word;
-  final String? meaning;
-  final PartOfSpeech? partOfSpeech;
-  final String? source;
-}
-
-/// Offline-first & online-enriched vocabulary suggestion service.
-///
-/// Automatically provides Vietnamese meanings and grammatical Part of Speech
-/// detection for ANY English word entered by the user.
+/// Suggestions consult the notebook and device dictionaries before any optional
+/// online request. Looking up a word never changes a saved notebook entry.
 class WordSuggestionService {
   static final Map<String, WordSuggestion> _cache = {};
+  static WordSuggestionStore? _localStore;
+  static int _storageGeneration = 0;
+  static final Set<Future<void>> _cacheWrites = {};
+
+  /// Set once during app startup. Tests can inject an isolated local store.
+  static void configureLocalStore(WordSuggestionStore? store) {
+    _localStore = store;
+    _storageGeneration++;
+    _cache.clear();
+  }
+
+  static bool get hasLocalStore => _localStore != null;
+
+  static Future<int> savedLookupCount() async =>
+      await _localStore?.savedCount() ?? 0;
+
+  static Future<void> clearSavedLookups() async {
+    ++_storageGeneration;
+    _cache.clear();
+    final store = _localStore;
+    try {
+      await Future.wait(_cacheWrites.toList());
+    } catch (_) {
+      /* Clear even if an earlier cache write failed. */
+    }
+    await store?.clearSaved();
+    _cache.clear();
+  }
+
+  static void _remember(WordSuggestion suggestion) {
+    if (_cache.length >= 500) _cache.clear();
+    _cache[suggestion.word] = suggestion;
+  }
+
+  static Future<WordSuggestion> _rememberOnline(
+    WordSuggestion suggestion,
+    String provider,
+    int generation,
+  ) async {
+    if (generation == _storageGeneration) {
+      try {
+        final write = _localStore?.saveOnline(suggestion, provider: provider);
+        if (write != null) {
+          _cacheWrites.add(write);
+          try {
+            await write;
+          } finally {
+            _cacheWrites.remove(write);
+          }
+        }
+      } catch (_) {
+        // A full/read-only disk must not discard the successful lookup.
+      }
+      if (generation == _storageGeneration) _remember(suggestion);
+    }
+    return suggestion;
+  }
 
   /// Clears in-memory suggestion cache (useful in tests and when data changes).
   static void clearCache() => _cache.clear();
 
-  /// Fast synchronous lookup (cache -> user notes -> career cartridges -> offline dictionary -> heuristics).
+  static String normalizeWord(String input) => input
+      .trim()
+      .toLowerCase()
+      .replaceAll('’', "'")
+      .replaceAll('‘', "'")
+      .replaceAll(RegExp(r'\s+'), ' ');
+
+  /// Immediate notebook/hot-cache/curated suggestions. The larger bundled
+  /// dictionary is queried asynchronously by [suggest].
   static WordSuggestion? suggestFast(
     String rawWord, {
     List<VocabularyWord>? userWords,
   }) {
-    final word = rawWord.trim().toLowerCase();
+    final word = normalizeWord(rawWord);
     if (word.isEmpty || word.length < 2) return null;
-
-    if (_cache.containsKey(word)) {
-      return _cache[word];
-    }
 
     // 1. User's previously saved notebook words
     if (userWords != null && userWords.isNotEmpty) {
       for (final uw in userWords) {
-        if (uw.word.trim().toLowerCase() == word) {
+        if (normalizeWord(uw.word) == word) {
           final res = WordSuggestion(
             word: word,
             meaning: uw.meaning.isNotEmpty ? uw.meaning : null,
             partOfSpeech: uw.partOfSpeech ?? detectPartOfSpeech(word),
             source: 'Previous note',
           );
-          _cache[word] = res;
           return res;
         }
       }
     }
 
-    // 2. Career Cartridge dictionary
+    if (_cache.containsKey(word)) return _cache[word];
+
+    // 2. Offered bundled word collections
     for (final cartridge in CartridgesData.allCartridges) {
       for (final cw in cartridge.words) {
         if (cw.word.trim().toLowerCase() == word) {
@@ -68,13 +116,13 @@ class WordSuggestionService {
             partOfSpeech: cw.partOfSpeech,
             source: 'Tech Cartridge',
           );
-          _cache[word] = res;
+          _remember(res);
           return res;
         }
       }
     }
 
-    // 3. Built-in comprehensive offline dictionary
+    // 3. Small curated entries override general community dictionary wording.
     if (_offlineDict.containsKey(word)) {
       final entry = _offlineDict[word]!;
       final res = WordSuggestion(
@@ -83,7 +131,7 @@ class WordSuggestionService {
         partOfSpeech: entry.pos ?? detectPartOfSpeech(word),
         source: 'Dictionary',
       );
-      _cache[word] = res;
+      _remember(res);
       return res;
     }
 
@@ -114,12 +162,42 @@ class WordSuggestionService {
     http.Client? client,
     bool? allowOnline,
   }) async {
-    final clean = rawWord.trim().toLowerCase();
+    final clean = normalizeWord(rawWord);
     if (clean.isEmpty || clean.length < 2) return null;
 
     final local = suggestFast(clean, userWords: userWords);
-    if (local != null && local.meaning != null && local.meaning!.isNotEmpty) {
+    if (local?.source == 'Previous note' &&
+        local?.meaning?.isNotEmpty == true) {
       return local;
+    }
+
+    final store = _localStore;
+    final generation = _storageGeneration;
+    if (store != null) {
+      try {
+        final own = await store.lookupNotebook(clean);
+        if (own != null) return own;
+      } catch (_) {
+        // A notebook read failure must not prevent dictionary lookup.
+      }
+    }
+    if (local?.meaning?.isNotEmpty == true) return local;
+    if (store != null) {
+      WordSuggestion? stored;
+      try {
+        stored = await store.lookupSaved(clean);
+      } catch (_) {
+        /* Preserve bundled lookup when the personal cache fails. */
+      }
+      try {
+        stored ??= await store.lookupBundled(clean);
+      } catch (_) {
+        /* Curated suggestions still work if the asset is damaged. */
+      }
+      if (stored?.meaning?.trim().isNotEmpty == true) {
+        if (generation == _storageGeneration) _remember(stored!);
+        return stored;
+      }
     }
 
     final shouldQueryOnline = allowOnline ?? allowOnlineTranslation;
@@ -127,8 +205,20 @@ class WordSuggestionService {
       return local;
     }
 
-    // Online translation lookup with closed client guard
     final httpClient = client ?? http.Client();
+    try {
+      return await _lookupProviders(clean, local, httpClient, generation);
+    } finally {
+      if (client == null) httpClient.close();
+    }
+  }
+
+  static Future<WordSuggestion?> _lookupProviders(
+    String clean,
+    WordSuggestion? local,
+    http.Client httpClient,
+    int generation,
+  ) async {
     try {
       // 1. Primary: Google Translate Dictionary endpoint with dict-chrome-ex client
       final uri = Uri.parse(
@@ -147,16 +237,22 @@ class WordSuggestionService {
 
       if (response.statusCode == 200 &&
           !response.body.trimLeft().startsWith('<')) {
-        final dynamic data = jsonDecode(response.body);
+        final dynamic data = jsonDecode(utf8.decode(response.bodyBytes));
         String? primaryMeaning;
         PartOfSpeech? pos;
 
         // Parse translation segments
         if (data is List && data.isNotEmpty && data[0] is List) {
           final segments = data[0] as List;
-          if (segments.isNotEmpty && segments[0] is List) {
-            primaryMeaning = segments[0][0]?.toString().trim();
-          }
+          primaryMeaning = segments
+              .whereType<List>()
+              .map(
+                (segment) => segment.isNotEmpty && segment.first is String
+                    ? segment.first as String
+                    : '',
+              )
+              .join()
+              .trim();
         }
 
         // Parse dictionary / POS / alternatives
@@ -186,15 +282,14 @@ class WordSuggestionService {
 
         pos ??= local?.partOfSpeech ?? detectPartOfSpeech(clean);
 
-        if (primaryMeaning != null && primaryMeaning.isNotEmpty) {
+        if (_validOnlineMeaning(clean, primaryMeaning)) {
           final res = WordSuggestion(
             word: clean,
             meaning: primaryMeaning,
             partOfSpeech: pos,
             source: 'Dictionary',
           );
-          _cache[clean] = res;
-          return res;
+          return await _rememberOnline(res, 'Google Translate', generation);
         }
       }
     } catch (_) {
@@ -218,34 +313,43 @@ class WordSuggestionService {
           .timeout(const Duration(seconds: 3));
 
       if (fallbackResponse.statusCode == 200) {
-        final dynamic data = jsonDecode(fallbackResponse.body);
+        final dynamic data = jsonDecode(
+          utf8.decode(fallbackResponse.bodyBytes),
+        );
         if (data is Map && data['responseData'] is Map) {
+          final status = data['responseStatus'];
+          if (status != null && status.toString() != '200') return local;
           final translated = data['responseData']['translatedText']
               ?.toString()
               .trim();
-          if (translated != null &&
-              translated.isNotEmpty &&
-              translated.toLowerCase() != clean) {
+          if (_validOnlineMeaning(clean, translated)) {
             final res = WordSuggestion(
               word: clean,
               meaning: translated,
               partOfSpeech: local?.partOfSpeech ?? detectPartOfSpeech(clean),
               source: 'Dictionary',
             );
-            _cache[clean] = res;
-            return res;
+            return await _rememberOnline(res, 'MyMemory', generation);
           }
         }
       }
     } catch (_) {
       // Fallback cleanly on network timeout or error
-    } finally {
-      if (client == null) {
-        httpClient.close();
-      }
     }
 
     return local;
+  }
+
+  static bool _validOnlineMeaning(String word, String? meaning) {
+    if (meaning == null || meaning.trim().isEmpty || meaning.length > 4000) {
+      return false;
+    }
+    final clean = meaning.trim().toLowerCase();
+    return clean != word &&
+        !clean.startsWith('<') &&
+        !clean.contains('quota exceeded') &&
+        !clean.contains('query length limit') &&
+        !clean.contains('invalid language pair');
   }
 
   static PartOfSpeech? _mapPos(String? posStr) {

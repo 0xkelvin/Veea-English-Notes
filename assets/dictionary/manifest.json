@@ -1,0 +1,18 @@
+{
+  "revision": "viwiktionary-20261002-v1",
+  "entry_count": 110986,
+  "source": "Vietnamese Wiktionary contributors, extracted by Kaikki/Wiktextract",
+  "source_url": "https://kaikki.org/viwiktionary/raw-wiktextract-data.jsonl.gz",
+  "source_page": "https://kaikki.org/viwiktionary/rawdata.html",
+  "wiktionary_dump": "2026-10-02",
+  "extraction_date": "2026-11-03",
+  "retrieved_date": "2026-11-26",
+  "source_sha256": "1f0abd21982660b5fc2eff5eb3fbacbed2d9fe8f476af794dbed0d927ffb8187",
+  "asset_sha256": "86250713ab66f06ae35d5e653c60813a936f110ee5697312e4fabb2665ea1d4c",
+  "sqlite_sha256": "42c600ef86bb9d2568fc0506611238dc2689b170c2673e8d7e78a26528a3caaf",
+  "compressed_bytes": 3107148,
+  "sqlite_bytes": 8937472,
+  "licence": "CC-BY-SA-4.0",
+  "licence_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+  "changes": "English records only; normalized headwords; selected short Vietnamese glosses (up to two); grammatical categories mapped to app labels; other fields omitted; SQLite conversion."
+}

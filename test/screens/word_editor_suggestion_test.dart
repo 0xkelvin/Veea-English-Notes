@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'dart:async';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,12 +9,33 @@ import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:veea_english_app/core/theme/pixel_theme.dart';
 import 'package:veea_english_app/data/local/sqlite_vocabulary_repository.dart';
+import 'package:veea_english_app/data/word_suggestion_store.dart';
 import 'package:veea_english_app/models/part_of_speech.dart';
 import 'package:veea_english_app/providers/vocabulary_provider.dart';
 import 'package:veea_english_app/screens/word_editor_screen.dart';
 import 'package:veea_english_app/services/pronunciation_service.dart';
 import 'package:veea_english_app/services/tts_service.dart';
 import 'package:veea_english_app/services/word_suggestion_service.dart';
+
+class DeferredMeaningStore implements WordSuggestionStore {
+  final airport = Completer<WordSuggestion?>();
+  @override
+  Future<WordSuggestion?> lookupNotebook(String word) async => null;
+  @override
+  Future<WordSuggestion?> lookupBundled(String word) =>
+      word == 'airport' ? airport.future : Future.value();
+  @override
+  Future<WordSuggestion?> lookupSaved(String word) async => null;
+  @override
+  Future<void> saveOnline(
+    WordSuggestion suggestion, {
+    required String provider,
+  }) async {}
+  @override
+  Future<void> clearSaved() async {}
+  @override
+  Future<int> savedCount() async => 0;
+}
 
 void main() {
   sqfliteFfiInit();
@@ -34,7 +57,10 @@ void main() {
     pronunciation = PronunciationService(repo.database);
   });
 
-  tearDown(() => repo.close());
+  tearDown(() async {
+    WordSuggestionService.configureLocalStore(null);
+    await repo.close();
+  });
 
   Widget wrap(Widget child) => MultiProvider(
     providers: [
@@ -79,6 +105,61 @@ void main() {
     );
     return tester.widget<TextField>(field);
   }
+
+  testWidgets(
+    'bundled meaning appears in the editor without an online lookup',
+    (tester) async {
+      final dir = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('veea-editor-dict-'),
+      ))!;
+      final store = SqliteWordSuggestionStore(
+        repo.database,
+        dictionaryDirectory: () async => dir.path,
+      );
+      WordSuggestionService.configureLocalStore(store);
+      addTearDown(() async {
+        await store.close();
+        await dir.delete(recursive: true);
+      });
+      await tester.pumpWidget(wrap(const WordEditorScreen()));
+      await settle(tester);
+      // Wait on an actual disk lookup, not an arbitrary network/time delay.
+      await tester.runAsync(() async {
+        await tester.enterText(find.byType(TextField).first, 'airport');
+        await WordSuggestionService.suggest('airport', allowOnline: false);
+      });
+      await settle(tester);
+      expect(find.textContaining('Sân bay'), findsWidgets);
+      expect(
+        find.byKey(const Key('meaning_dictionary_source')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('online_meaning_lookup')), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets('a late offline result cannot replace the next typed word', (
+    tester,
+  ) async {
+    final store = DeferredMeaningStore();
+    WordSuggestionService.configureLocalStore(store);
+    await tester.pumpWidget(wrap(const WordEditorScreen()));
+    await settle(tester);
+    await tester.enterText(find.byType(TextField).first, 'airport');
+    await tester.pump();
+    expect(find.text('Checking offline dictionary…'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).first, 'solution');
+    await settle(tester);
+    store.airport.complete(
+      const WordSuggestion(word: 'airport', meaning: 'late airport meaning'),
+    );
+    await settle(tester);
+    expect(find.textContaining('giải pháp'), findsWidgets);
+    expect(find.textContaining('late airport'), findsNothing);
+    expect(find.text('Checking offline dictionary…'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
 
   testWidgets(
     'online lookup sends only the chosen word after explicit approval',

@@ -47,6 +47,11 @@ flutter:
     # tool/build_pronunciation_dictionary.py. See PronunciationService.
     - assets/pronunciation/en_us_ipa.txt.gz
     - assets/pronunciation/CMUDICT-LICENSE.txt
+    # Vietnamese Wiktionary adaptation, distributed separately under CC BY-SA 4.0.
+    - assets/dictionary/en_vi.sqlite.gz
+    - assets/dictionary/NOTICE.txt
+    - assets/dictionary/CC-BY-SA-4.0.txt
+    - assets/dictionary/manifest.json
 
   # Pixel font disabled in favor of clean, modern system typography:
   # fonts:

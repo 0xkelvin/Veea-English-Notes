@@ -34,6 +34,7 @@ import 'word_editor_screen.dart';
 import 'learning_rules_screen.dart';
 import 'phone_account_screen.dart';
 import 'privacy_policy_screen.dart';
+import 'offline_dictionary_screen.dart';
 import 'feedback_screen.dart';
 
 /// Unified Settings, Appearance, Stats, and Cloud Sync screen.
@@ -231,6 +232,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: PixelMetrics.space4),
                   const _SettingsSectionTitle('Notebook'),
+                  PixelBox(
+                    padding: EdgeInsets.zero,
+                    child: Material(
+                      color: Colors.transparent,
+                      borderRadius: BorderRadius.circular(
+                        PixelMetrics.radiusLg,
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: ListTile(
+                        key: const Key('settings_offline_dictionary'),
+                        leading: const Icon(Icons.translate_outlined),
+                        title: const Text('Offline dictionary'),
+                        subtitle: const Text(
+                          'Vietnamese meanings and saved lookups',
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const OfflineDictionaryScreen(),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   if (!AppConfig.isVocabularySyncEnabled ||
                       !AppConfig.isCloudEnabled)
                     const _Notice(
