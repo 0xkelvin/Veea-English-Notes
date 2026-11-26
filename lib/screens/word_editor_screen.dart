@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/config/app_config.dart';
 import '../core/theme/pixel_metrics.dart';
@@ -147,7 +148,9 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
   int _suggestionToken = 0;
   bool _onlineLookupBusy = false;
   bool _onlineConsentOpen = false;
+  bool _localLookupBusy = false;
   String? _onlineLookupMessage;
+  String? _suggestionSourceUrl;
 
   String get _meaningHint {
     if (_suggestedMeaning != null && _suggestedMeaning!.isNotEmpty) {
@@ -239,12 +242,14 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
 
   /// Automatically looks up Vietnamese meaning suggestions and part of speech.
   Future<void> _refreshSuggestions(String rawWord) async {
-    ++_suggestionToken;
+    final token = ++_suggestionToken;
     final clean = rawWord.trim();
     if (clean.length < 2) {
       if (!mounted) return;
       setState(() {
         _suggestedMeaning = null;
+        _localLookupBusy = false;
+        _suggestionSourceUrl = null;
         _suggestedPartOfSpeech = null;
         if (!_partOfSpeechIsManual && widget.existing == null) {
           _partOfSpeech = null;
@@ -263,18 +268,71 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
     if (mounted) {
       setState(() {
         _onlineLookupMessage = null;
+        _localLookupBusy = fast?.meaning?.isNotEmpty != true;
         _suggestedMeaning = fast?.meaning;
+        _suggestionSourceUrl = fast?.sourceUrl;
         _suggestedPartOfSpeech = fast?.partOfSpeech;
         if (!_partOfSpeechIsManual && fast?.partOfSpeech != null) {
           _partOfSpeech = fast!.partOfSpeech;
         }
       });
     }
+    if (fast?.meaning?.isNotEmpty == true &&
+        !WordSuggestionService.hasLocalStore) {
+      return;
+    }
+    // Disk-backed local lookup includes the bundled dictionary and saved
+    // online results. Typing never opts the user into a network request.
+    final suggestion = await WordSuggestionService.suggest(
+      clean,
+      userWords: provider.words,
+      allowOnline: false,
+    );
+    if (!mounted || token != _suggestionToken) return;
+    setState(() {
+      _localLookupBusy = false;
+      _suggestedMeaning = suggestion?.meaning;
+      _suggestedPartOfSpeech = suggestion?.partOfSpeech;
+      _suggestionSourceUrl = suggestion?.sourceUrl;
+      if (!_partOfSpeechIsManual && suggestion?.partOfSpeech != null) {
+        _partOfSpeech = suggestion!.partOfSpeech;
+      }
+    });
+  }
+
+  Future<void> _openDictionarySource() async {
+    final uri = Uri.tryParse(_suggestionSourceUrl ?? '');
+    if (uri == null ||
+        uri.scheme != 'https' ||
+        uri.host != 'vi.wiktionary.org' ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasPort ||
+        !uri.path.startsWith('/wiki/')) {
+      return;
+    }
+    var opened = false;
+    try {
+      opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      /* Keep the local definition visible when opening fails. */
+    }
+    if (mounted && !opened) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not open the source. Try again when online.'),
+        ),
+      );
+    }
   }
 
   Future<void> _lookupOnline() async {
     final word = _word.text.trim();
-    if (_onlineLookupBusy || _onlineConsentOpen || word.length < 2) return;
+    if (_onlineLookupBusy ||
+        _onlineConsentOpen ||
+        _localLookupBusy ||
+        word.length < 2) {
+      return;
+    }
     _onlineConsentOpen = true;
     bool? approved;
     try {
@@ -318,6 +376,7 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
       if (!mounted || token != _suggestionToken) return;
       setState(() {
         _suggestedMeaning = suggestion?.meaning;
+        _suggestionSourceUrl = suggestion?.sourceUrl;
         _suggestedPartOfSpeech = suggestion?.partOfSpeech;
         if (_suggestedMeaning == null || _suggestedMeaning!.isEmpty) {
           _onlineLookupMessage =
@@ -714,6 +773,16 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                             key: const Key('suggested_meaning_text'),
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
+                          if (_suggestionSourceUrl != null)
+                            Align(
+                              alignment: AlignmentDirectional.centerStart,
+                              child: TextButton.icon(
+                                key: const Key('meaning_dictionary_source'),
+                                icon: const Icon(Icons.open_in_new, size: 16),
+                                label: const Text('Original dictionary entry'),
+                                onPressed: _openDictionarySource,
+                              ),
+                            ),
                           const SizedBox(height: PixelMetrics.space3),
                           PixelButton(
                             key: const Key('use_meaning_suggestion'),
@@ -737,10 +806,14 @@ class _WordEditorScreenState extends State<WordEditorScreen> {
                           _suggestedMeaning!.isEmpty)) ...[
                     TextButton.icon(
                       key: const Key('online_meaning_lookup'),
-                      onPressed: _onlineLookupBusy ? null : _lookupOnline,
+                      onPressed: _onlineLookupBusy || _localLookupBusy
+                          ? null
+                          : _lookupOnline,
                       icon: const Icon(Icons.language),
                       label: Text(
-                        _onlineLookupBusy
+                        _localLookupBusy
+                            ? 'Checking offline dictionary…'
+                            : _onlineLookupBusy
                             ? 'Looking up…'
                             : 'Look up meaning online',
                       ),

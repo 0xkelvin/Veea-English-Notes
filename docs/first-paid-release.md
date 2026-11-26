@@ -4,9 +4,20 @@ Branch: `feat/offline-pro-purchase-20261117`, based on `main` `05f66c4`.
 Prepared 17–18 November 2026 with actual agy implementation/review and Claude independent QA.
 No App Store product, payment key, production server setting, TestFlight upload or phone installation was changed by this work.
 
-## Superseded for the first public launch
+## Current owner decision — 26 November 2026
 
-On 24 November 2026 the owner chose **free first**. The current release removes
+The owner replaced the free-first offer with permanent Free access to one app
+lock and one vocabulary word per unlock. One non-consumable Pro purchase enables
+multiple apps and a configurable number of words, bounded by the practice pool.
+The Vietnam price target is99,000 VND once. All supported timers, including
+custom/per-app times, stay free. See [current product specification](pro-99k-model.md)
+and [App Store submission](app-store-submission.md) for current wording and gates.
+Verified StoreKit/account ownership, restoration and offline handling below are
+retained. No live billing or Apple policy approval is established by local tests.
+
+## Historical free-first decision — superseded
+
+On 24 November 2026 the owner chose **free first**. That branch removed
 new sales and makes all app-lock counts/custom/per-app times free without an
 account. See [current App Store submission](app-store-submission.md). The paid
 boundary and prices below are historical design, not the current customer offer.
@@ -50,8 +61,8 @@ GitHub's tracked app configuration contains no confirmed Pro product ID or publi
 
 On a signed TestFlight build pointing at staging:
 
-1. Start Free without an account: save words, Listen/Review, select practice words and protect one app. Try a second app/custom time, then open Pro. Confirm OFF/remove/export always work.
-2. Sign in: the same words, dates and practice choices stay visible. Buy Pro using the sandbox payment sheet. Verify the account-linked Premium response and multiple apps/custom timers.
+1. Start Free without an account: save words, Listen/Review, select an unlimited practice pool, protect one app and answer one word per unlock. Custom/default/per-app times stay free. A second active app or multiple words per unlock should explain Pro. Confirm OFF/remove/export always work.
+2. Sign in: the same words, dates and practice choices stay visible. Buy Pro using the sandbox payment sheet. Verify the account-linked Premium response, multiple apps and multiple words. Display the actual localized Apple price; Vietnam must be configured at 99,000 VND.
 3. Complete challenges for two apps; each timer/relock stays independent. Reopen/restart offline and confirm paid access and local words remain available.
 4. Cancel a purchase; test pending approval and later approval; cancel messages must not reappear on passive refresh. No repeated payment sheet for an already-paid account.
 5. Restore after reinstall (export notebook first, because reinstall removes local words). Verify the same account restores Pro; a different account cannot claim that purchase. Restore queued during sign-in must actually run.

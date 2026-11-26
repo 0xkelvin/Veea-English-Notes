@@ -146,7 +146,7 @@ void main() {
   test(
     'free launch blocks checkout without inventing purchase ownership',
     () async {
-      AppConfig.overrideFreeLaunch(null);
+      AppConfig.overrideFreeLaunch(true);
       expect(AppConfig.isFreeLaunch, isTrue);
       await pro.purchase();
       expect(repo.purchased, 0);
@@ -158,7 +158,7 @@ void main() {
     },
   );
   test('free launch starts without a configured Apple product', () async {
-    AppConfig.overrideFreeLaunch(null);
+    AppConfig.overrideFreeLaunch(true);
     AppConfig.overrideAppleProduct('');
     await pro.initializeDevice();
     await pro.refresh();
@@ -170,7 +170,7 @@ void main() {
   test(
     'free launch preserves restoration of earlier owned purchases',
     () async {
-      AppConfig.overrideFreeLaunch(null);
+      AppConfig.overrideFreeLaunch(true);
       repo.state = const ProStoreState(hasPro: true, transactions: ['earlier']);
       auth.select('a');
       await Future<void>.delayed(Duration.zero);

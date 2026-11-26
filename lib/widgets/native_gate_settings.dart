@@ -1,17 +1,18 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../core/config/app_config.dart';
 import '../models/gate_config.dart';
 import '../models/native_gate_status.dart';
 import '../models/protection_duration.dart';
 import '../providers/app_gate_provider.dart';
+import '../providers/auth_provider.dart';
+import '../providers/pro_provider.dart';
 import '../screens/app_gate_screen.dart';
+import '../screens/pro_screen.dart';
 import 'native_application_label.dart';
 import 'pixel/pixel_box.dart';
 import 'unlock_time_sheet.dart';
-import '../providers/pro_provider.dart';
-import '../screens/pro_screen.dart';
-import '../core/config/app_config.dart';
 
 class NativeGateSettings extends StatefulWidget {
   const NativeGateSettings({
@@ -79,11 +80,35 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
     super.dispose();
   }
 
-  void _reportFailure(BuildContext context, bool success) {
+  bool _hasProSupport(BuildContext context) {
+    try {
+      context.read<ProProvider>();
+      context.read<AuthProvider>();
+      return true;
+    } on ProviderNotFoundException {
+      return false;
+    }
+  }
+
+  ProProvider? _maybeWatchPro(BuildContext context) {
+    try {
+      return context.watch<ProProvider>();
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  void _reportFailure(
+    BuildContext context,
+    bool success, {
+    bool allowProRedirect = true,
+  }) {
     if (success || !context.mounted || gate.nativeError == null) return;
-    if (gate.nativeRequiresPro && !AppConfig.isFreeLaunch) {
-      ProScreen.open(context);
-      return;
+    if (allowProRedirect && gate.nativeRequiresPro && !AppConfig.isFreeLaunch) {
+      if (_hasProSupport(context)) {
+        unawaited(ProScreen.open(context));
+        return;
+      }
     }
     ScaffoldMessenger.of(
       context,
@@ -92,10 +117,13 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
 
   Future<void> _runAction(
     BuildContext context,
-    Future<bool> Function() action,
-  ) async {
+    Future<bool> Function() action, {
+    bool allowProRedirect = true,
+  }) async {
     final success = await action();
-    if (context.mounted) _reportFailure(context, success);
+    if (context.mounted) {
+      _reportFailure(context, success, allowProRedirect: allowProRedirect);
+    }
   }
 
   Future<void> _editDuration(
@@ -103,14 +131,6 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
     NativeGateApplication? app,
   ]) async {
     final status = gate.nativeStatus;
-    ProProvider? pro;
-    try {
-      pro = context.read<ProProvider>();
-    } catch (_) {}
-    if (!AppConfig.isFreeLaunch && app != null && pro?.hasPro == false) {
-      await ProScreen.open(context);
-      return;
-    }
     final choice = await showUnlockTimeSheet(
       context,
       currentMinutes: app == null
@@ -118,8 +138,7 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
           : status.durationFor(app.id),
       defaultMinutes: app == null ? null : status.passMinutes,
       usesDefault: app != null && app.customPassMinutes == null,
-      allowCustom: AppConfig.isFreeLaunch || (pro?.hasPro ?? true),
-      onGetPro: () => ProScreen.open(context),
+      allowCustom: true,
       applicationLabel: app == null
           ? null
           : NativeApplicationLabel(application: app),
@@ -128,7 +147,9 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
     final success = app == null
         ? await gate.setNativeDuration(choice.minutes!)
         : await gate.setNativeApplicationDuration(app.id, choice.minutes);
-    if (context.mounted) _reportFailure(context, success);
+    if (context.mounted) {
+      _reportFailure(context, success, allowProRedirect: false);
+    }
   }
 
   Future<void> _remove(BuildContext context, NativeGateApplication app) async {
@@ -165,7 +186,9 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
     );
     if (confirmed == true) {
       final success = await gate.removeNativeApplication(app.id);
-      if (context.mounted) _reportFailure(context, success);
+      if (context.mounted) {
+        _reportFailure(context, success, allowProRedirect: false);
+      }
     }
   }
 
@@ -194,281 +217,329 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
   }
 
   @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-    animation: gate,
-    builder: (context, _) {
-      final status = gate.nativeStatus;
-      final busy = gate.nativeBusy;
-      final theme = Theme.of(context);
-      final secondary = theme.colorScheme.onSurfaceVariant;
-      final canEnable = gate.canEnable(totalWords);
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            'Choose your apps and how long each stays unlocked after reviewing your words.',
-          ),
-          const SizedBox(height: 20),
-          const _PlanSummary(),
-          if (!status.available)
-            const _SettingsCard(
-              child: Text(
-                'Screen Time protection is not available in this build. You can still save and review your vocabulary.',
-              ),
-            )
-          else ...[
-            FilledButton.icon(
-              key: const Key('add_locked_apps'),
-              icon: const Icon(Icons.add),
-              label: Text(busy ? 'Updating…' : 'Add Apps'),
-              onPressed: busy
-                  ? null
-                  : () => _runAction(context, gate.chooseNativeApplications),
+  Widget build(BuildContext context) {
+    final pro = _maybeWatchPro(context);
+    final isFreeTier = !AppConfig.isFreeLaunch && pro != null && !pro.hasPro;
+    return AnimatedBuilder(
+      animation: gate,
+      builder: (context, _) {
+        final status = gate.nativeStatus;
+        final busy = gate.nativeBusy;
+        final theme = Theme.of(context);
+        final secondary = theme.colorScheme.onSurfaceVariant;
+        final canEnable = gate.canEnable(totalWords);
+        final isSingleFreeChange = isFreeTier && status.applications.isNotEmpty;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Choose your apps and how long each stays unlocked after reviewing your words.',
             ),
             const SizedBox(height: 20),
-            _SettingsCard(
-              padding: EdgeInsets.zero,
-              child: ListTile(
-                key: const Key('default_unlock_time'),
-                leading: Icon(
-                  Icons.timer_outlined,
-                  color: theme.colorScheme.primary,
-                ),
-                title: const Text('Default unlock time'),
-                subtitle: Text(ProtectionDuration.label(status.passMinutes)),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: busy ? null : () => _editDuration(context),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Your apps · ${status.applications.length}',
-              style: theme.textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Apps use the default time unless you choose a different one below.',
-              style: TextStyle(color: secondary),
-            ),
-            const SizedBox(height: 12),
-            if (status.applications.isEmpty)
+            _PlanSummary(status: status),
+            if (!status.available)
               const _SettingsCard(
                 child: Text(
-                  'No apps selected. Tap Add Apps to choose which apps Veea will lock.',
+                  'Screen Time protection is not available in this build. You can still save and review your vocabulary.',
+                ),
+              )
+            else ...[
+              FilledButton.icon(
+                key: const Key('add_locked_apps'),
+                icon: Icon(isSingleFreeChange ? Icons.swap_horiz : Icons.add),
+                label: Text(
+                  busy
+                      ? 'Updating…'
+                      : isSingleFreeChange
+                      ? 'Change App'
+                      : 'Add Apps',
+                ),
+                onPressed: busy
+                    ? null
+                    : () => _runAction(context, gate.chooseNativeApplications),
+              ),
+              const SizedBox(height: 20),
+              _SettingsCard(
+                padding: EdgeInsets.zero,
+                child: ListTile(
+                  key: const Key('default_unlock_time'),
+                  leading: Icon(
+                    Icons.timer_outlined,
+                    color: theme.colorScheme.primary,
+                  ),
+                  title: const Text('Default unlock time'),
+                  subtitle: Text(ProtectionDuration.label(status.passMinutes)),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: busy ? null : () => _editDuration(context),
                 ),
               ),
-            for (final app in status.applications) ...[
-              Semantics(
-                container: true,
-                explicitChildNodes: true,
-                child: _SettingsCard(
-                  key: ValueKey('locked_app_${app.id}'),
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          final label = NativeApplicationLabel(
-                            application: app,
-                          );
-                          final remove = Tooltip(
-                            message: 'Remove this app from locking',
-                            child: TextButton.icon(
-                              icon: const Icon(
-                                Icons.remove_circle_outline,
-                                size: 20,
-                              ),
-                              label: const Text('Remove'),
-                              style: TextButton.styleFrom(
-                                foregroundColor: theme.colorScheme.error,
-                              ),
-                              onPressed: busy
-                                  ? null
-                                  : () => _remove(context, app),
-                            ),
-                          );
-                          if (constraints.maxWidth < 300 ||
-                              MediaQuery.textScalerOf(context).scale(16) > 24) {
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [label, remove],
-                            );
-                          }
-                          return Row(
-                            children: [
-                              Expanded(child: label),
-                              const SizedBox(width: 8),
-                              remove,
-                            ],
-                          );
-                        },
-                      ),
-                      if (!app.lockEnabled)
-                        Text(
-                          'Locking paused · Enable this app in Settings',
-                          style: theme.textTheme.bodySmall,
-                        ),
-                      const Divider(height: 24),
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          final value =
-                              '${app.customPassMinutes == null ? 'Default · ' : ''}${ProtectionDuration.label(status.durationFor(app.id))}';
-                          final inline =
-                              constraints.maxWidth >= 300 &&
-                              MediaQuery.textScalerOf(context).scale(16) <= 21;
-                          return ListTile(
-                            key: ValueKey('unlock_time_${app.id}'),
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text('Unlock time'),
-                            subtitle: inline ? null : Text(value),
-                            trailing: inline
-                                ? Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        value,
-                                        style: theme.textTheme.bodyMedium
-                                            ?.copyWith(color: secondary),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      const Icon(Icons.chevron_right),
-                                    ],
-                                  )
-                                : const Icon(Icons.chevron_right),
-                            onTap: busy
-                                ? null
-                                : () => _editDuration(context, app),
-                          );
-                        },
-                      ),
-                      if (status.enabled &&
-                          app.lockEnabled &&
-                          app.unlockedUntil?.isAfter(gate.now) == true)
-                        Text(
-                          'Unlocked until ${DateUtils.isSameDay(gate.now, app.unlockedUntil) ? '' : '${MaterialLocalizations.of(context).formatShortDate(app.unlockedUntil!)} · '}${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(app.unlockedUntil!))}',
-                          style: TextStyle(color: secondary),
-                        ),
-                    ],
-                  ),
-                ),
+              const SizedBox(height: 24),
+              Text(
+                'Your apps · ${status.applications.length}',
+                style: theme.textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Apps use the default time unless you choose a different one below.',
+                style: TextStyle(color: secondary),
               ),
               const SizedBox(height: 12),
+              if (status.applications.isEmpty)
+                const _SettingsCard(
+                  child: Text(
+                    'No apps selected. Tap Add Apps to choose which apps Veea will lock.',
+                  ),
+                ),
+              for (final app in status.applications) ...[
+                Semantics(
+                  container: true,
+                  explicitChildNodes: true,
+                  child: _SettingsCard(
+                    key: ValueKey('locked_app_${app.id}'),
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final label = NativeApplicationLabel(
+                              application: app,
+                            );
+                            final remove = Tooltip(
+                              message: 'Remove this app from locking',
+                              child: TextButton.icon(
+                                icon: const Icon(
+                                  Icons.remove_circle_outline,
+                                  size: 20,
+                                ),
+                                label: const Text('Remove'),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: theme.colorScheme.error,
+                                ),
+                                onPressed: busy
+                                    ? null
+                                    : () => _remove(context, app),
+                              ),
+                            );
+                            if (constraints.maxWidth < 300 ||
+                                MediaQuery.textScalerOf(context).scale(16) >
+                                    24) {
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [label, remove],
+                              );
+                            }
+                            return Row(
+                              children: [
+                                Expanded(child: label),
+                                const SizedBox(width: 8),
+                                remove,
+                              ],
+                            );
+                          },
+                        ),
+                        if (!app.lockEnabled)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              isFreeTier && status.applications.length > 1
+                                  ? 'Locking paused · Free locks 1 app at a time. Remove an app, switch in Settings, or upgrade to Pro.'
+                                  : 'Locking paused · Enable this app in Settings',
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ),
+                        const Divider(height: 24),
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final value =
+                                '${app.customPassMinutes == null ? 'Default · ' : ''}${ProtectionDuration.label(status.durationFor(app.id))}';
+                            final inline =
+                                constraints.maxWidth >= 300 &&
+                                MediaQuery.textScalerOf(context).scale(16) <=
+                                    21;
+                            return ListTile(
+                              key: ValueKey('unlock_time_${app.id}'),
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Unlock time'),
+                              subtitle: inline ? null : Text(value),
+                              trailing: inline
+                                  ? Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          value,
+                                          style: theme.textTheme.bodyMedium
+                                              ?.copyWith(color: secondary),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        const Icon(Icons.chevron_right),
+                                      ],
+                                    )
+                                  : const Icon(Icons.chevron_right),
+                              onTap: busy
+                                  ? null
+                                  : () => _editDuration(context, app),
+                            );
+                          },
+                        ),
+                        if (status.enabled &&
+                            app.lockEnabled &&
+                            app.unlockedUntil?.isAfter(gate.now) == true)
+                          Text(
+                            'Unlocked until ${DateUtils.isSameDay(gate.now, app.unlockedUntil) ? '' : '${MaterialLocalizations.of(context).formatShortDate(app.unlockedUntil!)} · '}${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(app.unlockedUntil!))}',
+                            style: TextStyle(color: secondary),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              const SizedBox(height: 8),
+              if (status.configured && !status.authorized) ...[
+                const Text(
+                  'Screen Time access was removed. Your apps are not locked. Restore access to turn locking back on.',
+                ),
+                TextButton(
+                  onPressed: busy || !canEnable
+                      ? null
+                      : () => _runAction(
+                          context,
+                          () => gate.enableNativeProtection(
+                            totalWords: totalWords,
+                          ),
+                        ),
+                  child: const Text('Restore Screen Time access'),
+                ),
+                TextButton(
+                  onPressed: busy
+                      ? null
+                      : () => _runAction(
+                          context,
+                          gate.disableNativeProtection,
+                          allowProRedirect: false,
+                        ),
+                  child: const Text('Turn off app locking'),
+                ),
+              ],
+              if (!canEnable) ...[
+                Text(
+                  totalWords < GateConfig.minRequiredWords
+                      ? 'Save at least ${GateConfig.minRequiredWords} words before turning on app locking ($totalWords/${GateConfig.minRequiredWords} saved).'
+                      : 'Choose at least one practice word in Learning rules before turning on app locking.',
+                ),
+                if (onAddWord != null &&
+                    totalWords < GateConfig.minRequiredWords)
+                  TextButton(
+                    onPressed: onAddWord,
+                    child: const Text('Add a word'),
+                  ),
+              ],
+              _SettingsCard(
+                padding: EdgeInsets.zero,
+                child: SwitchListTile.adaptive(
+                  title: const Text('Lock selected apps'),
+                  subtitle: Text(
+                    status.allLocksEnabled
+                        ? 'Each app locks again when its own timer ends.'
+                        : status.enabledApplicationCount > 0
+                        ? '${status.enabledApplicationCount} of ${status.applications.length} locks on'
+                        : 'All locks off',
+                  ),
+                  value: status.allLocksEnabled,
+                  onChanged:
+                      busy ||
+                          (!status.allLocksEnabled &&
+                              (!canEnable || status.applications.isEmpty))
+                      ? null
+                      : (enabled) {
+                          if (enabled) {
+                            _runAction(
+                              context,
+                              () => gate.enableNativeProtection(
+                                totalWords: totalWords,
+                              ),
+                            );
+                          } else {
+                            _runAction(
+                              context,
+                              gate.disableNativeProtection,
+                              allowProRedirect: false,
+                            );
+                          }
+                        },
+                ),
+              ),
+              if (status.enabledApplicationCount > 0 && !status.allLocksEnabled)
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TextButton.icon(
+                    key: const Key('turn_off_all_locks'),
+                    icon: const Icon(Icons.lock_open_outlined),
+                    label: const Text('Turn off all locks'),
+                    onPressed: busy
+                        ? null
+                        : () => _runAction(
+                            context,
+                            gate.disableNativeProtection,
+                            allowProRedirect: false,
+                          ),
+                  ),
+                ),
+              if (status.enabled &&
+                  status.applications.any((app) => app.lockEnabled))
+                TextButton.icon(
+                  icon: const Icon(Icons.school_outlined),
+                  label: const Text('Review to unlock an app'),
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          final target = await gate.manageNativeApplications();
+                          if (target == null &&
+                              gate.nativeError != null &&
+                              context.mounted) {
+                            _reportFailure(context, false);
+                          }
+                          if (target != null && context.mounted) {
+                            await _learn(context, target);
+                          }
+                        },
+                ),
+              const SizedBox(height: 12),
+              Text(
+                'Timers keep running when you close Veea. Changing a duration applies to the next unlock.',
+                style: TextStyle(color: secondary),
+              ),
             ],
-            const SizedBox(height: 8),
-            if (status.configured && !status.authorized) ...[
-              const Text(
-                'Screen Time access was removed. Your apps are not locked. Restore access to turn locking back on.',
+            if (status.error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                status.error!,
+                style: TextStyle(color: theme.colorScheme.error),
               ),
               TextButton(
-                onPressed: busy || !canEnable
+                onPressed: busy
                     ? null
                     : () => _runAction(
                         context,
-                        () =>
-                            gate.enableNativeProtection(totalWords: totalWords),
+                        gate.disableNativeProtection,
+                        allowProRedirect: false,
                       ),
-                child: const Text('Restore Screen Time access'),
-              ),
-              TextButton(
-                onPressed: busy
-                    ? null
-                    : () => _runAction(context, gate.disableNativeProtection),
-                child: const Text('Turn off app locking'),
+                child: const Text('Reset protection'),
               ),
             ],
-            if (!canEnable) ...[
+            if (gate.nativeError != null) ...[
+              const SizedBox(height: 12),
               Text(
-                totalWords < GateConfig.minRequiredWords
-                    ? 'Save at least ${GateConfig.minRequiredWords} words before turning on app locking ($totalWords/${GateConfig.minRequiredWords} saved).'
-                    : 'Choose at least one practice word in Learning rules before turning on app locking.',
+                gate.nativeError!,
+                style: TextStyle(color: theme.colorScheme.error),
               ),
-              if (onAddWord != null && totalWords < GateConfig.minRequiredWords)
-                TextButton(
-                  onPressed: onAddWord,
-                  child: const Text('Add a word'),
-                ),
             ],
-            _SettingsCard(
-              padding: EdgeInsets.zero,
-              child: SwitchListTile.adaptive(
-                title: const Text('Lock selected apps'),
-                subtitle: Text(
-                  status.allLocksEnabled
-                      ? 'Each app locks again when its own timer ends.'
-                      : status.enabledApplicationCount > 0
-                      ? '${status.enabledApplicationCount} of ${status.applications.length} locks on'
-                      : 'All locks off',
-                ),
-                value: status.allLocksEnabled,
-                onChanged:
-                    busy ||
-                        (!status.allLocksEnabled &&
-                            (!canEnable || status.applications.isEmpty))
-                    ? null
-                    : (enabled) {
-                        if (enabled) {
-                          _runAction(
-                            context,
-                            () => gate.enableNativeProtection(
-                              totalWords: totalWords,
-                            ),
-                          );
-                        } else {
-                          _runAction(context, gate.disableNativeProtection);
-                        }
-                      },
-              ),
-            ),
-            if (status.enabled &&
-                status.applications.any((app) => app.lockEnabled))
-              TextButton.icon(
-                icon: const Icon(Icons.school_outlined),
-                label: const Text('Review to unlock an app'),
-                onPressed: busy
-                    ? null
-                    : () async {
-                        final target = await gate.manageNativeApplications();
-                        if (target == null &&
-                            gate.nativeError != null &&
-                            context.mounted) {
-                          _reportFailure(context, false);
-                        }
-                        if (target != null && context.mounted) {
-                          await _learn(context, target);
-                        }
-                      },
-              ),
-            const SizedBox(height: 12),
-            Text(
-              'Timers keep running when you close Veea. Changing a duration applies to the next unlock.',
-              style: TextStyle(color: secondary),
-            ),
           ],
-          if (status.error != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              status.error!,
-              style: TextStyle(color: theme.colorScheme.error),
-            ),
-            TextButton(
-              onPressed: busy
-                  ? null
-                  : () => _runAction(context, gate.disableNativeProtection),
-              child: const Text('Reset protection'),
-            ),
-          ],
-          if (gate.nativeError != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              gate.nativeError!,
-              style: TextStyle(color: theme.colorScheme.error),
-            ),
-          ],
-        ],
-      );
-    },
-  );
+        );
+      },
+    );
+  }
 }
 
 class _SettingsCard extends StatelessWidget {
@@ -492,34 +563,70 @@ class _SettingsCard extends StatelessWidget {
 }
 
 class _PlanSummary extends StatelessWidget {
-  const _PlanSummary();
+  const _PlanSummary({required this.status});
+  final NativeGateStatus status;
+
+  bool _hasAuth(BuildContext context) {
+    try {
+      context.read<AuthProvider>();
+      return true;
+    } on ProviderNotFoundException {
+      return false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    ProProvider? pro;
     if (AppConfig.isFreeLaunch) return const SizedBox.shrink();
+    ProProvider? pro;
     try {
       pro = context.watch<ProProvider>();
-    } catch (_) {
+    } on ProviderNotFoundException {
       return const SizedBox.shrink();
     }
+    final theme = Theme.of(context);
+    final secondary = theme.colorScheme.onSurfaceVariant;
+    final hasExtraSelections = !pro.hasPro && status.applications.length > 1;
+    final canOpenPro = _hasAuth(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
-      child: ListTile(
-        contentPadding: EdgeInsets.zero,
-        title: Text(
-          pro.hasPro ? 'Pro · Multiple app locks' : 'Free · One app lock',
-        ),
-        subtitle: Text(
-          pro.hasPro
-              ? 'Choose a different unlock time for each app.'
-              : 'Choose 5, 15 or 30 minutes. Pro adds more apps and custom times. Extra locks are paused on Free; your selections are kept.',
-        ),
-        trailing: pro.hasPro
-            ? null
-            : TextButton(
-                onPressed: () => ProScreen.open(context),
-                child: const Text('Get Pro'),
+      child: _SettingsCard(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              pro.hasPro ? 'Pro · Multiple app locks' : 'Free · One app lock',
+              style: theme.textTheme.titleSmall,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              pro.hasPro
+                  ? 'Lock multiple apps and require multiple words per unlock. All custom unlock times are included.'
+                  : hasExtraSelections
+                  ? 'Lock 1 app with 1 word per unlock, with any custom unlock time. Extra apps from earlier builds are paused and kept — you can change your app, turn off locks, or remove apps anytime.'
+                  : 'Lock 1 app with 1 word per unlock, with any custom unlock time. You can change your app anytime, or upgrade to Pro for multiple apps and multiple words.',
+              style: theme.textTheme.bodySmall?.copyWith(color: secondary),
+            ),
+            if (!pro.hasPro) ...[
+              const SizedBox(height: 4),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton(
+                  key: const Key('plan_summary_upgrade'),
+                  onPressed: canOpenPro ? () => ProScreen.open(context) : null,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                  ),
+                  child: const Text('Get Pro'),
+                ),
               ),
+            ],
+          ],
+        ),
       ),
     );
   }

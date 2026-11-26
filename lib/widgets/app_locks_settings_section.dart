@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../core/config/app_config.dart';
 import '../models/gate_config.dart';
 import '../models/native_gate_status.dart';
 import '../providers/app_gate_provider.dart';
+import '../providers/auth_provider.dart';
+import '../providers/pro_provider.dart';
+import '../screens/pro_screen.dart';
 import 'native_application_label.dart';
 import 'pixel/pixel_box.dart';
-import '../screens/pro_screen.dart';
-import '../core/config/app_config.dart';
 
 /// Settings overview; app selection and time rules live on the management page.
 class AppLocksSettingsSection extends StatelessWidget {
@@ -19,14 +23,47 @@ class AppLocksSettingsSection extends StatelessWidget {
   final int totalWords;
   final VoidCallback onManage;
 
-  Future<void> _run(BuildContext context, Future<bool> operation) async {
+  bool _hasProSupport(BuildContext context) {
+    try {
+      context.read<ProProvider>();
+      context.read<AuthProvider>();
+      return true;
+    } on ProviderNotFoundException {
+      return false;
+    }
+  }
+
+  ProProvider? _maybeWatchPro(BuildContext context) {
+    try {
+      return context.watch<ProProvider>();
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  Future<void> _run(
+    BuildContext context,
+    Future<bool> operation, {
+    bool allowProRedirect = true,
+  }) async {
     final success = await operation;
     final error = gate?.nativeError;
     if (!success &&
+        allowProRedirect &&
         gate?.nativeRequiresPro == true &&
         !AppConfig.isFreeLaunch &&
         context.mounted) {
-      await ProScreen.open(context);
+      if (_hasProSupport(context)) {
+        await ProScreen.open(context);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              error ?? 'Upgrade to Veea Pro to lock multiple apps.',
+            ),
+          ),
+        );
+      }
       return;
     }
     if (!success && error != null && context.mounted) {
@@ -67,6 +104,13 @@ class AppLocksSettingsSection extends StatelessWidget {
 
   Widget _content(BuildContext context, NativeGateStatus status, bool busy) {
     final theme = Theme.of(context);
+    final pro = _maybeWatchPro(context);
+    final isFreePausedMulti =
+        !AppConfig.isFreeLaunch &&
+        pro != null &&
+        !pro.hasPro &&
+        status.applications.length > 1 &&
+        status.enabledApplicationCount < status.applications.length;
     final canEnable = gate?.canEnable(totalWords) ?? false;
     final canToggle =
         gate != null &&
@@ -105,10 +149,27 @@ class AppLocksSettingsSection extends StatelessWidget {
                     enabled
                         ? gate!.enableNativeProtection(totalWords: totalWords)
                         : gate!.disableNativeProtection(),
+                    allowProRedirect: enabled,
                   )
                 : null,
           ),
         ),
+        if (status.enabledApplicationCount > 0 && !status.allLocksEnabled)
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton.icon(
+              key: const Key('settings_turn_off_all_locks'),
+              icon: const Icon(Icons.lock_open_outlined),
+              label: const Text('Turn off all locks'),
+              onPressed: busy
+                  ? null
+                  : () => _run(
+                      context,
+                      gate!.disableNativeProtection(),
+                      allowProRedirect: false,
+                    ),
+            ),
+          ),
         const SizedBox(height: 12),
         if (status.applications.isEmpty)
           const _LockCard(
@@ -160,6 +221,7 @@ class AppLocksSettingsSection extends StatelessWidget {
                                         status.applications[i].id,
                                         enabled,
                                       ),
+                                      allowProRedirect: enabled,
                                     )
                                   : null,
                             ),
@@ -172,6 +234,15 @@ class AppLocksSettingsSection extends StatelessWidget {
               ],
             ),
           ),
+        if (isFreePausedMulti) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Free locks 1 app at a time. Turn off an active lock to switch apps, or upgrade to Pro to lock multiple apps.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         _LockCard(
           child: ListTile(

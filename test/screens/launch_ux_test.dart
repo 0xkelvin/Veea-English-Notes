@@ -44,6 +44,10 @@ import 'package:veea_english_app/services/pronunciation_service.dart';
 import 'package:veea_english_app/services/sync_service.dart';
 import 'package:veea_english_app/services/tts_service.dart';
 import 'package:veea_english_app/widgets/practice_word_picker.dart';
+import 'package:veea_english_app/widgets/commute_tape_selector_sheet.dart';
+import 'package:veea_english_app/services/audio_commute_service.dart';
+import 'package:veea_english_app/services/commute_playlist_service.dart';
+import 'package:veea_english_app/screens/offline_dictionary_screen.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -58,6 +62,8 @@ void main() {
   late AppGateProvider gate;
   late List<VocabularyWord> words;
   late TtsService tts;
+  late AudioCommuteService commute;
+  late CommutePlaylistService playlists;
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 
@@ -126,12 +132,19 @@ void main() {
     await gate.init();
     await gate.setPracticeWords(['a', 'b']);
     tts = TtsService();
+    commute = AudioCommuteService(ttsService: tts);
+    playlists = CommutePlaylistService(
+      prefs: await SharedPreferences.getInstance(),
+    );
+    await playlists.init();
   });
 
   tearDown(() async {
     vocabulary.dispose();
     gate.dispose();
     tts.dispose();
+    commute.dispose();
+    playlists.dispose();
     await repo.close();
   });
 
@@ -150,6 +163,8 @@ void main() {
           ),
           ChangeNotifierProvider.value(value: gate),
           ChangeNotifierProvider.value(value: tts),
+          ChangeNotifierProvider.value(value: commute),
+          ChangeNotifierProvider.value(value: playlists),
           ChangeNotifierProvider(create: (_) => ThemeProvider()),
           ChangeNotifierProvider(create: (_) => WidgetProvider()),
           ChangeNotifierProvider(create: (_) => CartridgeProvider()),
@@ -213,6 +228,10 @@ void main() {
   }
 
   final screens = <String, Widget Function()>{
+    'listen_chooser': () => Scaffold(
+      body: CommuteTapeSelectorSheet(allWords: words, commuteService: commute),
+    ),
+    'offline_dictionary': () => const OfflineDictionaryScreen(),
     'listen': () => const AudioCommuteScreen(),
     'scan': () => const PixelLensScreen(),
     'notebook': () => const HomeScreen(),
@@ -261,6 +280,28 @@ void main() {
           await settle(tester);
           expect(tester.takeException(), isNull);
           await capture(tester, '${screen.key}_${variant.name}');
+          if (screen.key == 'listen_chooser') {
+            final calendar = find.byKey(const Key('listen_calendar_toggle'));
+            await tester.scrollUntilVisible(
+              calendar.hitTestable(),
+              80,
+              scrollable: find
+                  .descendant(
+                    of: find.byKey(const Key('listen_words_scroll')),
+                    matching: find.byType(Scrollable),
+                  )
+                  .first,
+            );
+            await tester.tap(calendar);
+            await settle(tester);
+            expect(tester.takeException(), isNull);
+            await capture(tester, 'listen_calendar_${variant.name}');
+            await playlists.createPlaylist('On my way', ['a', 'b']);
+            await tester.tap(find.byKey(const Key('listen_tab_saved_lists')));
+            await settle(tester);
+            expect(tester.takeException(), isNull);
+            await capture(tester, 'listen_saved_lists_${variant.name}');
+          }
           if (screen.key == 'search') {
             await tester.tap(find.byKey(const Key('search_include_notes')));
             await settle(tester);

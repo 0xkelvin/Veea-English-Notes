@@ -91,18 +91,28 @@ import DeviceActivity
       guard #available(iOS 16.0, *) else { result(FlutterMethodNotImplemented); return }
       Task { @MainActor in
         let manager = ProPurchaseManager.shared
-        manager.onChange = { purchases.invokeMethod("onProChanged", arguments: nil) }
+        manager.onChange = {
+          NativeScreenTimeManager.shared.reconcilePlan()
+          purchases.invokeMethod("onProChanged", arguments: nil)
+        }
         do {
           switch call.method {
           case "configure":
             let state = try await manager.configure(call.arguments as? [String: Any] ?? [:])
             NativeScreenTimeManager.shared.reconcilePlan()
             result(state)
-          case "purchase": result(try await manager.purchase())
-          case "restore": result(try await manager.restore())
+          case "purchase":
+            let state = try await manager.purchase()
+            NativeScreenTimeManager.shared.reconcilePlan()
+            result(state)
+          case "restore":
+            let state = try await manager.restore()
+            NativeScreenTimeManager.shared.reconcilePlan()
+            result(state)
           case "recordVerification":
             let args = call.arguments as? [String: Any] ?? [:]
             await manager.recordVerification(args["transactionID"] as? String ?? "", revoked: args["revoked"] as? Bool ?? false)
+            NativeScreenTimeManager.shared.reconcilePlan()
             result(nil)
           case "finish":
             await manager.finish((call.arguments as? [String: Any])?["transactionID"] as? String ?? "")
@@ -263,7 +273,13 @@ import DeviceActivity
   }
 
   private func screenTimeError(_ error: Error) -> FlutterError {
-    FlutterError(code: error is NativeGatePlanError ? "PRO_REQUIRED" : "SCREEN_TIME_ERROR", message: error.localizedDescription, details: nil)
+    let code: String
+    switch error {
+    case NativeGatePlanError.proRequired: code = "PRO_REQUIRED"
+    case NativeGatePlanError.checkingPro: code = "PURCHASE_CHECK_PENDING"
+    default: code = "SCREEN_TIME_ERROR"
+    }
+    return FlutterError(code: code, message: error.localizedDescription, details: nil)
   }
 
   private func activeRootViewController() -> UIViewController? {
