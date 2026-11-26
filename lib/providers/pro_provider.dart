@@ -152,7 +152,11 @@ class ProProvider extends ChangeNotifier {
         );
         var until = DateTime.now().toUtc().add(const Duration(hours: 24));
         if (expiry != null && expiry.isBefore(until)) until = expiry;
-        final state = await repository.configure(owner, serverUntil: until);
+        final state = await repository.configure(
+          owner,
+          serverUntil: until,
+          serverLifetime: expiry != null ? false : null,
+        );
         if (!_current(epoch, owner)) return;
         _store = state;
         _message =
@@ -228,7 +232,7 @@ class ProProvider extends ChangeNotifier {
           serverUntil: premium ? until : null,
           clearServer: !premium,
           serverLifetime: server['purchase_verification_pending'] == true
-              ? null
+              ? (expiry != null ? false : null)
               : premium && server['plan_expires_at'] == null,
         );
         if (!_current(epoch, owner)) return;
@@ -256,7 +260,7 @@ class ProProvider extends ChangeNotifier {
               _ =>
                 restore
                     ? (hasPro
-                          ? 'Pro restored to your account.'
+                          ? 'Pro restored.'
                           : 'No Pro purchase found for this account.')
                     : purchase && hasPro
                     ? 'Pro is ready. Thank you for supporting Veea!'

@@ -45,6 +45,9 @@ var (
 	// ErrInvalid reports that the transaction ID is malformed or nonexistent, or that the
 	// JWS signature, certificate chain, or required transaction claims failed verification.
 	ErrInvalid = errors.New("appleiap: invalid transaction")
+	// ErrNotFound is only Apple's explicit 4040010 response, not a failed signature
+	// or an outage. It also classifies as ErrInvalid for existing callers.
+	ErrNotFound = fmt.Errorf("%w: transaction not found", ErrInvalid)
 )
 
 // Supported App Store environments and their fixed App Store Server API base URLs.
@@ -107,6 +110,9 @@ type Config struct {
 	BundleID    string
 	Environment string
 	ProductIDs  []string
+	// AllowSandbox acknowledges review/TestFlight proofs on a Production API.
+	// The purchase service must never persist these as Production entitlements.
+	AllowSandbox bool
 }
 
 // Transaction is a verified App Store non-consumable purchase record.
@@ -136,12 +142,16 @@ type Verifier struct {
 	rootDERs    map[string]struct{}
 	client      *http.Client
 	now         func() time.Time
+	sandbox     *Verifier
 }
 
-// New validates cfg and returns a Verifier pinned to Apple Root CA - G3 and the fixed
-// App Store Server API endpoint for cfg.Environment.
+// New validates cfg and pins Apple Root CA - G3 and the fixed endpoint for
+// cfg.Environment. Production may explicitly enable a separate Sandbox fallback.
 func New(cfg Config) (*Verifier, error) {
 	var errs []error
+	if cfg.AllowSandbox && cfg.Environment != EnvProduction {
+		errs = append(errs, errors.New("appleiap: Sandbox fallback requires Production environment"))
+	}
 
 	issuer, err := uuid.Parse(strings.TrimSpace(cfg.IssuerID))
 	if err != nil || issuer == uuid.Nil {
@@ -208,7 +218,7 @@ func New(cfg Config) (*Verifier, error) {
 		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
 	}
 
-	return &Verifier{
+	v := &Verifier{
 		issuerID:    issuer.String(),
 		keyID:       keyID,
 		key:         key,
@@ -220,12 +230,31 @@ func New(cfg Config) (*Verifier, error) {
 		rootDERs:    rootDERs,
 		client:      &http.Client{Transport: transport, Timeout: requestTimeout},
 		now:         time.Now,
-	}, nil
+	}
+	if cfg.AllowSandbox {
+		cfg.AllowSandbox = false
+		cfg.Environment = EnvSandbox
+		v.sandbox, err = New(cfg)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return v, nil
 }
 
 // Verify fetches fresh signed transaction information from Apple for transactionID and
 // validates its certificate chain, ES256 signature, and non-consumable purchase claims.
 func (v *Verifier) Verify(ctx context.Context, transactionID string) (Transaction, error) {
+	proof, err := v.verify(ctx, transactionID)
+	// Apple documents Production first, then Sandbox only for 4040010. A bad
+	// signature, wrong bundle/owner/environment, generic 404 or outage never retries.
+	if v != nil && v.sandbox != nil && errors.Is(err, ErrNotFound) {
+		return v.sandbox.verify(ctx, transactionID)
+	}
+	return proof, err
+}
+
+func (v *Verifier) verify(ctx context.Context, transactionID string) (Transaction, error) {
 	if v == nil || v.key == nil || v.client == nil || v.roots == nil {
 		return Transaction{}, ErrUnavailable
 	}
@@ -264,6 +293,12 @@ func (v *Verifier) Verify(ctx context.Context, transactionID string) (Transactio
 	switch res.StatusCode {
 	case http.StatusOK:
 	case http.StatusNotFound:
+		var apiErr struct {
+			ErrorCode int `json:"errorCode"`
+		}
+		if json.Unmarshal(body, &apiErr) == nil && apiErr.ErrorCode == 4040010 {
+			return Transaction{}, ErrNotFound
+		}
 		return Transaction{}, fmt.Errorf("%w: transaction not found", ErrInvalid)
 	case http.StatusBadRequest:
 		var apiErr struct {

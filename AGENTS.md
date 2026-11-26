@@ -200,7 +200,11 @@ account isolation/purge tests. `AppConfig.isVocabularySyncEnabled=false` disable
 and remote cartridge installs. Do not re-enable by flipping a flag without a reviewed ownership
 migration and user consent. Payment routes must authenticate, revalidate the acting session under
 L3 user then L4a session locks, verify fresh Apple data, and enforce account-token/environment
-ownership. Sandbox and production use separate databases and a matching `apple_iap_control`.
+ownership. Durable Sandbox and production purchases use separate databases and a matching
+`apple_iap_control`. A Production API may explicitly enable fresh Sandbox
+acknowledgements for TestFlight/App Review, but must never persist those test
+proofs, grant server Premium or refresh a real Production proof with one.
+See `docs/payment-environments.md`.
 Payments are disabled by default; never simulate paid success in production. Full purge removes
 Apple rows, export includes five retained proof periods, manual grants remain independent.
 

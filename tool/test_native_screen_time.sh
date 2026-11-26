@@ -12,3 +12,6 @@ swiftc -module-cache-path "$veea_test_dir/module-cache" -swift-version 6 ios/Nat
   ios/NativeGateShared/NativeGateGrantCoordinator.swift \
   test/native/native_gate/main.swift -o "$veea_test_dir/native-tests"
 "$veea_test_dir/native-tests"
+swiftc -module-cache-path "$veea_test_dir/module-cache" -swift-version 6 ios/Runner/ProPurchasePolicy.swift \
+  test/native/pro_purchase_policy/main.swift -o "$veea_test_dir/purchase-policy-tests"
+"$veea_test_dir/purchase-policy-tests"

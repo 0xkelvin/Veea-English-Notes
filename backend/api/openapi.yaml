@@ -307,8 +307,13 @@ paths:
       summary: Verify a one-time Apple Pro purchase and link it to the signed-in account.
       description: |
         Fresh Apple Server API verification; client flags and receipts are not trusted. The signed
-        appAccountToken must match the authenticated account UUID. Sandbox and production use separate
-        databases and a matching database environment gate. Disabled by default. Idempotent retries.
+        appAccountToken must match the authenticated account UUID. Durable Sandbox and Production purchases
+        use separate databases with matching environment gates. An explicitly enabled Production API may
+        acknowledge a freshly verified Sandbox transaction for TestFlight/App Review without storing it
+        or granting account Premium. Its response plan remains the real Production account plan;
+        Sandbox access is provided only by matching Apple-verified device ownership. Production-first
+        verification retries Sandbox only for Apple's explicit 4040010 error. Disabled by default.
+        Idempotent retries.
         A revoked purchase is committed and returns 200 with purchase_revoked true and the resulting
         plan; independent manual grants are preserved. No query parameters or vocabulary content.
       security: [{ bearerAuth: [] }]
@@ -2326,7 +2331,9 @@ components:
             writers: { type: integer, enum: [20] }
         apple_purchase_available: { type: boolean, description: True only when server Apple verification is configured. Clients must require true before starting a payment. }
         purchase_verification_pending: { type: boolean, description: Independent manual access remains active while Apple verification is unavailable. Do not start a new payment. }
-        purchase_revoked: { type: boolean, description: Present only after Apple verification. False for an active proof; true after a committed revocation. }
+        purchase_revoked: { type: boolean, description: Present only after Apple verification. True for a revoked proof; durable revocation is committed when purchase_recorded is true. }
+        purchase_environment: { type: string, enum: [Sandbox, Production], description: "Present after verification; environment from the verified Apple proof, never a client hint." }
+        purchase_recorded: { type: boolean, description: Present after verification. False for a Sandbox acknowledgement on Production; it creates no account purchase or Premium grant. }
         checked_at: { $ref: "#/components/schemas/Timestamp" }
     AdminPlanRequest:
       type: object

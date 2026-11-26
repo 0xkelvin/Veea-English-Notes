@@ -165,7 +165,9 @@ Suggested operator: Nin. Record actual configuration/evidence, not private keys.
 - Complete age rating, categories, encryption/export-compliance questions, regions,
   privacy disclosures and any displayed agreements/business/tax/banking requirements.
 - Configure the proposed non-consumable, the intended 99,000 VND Vietnam price, actual localized
-  price and server verification. Keep staging Sandbox and Production isolated.
+  price and server verification. Keep durable staging Sandbox and Production purchases isolated.
+  The release Production API must also enable Sandbox acknowledgements for App Review,
+  without granting Production Pro from test purchases; follow [payment environments](payment-environments.md).
   Add the first in-app purchase and app version to the same review submission.
   [Apple purchase submission instructions](https://developer.apple.com/help/app-store-connect/manage-submissions-to-app-review/submit-an-in-app-purchase/).
 - Run signed-device checks for five-minute background relock, two independent

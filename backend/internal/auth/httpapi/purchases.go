@@ -41,12 +41,12 @@ func (h *Handlers) applePurchase(w http.ResponseWriter, r *http.Request, p sessi
 		h.purchaseFailure(w, r, appleiap.ErrUnavailable)
 		return
 	}
-	revoked, err := h.Purchases.VerifyAndClaim(r.Context(), p, req.TransactionID)
+	outcome, err := h.Purchases.VerifyAndClaimOutcome(r.Context(), p, req.TransactionID)
 	if err != nil {
 		h.purchaseFailure(w, r, err)
 		return
 	}
-	h.writeMyEntitlements(w, r, p, &revoked)
+	h.writeMyEntitlements(w, r, p, &outcome)
 }
 func (h *Handlers) purchaseFailure(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
