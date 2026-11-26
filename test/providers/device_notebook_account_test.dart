@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:veea_english_app/core/config/app_config.dart';
 import 'package:veea_english_app/data/local/sqlite_vocabulary_repository.dart';
 import 'package:veea_english_app/models/vocabulary_word.dart';
 import 'package:veea_english_app/providers/vocabulary_provider.dart';
@@ -118,6 +119,9 @@ void main() {
   test(
     'network refresh failure keeps the verified purchase identity, explicit sign-out clears it',
     () async {
+      // An earlier purchase is restored only when its real product is configured.
+      AppConfig.overrideAppleProduct('app.test.pro');
+      addTearDown(() => AppConfig.overrideAppleProduct(null));
       var offline = false;
       final app = GoAccountStack(
         await SqliteVocabularyRepository.open(path: inMemoryDatabasePath),

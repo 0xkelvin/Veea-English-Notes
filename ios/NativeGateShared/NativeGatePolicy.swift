@@ -181,6 +181,14 @@ enum NativeGatePolicy {
 
 /// Product limits live beside the native protection policy so a platform-channel
 /// caller cannot bypass the Free plan through a second enable path.
+enum NativeGateReleasePolicy {
+  // Source-controlled launch decision, independent of StoreKit or sign-in.
+  static let isFreeLaunch = true
+  static func permitsAllLockControls(purchasedPro: Bool) -> Bool {
+    isFreeLaunch || purchasedPro
+  }
+}
+
 enum NativeGatePlanError: LocalizedError {
   case proRequired
   var errorDescription: String? {

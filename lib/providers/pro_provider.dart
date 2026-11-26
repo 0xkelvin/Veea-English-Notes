@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../core/config/app_config.dart';
 import '../data/pro_repository.dart';
+import '../data/remote/api_client.dart';
 import 'auth_provider.dart';
 import 'go_auth_provider.dart';
 
@@ -28,6 +29,8 @@ class ProProvider extends ChangeNotifier {
   ProStoreState _store = const ProStoreState();
   String? _message;
   bool _serverPurchaseAvailable = false;
+  bool _serverChecked = false;
+  bool get purchaseAvailabilityChecked => _serverChecked;
   bool get purchasesReady => _serverPurchaseAvailable;
   bool get hasPro => _store.hasPro;
   bool get hasLifetime => _store.hasLifetime;
@@ -37,6 +40,7 @@ class ProProvider extends ChangeNotifier {
   bool get isConfigured =>
       AppConfig.isCloudEnabled && AppConfig.appleProProductId.isNotEmpty;
   bool get canPurchase =>
+      !AppConfig.isFreeLaunch &&
       isConfigured &&
       auth.isSignedIn &&
       price != null &&
@@ -57,6 +61,7 @@ class ProProvider extends ChangeNotifier {
     _store = const ProStoreState();
     _confirmedAt.clear();
     _serverPurchaseAvailable = false;
+    _serverChecked = false;
     _message = null;
     _busy = false;
     _notify();
@@ -66,6 +71,7 @@ class ProProvider extends ChangeNotifier {
   bool _current(int epoch, String? owner) =>
       !_disposed && epoch == _epoch && owner == _entitlementOwner;
   Future<void> initializeDevice() async {
+    if (AppConfig.isFreeLaunch && AppConfig.appleProProductId.isEmpty) return;
     final epoch = _epoch, owner = _entitlementOwner;
     try {
       final state = await repository.configure(owner, loadProduct: false);
@@ -85,6 +91,16 @@ class ProProvider extends ChangeNotifier {
   Future<void> restore() => _run(restore: true);
   Future<void> _run({bool purchase = false, bool restore = false}) async {
     if (_disposed) return;
+    if (purchase && AppConfig.isFreeLaunch) {
+      _message = 'This release is free. No purchase is needed.';
+      _notify();
+      return;
+    }
+    if (!restore &&
+        AppConfig.isFreeLaunch &&
+        AppConfig.appleProProductId.isEmpty) {
+      return;
+    }
     if (_busy) {
       if (restore) {
         _restoreRequested = true;
@@ -103,7 +119,10 @@ class ProProvider extends ChangeNotifier {
     _message = null;
     _notify();
     try {
-      final configured = await repository.configure(owner);
+      final configured = await repository.configure(
+        owner,
+        loadProduct: !AppConfig.isFreeLaunch,
+      );
       if (!_current(epoch, owner)) return;
       _store = configured;
       Map<String, Object?>? server;
@@ -115,6 +134,7 @@ class ProProvider extends ChangeNotifier {
         server = await repository.entitlement(owner);
         if (!_current(epoch, owner)) return;
         _serverPurchaseAvailable = server['apple_purchase_available'] == true;
+        _serverChecked = true;
       }
       final alreadyLifetime =
           purchase &&
@@ -154,6 +174,7 @@ class ProProvider extends ChangeNotifier {
         _store = await repository.restore();
       }
       if (!_current(epoch, owner)) return;
+      ApiException? claimError;
       if (owner != null && auth.isSignedIn) {
         for (final id in _store.transactions) {
           final confirmed = _confirmedAt[id];
@@ -165,16 +186,23 @@ class ProProvider extends ChangeNotifier {
                   const Duration(minutes: 5)) {
             continue;
           }
-          server = await repository.claim(owner, id);
-          if (!_current(epoch, owner)) return;
-          await repository.recordVerification(
-            id,
-            revoked: server['purchase_revoked'] == true,
-          );
-          if (!_current(epoch, owner)) return;
-          await repository.finish(id);
-          if (!_current(epoch, owner)) return;
-          _confirmedAt[id] = DateTime.now();
+          try {
+            server = await repository.claim(owner, id);
+            if (!_current(epoch, owner)) return;
+            await repository.recordVerification(
+              id,
+              revoked: server['purchase_revoked'] == true,
+            );
+            if (!_current(epoch, owner)) return;
+            await repository.finish(id);
+            if (!_current(epoch, owner)) return;
+            _confirmedAt[id] = DateTime.now();
+          } on ApiException catch (error) {
+            if (!_current(epoch, owner)) return;
+            // A refused/pending proof must remain unfinished. It must not
+            // prevent unrelated owned transactions from being reconciled.
+            claimError ??= error;
+          }
         }
       }
       if (server == null &&
@@ -186,6 +214,7 @@ class ProProvider extends ChangeNotifier {
       }
       if (server != null) {
         _serverPurchaseAvailable = server['apple_purchase_available'] == true;
+        _serverChecked = true;
         final premium = server['plan'] == 'premium';
         final expiry = DateTime.tryParse(
           server['plan_expires_at']?.toString() ?? '',
@@ -212,6 +241,10 @@ class ProProvider extends ChangeNotifier {
           outcome: _store.outcome,
         );
       }
+      if (claimError != null) {
+        _message = _purchaseError(claimError);
+        return;
+      }
       _message = alreadyLifetime
           ? 'Lifetime Pro is already linked to your account. No purchase needed.'
           : switch (_store.outcome) {
@@ -229,6 +262,8 @@ class ProProvider extends ChangeNotifier {
                     ? 'Pro is ready. Thank you for supporting Veea!'
                     : null,
             };
+    } on ApiException catch (error) {
+      if (_current(epoch, owner)) _message = _purchaseError(error);
     } on MissingPluginException {
       if (_current(epoch, owner)) {
         _message = 'Purchases are available in the iPhone app.';
@@ -260,6 +295,22 @@ class ProProvider extends ChangeNotifier {
       }
     }
   }
+
+  String _purchaseError(ApiException error) => switch (error.code) {
+    'purchase_ownership' =>
+      'This purchase could not be linked to this Veea account. Sign in to the account used for the original purchase or contact support.',
+    'purchase_invalid' =>
+      'Apple purchase verification was not accepted by the account service. Please contact support before trying to buy again.',
+    'purchase_unavailable' =>
+      'Purchase verification is temporarily unavailable. Please try again later.',
+    _ when error.isAuthFailure => 'Sign in again to manage your purchase.',
+    _ when !error.isTransient =>
+      'The account service could not verify this purchase. Please contact support before trying to buy again.',
+    _ =>
+      hasPro
+          ? 'Pro is available on this device. Account confirmation will retry when you are online.'
+          : 'Could not check your purchase. Please connect to the internet and try again.',
+  };
 
   @override
   void dispose() {

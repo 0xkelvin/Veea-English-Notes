@@ -98,6 +98,8 @@ class _PixelFieldState extends State<PixelField> {
           cursorRadius: const Radius.circular(2),
           style: theme.textTheme.bodyLarge,
           decoration: InputDecoration(
+            // The outer container owns the rounded fill and focus border.
+            filled: false,
             isDense: true,
             hintText: widget.hint,
             hintStyle: theme.textTheme.bodyLarge?.copyWith(
@@ -189,6 +191,7 @@ class PixelSearchField extends StatelessWidget {
           textInputAction: TextInputAction.search,
           style: Theme.of(context).textTheme.bodyLarge,
           decoration: InputDecoration(
+            filled: false,
             isDense: true,
             prefixIcon: const Icon(Icons.search),
             suffixIcon: value.text.isEmpty

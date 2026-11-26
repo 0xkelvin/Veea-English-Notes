@@ -10,7 +10,7 @@ void main() {
   group('WordSuggestionService', () {
     setUp(() {
       WordSuggestionService.clearCache();
-      WordSuggestionService.allowOnlineTranslation = true;
+      WordSuggestionService.allowOnlineTranslation = false;
     });
 
     test('suggests Vietnamese meaning and PartOfSpeech for solution', () async {
@@ -25,7 +25,7 @@ void main() {
       () async {
         final suggestion = await WordSuggestionService.suggest('resilient');
         expect(suggestion, isNotNull);
-        expect(suggestion!.meaning, contains('kiên cường'));
+        expect(suggestion!.meaning!.toLowerCase(), contains('kiên cường'));
         expect(suggestion.partOfSpeech, PartOfSpeech.adjective);
       },
     );
@@ -37,13 +37,14 @@ void main() {
       expect(suggestion.partOfSpeech, PartOfSpeech.noun);
     });
 
-    test('suggests from career cartridges', () async {
-      final suggestion = await WordSuggestionService.suggest('idempotent');
-      expect(suggestion, isNotNull);
-      expect(suggestion!.meaning, contains('Bảo toàn kết quả'));
-      expect(suggestion.partOfSpeech, PartOfSpeech.adjective);
-      expect(suggestion.source, 'Tech Cartridge');
-    });
+    test(
+      'unreleased career content is not offered as an offline dictionary',
+      () async {
+        final suggestion = await WordSuggestionService.suggest('idempotent');
+        expect(suggestion?.meaning, isNull);
+        expect(suggestion?.source, isNot('Tech Cartridge'));
+      },
+    );
 
     test('prefers user previous notes if provided', () async {
       final userWords = [
@@ -99,9 +100,19 @@ void main() {
       expect(WordSuggestionService.suggestFast(''), isNull);
     });
 
-    test('allowOnlineTranslation defaults to true', () {
-      expect(WordSuggestionService.allowOnlineTranslation, isTrue);
-    });
+    test(
+      'unknown words do not make an online request without opt-in',
+      () async {
+        var requests = 0;
+        final mock = MockClient((_) async {
+          requests++;
+          return http.Response('[]', 200);
+        });
+        await WordSuggestionService.suggest('labyrinthine', client: mock);
+        expect(requests, 0);
+        expect(WordSuggestionService.allowOnlineTranslation, isFalse);
+      },
+    );
 
     test(
       'online translation suggests Vietnamese meaning for words not in offline dict',
@@ -131,6 +142,7 @@ void main() {
         final suggestion = await WordSuggestionService.suggest(
           'labyrinthine',
           client: mockClient,
+          allowOnline: true,
         );
 
         expect(suggestion, isNotNull);
@@ -203,6 +215,7 @@ void main() {
         final suggestion = await WordSuggestionService.suggest(
           'visionary',
           client: mockClient,
+          allowOnline: true,
         );
 
         expect(suggestion, isNotNull);
@@ -219,6 +232,7 @@ void main() {
       final suggestion = await WordSuggestionService.suggest(
         'kaleidoscopic',
         client: mockClient,
+        allowOnline: true,
       );
 
       expect(suggestion, isNotNull);

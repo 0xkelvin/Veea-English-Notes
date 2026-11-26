@@ -86,7 +86,7 @@ class _PixelButtonState extends State<PixelButton> {
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
               color: fg,
               fontWeight: FontWeight.w600,
-              letterSpacing: 0.4,
+              letterSpacing: 0,
             ),
           ),
         ),
@@ -138,9 +138,9 @@ class _PixelButtonState extends State<PixelButton> {
                     boxShadow: _enabled && (widget.filled || widget.danger)
                         ? [
                             BoxShadow(
-                              color: fill.withValues(alpha: 0.24),
-                              blurRadius: 10,
-                              offset: const Offset(0, 3),
+                              color: fill.withValues(alpha: 0.12),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
                             ),
                           ]
                         : null,
@@ -199,9 +199,9 @@ class _PixelIconButtonState extends State<PixelIconButton> {
       fg = palette.accent;
       borderColor = palette.accent.withValues(alpha: 0.35);
     } else {
-      fill = palette.paper.withValues(alpha: 0.7);
+      fill = Colors.transparent;
       fg = palette.ink;
-      borderColor = palette.border;
+      borderColor = Colors.transparent;
     }
 
     return Semantics(

@@ -13,7 +13,8 @@ import '../services/sync_service.dart';
 import 'sync_review_screen.dart';
 
 class GoAccountScreen extends StatefulWidget {
-  const GoAccountScreen({super.key});
+  const GoAccountScreen({super.key, this.now});
+  final DateTime Function()? now;
   @override
   State<GoAccountScreen> createState() => _GoAccountScreenState();
 }
@@ -26,10 +27,23 @@ class _GoAccountScreenState extends State<GoAccountScreen> {
   EmailChallenge? _challenge;
   bool _signup = false, _usePassword = false;
   Timer? _poll;
+  Timer? _challengeClock;
+  DateTime get _now => widget.now?.call() ?? DateTime.now();
+  int _resendSeconds = 0;
+
+  bool get _codeExpired =>
+      _challenge != null && !_now.isBefore(_challenge!.expiresAt);
   GoAuthProvider get auth => context.read<AuthProvider>() as GoAuthProvider;
   @override
   void initState() {
     super.initState();
+    _challengeClock = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && _challenge != null) {
+        setState(() {
+          if (_resendSeconds > 0) _resendSeconds--;
+        });
+      }
+    });
     _poll = Timer.periodic(const Duration(seconds: 5), (_) async {
       if (!mounted || auth.isBusy || !auth.hasPendingDeletion) return;
       final receipt = auth.deletionReceipt!;
@@ -45,6 +59,7 @@ class _GoAccountScreenState extends State<GoAccountScreen> {
   @override
   void dispose() {
     _poll?.cancel();
+    _challengeClock?.cancel();
     _email.dispose();
     _password.dispose();
     _code.dispose();
@@ -72,8 +87,16 @@ class _GoAccountScreenState extends State<GoAccountScreen> {
     if (mounted && result != null) {
       setState(() {
         _challenge = result;
+        // The server enforces the real cooldown. Bound the UI wait and count
+        // elapsed timer ticks so a wrong/changing phone clock cannot trap it.
+        _resendSeconds =
+            (result.resendAfter.difference(_now).inMilliseconds / 1000)
+                .ceil()
+                .clamp(0, 60);
         _code.clear();
-        _password.clear();
+        // Password signup resends must repeat the same request. Keep the
+        // password only in its controller until verification/cancel/dispose.
+        if (!_signup || !_usePassword) _password.clear();
       });
     }
   }
@@ -85,7 +108,7 @@ class _GoAccountScreenState extends State<GoAccountScreen> {
         title: const Text('Permanently delete account?'),
         content: const Text(
           'Access ends immediately after confirmation. There is no grace period. '
-          'Your online account and Pro purchase link will be deleted. Purchases cannot automatically transfer to a new account. '
+          'Your online account and any previous Pro purchase link will be deleted. Purchases cannot automatically transfer to a new account. '
           'Your notebook stays on this phone. Data cleanup targets 24 hours; the email remains reserved until it finishes.',
         ),
         actions: [
@@ -214,7 +237,7 @@ class _GoAccountScreenState extends State<GoAccountScreen> {
           else if (account.isSignedIn) ...[
             Text(account.identifier ?? '', key: const Key('go_account_email')),
             const Text(
-              'Your notebook stays on this phone when you sign in or out. Your account manages Pro access. Export a backup before moving your words to another phone.',
+              'Signing in is optional. Your notebook stays on this phone when you sign in or out. Export a backup before moving your words to another phone.',
             ),
             if (AppConfig.isVocabularySyncEnabled)
               FilledButton(
@@ -272,6 +295,7 @@ class _GoAccountScreenState extends State<GoAccountScreen> {
             TextField(
               key: const Key('go_email'),
               controller: _email,
+              enabled: !busy && challenge == null,
               keyboardType: TextInputType.emailAddress,
               autofillHints: const [AutofillHints.email],
               decoration: const InputDecoration(labelText: 'Email'),
@@ -282,7 +306,10 @@ class _GoAccountScreenState extends State<GoAccountScreen> {
                 value: _usePassword,
                 onChanged: busy
                     ? null
-                    : (v) => setState(() => _usePassword = v),
+                    : (v) => setState(() {
+                        _usePassword = v;
+                        if (!v) _password.clear();
+                      }),
               ),
               if (_usePassword)
                 TextField(
@@ -327,13 +354,17 @@ class _GoAccountScreenState extends State<GoAccountScreen> {
                 ),
               ),
             ] else ...[
-              const Text(
-                'If eligible, a code was sent to this email. Codes expire after ten minutes.',
+              Text(
+                _codeExpired
+                    ? 'This code may have expired. You can try it or request a new code.'
+                    : 'If eligible, a code was sent to ${challenge.email}. Check your inbox and spam folder.',
               ),
               TextField(
                 key: const Key('go_code'),
                 controller: _code,
+                enabled: !busy,
                 keyboardType: TextInputType.number,
+                autofillHints: const [AutofillHints.oneTimeCode],
                 decoration: const InputDecoration(
                   labelText: 'Verification code',
                 ),
@@ -350,11 +381,12 @@ class _GoAccountScreenState extends State<GoAccountScreen> {
                 child: const Text('Verify and sign in'),
               ),
               TextButton(
-                onPressed:
-                    busy || DateTime.now().isBefore(challenge.resendAfter)
-                    ? null
-                    : _start,
-                child: const Text('Resend code'),
+                onPressed: busy || _resendSeconds > 0 ? null : _start,
+                child: Text(
+                  _resendSeconds > 0
+                      ? 'Resend code in ${_resendSeconds}s'
+                      : 'Resend code',
+                ),
               ),
               TextButton(
                 onPressed: busy
@@ -362,6 +394,7 @@ class _GoAccountScreenState extends State<GoAccountScreen> {
                     : () => setState(() {
                         _challenge = null;
                         _code.clear();
+                        _password.clear();
                       }),
                 child: const Text('Use another email'),
               ),
@@ -369,10 +402,14 @@ class _GoAccountScreenState extends State<GoAccountScreen> {
           ],
           if (receipt != null) ...[
             const Divider(),
-            Text(
-              'Deletion status: ${receipt.state}',
-              key: const Key('go_receipt_status'),
-            ),
+            Text(switch (receipt.state) {
+              'awaiting_proof' => 'Verify your email to confirm deletion.',
+              'pending' => 'Account deletion is in progress.',
+              'completed' => 'Your online account has been deleted.',
+              'expired' => 'This deletion request has expired.',
+              'canceled' => 'This deletion request was cancelled.',
+              _ => 'Check your deletion request for an update.',
+            }, key: const Key('go_receipt_status')),
             if (!receipt.locallyCleared &&
                 receipt.state == 'awaiting_proof') ...[
               const Text(
@@ -402,7 +439,7 @@ class _GoAccountScreenState extends State<GoAccountScreen> {
               child: const Text('Check deletion receipt'),
             ),
             const Text(
-              'The receipt survives sign-out and app restart. A missing receipt or ordinary 401 does not prove deletion.',
+              'You can check this request again after restarting the app. If confirmation is unavailable, your saved words stay on this phone.',
             ),
           ],
         ],

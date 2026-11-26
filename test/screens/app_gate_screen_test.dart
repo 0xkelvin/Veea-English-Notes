@@ -6,10 +6,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:veea_english_app/core/theme/pixel_theme.dart';
 import 'package:veea_english_app/data/local/sqlite_vocabulary_repository.dart';
+import 'package:veea_english_app/data/remote/api_client.dart';
+import 'package:veea_english_app/data/remote/auth_api.dart';
 import 'package:veea_english_app/models/gate_config.dart';
 import 'package:veea_english_app/models/part_of_speech.dart';
 import 'package:veea_english_app/models/vocabulary_word.dart';
 import 'package:veea_english_app/providers/app_gate_provider.dart';
+import 'package:veea_english_app/providers/auth_provider.dart';
 import 'package:veea_english_app/providers/cartridge_provider.dart';
 import 'package:veea_english_app/providers/theme_provider.dart';
 import 'package:veea_english_app/providers/vocabulary_provider.dart';
@@ -17,7 +20,9 @@ import 'package:veea_english_app/providers/widget_provider.dart';
 import 'package:veea_english_app/screens/app_gate_screen.dart';
 import 'package:veea_english_app/screens/settings_screen.dart';
 import 'package:veea_english_app/services/app_gate_service.dart';
+import 'package:veea_english_app/services/sync_service.dart';
 import 'package:veea_english_app/widgets/native_gate_settings.dart';
+import '../support/fake_token_store.dart';
 
 void main() {
   sqfliteFfiInit();
@@ -535,6 +540,22 @@ void main() {
               ChangeNotifierProvider(create: (_) => ThemeProvider()),
               ChangeNotifierProvider(create: (_) => WidgetProvider()),
               ChangeNotifierProvider(create: (_) => CartridgeProvider()),
+              ChangeNotifierProvider(
+                create: (_) => SyncService(repository: repo),
+              ),
+              ChangeNotifierProvider<AuthProvider>(
+                create: (context) {
+                  final tokens = FakeTokenStore();
+                  final client = ApiClient(tokenStore: tokens);
+                  return AuthProvider(
+                    authApi: AuthApi(client: client, tokens: tokens),
+                    tokens: tokens,
+                    client: client,
+                    repository: repo,
+                    sync: context.read<SyncService>(),
+                  );
+                },
+              ),
             ],
             child: MaterialApp(
               theme: PixelTheme.light(),

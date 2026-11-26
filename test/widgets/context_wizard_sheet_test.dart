@@ -50,7 +50,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('AI CONTEXT WIZARD'), findsOneWidget);
+      expect(find.text('Example ideas'), findsOneWidget);
       expect(find.text('WORD: DATABASE'), findsOneWidget);
       expect(find.text('NOUN'), findsOneWidget);
       expect(find.text('(cơ sở dữ liệu)'), findsOneWidget);

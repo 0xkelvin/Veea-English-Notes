@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -14,7 +13,7 @@ import '../widgets/pixel/pixel_box.dart';
 import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_icon.dart';
 
-/// 8-Bit Retro Walkman / Cassette Hands-Free Audio Player Screen.
+/// Hands-Free Listening Audio Player Screen.
 class AudioCommuteScreen extends StatefulWidget {
   const AudioCommuteScreen({super.key});
 
@@ -22,10 +21,8 @@ class AudioCommuteScreen extends StatefulWidget {
   State<AudioCommuteScreen> createState() => _AudioCommuteScreenState();
 }
 
-class _AudioCommuteScreenState extends State<AudioCommuteScreen>
-    with SingleTickerProviderStateMixin {
+class _AudioCommuteScreenState extends State<AudioCommuteScreen> {
   late final AudioCommuteService _commuteService;
-  late final AnimationController _tapeController;
   List<VocabularyWord> _allWords = [];
 
   @override
@@ -33,11 +30,6 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
     super.initState();
     final tts = context.read<TtsService>();
     _commuteService = AudioCommuteService(ttsService: tts);
-
-    _tapeController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 4),
-    );
 
     _commuteService.addListener(_onServiceUpdate);
 
@@ -91,6 +83,11 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
       useSafeArea: true,
       showDragHandle: true,
       backgroundColor: context.palette.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(PixelMetrics.radiusLg),
+        ),
+      ),
       builder: (sheetContext) => ConstrainedBox(
         key: const Key('listen_settings_sheet'),
         constraints: BoxConstraints(
@@ -143,11 +140,6 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
 
   void _onServiceUpdate() {
     if (!mounted) return;
-    if (_commuteService.isPlaying) {
-      if (!_tapeController.isAnimating) _tapeController.repeat();
-    } else {
-      if (_tapeController.isAnimating) _tapeController.stop();
-    }
     setState(() {});
   }
 
@@ -156,7 +148,6 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
     _commuteService.removeListener(_onServiceUpdate);
     _commuteService.stop();
     _commuteService.dispose();
-    _tapeController.dispose();
     super.dispose();
   }
 
@@ -174,7 +165,7 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
             // Top Bar
             Container(
               padding: const EdgeInsets.symmetric(
-                horizontal: PixelMetrics.space4,
+                horizontal: PixelMetrics.space3,
                 vertical: PixelMetrics.space2,
               ),
               decoration: BoxDecoration(
@@ -193,13 +184,9 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
                     semanticLabel: 'Back',
                     onPressed: () => Navigator.of(context).pop(),
                   ),
+                  const SizedBox(width: PixelMetrics.space2),
                   Expanded(
-                    child: Text(
-                      'Listen',
-                      style: theme.textTheme.titleMedium,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    child: Text('Listen', style: theme.textTheme.titleMedium),
                   ),
                   const SizedBox(width: PixelMetrics.space2),
                   PixelIconButton(
@@ -212,27 +199,16 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
               ),
             ),
 
-            // Main Cassette & Word Display
+            // Main Player Header & Word Display
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.all(PixelMetrics.space4),
                 children: [
-                  // Retro Cassette Deck Widget
-                  _RetroCassetteWidget(
-                    tapeAnimation: _tapeController,
+                  _PlaylistHeaderCard(
+                    playlistTitle: _commuteService.playlistTitle,
+                    currentIndex: _commuteService.currentIndex,
+                    totalWords: _commuteService.totalWords,
                     isPlaying: _commuteService.isPlaying,
-                    playlistTitle: _commuteService.playlistTitle,
-                    trackInfo: _commuteService.totalWords > 0
-                        ? '${_commuteService.currentIndex + 1} / ${_commuteService.totalWords}'
-                        : 'NO WORDS',
-                  ),
-
-                  const SizedBox(height: PixelMetrics.space3),
-
-                  // Tape Selector Strip
-                  _TapeSelectorStrip(
-                    playlistTitle: _commuteService.playlistTitle,
-                    wordCount: _commuteService.totalWords,
                     onOpenSelector: _openTapeSelector,
                   ),
 
@@ -253,17 +229,49 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
                           ? currentWord.examples.first
                           : '',
                       phaseText: _commuteService.currentPhaseText,
+                      isPlaying: _commuteService.isPlaying,
                     ),
                   ] else ...[
-                    const PixelBox(
+                    PixelBox(
                       raised: true,
-                      padding: EdgeInsets.all(PixelMetrics.space6),
-                      child: Center(
-                        child: Text(
-                          'No words to play yet.\nSave a word in your notebook, then come back to listen.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 16),
-                        ),
+                      padding: const EdgeInsets.all(PixelMetrics.space6),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: palette.paper,
+                              borderRadius: BorderRadius.circular(
+                                PixelMetrics.radius,
+                              ),
+                              border: Border.all(
+                                color: palette.border,
+                                width: PixelMetrics.border,
+                              ),
+                            ),
+                            alignment: Alignment.center,
+                            child: PixelIcon(
+                              PixelGlyph.headphones,
+                              color: palette.inkMuted,
+                              scale: 2.4,
+                            ),
+                          ),
+                          const SizedBox(height: PixelMetrics.space3),
+                          Text(
+                            'No words to play yet',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: PixelMetrics.space2),
+                          Text(
+                            'Save a word in your notebook, then come back to listen.',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: palette.inkMuted,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -272,10 +280,7 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
             ),
 
             // Bottom Transport Control Bar
-            _TransportControlsBar(
-              commuteService: _commuteService,
-              onOpenSelector: _openTapeSelector,
-            ),
+            _TransportControlsBar(commuteService: _commuteService),
           ],
         ),
       ),
@@ -283,236 +288,138 @@ class _AudioCommuteScreenState extends State<AudioCommuteScreen>
   }
 }
 
-class _TapeSelectorStrip extends StatelessWidget {
-  const _TapeSelectorStrip({
+class _PlaylistHeaderCard extends StatelessWidget {
+  const _PlaylistHeaderCard({
     required this.playlistTitle,
-    required this.wordCount,
+    required this.currentIndex,
+    required this.totalWords,
+    required this.isPlaying,
     required this.onOpenSelector,
   });
 
   final String playlistTitle;
-  final int wordCount;
+  final int currentIndex;
+  final int totalWords;
+  final bool isPlaying;
   final VoidCallback onOpenSelector;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: PixelMetrics.space3,
-        vertical: PixelMetrics.space2,
-      ),
-      decoration: BoxDecoration(
-        color: palette.surface,
-        border: Border.all(color: palette.border, width: PixelMetrics.border),
-        boxShadow: [
-          BoxShadow(
-            color: palette.border.withValues(alpha: 0.3),
-            offset: const Offset(2, 2),
-            blurRadius: 0,
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              PixelIcon(
-                PixelGlyph.headphones,
-                color: palette.accent,
-                scale: 1.8,
-              ),
-              const SizedBox(width: PixelMetrics.space2),
-              Expanded(
-                child: Text(
-                  playlistTitle,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: palette.ink,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: PixelMetrics.space2),
-          PixelButton(label: 'Choose words', onPressed: onOpenSelector),
-        ],
-      ),
-    );
-  }
-}
-
-class _RetroCassetteWidget extends StatelessWidget {
-  const _RetroCassetteWidget({
-    required this.tapeAnimation,
-    required this.isPlaying,
-    required this.trackInfo,
-    this.playlistTitle = 'TODAY',
-  });
-
-  final Animation<double> tapeAnimation;
-  final bool isPlaying;
-  final String trackInfo;
-  final String playlistTitle;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
+    final theme = Theme.of(context);
+    final textScale = MediaQuery.textScalerOf(context).scale(1);
+    final trackLabel = totalWords > 0
+        ? 'Word ${currentIndex + 1} of $totalWords'
+        : 'No words saved';
 
     return PixelBox(
-      raised: true,
-      color: const Color(0xFF1E211A),
-      padding: const EdgeInsets.all(PixelMetrics.space4),
-      child: Column(
-        children: [
-          // Cassette Header Label
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      padding: const EdgeInsets.all(PixelMetrics.space3),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compactStack = constraints.maxWidth < 310 || textScale > 1.25;
+
+          final artwork = AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: isPlaying
+                  ? palette.accent.withValues(alpha: 0.14)
+                  : palette.paper,
+              borderRadius: BorderRadius.circular(PixelMetrics.radiusSm),
+              border: Border.all(
+                color: isPlaying
+                    ? palette.accent.withValues(alpha: 0.35)
+                    : palette.border,
+                width: PixelMetrics.border,
+              ),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              isPlaying ? Icons.graphic_eq_rounded : Icons.headphones_rounded,
+              size: 20,
+              color: palette.accent,
+            ),
+          );
+
+          final chooseButton = TextButton(
+            onPressed: onOpenSelector,
+            style: TextButton.styleFrom(
+              foregroundColor: palette.accent,
+              backgroundColor: palette.accent.withValues(alpha: 0.08),
+              padding: const EdgeInsets.symmetric(
+                horizontal: PixelMetrics.space3,
+                vertical: PixelMetrics.space2,
+              ),
+              minimumSize: const Size(0, PixelMetrics.tapTarget),
+              tapTargetSize: MaterialTapTargetSize.padded,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(PixelMetrics.radiusSm),
+              ),
+            ),
+            child: const Text('Choose words'),
+          );
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: Text(
-                  'SIDE A • ${playlistTitle.toUpperCase()}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: palette.accent,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  'TRACK: $trackInfo',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFFE0DFD5),
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: PixelMetrics.space3),
-
-          // Cassette Window & Spools
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF11130D),
-              border: Border.all(color: palette.border, width: 2),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                // Left Spool
-                _TapeSpool(animation: tapeAnimation, isPlaying: isPlaying),
-
-                // Center Cassette Tape Window & VU Meters
-                Column(
-                  children: [
-                    Container(
-                      width: 80,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2B2E24),
-                        border: Border.all(color: palette.border, width: 1),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 4,
-                            child: Container(color: const Color(0xFF4A341E)),
-                          ),
-                          Expanded(
-                            flex: 6,
-                            child: Container(color: Colors.transparent),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    // Animated VU Meter Bars
-                    Row(
-                      children: List.generate(
-                        7,
-                        (index) => Container(
-                          width: 6,
-                          height: isPlaying ? (6.0 + ((index * 3) % 12)) : 4.0,
-                          margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                          color: index > 4
-                              ? const Color(0xFFE53935)
-                              : (isPlaying
-                                    ? const Color(0xFFCBE32B)
-                                    : const Color(0xFF555A48)),
-                        ),
-                      ),
-                    ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  if (!compactStack) ...[
+                    artwork,
+                    const SizedBox(width: PixelMetrics.space3),
                   ],
-                ),
-
-                // Right Spool
-                _TapeSpool(animation: tapeAnimation, isPlaying: isPlaying),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TapeSpool extends StatelessWidget {
-  const _TapeSpool({required this.animation, required this.isPlaying});
-
-  final Animation<double> animation;
-  final bool isPlaying;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, child) {
-        final angle = isPlaying ? (animation.value * 2 * math.pi) : 0.0;
-        return Transform.rotate(
-          angle: angle,
-          child: Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0xFFE0DFD5),
-              border: Border.all(color: Colors.black, width: 2),
-            ),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Container(
-                  width: 14,
-                  height: 14,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Color(0xFF11130D),
-                  ),
-                ),
-                for (int i = 0; i < 3; i++)
-                  Transform.rotate(
-                    angle: i * (math.pi / 3),
-                    child: Container(
-                      width: 2,
-                      height: 28,
-                      color: const Color(0xFF11130D),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          playlistTitle,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: palette.ink,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          trackLabel,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: palette.inkMuted,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
+                  if (!compactStack) ...[
+                    const SizedBox(width: PixelMetrics.space2),
+                    chooseButton,
+                  ],
+                ],
+              ),
+              if (compactStack) ...[
+                const SizedBox(height: PixelMetrics.space2),
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: chooseButton,
+                ),
               ],
-            ),
-          ),
-        );
-      },
+              if (totalWords > 0) ...[
+                const SizedBox(height: PixelMetrics.space3),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(PixelMetrics.radiusPill),
+                  child: LinearProgressIndicator(
+                    value: (currentIndex + 1) / totalWords,
+                    minHeight: 3,
+                    backgroundColor: palette.border.withValues(alpha: 0.7),
+                    color: palette.accent,
+                    semanticsLabel: 'Playlist progress',
+                  ),
+                ),
+              ],
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -525,6 +432,7 @@ class _WordDisplayCard extends StatelessWidget {
     required this.meaning,
     required this.example,
     required this.phaseText,
+    required this.isPlaying,
   });
 
   final String word;
@@ -533,92 +441,167 @@ class _WordDisplayCard extends StatelessWidget {
   final String meaning;
   final String example;
   final String phaseText;
+  final bool isPlaying;
+
+  String _formatPhaseText(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return '';
+    if (trimmed == 'PAUSED') return 'Paused';
+    if (trimmed.startsWith('PLAYING:')) return 'Reading word';
+    if (trimmed.startsWith('EXAMPLE:')) return 'Reading example';
+    if (trimmed == 'NEXT WORD…') return 'Next word…';
+    if (trimmed.startsWith('PAUSE ')) {
+      return 'Pause ${trimmed.substring(6)}';
+    }
+    if (trimmed.startsWith('REPEAT ')) {
+      return 'Repeat ${trimmed.substring(7)}';
+    }
+    return trimmed[0].toUpperCase() + trimmed.substring(1).toLowerCase();
+  }
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final theme = Theme.of(context);
+    final formattedPhase = _formatPhaseText(phaseText);
 
     return PixelBox(
       raised: true,
       color: palette.surface,
-      padding: const EdgeInsets.all(PixelMetrics.space4),
+      padding: const EdgeInsets.all(PixelMetrics.space5),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Show status only once there is something to report.
-          if (phaseText.isNotEmpty) ...[
+          if (formattedPhase.isNotEmpty) ...[
             Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: palette.paper,
-                border: Border.all(color: palette.border, width: 1),
+              padding: const EdgeInsets.symmetric(
+                horizontal: PixelMetrics.space3,
+                vertical: PixelMetrics.space1,
               ),
-              child: Text(
-                phaseText.toUpperCase(),
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: palette.accent,
+              decoration: BoxDecoration(
+                color: isPlaying
+                    ? palette.accent.withValues(alpha: 0.10)
+                    : palette.paper,
+                borderRadius: BorderRadius.circular(PixelMetrics.radiusPill),
+                border: Border.all(
+                  color: isPlaying
+                      ? palette.accent.withValues(alpha: 0.24)
+                      : palette.border,
+                  width: PixelMetrics.border,
                 ),
-                textAlign: TextAlign.center,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isPlaying ? palette.accent : palette.inkMuted,
+                    ),
+                  ),
+                  const SizedBox(width: PixelMetrics.space2),
+                  Flexible(
+                    child: Text(
+                      formattedPhase,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: isPlaying ? palette.accent : palette.inkMuted,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-
-            const SizedBox(height: PixelMetrics.space3),
+            const SizedBox(height: PixelMetrics.space4),
           ],
 
-          // Word & IPA
-          Wrap(
-            spacing: PixelMetrics.space2,
-            runSpacing: PixelMetrics.space1,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text(
-                word,
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontSize: 30,
-                  fontWeight: FontWeight.bold,
-                  color: palette.ink,
-                ),
-              ),
-              if (partOfSpeech.isNotEmpty) ...[
-                Text(
-                  partOfSpeech,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: palette.accent,
-                  ),
-                ),
-              ],
-              if (ipa.isNotEmpty) ...[
-                Text(
-                  ipa,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: palette.inkFaint,
-                  ),
-                ),
-              ],
-            ],
+          // Primary Headword
+          Text(
+            word,
+            style: theme.textTheme.displaySmall?.copyWith(
+              // Use the headline size on narrow phones; user text scaling
+              // still applies fully, with no fitted/shrunk text.
+              fontSize: MediaQuery.sizeOf(context).width < 360 ? 26 : 32,
+              fontWeight: FontWeight.w700,
+              color: palette.ink,
+              height: 1.2,
+              letterSpacing: -0.4,
+            ),
           ),
 
-          const SizedBox(height: PixelMetrics.space2),
+          if (partOfSpeech.isNotEmpty || ipa.isNotEmpty) ...[
+            const SizedBox(height: PixelMetrics.space2),
+            Wrap(
+              spacing: PixelMetrics.space2,
+              runSpacing: PixelMetrics.space1,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (partOfSpeech.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: PixelMetrics.space2,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: palette.accent.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(
+                        PixelMetrics.radiusPill,
+                      ),
+                    ),
+                    child: Text(
+                      partOfSpeech,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: palette.accent,
+                      ),
+                    ),
+                  ),
+                if (ipa.isNotEmpty)
+                  Text(
+                    ipa,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: palette.inkMuted,
+                    ),
+                  ),
+              ],
+            ),
+          ],
 
-          // Meaning
+          const SizedBox(height: PixelMetrics.space4),
+          Divider(height: 1, color: palette.border),
+          const SizedBox(height: PixelMetrics.space4),
+
+          // Primary Meaning
           Text(
             meaning,
-            style: theme.textTheme.bodyLarge?.copyWith(
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: palette.ink,
               fontWeight: FontWeight.w600,
+              height: 1.4,
             ),
           ),
 
           if (example.isNotEmpty) ...[
-            const SizedBox(height: PixelMetrics.space2),
-            Text(
-              '“$example”',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontStyle: FontStyle.italic,
-                color: palette.inkMuted,
+            const SizedBox(height: PixelMetrics.space4),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(PixelMetrics.space3),
+              decoration: BoxDecoration(
+                color: palette.paper,
+                borderRadius: BorderRadius.circular(PixelMetrics.radiusSm),
+                border: Border.all(
+                  color: palette.border,
+                  width: PixelMetrics.border,
+                ),
+              ),
+              child: Text(
+                '“$example”',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontStyle: FontStyle.italic,
+                  color: palette.inkMuted,
+                  height: 1.45,
+                ),
               ),
             ),
           ],
@@ -708,7 +691,13 @@ class _ListeningSettingMenu<T> extends StatelessWidget {
             children: [
               Expanded(
                 flex: 3,
-                child: Text(label, style: theme.textTheme.bodyMedium),
+                child: Text(
+                  label,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: palette.ink,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ),
               const SizedBox(width: PixelMetrics.space3),
               Flexible(
@@ -744,13 +733,9 @@ class _ListeningSettingMenu<T> extends StatelessWidget {
 }
 
 class _TransportControlsBar extends StatelessWidget {
-  const _TransportControlsBar({
-    required this.commuteService,
-    required this.onOpenSelector,
-  });
+  const _TransportControlsBar({required this.commuteService});
 
   final AudioCommuteService commuteService;
-  final VoidCallback onOpenSelector;
 
   @override
   Widget build(BuildContext context) {
@@ -759,7 +744,7 @@ class _TransportControlsBar extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: PixelMetrics.space3,
-        vertical: PixelMetrics.space2,
+        vertical: PixelMetrics.space3,
       ),
       decoration: BoxDecoration(
         color: palette.surface,
@@ -770,13 +755,6 @@ class _TransportControlsBar extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          // Eject / Select Playlist
-          PixelIconButton(
-            glyph: PixelGlyph.headphones,
-            semanticLabel: 'Select Tape / Playlist',
-            onPressed: onOpenSelector,
-          ),
-
           // Shuffle
           PixelIconButton(
             glyph: PixelGlyph.shuffle,
@@ -795,6 +773,14 @@ class _TransportControlsBar extends StatelessWidget {
           // Play / Pause Main Action
           IconButton.filled(
             tooltip: commuteService.isPlaying ? 'Pause' : 'Play',
+            iconSize: 28,
+            style: IconButton.styleFrom(
+              backgroundColor: palette.accent,
+              foregroundColor: palette.onAccent,
+              disabledBackgroundColor: palette.border,
+              disabledForegroundColor: palette.inkFaint,
+              minimumSize: const Size(52, 52),
+            ),
             onPressed: commuteService.totalWords == 0
                 ? null
                 : () {

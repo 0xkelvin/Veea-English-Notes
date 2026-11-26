@@ -49,7 +49,7 @@ void main() {
       // Verify tags and source
       expect(find.text('#mindset'), findsOneWidget);
       expect(find.text('#ielts'), findsOneWidget);
-      expect(find.text('FROM SAFARI'), findsOneWidget);
+      expect(find.text('From Safari'), findsOneWidget);
     },
   );
 
@@ -58,7 +58,7 @@ void main() {
     (tester) async {
       final word = testWord.copyWith(source: 'Pixel Lens OCR');
       await tester.pumpWidget(wrap(WordRow(word: word, onTap: () {})));
-      expect(find.text('FROM PIXEL LENS OCR'), findsNothing);
+      expect(find.text('From Pixel Lens OCR'), findsNothing);
       expect(find.text('#mindset'), findsOneWidget);
       expect(word.source, 'Pixel Lens OCR');
       expect(word.displaySource, isNull);

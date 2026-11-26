@@ -135,7 +135,10 @@ class ClipboardDetectorService {
     if (cleanWord.isEmpty) return false;
 
     // 1. Automatic Vietnamese meaning & POS via WordSuggestionService
-    final suggestion = await WordSuggestionService.suggest(cleanWord);
+    final suggestion = await WordSuggestionService.suggest(
+      cleanWord,
+      allowOnline: false,
+    );
 
     // 2. Automated IPA pronunciation lookup
     String? pronunciation;

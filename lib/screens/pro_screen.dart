@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/pro_provider.dart';
+import '../core/config/app_config.dart';
 import 'account_screen.dart';
 
 class ProScreen extends StatelessWidget {
@@ -13,6 +14,46 @@ class ProScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final pro = context.watch<ProProvider>();
     final auth = context.watch<AuthProvider>();
+    if (AppConfig.isFreeLaunch) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Previous purchases')),
+        body: ListView(
+          padding: const EdgeInsets.all(24),
+          children: [
+            const Text('Veea is free in this release.'),
+            const SizedBox(height: 12),
+            const Text(
+              'App locks, custom unlock times, listening and review do not require a purchase or account.',
+            ),
+            if (pro.isConfigured) ...[
+              const SizedBox(height: 24),
+              const Text(
+                'If you previously purchased Pro, you can restore its record using the original Veea account.',
+              ),
+              TextButton(
+                key: const Key('restore_pro'),
+                onPressed: pro.isBusy
+                    ? null
+                    : () async {
+                        if (!auth.isSignedIn) {
+                          await Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const AccountScreen(),
+                            ),
+                          );
+                        }
+                        if (context.mounted && auth.isSignedIn) {
+                          await pro.restore();
+                        }
+                      },
+                child: const Text('Restore previous purchases'),
+              ),
+              if (pro.message != null) Text(pro.message!),
+            ],
+          ],
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('Veea Pro')),
       body: ListView(
@@ -75,7 +116,9 @@ class ProScreen extends StatelessWidget {
                         builder: (_) => const AccountScreen(),
                       ),
                     ),
-              child: const Text('Sign in to get Pro'),
+              child: Text(
+                pro.hasPro ? 'Sign in to manage Pro' : 'Sign in to get Pro',
+              ),
             )
           else if (!pro.hasLifetime)
             FilledButton(
@@ -89,7 +132,11 @@ class ProScreen extends StatelessWidget {
                     : 'Get lifetime Pro · ${pro.price}',
               ),
             ),
-          if ((!pro.isConfigured || !pro.purchasesReady) && !pro.hasPro) ...[
+          if ((!pro.isConfigured ||
+                  (auth.isSignedIn &&
+                      pro.purchaseAvailabilityChecked &&
+                      !pro.purchasesReady)) &&
+              !pro.hasPro) ...[
             const SizedBox(height: 12),
             const Text(
               'Pro purchases are not available in this build yet. All free features remain available.',

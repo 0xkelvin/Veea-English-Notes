@@ -13,6 +13,7 @@ import 'package:veea_english_app/core/theme/pixel_theme.dart';
 import 'package:veea_english_app/data/feedback_repository.dart';
 import 'package:veea_english_app/providers/feedback_provider.dart';
 import 'package:veea_english_app/screens/phone_account_screen.dart';
+import 'package:veea_english_app/screens/privacy_policy_screen.dart';
 import 'package:veea_english_app/screens/feedback_screen.dart';
 import 'package:veea_english_app/data/local/sqlite_vocabulary_repository.dart';
 import 'package:veea_english_app/data/remote/api_client.dart';
@@ -218,6 +219,7 @@ void main() {
     'settings': () => const SettingsScreen(),
     'account': () => const AccountScreen(),
     'feedback': () => const FeedbackScreen(),
+    'privacy_policy': () => const PrivacyPolicyScreen(),
     'protection': () => const AppProtectionScreen(),
     'learning_rules': () => LearningRulesScreen(gate: gate),
     'practice_picker': () =>
@@ -258,9 +260,7 @@ void main() {
           );
           await settle(tester);
           expect(tester.takeException(), isNull);
-          if (variant.name == 'phone' || variant.name == 'dark') {
-            await capture(tester, '${screen.key}_${variant.name}');
-          }
+          await capture(tester, '${screen.key}_${variant.name}');
           if (screen.key == 'search') {
             await tester.tap(find.byKey(const Key('search_include_notes')));
             await settle(tester);
@@ -612,6 +612,10 @@ void main() {
         expect(await repo.database.query('srs_reviews'), isEmpty);
         await repo.database.execute('DROP TRIGGER reject_review');
       });
+      // Let the floating error notice clear before retrying the lower rating.
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Good'));
       await tester.runAsync(() async {
         await tester.tap(find.text('Good'));
         await Future<void>.delayed(const Duration(milliseconds: 50));

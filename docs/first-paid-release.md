@@ -4,7 +4,16 @@ Branch: `feat/offline-pro-purchase-20261117`, based on `main` `05f66c4`.
 Prepared 17–18 November 2026 with actual agy implementation/review and Claude independent QA.
 No App Store product, payment key, production server setting, TestFlight upload or phone installation was changed by this work.
 
-## Product decisions
+## Superseded for the first public launch
+
+On 24 November 2026 the owner chose **free first**. The current release removes
+new sales and makes all app-lock counts/custom/per-app times free without an
+account. See [current App Store submission](app-store-submission.md). The paid
+boundary and prices below are historical design, not the current customer offer.
+Retain verified ownership and restore rights for any earlier purchases; future
+paid learning features require a new decision.
+
+## Historical product decisions
 
 - Free: unlimited local words, Listen, Review, learning rules, one app lock, and default unlock presets of 5, 15 or 30 minutes.
 - Pro: one-time non-consumable, multiple app locks, custom 5-minute–24-hour default and per-app unlock times. Existing learning rules remain available.

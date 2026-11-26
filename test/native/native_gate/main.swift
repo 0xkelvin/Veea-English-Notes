@@ -356,6 +356,18 @@ precondition(NativeGatePolicy.applicationID(from: "native:bad-id") == nil)
 print("Native gate policy, persistence, handoff, scheduling-failure, stale-callback, and cross-process lock tests passed")
 
 // Plan enforcement is native, independent of paywall widgets.
+// Production launch capability is independent of purchase ownership.
+precondition(NativeGateReleasePolicy.isFreeLaunch)
+let freeLaunchControls = NativeGateReleasePolicy.permitsAllLockControls(purchasedPro: false)
+precondition(freeLaunchControls)
+try NativeGatePlanPolicy.requireAppCount(50, pro: freeLaunchControls)
+for minutes in [5, 7, 47, 1440] {
+  try NativeGatePlanPolicy.requireDuration(minutes, pro: freeLaunchControls)
+  precondition(NativeGatePlanPolicy.duration(minutes, pro: freeLaunchControls) == minutes)
+}
+print("Free launch permits multiple app locks and custom times without Pro ownership")
+
+// Retained historical policy remains covered for future separately reviewed work.
 try NativeGatePlanPolicy.requireAppCount(1, pro: false)
 do { try NativeGatePlanPolicy.requireAppCount(2, pro: false); preconditionFailure("Free must refuse a second app") }
 catch NativeGatePlanError.proRequired {}

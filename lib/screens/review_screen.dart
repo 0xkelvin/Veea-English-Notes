@@ -9,6 +9,7 @@ import '../models/srs_review.dart';
 import '../models/vocabulary_word.dart';
 import '../providers/vocabulary_provider.dart';
 import '../services/tts_service.dart';
+import '../services/pronunciation_service.dart';
 import '../widgets/highlighted_text.dart';
 import '../widgets/pixel/pixel_box.dart';
 import '../widgets/pixel/pixel_button.dart';
@@ -17,7 +18,7 @@ import '../widgets/practice_word_picker.dart';
 import 'audio_commute_screen.dart';
 import 'word_editor_screen.dart';
 
-/// 8-bit Spaced Repetition (SM-2) Flashcard Review Screen.
+/// Spaced Repetition (SM-2) Flashcard Review Screen.
 class ReviewScreen extends StatefulWidget {
   const ReviewScreen({super.key, this.practiceAll = false});
 
@@ -318,39 +319,55 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   Widget _buildTopBar(BuildContext context) {
     final palette = context.palette;
+    final theme = Theme.of(context);
+    final showProgress = !_isLoading && _queue.isNotEmpty && !_isComplete;
+
     return Container(
-      padding: const EdgeInsets.all(PixelMetrics.space2),
-      color: palette.surface,
+      decoration: BoxDecoration(
+        color: palette.surface,
+        border: Border(
+          bottom: BorderSide(color: palette.border, width: PixelMetrics.border),
+        ),
+      ),
       child: Column(
         children: [
-          Row(
-            children: [
-              PixelIconButton(
-                glyph: PixelGlyph.arrowLeft,
-                semanticLabel: 'Exit review',
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-              const SizedBox(width: PixelMetrics.space2),
-              Expanded(
-                child: Text(
-                  'Review',
-                  style: Theme.of(context).textTheme.titleMedium,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              PixelMetrics.space3,
+              PixelMetrics.space2,
+              PixelMetrics.space3,
+              0,
+            ),
+            child: Row(
+              children: [
+                PixelIconButton(
+                  glyph: PixelGlyph.arrowLeft,
+                  semanticLabel: 'Exit review',
+                  onPressed: () => Navigator.of(context).pop(),
                 ),
-              ),
-              PixelIconButton(
-                glyph: PixelGlyph.headphones,
-                semanticLabel: 'Hands-Free Audio Review',
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const AudioCommuteScreen(),
+                const SizedBox(width: PixelMetrics.space2),
+                Expanded(
+                  child: Text('Review', style: theme.textTheme.titleMedium),
+                ),
+                const SizedBox(width: PixelMetrics.space2),
+                PixelIconButton(
+                  glyph: PixelGlyph.headphones,
+                  semanticLabel: 'Hands-Free Audio Review',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AudioCommuteScreen(),
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: PixelMetrics.space2,
+            padding: EdgeInsets.fromLTRB(
+              PixelMetrics.space4,
+              PixelMetrics.space1,
+              PixelMetrics.space3,
+              showProgress ? PixelMetrics.space1 : PixelMetrics.space2,
             ),
             child: SizedBox(
               width: double.infinity,
@@ -358,14 +375,49 @@ class _ReviewScreenState extends State<ReviewScreen> {
                 alignment: WrapAlignment.spaceBetween,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 spacing: PixelMetrics.space2,
+                runSpacing: PixelMetrics.space1,
                 children: [
-                  Text(
-                    _selectionLabel ??
-                        (widget.practiceAll ? 'Recent words' : 'Due words'),
-                    style: Theme.of(context).textTheme.bodySmall,
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: PixelMetrics.space2,
+                    runSpacing: 2,
+                    children: [
+                      Text(
+                        _selectionLabel ??
+                            (widget.practiceAll ? 'Recent words' : 'Due words'),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: palette.inkMuted,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (showProgress) ...[
+                        Text(
+                          '·',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: palette.inkFaint,
+                          ),
+                        ),
+                        Text(
+                          'Word ${_currentIndex + 1} of ${_queue.length}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: palette.inkMuted,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   TextButton.icon(
                     key: const Key('choose_review_words'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: palette.accent,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: PixelMetrics.space2,
+                        vertical: PixelMetrics.space1,
+                      ),
+                      minimumSize: const Size(0, PixelMetrics.tapTarget),
+                      tapTargetSize: MaterialTapTargetSize.padded,
+                    ),
                     onPressed:
                         _isLoading ||
                             _isSubmitting ||
@@ -377,36 +429,30 @@ class _ReviewScreenState extends State<ReviewScreen> {
                                 0
                         ? null
                         : _chooseWords,
-                    icon: const Icon(Icons.checklist, size: 20),
+                    icon: const Icon(Icons.checklist_rounded, size: 18),
                     label: Text(_isChoosingWords ? 'Loading…' : 'Choose words'),
                   ),
                 ],
               ),
             ),
           ),
-          if (!_isLoading && _queue.isNotEmpty && !_isComplete)
+          if (showProgress)
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                PixelMetrics.space2,
+                PixelMetrics.space4,
                 0,
-                PixelMetrics.space2,
+                PixelMetrics.space4,
                 PixelMetrics.space2,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Word ${_currentIndex + 1} of ${_queue.length}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: PixelMetrics.space1),
-                  LinearProgressIndicator(
-                    value: _currentIndex / _queue.length,
-                    backgroundColor: palette.border,
-                    color: palette.accent,
-                    semanticsLabel: 'Review progress',
-                  ),
-                ],
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(PixelMetrics.radiusPill),
+                child: LinearProgressIndicator(
+                  value: _currentIndex / _queue.length,
+                  minHeight: 4,
+                  backgroundColor: palette.border.withValues(alpha: 0.7),
+                  color: palette.accent,
+                  semanticsLabel: 'Review progress',
+                ),
               ),
             ),
         ],
@@ -415,16 +461,21 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   Widget _buildLoading() {
+    final palette = context.palette;
     return Center(
       child: Text(
         'Loading your words…',
-        style: Theme.of(context).textTheme.labelSmall,
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: palette.inkMuted),
       ),
     );
   }
 
   Widget _buildEmptyState(BuildContext context) {
     final palette = context.palette;
+    final theme = Theme.of(context);
+    final totalWords = context.watch<VocabularyProvider>().stats.totalWords;
 
     return Center(
       child: SingleChildScrollView(
@@ -433,39 +484,34 @@ class _ReviewScreenState extends State<ReviewScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                padding: const EdgeInsets.all(PixelMetrics.space4),
-                decoration: BoxDecoration(
-                  color: palette.surface,
-                  border: Border.all(
-                    color: palette.border,
-                    width: PixelMetrics.border,
-                  ),
-                ),
+              PixelBox(
+                raised: true,
+                padding: const EdgeInsets.all(PixelMetrics.space5),
                 child: Column(
                   children: [
                     Text(
                       'All caught up',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.titleMedium?.copyWith(color: palette.accent),
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: palette.accent,
+                      ),
+                      textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: PixelMetrics.space3),
                     Text(
-                      context.watch<VocabularyProvider>().stats.totalWords == 0
+                      totalWords == 0
                           ? 'Save your first word to start reviewing.'
                           : 'No words are due right now. Come back later or practice your recent words.',
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: palette.inkMuted,
+                      ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: PixelMetrics.space5),
               PixelButton(
-                label: context.watch<VocabularyProvider>().stats.totalWords == 0
-                    ? 'Add a word'
-                    : 'Practice recent words',
+                label: totalWords == 0 ? 'Add a word' : 'Practice recent words',
                 glyph: PixelGlyph.cards,
                 filled: true,
                 expand: true,
@@ -498,117 +544,120 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final word = _currentWord!;
     final palette = context.palette;
     final theme = Theme.of(context);
+    final rawIpa = PronunciationService.normalise(word.pronunciation ?? '');
+    final ipa = rawIpa.isEmpty ? null : PronunciationService.format(rawIpa);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(PixelMetrics.space4),
+      padding: const EdgeInsets.fromLTRB(
+        PixelMetrics.space4,
+        PixelMetrics.space5,
+        PixelMetrics.space4,
+        PixelMetrics.space6,
+      ),
       child: Column(
         children: [
-          // 8-bit RPG Battle / Dialogue Window
+          // Clean Word-Centered Flashcard
           PixelBox(
             raised: true,
             padding: EdgeInsets.zero,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Dialogue Header Bar
-                Container(
+                // Front of Card Content
+                Padding(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: PixelMetrics.space3,
-                    vertical: PixelMetrics.space2,
+                    horizontal: PixelMetrics.space5,
+                    vertical: PixelMetrics.space6,
                   ),
-                  decoration: BoxDecoration(
-                    color: palette.surface,
-                    border: Border(
-                      bottom: BorderSide(
-                        color: palette.border,
-                        width: PixelMetrics.border,
-                      ),
-                    ),
-                  ),
-                  child: Row(
+                  child: Column(
                     children: [
-                      Expanded(
-                        child: Text(
-                          'ROUND ${_currentIndex + 1} OF ${_queue.length}',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      if (word.partOfSpeech != null)
+                      if (word.partOfSpeech != null) ...[
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 1,
+                            horizontal: 10,
+                            vertical: 3,
                           ),
                           decoration: BoxDecoration(
-                            color: palette.paper,
-                            border: Border.all(color: palette.border, width: 1),
+                            color: palette.accent.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(
+                              PixelMetrics.radiusPill,
+                            ),
                           ),
                           child: Text(
-                            word.partOfSpeech!.short.toUpperCase(),
+                            word.partOfSpeech!.short,
                             style: theme.textTheme.labelSmall?.copyWith(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
+                              color: palette.accent,
                             ),
                           ),
                         ),
-                    ],
-                  ),
-                ),
-
-                // Front of Card Content
-                Padding(
-                  padding: const EdgeInsets.all(PixelMetrics.space5),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: PixelMetrics.space2),
+                        const SizedBox(height: PixelMetrics.space3),
+                      ],
                       Text(
                         word.word,
-                        style: theme.textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 36,
-                          letterSpacing: 1.5,
+                        style: theme.textTheme.displaySmall?.copyWith(
+                          fontSize: 34,
+                          fontWeight: FontWeight.w700,
+                          color: palette.ink,
+                          height: 1.2,
+                          letterSpacing: -0.4,
                         ),
                         textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: PixelMetrics.space2),
+                      const SizedBox(height: PixelMetrics.space3),
 
-                      // Audio / IPA Button
-                      GestureDetector(
+                      // Audio / IPA Pill Button
+                      Semantics(
+                        button: true,
+                        label: ipa != null
+                            ? 'Hear pronunciation $ipa'
+                            : 'Hear word',
+                        excludeSemantics: true,
                         onTap: _playCurrentWordAudio,
-                        behavior: HitTestBehavior.opaque,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: PixelMetrics.space3,
-                            vertical: PixelMetrics.space1,
-                          ),
-                          decoration: BoxDecoration(
-                            color: palette.paper,
-                            border: Border.all(
+                        child: Material(
+                          color: palette.paper,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(
+                              PixelMetrics.radiusPill,
+                            ),
+                            side: BorderSide(
                               color: palette.border,
                               width: PixelMetrics.border,
                             ),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              PixelIcon(
-                                PixelGlyph.speaker,
-                                color: palette.accent,
-                                scale: 2,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(
+                              PixelMetrics.radiusPill,
+                            ),
+                            onTap: _playCurrentWordAudio,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(
+                                minHeight: PixelMetrics.tapTarget,
                               ),
-                              const SizedBox(width: PixelMetrics.space2),
-                              Flexible(
-                                child: Text(
-                                  word.pronunciation ?? 'Hear word',
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: palette.accent,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: PixelMetrics.space4,
+                                  vertical: PixelMetrics.space2,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    PixelIcon(
+                                      PixelGlyph.speaker,
+                                      color: palette.accent,
+                                      scale: 2,
+                                    ),
+                                    const SizedBox(width: PixelMetrics.space2),
+                                    Flexible(
+                                      child: Text(
+                                        ipa ?? 'Hear word',
+                                        style: theme.textTheme.bodyLarge
+                                            ?.copyWith(color: palette.inkMuted),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ],
+                            ),
                           ),
                         ),
                       ),
@@ -616,8 +665,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
                       if (word.displaySource != null) ...[
                         const SizedBox(height: PixelMetrics.space4),
                         Text(
-                          'ENCOUNTERED: "${word.displaySource}"',
-                          style: theme.textTheme.bodyMedium?.copyWith(
+                          'From “${word.displaySource}”',
+                          style: theme.textTheme.bodySmall?.copyWith(
                             color: palette.inkMuted,
                             fontStyle: FontStyle.italic,
                           ),
@@ -628,12 +677,14 @@ class _ReviewScreenState extends State<ReviewScreen> {
                       if (word.tags.isNotEmpty) ...[
                         const SizedBox(height: PixelMetrics.space2),
                         Wrap(
-                          spacing: 4,
+                          alignment: WrapAlignment.center,
+                          spacing: PixelMetrics.space2,
+                          runSpacing: PixelMetrics.space1,
                           children: word.tags
                               .map(
                                 (t) => Text(
                                   '#$t',
-                                  style: theme.textTheme.labelSmall?.copyWith(
+                                  style: theme.textTheme.bodySmall?.copyWith(
                                     color: palette.inkFaint,
                                   ),
                                 ),
@@ -647,27 +698,21 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
                 // Back of Card (Revealed Meaning & Examples)
                 if (_isFlipped) ...[
+                  Divider(height: 1, color: palette.border),
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(PixelMetrics.space4),
+                    padding: const EdgeInsets.all(PixelMetrics.space5),
                     decoration: BoxDecoration(
-                      color: palette.paper,
-                      border: Border(
-                        top: BorderSide(
-                          color: palette.border,
-                          width: PixelMetrics.border,
-                        ),
-                        bottom: BorderSide(
-                          color: palette.border,
-                          width: PixelMetrics.border,
-                        ),
+                      color: palette.paper.withValues(alpha: 0.55),
+                      borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(PixelMetrics.radiusLg - 1),
                       ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'VIETNAMESE MEANING',
+                          'Meaning',
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: palette.inkMuted,
                           ),
@@ -675,37 +720,39 @@ class _ReviewScreenState extends State<ReviewScreen> {
                         const SizedBox(height: PixelMetrics.space1),
                         Text(
                           word.meaning,
-                          style: theme.textTheme.bodyLarge?.copyWith(
+                          style: theme.textTheme.titleMedium?.copyWith(
                             color: palette.ink,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                            height: 1.35,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 19,
+                            height: 1.4,
                           ),
                         ),
                         if (word.examples.isNotEmpty) ...[
-                          const SizedBox(height: PixelMetrics.space3),
+                          const SizedBox(height: PixelMetrics.space4),
                           Text(
-                            'EXAMPLE CONTEXT',
+                            word.examples.length == 1 ? 'Example' : 'Examples',
                             style: theme.textTheme.labelSmall?.copyWith(
                               color: palette.inkMuted,
                             ),
                           ),
-                          const SizedBox(height: PixelMetrics.space1),
+                          const SizedBox(height: PixelMetrics.space2),
                           for (final ex in word.examples)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 6),
+                              padding: const EdgeInsets.only(
+                                bottom: PixelMetrics.space2,
+                              ),
                               child: HighlightedText(
-                                text: '• “$ex”',
+                                text: '“$ex”',
                                 targetWord: word.word,
                                 style: theme.textTheme.bodyMedium?.copyWith(
                                   color: palette.ink,
                                   fontStyle: FontStyle.italic,
-                                  height: 1.35,
+                                  height: 1.4,
                                 ),
                                 highlightStyle: theme.textTheme.bodyMedium
                                     ?.copyWith(
                                       color: palette.accent,
-                                      fontWeight: FontWeight.bold,
+                                      fontWeight: FontWeight.w600,
                                       fontStyle: FontStyle.italic,
                                     ),
                               ),
@@ -732,10 +779,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
             )
           else ...[
             Text(
-              'HOW WELL DID YOU RECALL THIS?',
-              style: theme.textTheme.labelSmall?.copyWith(
-                fontWeight: FontWeight.bold,
+              'How well did you recall this?',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: palette.inkMuted,
+                fontWeight: FontWeight.w500,
               ),
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: PixelMetrics.space3),
             _buildRatingButtons(context),
@@ -747,68 +796,78 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   Widget _buildRatingButtons(BuildContext context) {
     final palette = context.palette;
+    final stackVertically = MediaQuery.textScalerOf(context).scale(1) > 1.5;
+
+    final againButton = _RatingCardButton(
+      keyLabel: '1',
+      title: 'Again',
+      subtitle: 'Forgot it',
+      borderColor: palette.danger.withValues(alpha: 0.45),
+      textColor: palette.danger,
+      onPressed: _isSubmitting ? null : () => _rateCard(SrsRating.again),
+    );
+    final hardButton = _RatingCardButton(
+      keyLabel: '2',
+      title: 'Hard',
+      subtitle: 'Needed a hint',
+      borderColor: palette.border,
+      textColor: palette.ink,
+      onPressed: _isSubmitting ? null : () => _rateCard(SrsRating.hard),
+    );
+    final goodButton = _RatingCardButton(
+      keyLabel: '3',
+      title: 'Good',
+      subtitle: 'Remembered',
+      borderColor: palette.border,
+      textColor: palette.ink,
+      onPressed: _isSubmitting ? null : () => _rateCard(SrsRating.good),
+    );
+    final easyButton = _RatingCardButton(
+      keyLabel: '4',
+      title: 'Easy',
+      subtitle: 'Knew it quickly',
+      borderColor: palette.accent.withValues(alpha: 0.45),
+      textColor: palette.accent,
+      onPressed: _isSubmitting ? null : () => _rateCard(SrsRating.easy),
+    );
+
+    if (stackVertically) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          againButton,
+          const SizedBox(height: PixelMetrics.space2),
+          hardButton,
+          const SizedBox(height: PixelMetrics.space2),
+          goodButton,
+          const SizedBox(height: PixelMetrics.space2),
+          easyButton,
+        ],
+      );
+    }
 
     return Column(
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: _RatingCardButton(
-                keyLabel: '1',
-                title: 'Again',
-                subtitle: 'Forgot it',
-                borderColor: palette.danger,
-                textColor: palette.danger,
-                onPressed: _isSubmitting
-                    ? null
-                    : () => _rateCard(SrsRating.again),
-              ),
-            ),
-            const SizedBox(width: PixelMetrics.space2),
-            Expanded(
-              child: _RatingCardButton(
-                keyLabel: '2',
-                title: 'Hard',
-                subtitle: 'Needed a hint',
-                borderColor: palette.inkFaint,
-                textColor: palette.inkMuted,
-                onPressed: _isSubmitting
-                    ? null
-                    : () => _rateCard(SrsRating.hard),
-              ),
-            ),
-          ],
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: againButton),
+              const SizedBox(width: PixelMetrics.space2),
+              Expanded(child: hardButton),
+            ],
+          ),
         ),
         const SizedBox(height: PixelMetrics.space2),
-        Row(
-          children: [
-            Expanded(
-              child: _RatingCardButton(
-                keyLabel: '3',
-                title: 'Good',
-                subtitle: 'Remembered',
-                borderColor: palette.border,
-                textColor: palette.ink,
-                onPressed: _isSubmitting
-                    ? null
-                    : () => _rateCard(SrsRating.good),
-              ),
-            ),
-            const SizedBox(width: PixelMetrics.space2),
-            Expanded(
-              child: _RatingCardButton(
-                keyLabel: '4',
-                title: 'Easy',
-                subtitle: 'Knew it quickly',
-                borderColor: palette.accent,
-                textColor: palette.onAccent,
-                fillColor: palette.accent,
-                onPressed: _isSubmitting
-                    ? null
-                    : () => _rateCard(SrsRating.easy),
-              ),
-            ),
-          ],
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: goodButton),
+              const SizedBox(width: PixelMetrics.space2),
+              Expanded(child: easyButton),
+            ],
+          ),
         ),
       ],
     );
@@ -819,7 +878,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final theme = Theme.of(context);
     final total = _queue.length;
     final correct = _goodCount + _easyCount;
-    final accuracy = total > 0 ? ((correct / total) * 100).round() : 100;
 
     return Center(
       child: SingleChildScrollView(
@@ -835,39 +893,40 @@ class _ReviewScreenState extends State<ReviewScreen> {
                   children: [
                     Text(
                       'Review complete',
-                      style: theme.textTheme.headlineSmall?.copyWith(
+                      style: theme.textTheme.headlineMedium?.copyWith(
                         color: palette.accent,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.2,
                       ),
+                      textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: PixelMetrics.space4),
-                    _buildStatRow(context, 'WORDS REVIEWED', '$total'),
-                    const SizedBox(height: PixelMetrics.space2),
-                    _buildStatRow(context, 'COMFORTABLE RECALL', '$accuracy%'),
-                    const SizedBox(height: PixelMetrics.space2),
+                    const SizedBox(height: PixelMetrics.space5),
+                    _buildStatRow(context, 'Words reviewed', '$total'),
+                    Divider(height: PixelMetrics.space5, color: palette.border),
                     _buildStatRow(
                       context,
-                      'PERFECT RECALL',
+                      'Comfortable recall',
                       '$correct / $total',
                     ),
-                    const SizedBox(height: PixelMetrics.space2),
+                    Divider(height: PixelMetrics.space5, color: palette.border),
                     _buildStatRow(
                       context,
-                      'NEEDS PRACTICE',
+                      'Needs practice',
                       '${_againCount + _hardCount}',
                     ),
-                    const SizedBox(height: PixelMetrics.space4),
+                    const SizedBox(height: PixelMetrics.space5),
                     Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.all(PixelMetrics.space2),
-                      color: palette.paper,
+                      padding: const EdgeInsets.all(PixelMetrics.space3),
+                      decoration: BoxDecoration(
+                        color: palette.paper,
+                        borderRadius: BorderRadius.circular(
+                          PixelMetrics.radiusSm,
+                        ),
+                      ),
                       child: Text(
                         'Your next reviews are scheduled automatically.',
                         textAlign: TextAlign.center,
-                        style: theme.textTheme.labelSmall?.copyWith(
+                        style: theme.textTheme.bodySmall?.copyWith(
                           color: palette.inkMuted,
-                          fontSize: 10,
                         ),
                       ),
                     ),
@@ -891,14 +950,23 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   Widget _buildStatRow(BuildContext context, String label, String value) {
     final theme = Theme.of(context);
+    final palette = context.palette;
     return Row(
       children: [
-        Expanded(child: Text(label, style: theme.textTheme.labelSmall)),
+        Expanded(
+          child: Text(
+            label,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: palette.inkMuted,
+            ),
+          ),
+        ),
         const SizedBox(width: PixelMetrics.space2),
         Text(
           value,
           style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
+            color: palette.ink,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ],
@@ -913,7 +981,6 @@ class _RatingCardButton extends StatelessWidget {
     required this.subtitle,
     required this.borderColor,
     required this.textColor,
-    this.fillColor,
     this.onPressed,
   });
 
@@ -922,13 +989,12 @@ class _RatingCardButton extends StatelessWidget {
   final String subtitle;
   final Color borderColor;
   final Color textColor;
-  final Color? fillColor;
   final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final bg = fillColor ?? palette.surface;
+    final theme = Theme.of(context);
 
     return Semantics(
       button: true,
@@ -936,64 +1002,76 @@ class _RatingCardButton extends StatelessWidget {
       label: '$title, $subtitle',
       excludeSemantics: true,
       onTap: onPressed,
-      child: GestureDetector(
-        onTap: onPressed,
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: PixelMetrics.space3,
-            vertical: PixelMetrics.space2,
-          ),
-          decoration: BoxDecoration(
-            color: bg,
-            border: Border.all(color: borderColor, width: PixelMetrics.border),
-          ),
-          child: Column(
-            children: [
-              Row(
+      child: Material(
+        color: palette.surface,
+        borderRadius: BorderRadius.circular(PixelMetrics.radius),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(PixelMetrics.radius),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 56),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: PixelMetrics.space3,
+                vertical: PixelMetrics.space3,
+              ),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(PixelMetrics.radius),
+                border: Border.all(
+                  color: borderColor,
+                  width: PixelMetrics.border,
+                ),
+              ),
+              child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 4,
-                      vertical: 1,
-                    ),
-                    decoration: BoxDecoration(
-                      color: palette.paper,
-                      border: Border.all(color: borderColor, width: 1),
-                    ),
-                    child: Text(
-                      keyLabel,
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: textColor,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: palette.paper,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: palette.border, width: 1),
+                        ),
+                        child: Text(
+                          keyLabel,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontSize: 11,
+                            color: palette.inkMuted,
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          title,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: textColor,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    child: Text(
-                      title,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: textColor,
-                      ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 12,
+                      color: palette.inkMuted,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: fillColor != null ? textColor : palette.inkMuted,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),

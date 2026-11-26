@@ -73,7 +73,7 @@ void main() {
     await settle(tester);
 
     expect(find.text('/rɪˈzɪljənt/'), findsOneWidget);
-    expect(find.text('PRONUNCIATION · AUTOMATIC'), findsOneWidget);
+    expect(find.text('Pronunciation · Automatic'), findsOneWidget);
   });
 
   testWidgets('follows the word when it is edited', (tester) async {
@@ -139,7 +139,7 @@ void main() {
     await settle(tester);
 
     expect(find.text('/mine/'), findsOneWidget);
-    expect(find.text('PRONUNCIATION · YOURS'), findsOneWidget);
+    expect(find.text('Pronunciation · Custom'), findsOneWidget);
   });
 
   testWidgets('an override survives further edits to the word', (tester) async {
@@ -182,6 +182,6 @@ void main() {
     await settle(tester);
 
     expect(find.text('/rɪˈzɪljənt/'), findsOneWidget);
-    expect(find.text('PRONUNCIATION · AUTOMATIC'), findsOneWidget);
+    expect(find.text('Pronunciation · Automatic'), findsOneWidget);
   });
 }

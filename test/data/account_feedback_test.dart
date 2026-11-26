@@ -63,6 +63,8 @@ void main() {
   });
   tearDown(() async {
     AppConfig.overrideBaseUrl(null);
+    AppConfig.overrideFeedbackDelivery(null);
+    AppConfig.overrideZaloCommunityUrl(null);
     await repo.close();
   });
   ApiClient transport(Future<http.Response> Function(http.Request) responder) =>
@@ -240,8 +242,47 @@ void main() {
     },
   );
   test(
+    'account-only Go build sends no legacy feedback or config requests and preserves reports',
+    () async {
+      final requestedPaths = <String>[];
+      final client = transport((r) async {
+        requestedPaths.add(r.url.path);
+        return ok({});
+      });
+      final store = FeedbackRepository(
+        repo.database,
+        client,
+        receipts: MemoryReceipts(),
+      );
+      final feedback = FeedbackProvider(store);
+      addTearDown(feedback.dispose);
+      await feedback.activate(null);
+      expect(AppConfig.isCloudEnabled, isTrue);
+      expect(AppConfig.isFeedbackDeliveryEnabled, isFalse);
+
+      expect(
+        await feedback.submit(
+          kind: 'bug',
+          message: 'Saved draft must stay intact without server delivery.',
+        ),
+        isTrue,
+      );
+      await feedback.refresh();
+      expect(requestedPaths, isEmpty);
+      expect(feedback.reports, hasLength(1));
+      expect(feedback.reports.single.queued, isTrue);
+      expect(feedback.communityUrl, isNull);
+
+      AppConfig.overrideZaloCommunityUrl('https://zalo.me/g/valid123');
+      await feedback.refresh();
+      expect(requestedPaths, isEmpty);
+      expect(feedback.communityUrl, 'https://zalo.me/g/valid123');
+    },
+  );
+  test(
     'feedback survives offline delivery and retries with the same id and receipt',
     () async {
+      AppConfig.overrideFeedbackDelivery(true);
       var offline = true;
       final sent = <Map>[];
       final keys = <String>[];
@@ -289,6 +330,7 @@ void main() {
   test(
     'malformed feedback acknowledgement stays queued and diagnostics are opt-in',
     () async {
+      AppConfig.overrideFeedbackDelivery(true);
       Map? payload;
       final client = transport((r) async {
         if (r.url.path.endsWith('/config')) return ok({});

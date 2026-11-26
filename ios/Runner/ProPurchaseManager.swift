@@ -82,7 +82,7 @@ final class ProPurchaseManager {
     await refreshEntitlements()
     guard epoch == generation else { throw changedAccount() }
     isReady = true
-    if args["loadProduct"] as? Bool != false && !productID.isEmpty && product == nil {
+    if !NativeGateReleasePolicy.isFreeLaunch && args["loadProduct"] as? Bool != false && !productID.isEmpty && product == nil {
       let products = (try? await Product.products(for: [productID])) ?? []
       guard epoch == generation else { throw changedAccount() }
       product = products.first { $0.id == productID && $0.type == .nonConsumable }
@@ -121,6 +121,9 @@ final class ProPurchaseManager {
     else if outcome == "account_mismatch" { outcome = nil }
   }
   func purchase() async throws -> [String: Any] {
+    guard !NativeGateReleasePolicy.isFreeLaunch else {
+      throw NSError(domain: "VeeaPro", code: 5, userInfo: [NSLocalizedDescriptionKey: "This release is free. No purchase is needed."])
+    }
     guard let owner, let product else {
       throw NSError(domain: "VeeaPro", code: 1, userInfo: [NSLocalizedDescriptionKey: "Sign in and connect to the App Store before purchasing."])
     }
