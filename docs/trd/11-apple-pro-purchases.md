@@ -7,8 +7,8 @@
 ## 1. Scope and product rules
 
 1. **Offline-first vocabulary unchanged:** Local notebooks, listening, and review remain unlimited on Free and Pro, and vocabulary remains offline without new word-sync requirements.
-2. **Gate capabilities by plan:** Free allows one protected app with preset unlock duration; Pro unlocks multiple protected apps and custom/per-app unlock durations on iOS, plus existing TRD 10 Premium cartridge access when signed in.
-3. **One-time lifetime non-consumable purchase:** Pro is sold as an App Store **Non-Consumable** (launch pricing 99,000 VND early-bird / 149,000 VND regular), never a recurring subscription.
+2. **Current owner decision (26 November 2026):** Free allows one app lock and one vocabulary word per unlock, with an unlimited rotating practice pool. Pro enables multiple app locks and multiple words per unlock, bounded by the available pool. All supported default/custom/per-app durations are free. Existing TRD 10 server cartridge gates remain closed and are not advertised as part of this offer.
+3. **One-time non-consumable purchase:** Pro is sold as one App Store **Non-Consumable**, with target Vietnam price 99,000 VND, no trial or recurring subscription. Display Apple's localized price; App Store configuration and guideline 4.10 review remain release gates.
 4. **Sign in before purchase & account binding:** The user must be signed in to a Veea account before purchasing or restoring. StoreKit 2 passes the authenticated Veea user UUID as `appAccountToken(.appAccountToken(owner))`.
 5. **Default disabled without configuration:** Neither the public repository nor default local configuration ships live App Store product IDs, credentials, or deployment URLs. When `VEEA_APPLE_IAP_*` configuration is absent, purchase verification is disabled and fails closed (`503 purchase_unavailable`).
 

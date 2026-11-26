@@ -11,10 +11,11 @@ import 'package:flutter/foundation.dart';
 class AppConfig {
   AppConfig._();
 
-  // The first public release offers all learning and app-lock controls free.
-  // Reintroducing sales requires a reviewed learning-value product decision.
+  // Owner decision 2026-11-26: Free includes one app and one word per unlock;
+  // verified one-time Pro adds multiple apps and words. Timers stay free.
+  // The override retains compatibility tests for the earlier free-first build.
   static bool? _freeLaunchOverride;
-  static bool get isFreeLaunch => _freeLaunchOverride ?? true;
+  static bool get isFreeLaunch => _freeLaunchOverride ?? false;
   @visibleForTesting
   static void overrideFreeLaunch(bool? value) {
     assert(() {

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../core/config/app_config.dart';
 
 import '../data/vocabulary_repository.dart';
 import '../models/gate_config.dart';
@@ -16,13 +17,51 @@ class AppGateProvider extends ChangeNotifier {
     required VocabularyRepository repository,
     AppGateService? service,
     DateTime Function()? now,
+    bool hasPro = false,
   }) : _repository = repository,
        _service = service ?? AppGateService(),
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now,
+       _hasPro = hasPro;
 
   final VocabularyRepository _repository;
   final AppGateService _service;
   final DateTime Function() _now;
+  bool _hasPro;
+  final Map<String, int> _roundWordCounts = {};
+  bool get canUseMultipleWords => AppConfig.isFreeLaunch || _hasPro;
+  int get maximumWordsPerUnlock => practiceWordCount == 0
+      ? 0
+      : canUseMultipleWords
+      ? practiceWordCount
+      : 1;
+
+  /// Effective access changes immediately; preserve the saved Pro preference
+  /// so sign-in/restore does not erase learning settings or personal words.
+  void setProAccess(bool hasPro) {
+    if (_hasPro == hasPro || _isDisposed) return;
+    _hasPro = hasPro;
+    notifyListeners();
+  }
+
+  /// An upgrade changes the next round, not an answer already in progress.
+  /// Downgrades take effect immediately and never require extra paid steps.
+  void beginChallengeRound(String targetApp) {
+    _roundWordCounts.putIfAbsent(_stateKey(targetApp), () => requiredWords);
+  }
+
+  /// Closing ends the screen's target snapshot, not its saved answers.
+  /// The next opening (including a cold restart) uses the current rule.
+  void endChallengeRound(String targetApp) {
+    _roundWordCounts.remove(_stateKey(targetApp));
+  }
+
+  int requiredWordsForApp(String targetApp) {
+    if (!canUseMultipleWords) return 1;
+    return (_roundWordCounts[_stateKey(targetApp)] ?? requiredWords).clamp(
+      1,
+      practiceWordCount == 0 ? 1 : practiceWordCount,
+    );
+  }
 
   GateConfig _config = const GateConfig();
   List<GateLog> _logs = const [];
@@ -54,10 +93,13 @@ class AppGateProvider extends ChangeNotifier {
   int get practiceWordCount => practiceWords.length;
   int get requiredWords => _config.wordsPerUnlock.clamp(
     1,
-    practiceWordCount == 0 ? 1 : practiceWordCount,
+    maximumWordsPerUnlock == 0 ? 1 : maximumWordsPerUnlock,
   );
   String? _poolNotice;
   String? get poolNotice => _poolNotice;
+  String _poolAdjustmentNotice(int count) => canUseMultipleWords
+      ? 'Words per unlock adjusted to $count to match your available practice words.'
+      : 'Saved word-count preference adjusted to $count to match your practice pool. Free continues with 1 word per unlock.';
   // Keep learning progress per app while native callbacks remain per opening.
   static String _stateKey(String app) {
     final key = app.trim().toLowerCase();
@@ -78,7 +120,8 @@ class AppGateProvider extends ChangeNotifier {
     Set<String> excludeIds = const {},
   }) {
     final pending = preview ? null : pendingAnswerForApp(targetApp);
-    if (pending != null && progressForApp(targetApp) >= requiredWords) {
+    if (pending != null &&
+        progressForApp(targetApp) >= requiredWordsForApp(targetApp)) {
       for (final word in practiceWords) {
         if (word.id == pending.wordId) return word;
       }
@@ -102,8 +145,7 @@ class AppGateProvider extends ChangeNotifier {
     );
     if (practiceWordCount > 0 && _config.wordsPerUnlock > practiceWordCount) {
       await _save(_config.copyWith(wordsPerUnlock: practiceWordCount));
-      _poolNotice =
-          'Words per unlock adjusted to $practiceWordCount to match your available practice words.';
+      _poolNotice = _poolAdjustmentNotice(practiceWordCount);
     }
     _progressByApp
       ..clear()
@@ -296,6 +338,7 @@ class AppGateProvider extends ChangeNotifier {
       final key = _stateKey(target);
       _progressByApp.remove(key);
       _pendingAnswers.remove(key);
+      _roundWordCounts.remove(key);
       // iOS has already removed the shield. History cleanup cannot undo that
       // success or require the user to repeat a destructive-looking action.
       try {
@@ -473,6 +516,13 @@ class AppGateProvider extends ChangeNotifier {
   }
 
   Future<void> setWordsPerUnlock(int count) async {
+    if (count > 1 && !canUseMultipleWords) {
+      throw PlatformException(
+        code: 'PRO_REQUIRED',
+        message:
+            'Free includes one word per unlock. Pro lets you review more words per unlock.',
+      );
+    }
     await prepareChallenge();
     if (practiceWordCount == 0) {
       throw PlatformException(
@@ -502,7 +552,7 @@ class AppGateProvider extends ChangeNotifier {
     final maximum = selected?.length ?? available.length;
     final count = _config.wordsPerUnlock.clamp(1, maximum == 0 ? 1 : maximum);
     _poolNotice = count != _config.wordsPerUnlock
-        ? 'Words per unlock adjusted to $count to match your practice pool.'
+        ? _poolAdjustmentNotice(count)
         : null;
     await _save(
       _config.copyWith(
@@ -628,7 +678,8 @@ class AppGateProvider extends ChangeNotifier {
       );
     }
     try {
-      final roundAlreadyEarned = progressForApp(targetApp) >= requiredWords;
+      final roundCount = requiredWordsForApp(targetApp);
+      final roundAlreadyEarned = progressForApp(targetApp) >= roundCount;
       var pending = pendingAnswerForApp(targetApp);
       final answerId = pending?.wordId ?? wordId;
       final answerAttempts = pending?.attempts ?? attempts;
@@ -637,8 +688,7 @@ class AppGateProvider extends ChangeNotifier {
         targetApp,
         allowCompleted: roundAlreadyEarned,
       );
-      if (!roundAlreadyEarned &&
-          progressForApp(targetApp) + 1 < requiredWords) {
+      if (!roundAlreadyEarned && progressForApp(targetApp) + 1 < roundCount) {
         throw PlatformException(
           code: 'ROUND_INCOMPLETE',
           message: 'Complete the remaining words before earning access.',
@@ -696,6 +746,7 @@ class AppGateProvider extends ChangeNotifier {
       } finally {
         _progressByApp.remove(key);
         _pendingAnswers.remove(key);
+        _roundWordCounts.remove(key);
         try {
           await _repository.clearGateRoundProgress(key);
         } catch (error) {

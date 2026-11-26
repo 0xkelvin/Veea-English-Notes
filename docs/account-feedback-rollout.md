@@ -62,7 +62,7 @@ verification. See [backend production instructions](../backend/README.md#product
 
 ## Feedback
 
-Current free-first launch provides local drafts and explicit Share/Copy, with an
+The current release provides local drafts and explicit Share/Copy, with an
 optional email composer only for a validated `VEEA_SUPPORT_EMAIL`. Share handoff
 never proves receipt and never marks a saved report sent. App details are opt-in
 and limited to version/platform/screen; no notebook contents, account IDs or

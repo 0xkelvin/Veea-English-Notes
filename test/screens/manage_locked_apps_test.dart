@@ -374,6 +374,7 @@ void main() {
         "CREATE TRIGGER reject_round_cleanup BEFORE DELETE ON gate_round_progress BEGIN SELECT RAISE(ABORT, 'test cleanup failure'); END",
       );
       // Force a row so SQLite executes the trigger on deletion.
+      gate.setProAccess(true);
       await gate.setWordsPerUnlock(2);
       await gate.recordStepCompletion(
         wordId: 'recipe',

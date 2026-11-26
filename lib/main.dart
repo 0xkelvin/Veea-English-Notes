@@ -117,7 +117,10 @@ Future<void> main() async {
     final widgetProvider = WidgetProvider();
     await widgetProvider.init();
 
-    final appGateProvider = AppGateProvider(repository: repository);
+    final appGateProvider = AppGateProvider(
+      repository: repository,
+      hasPro: pro.hasPro,
+    );
     await appGateProvider.init();
 
     runApp(
@@ -229,7 +232,10 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
   Timer? _syncDebounce;
 
   void _proChanged() {
-    if (mounted) unawaited(_appGateProvider.refreshNativeScreenTime());
+    if (mounted) {
+      _appGateProvider.setProAccess(widget.pro?.hasPro ?? false);
+      unawaited(_appGateProvider.refreshNativeScreenTime());
+    }
   }
 
   void _authChanged() {
@@ -346,6 +352,9 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
         widget.appGateProvider ??
         (AppGateProvider(repository: widget.vocabulary.repository)..init());
     _lastAccount = widget.auth.accountId;
+    if (widget.pro case final pro?) {
+      _appGateProvider.setProAccess(pro.hasPro);
+    }
     widget.pro?.addListener(_proChanged);
     unawaited(widget.pro?.refresh() ?? Future.value());
     widget.auth.addListener(_authChanged);
