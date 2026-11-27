@@ -828,7 +828,7 @@ class AppGateProvider extends ChangeNotifier {
       throw PlatformException(
         code: 'WORD_OUTSIDE_POOL',
         message:
-            'This word is no longer in your practice pool. Continue with your selected words.',
+            'This word is no longer selected. Continue with your unlock words.',
       );
     }
   }

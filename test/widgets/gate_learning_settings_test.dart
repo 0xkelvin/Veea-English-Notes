@@ -175,10 +175,20 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
+      gate.setProAccess(true);
+      await tester.runAsync(() => gate.setPracticeWords(['recipe', 'consent']));
+      gate.setProAccess(false);
       expect(gate.practiceWordCount, 1);
       await tester.pumpWidget(buildHarness());
       await tester.pumpAndSettle();
       expect(find.text('Review 1 word to unlock'), findsOneWidget);
+      expect(find.text('View selected word'), findsOneWidget);
+      expect(
+        find.text(
+          '1 more saved word is paused on Free. Pro restores the full selection.',
+        ),
+        findsOneWidget,
+      );
       await capture(tester, 'learning_free');
       expect(find.text('WORDS PER UNLOCK'), findsNothing);
       expect(find.byKey(const Key('edit_unlock_count')), findsNothing);

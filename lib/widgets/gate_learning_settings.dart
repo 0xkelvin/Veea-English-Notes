@@ -186,7 +186,11 @@ class _GateLearningSettingsState extends State<GateLearningSettings> {
                         ),
                       ),
                 icon: const Icon(Icons.format_list_bulleted),
-                label: Text('View all $count selected words'),
+                label: Text(
+                  count == 1
+                      ? 'View selected word'
+                      : 'View all $count selected words',
+                ),
               ),
             const SizedBox(height: 12),
             SizedBox(
@@ -217,7 +221,7 @@ class _GateLearningSettingsState extends State<GateLearningSettings> {
               ),
               if (widget.gate.pausedPracticeWordCount > 0)
                 Text(
-                  '${widget.gate.pausedPracticeWordCount} more saved words are paused on Free. Pro restores the full selection.',
+                  '${widget.gate.pausedPracticeWordCount} more saved ${widget.gate.pausedPracticeWordCount == 1 ? 'word is' : 'words are'} paused on Free. Pro restores the full selection.',
                   style: theme.textTheme.bodySmall,
                 ),
               TextButton.icon(
