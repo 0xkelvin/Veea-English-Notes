@@ -442,6 +442,7 @@ void main() {
       expect(calls.where((c) => c.method == 'grantPass'), isEmpty);
       now = now.add(const Duration(days: 1));
       await gate.setDailyWordGoal(true);
+      await gate.setPracticeWords(['b']);
       await gate.completeGateChallenge(
         wordId: 'b',
         targetApp: 'X',
@@ -855,7 +856,7 @@ void main() {
         tester.widget<SwitchListTile>(find.byType(SwitchListTile)).value,
         isFalse,
       );
-      expect(find.text('Practice words'), findsOneWidget);
+      expect(find.text('Words to unlock'), findsOneWidget);
     },
   );
 
@@ -966,7 +967,7 @@ void main() {
       expect(gate.requiredWords, 15);
       await gate.setPracticeWords(['a', 'b']);
       expect(gate.requiredWords, 2);
-      expect(gate.poolNotice, contains('adjusted'));
+      expect(gate.config.wordsPerUnlock, gate.practiceWordCount);
       await repo.softDelete('b', now);
       await gate.prepareChallenge();
       expect(gate.requiredWords, 1);
@@ -1006,54 +1007,62 @@ void main() {
   );
 
   test(
-    'two selected words alternate across apps and provider restarts',
+    'every unlock reviews both selected words, including across apps and restarts',
     () async {
       await gate.setPracticeWords(['a', 'b']);
-      final order = <String>[];
-      for (var index = 0; index < 4; index++) {
-        final app = index.isEven ? 'X' : 'YouTube';
-        final word = (await gate.selectGateWord(targetApp: app))!;
-        order.add(word.id);
-        await gate.completeGateChallenge(
-          wordId: word.id,
+      for (final app in ['X', 'YouTube', 'X']) {
+        final seen = <String>{};
+        final first = (await gate.selectGateWord(targetApp: app))!;
+        seen.add(first.id);
+        await gate.recordStepCompletion(
+          wordId: first.id,
           targetApp: app,
           attempts: 0,
         );
         gate.dispose();
         gate = AppGateProvider(repository: repo, now: () => now, hasPro: true);
         await gate.init();
+        final second = (await gate.selectGateWord(targetApp: app))!;
+        expect(seen.add(second.id), isTrue);
+        await gate.completeGateChallenge(
+          wordId: second.id,
+          targetApp: app,
+          attempts: 0,
+        );
+        expect(seen, {'a', 'b'});
+        expect(gate.progressForApp(app), 0);
       }
-      expect(order.toSet(), {'a', 'b'});
-      expect(order[0], order[2]);
-      expect(order[1], order[3]);
-      expect(order[0], isNot(order[1]));
-      expect((await repo.gateWordTurns()).values.toSet(), {3, 4});
+      expect((await repo.gateWordTurns()).keys.toSet(), {'a', 'b'});
     },
   );
 
-  test('failed grants and duplicate steps do not advance rotation', () async {
-    await gate.setPracticeWords(['a', 'b']);
-    failGrant = true;
-    await expectLater(
-      gate.completeGateChallenge(wordId: 'a', targetApp: 'X', attempts: 0),
-      throwsA(isA<PlatformException>()),
-    );
-    expect(await repo.gateWordTurns(), isEmpty);
-    failGrant = false;
-    await gate.completeGateChallenge(wordId: 'a', targetApp: 'X', attempts: 0);
-    expect(await repo.gateWordTurns(), {'a': 1});
-    await gate.setWordsPerUnlock(2);
-    await gate.recordStepCompletion(wordId: 'b', targetApp: 'X', attempts: 0);
-    final turns = await repo.gateWordTurns();
-    await repo.recordGateCompletion(
-      wordId: 'b',
-      targetApp: 'X',
-      attempts: 0,
-      completesRound: false,
-    );
-    expect(await repo.gateWordTurns(), turns);
-    expect((await gate.selectGateWord(targetApp: 'X'))!.id, 'a');
-  });
+  test(
+    'failed final grant and duplicate steps never advance selected words twice',
+    () async {
+      await gate.setPracticeWords(['a', 'b']);
+      await gate.recordStepCompletion(wordId: 'a', targetApp: 'X', attempts: 0);
+      final turns = await repo.gateWordTurns();
+      await expectLater(
+        gate.recordStepCompletion(wordId: 'a', targetApp: 'X', attempts: 0),
+        throwsA(isA<PlatformException>()),
+      );
+      expect(await repo.gateWordTurns(), turns);
+      failGrant = true;
+      await expectLater(
+        gate.completeGateChallenge(wordId: 'b', targetApp: 'X', attempts: 0),
+        throwsA(isA<PlatformException>()),
+      );
+      expect(await repo.gateWordTurns(), turns);
+      failGrant = false;
+      await gate.completeGateChallenge(
+        wordId: 'b',
+        targetApp: 'X',
+        attempts: 0,
+      );
+      expect((await repo.gateWordTurns()).keys.toSet(), {'a', 'b'});
+      expect(gate.progressForApp('X'), 0);
+    },
+  );
 
   test(
     'version 8 migration seeds rotation without changing words or history',
@@ -1145,8 +1154,6 @@ void main() {
         find.byKey(const ValueKey('practice_word_preview_b')),
         findsNothing,
       );
-      expect(find.text('Nov 5, 2026'), findsOneWidget);
-      expect(find.text('Nov 6, 2026'), findsOneWidget);
       await tester.tap(find.byKey(const Key('view_selected_practice_words')));
       await tester.pumpAndSettle();
       expect(find.byType(SelectedPracticeWordsScreen), findsOneWidget);
@@ -1162,7 +1169,7 @@ void main() {
         find.byKey(const ValueKey('selected_practice_word_b')),
         findsNothing,
       );
-      expect(find.text('2 words in practice'), findsOneWidget);
+      expect(find.text('2 words per unlock'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -1222,7 +1229,7 @@ void main() {
         await gate.setPracticeWords(['b']);
       });
       await tester.pumpAndSettle();
-      expect(find.text('1 word in practice'), findsOneWidget);
+      expect(find.text('1 word per unlock'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('selected_practice_word_b')),
         findsOneWidget,
@@ -1241,40 +1248,37 @@ void main() {
       await tester.tap(find.byKey(const Key('cancel_practice_words')));
       await tester.pumpAndSettle();
       expect(find.byType(SelectedPracticeWordsScreen), findsOneWidget);
-      expect(find.text('1 word in practice'), findsOneWidget);
+      expect(find.text('1 word per unlock'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
 
-  testWidgets(
-    'automatic all shows the notebook and removes deleted words from review',
-    (tester) async {
-      await tester.pumpWidget(app(SelectedPracticeWordsScreen(gate: gate)));
-      await tester.pumpAndSettle();
-      expect(find.text('3 words in practice'), findsOneWidget);
-      await tester.runAsync(() async {
-        await repo.softDelete('b', now);
-        await gate.prepareChallenge();
-      });
-      await tester.pumpAndSettle();
-      expect(find.text('2 words in practice'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('selected_practice_word_b')),
-        findsNothing,
-      );
-      await tester.runAsync(() async {
-        await repo.softDelete('a', now);
-        await repo.softDelete('c', now);
-        await gate.prepareChallenge();
-      });
-      await tester.pumpAndSettle();
-      expect(
-        find.text('Your notebook has no saved words yet.'),
-        findsOneWidget,
-      );
-      expect(tester.takeException(), isNull);
-    },
-  );
+  testWidgets('an explicit full selection removes deleted words from review', (
+    tester,
+  ) async {
+    await tester.runAsync(() => gate.setPracticeWords(['a', 'b', 'c']));
+    await tester.pumpWidget(app(SelectedPracticeWordsScreen(gate: gate)));
+    await tester.pumpAndSettle();
+    expect(find.text('3 words per unlock'), findsOneWidget);
+    await tester.runAsync(() async {
+      await repo.softDelete('b', now);
+      await gate.prepareChallenge();
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('2 words per unlock'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('selected_practice_word_b')),
+      findsNothing,
+    );
+    await tester.runAsync(() async {
+      await repo.softDelete('a', now);
+      await repo.softDelete('c', now);
+      await gate.prepareChallenge();
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('Your notebook has no saved words yet.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   test(
     'version 7 daily requirement migrates to a nonblocking goal with audio off',
@@ -1391,46 +1395,80 @@ void main() {
     },
   );
 
+  testWidgets('choosing two words is the only size control in Learning rules', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(app(LearningRulesScreen(gate: gate)));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('edit_unlock_count')), findsNothing);
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('edit_unlock_words')));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpAndSettle();
+    final current = gate.practiceWords.single.id;
+    final other = words.firstWhere((word) => word.id != current);
+    await tester.tap(find.byKey(ValueKey('practice_word_${other.id}')));
+    await tester.pumpAndSettle();
+    expect(find.text('Use 2 words per unlock'), findsOneWidget);
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('save_practice_words')));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpAndSettle();
+    expect(gate.requiredWords, 2);
+    expect(find.text('Review 2 words to unlock'), findsOneWidget);
+  });
+
   testWidgets(
-    'the number editor accepts 2 and rejects a count above the selected pool',
+    'choosing words from an empty challenge replaces its stale one-word target',
     (tester) async {
-      tester.view.physicalSize = const Size(800, 1600);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      await tester.pumpWidget(
-        app(
-          Scaffold(
-            body: SingleChildScrollView(
-              child: GateLearningSettings(gate: gate, totalWords: 3),
-            ),
-          ),
-        ),
-      );
-      await tester.runAsync(
-        () => tester.tap(find.byKey(const Key('edit_unlock_count'))),
-      );
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const Key('unlock_count_input')), '4');
-      await tester.tap(find.text('Save'));
-      await tester.pumpAndSettle();
-      expect(find.text('Enter a number from 1 to 3.'), findsOneWidget);
-      await tester.enterText(find.byKey(const Key('unlock_count_input')), '2');
+      final deleted = gate.practiceWords.single.id;
       await tester.runAsync(() async {
-        await tester.tap(find.text('Save'));
+        await repo.softDelete(deleted, now);
+        await gate.prepareChallenge();
+      });
+      await tester.pumpWidget(app(AppGateScreen(targetApp: 'X')));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('CHOOSE YOUR PRACTICE WORDS'), findsOneWidget);
+      await tester.runAsync(() async {
+        await tester.tap(find.text('Choose words'));
         await Future<void>.delayed(const Duration(milliseconds: 50));
       });
       await tester.pumpAndSettle();
+      for (final word in words.where((word) => word.id != deleted)) {
+        await tester.tap(find.byKey(ValueKey('practice_word_${word.id}')));
+        await tester.pumpAndSettle();
+      }
+      expect(find.text('Use 2 words per unlock'), findsOneWidget);
       await tester.runAsync(() async {
-        for (
-          var attempt = 0;
-          attempt < 100 && gate.requiredWords != 2;
-          attempt++
-        ) {
-          await Future<void>.delayed(const Duration(milliseconds: 10));
-        }
+        await tester.tap(find.byKey(const Key('save_practice_words')));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
       });
-      expect(gate.requiredWords, 2);
+      await tester.pumpAndSettle();
+      for (
+        var attempt = 0;
+        attempt < 100 &&
+            (gate.requiredWordsForApp('X') != 2 ||
+                find.byKey(const Key('app_gate_input')).evaluate().isEmpty);
+        attempt++
+      ) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+      expect(gate.requiredWordsForApp('X'), 2);
+      expect(calls.where((call) => call.method == 'grantPass'), isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
     },
   );
 

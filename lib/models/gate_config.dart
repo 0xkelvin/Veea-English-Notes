@@ -74,7 +74,8 @@ class GateConfig {
   /// Pass window in minutes (`5`, `15`, `30`, or `0` for every open).
   final int passDurationMinutes;
 
-  /// Any positive count, capped at the current practice pool size by the provider.
+  /// Legacy persisted count, synchronized to the saved selection size.
+  /// The effective challenge count is derived from active selected words.
   final int wordsPerUnlock;
 
   final bool autoPronounce;
@@ -82,7 +83,8 @@ class GateConfig {
   /// An optional notebook goal; never a condition for unlocking apps.
   final bool dailyWordGoal;
 
-  /// Null uses the whole notebook. An empty custom pool requires new selection.
+  /// Explicit unlock word IDs. A legacy null pool is frozen on first load;
+  /// new notebook words never join an unlock challenge automatically.
   final List<String>? practiceWordIds;
 
   /// Selected app names, bundle IDs, or package identifiers to gate.

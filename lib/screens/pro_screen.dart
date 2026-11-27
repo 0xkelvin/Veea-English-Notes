@@ -206,7 +206,7 @@ class ProScreen extends StatelessWidget {
                   icon: Icons.format_list_numbered_outlined,
                   title: 'Multiple words per unlock',
                   subtitle:
-                      'Choose how many vocabulary words to review before unlocking, up to your practice pool.',
+                      'Select multiple vocabulary words and review every selected word to unlock.',
                 ),
               ],
             ),

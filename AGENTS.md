@@ -213,9 +213,13 @@ Apple rows, export includes five retained proof periods, manual grants remain in
 The owner explicitly replaced the 24 November free-first offer. Production
 `AppConfig.isFreeLaunch` and `NativeGateReleasePolicy.isFreeLaunch` are false.
 Free includes unlimited local vocabulary, dictionary, Listen, Review, custom
-lists, one app lock and one word per unlock. The practice pool remains unlimited
-and rotates. A single non-consumable Pro purchase enables BOTH multiple app locks
-(existing 50-app safety limit) and a configurable word count bounded by the pool.
+lists, one app lock and one word per unlock. Owner UX update (27 November):
+selecting words is the only learning-rule control. Every unlock reviews every
+active selected word once; there is no separate count or rotating larger pool.
+Free selects one replaceable word. Pro selects multiple words and reviews all of
+them. New notebook words do not join automatically. A single non-consumable Pro
+purchase enables BOTH multiple app locks (existing 50-app safety limit) and
+multiple selected unlock words.
 The target Vietnam price is 99,000 VND once, with no trial or subscription; show
 only StoreKit's actual localized price. Never invent a price or paid success.
 All default/custom/per-app unlock durations, pronunciation, OFF and removal are
@@ -224,7 +228,10 @@ refund handling and offline ownership. Sign in before checkout/restore; free
 usage does not require sign-in. Notebook transport remains disabled.
 
 Saved extra apps are paused on Free without deleting their selections/times;
-paid word-count preferences remain saved while the effective Free count is one.
+the saved Pro word list remains intact while only its first word is active on Free.
+Explicitly editing Free selection replaces it with one word. Retain the legacy
+words_per_unlock column for compatibility, synchronized to the saved selection;
+never expose it as an independent user control.
 Restoring Pro does not silently re-enable paused locks; the user can turn them
 on again. Upgrading mid-challenge affects the next opening; closing releases
 the temporary target but retains saved answers. Downgrades immediately

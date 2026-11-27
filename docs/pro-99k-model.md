@@ -1,13 +1,13 @@
 # One free app and word, one-time Pro
 
-Owner decision: 26 November 2026. Supersedes the free-first and unlock-trial proposals.
+Owner decision: 26 November 2026; word-selection UX simplified on 27 November. Supersedes the free-first and unlock-trial proposals.
 
 | Capability | Free forever | Verified Pro |
 | --- | --- | --- |
 | Notebook/dictionary/Listen/ordinary Review/custom lists/export | Included | Included |
 | Active app locks | One | Multiple, within existing 50-app safety limit |
-| Words per unlock | One | Configurable, capped by available practice words |
-| Practice pool | Unlimited, rotating | Unlimited, rotating |
+| Unlock selection | One replaceable word | Multiple selected words |
+| Each unlock | Review that selected word | Review every selected word once |
 | Default/custom/per-app times and pronunciation | Included | Included |
 | Turn locks OFF or remove apps | Included | Included |
 
@@ -35,7 +35,13 @@ open does not add questions to an answer already in progress. Closing that
 screen releases its temporary target; the next opening or cold restart uses
 the current rule while keeping already-answered vocabulary progress.
 A downgrade immediately allows the Free one-word rule, preserving credited
-learning history. Practice-pool edits still cap the saved count to available words.
+learning history. Selecting words directly sets the required count; there is no
+separate count picker. Newly saved notebook words never join automatically.
+Legacy automatic pools become a fixed list using their old count, retaining
+unfinished answer IDs. Deleted/unavailable selected words leave the effective
+challenge; deleting the last selected word requires a new selection. On Free,
+only the first saved word is active; additional Pro choices remain saved until
+the user explicitly edits the selection. Listen/Review lists remain unlimited.
 
 Failed/cancelled/pending/mismatched purchases never fabricate access or erase
 words. Verified historical ownership is retained; duplicate lifetime checkout
@@ -47,7 +53,7 @@ English: Free includes one app lock and one word per unlock. Pro adds more apps
 and more words per unlock. Pay once. No subscription. All unlock times are free.
 
 Vietnamese: Miễn phí: khóa 1 ứng dụng và ôn 1 từ mỗi lần mở khóa. Veea Pro: khóa
-nhiều ứng dụng và tự chọn số từ cần ôn mỗi lần. Thanh toán một lần, không đăng
+nhiều ứng dụng và chọn nhiều từ để ôn. Mỗi lần mở khóa sẽ ôn tất cả các từ đã chọn. Thanh toán một lần, không đăng
 ký định kỳ. Các tùy chọn thời gian mở khóa đều miễn phí.
 
 ## Store and review gates

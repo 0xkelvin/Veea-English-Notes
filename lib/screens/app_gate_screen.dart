@@ -302,7 +302,8 @@ class _AppGateScreenState extends State<AppGateScreen>
 
       // If multi-word round and the selected word was just solved, pick another
       // word from the user's notebook if available.
-      if (word != null &&
+      if (gateProvider == null &&
+          word != null &&
           _solvedWordIds.contains(word.id) &&
           vocabProvider != null &&
           vocabProvider.words.length > 1) {
@@ -719,6 +720,7 @@ class _AppGateScreenState extends State<AppGateScreen>
                       )
                     else if (_currentWord == null &&
                         gateProvider != null &&
+                        gateProvider.notebookWords.isNotEmpty &&
                         gateProvider.config.practiceWordIds != null)
                       _GateMessageCard(
                         title: 'CHOOSE YOUR PRACTICE WORDS',
@@ -731,6 +733,10 @@ class _AppGateScreenState extends State<AppGateScreen>
                           try {
                             if (await choosePracticeWords(context, provider)) {
                               if (!mounted) return;
+                              // An empty challenge has no usable old target.
+                              // The newly chosen list defines this resumed round.
+                              provider.endChallengeRound(_currentApp);
+                              _beginRoundIfLocked(provider);
                               _solvedInRound = provider.progressForApp(
                                 _currentApp,
                               );

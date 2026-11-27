@@ -1,4 +1,7 @@
+import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -21,6 +24,37 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
+
+  const captureDir = String.fromEnvironment('VEEA_UX_CAPTURE_DIR');
+  const fontPath = String.fromEnvironment('VEEA_UX_FONT');
+  const iconPath = String.fromEnvironment('VEEA_UX_ICON_FONT');
+  setUpAll(() async {
+    for (final entry in [
+      ('SF Pro Text', fontPath),
+      ('MaterialIcons', iconPath),
+    ]) {
+      if (entry.$2.isNotEmpty) {
+        await (FontLoader(
+              entry.$1,
+            )..addFont(File(entry.$2).readAsBytes().then(ByteData.sublistView)))
+            .load();
+      }
+    }
+  });
+  Future<void> capture(WidgetTester tester, String name) async {
+    if (captureDir.isEmpty) return;
+    await tester.runAsync(() async {
+      final boundary = tester.renderObject<RenderRepaintBoundary>(
+        find.byKey(const Key('rules_capture')),
+      );
+      final image = await boundary.toImage(pixelRatio: 2);
+      final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+      final file = File('$captureDir/$name.png');
+      await file.parent.create(recursive: true);
+      await file.writeAsBytes(bytes!.buffer.asUint8List());
+      image.dispose();
+    });
+  }
 
   final now = DateTime(2026, 11, 26, 12);
   late SqliteVocabularyRepository repo;
@@ -48,7 +82,13 @@ void main() {
         VocabularyWord.create(
           id: word,
           word: word,
-          meaning: 'meaning of $word',
+          meaning: const {
+            'recipe': 'công thức nấu ăn',
+            'consent': 'sự đồng ý',
+            'resilient': 'kiên cường',
+            'fluent': 'trôi chảy',
+            'habit': 'thói quen',
+          }[word]!,
           date: '2026-11-26',
           now: now,
         ),
@@ -83,6 +123,7 @@ void main() {
     EdgeInsets viewInsets = EdgeInsets.zero,
   }) {
     final app = MaterialApp(
+      debugShowCheckedModeBanner: false,
       theme: dark ? PixelTheme.dark() : PixelTheme.light(),
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
@@ -101,13 +142,17 @@ void main() {
         ),
       ),
     );
-    if (!includePro) return app;
+    final captured = RepaintBoundary(
+      key: const Key('rules_capture'),
+      child: app,
+    );
+    if (!includePro) return captured;
     return MultiProvider(
       providers: [
         ChangeNotifierProvider<AuthProvider>.value(value: auth),
         ChangeNotifierProvider<ProProvider>.value(value: pro),
       ],
-      child: app,
+      child: captured,
     );
   }
 
@@ -124,217 +169,195 @@ void main() {
   }
 
   testWidgets(
-    'Free user sees 1 word per unlock, can edit unlimited practice pool & pronunciation, and plus/edit/upgrade surface Pro',
+    'Free shows one explicit word, no independent count, and replacement is free',
     (tester) async {
-      expect(AppConfig.isFreeLaunch, isFalse);
-      expect(gate.canUseMultipleWords, isFalse);
-      expect(gate.maximumWordsPerUnlock, 1);
-      expect(gate.requiredWords, 1);
-
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      expect(gate.practiceWordCount, 1);
       await tester.pumpWidget(buildHarness());
       await tester.pumpAndSettle();
-
-      // Unlimited free practice pool is visible and editable without paywall.
-      expect(
-        find.text('All 5 words · new words included automatically.'),
-        findsOneWidget,
-      );
-      expect(find.text('1'), findsOneWidget);
-      expect(find.text('More words per unlock with Pro'), findsOneWidget);
-      expect(find.byKey(const Key('upgrade_words_per_unlock')), findsOneWidget);
-
-      // Opening practice pool editor stays free.
-      await tester.ensureVisible(find.text('Edit practice words'));
+      expect(find.text('Review 1 word to unlock'), findsOneWidget);
+      await capture(tester, 'learning_free');
+      expect(find.text('WORDS PER UNLOCK'), findsNothing);
+      expect(find.byKey(const Key('edit_unlock_count')), findsNothing);
+      expect(find.byTooltip('Increase words per unlock'), findsNothing);
+      await tester.ensureVisible(find.byKey(const Key('edit_unlock_words')));
       await tester.runAsync(() async {
-        await tester.tap(find.text('Edit practice words'));
+        await tester.tap(find.byKey(const Key('edit_unlock_words')));
         await Future<void>.delayed(const Duration(milliseconds: 50));
       });
       await tester.pumpAndSettle();
       expect(find.byType(PracticeWordPicker), findsOneWidget);
-      Navigator.of(tester.element(find.byType(PracticeWordPicker))).pop();
-      await tester.pumpAndSettle();
-      await drainSql(tester);
-
-      // Auto-play pronunciation remains free.
-      final pronounceTile = find.widgetWithText(
-        SwitchListTile,
-        'Auto-play pronunciation',
+      expect(find.byType(RadioListTile<String>), findsWidgets);
+      await capture(tester, 'picker_free');
+      expect(find.text('Include new words automatically'), findsNothing);
+      final replacement = gate.notebookWords.firstWhere(
+        (word) => word.id != gate.practiceWords.single.id,
       );
-      await tester.ensureVisible(pronounceTile);
+      await tester.tap(find.byKey(ValueKey('practice_word_${replacement.id}')));
+      await tester.pumpAndSettle();
+      expect(find.text('Use 1 word per unlock'), findsOneWidget);
       await tester.runAsync(() async {
-        await tester.tap(pronounceTile);
-        for (var i = 0; i < 100 && !gate.config.autoPronounce; i++) {
-          await Future<void>.delayed(const Duration(milliseconds: 10));
-        }
-      });
-      await tester.pumpAndSettle();
-      await drainSql(tester);
-      expect(gate.config.autoPronounce, isTrue);
-
-      // Tapping + with pool >= 2 surfaces ProScreen (does not silently do nothing).
-      final plusButton = find.byTooltip('Increase words per unlock');
-      await tester.ensureVisible(plusButton);
-      await tester.tap(plusButton);
-      await tester.pumpAndSettle();
-      expect(find.byType(ProScreen), findsOneWidget);
-      Navigator.of(tester.element(find.byType(ProScreen))).pop();
-      await tester.pumpAndSettle();
-
-      // Tapping the count number with pool >= 2 also surfaces ProScreen.
-      final editCount = find.byKey(const Key('edit_unlock_count'));
-      await tester.ensureVisible(editCount);
-      await tester.tap(editCount);
-      await tester.pumpAndSettle();
-      expect(find.byType(ProScreen), findsOneWidget);
-      Navigator.of(tester.element(find.byType(ProScreen))).pop();
-      await tester.pumpAndSettle();
-
-      // Tapping the inline upgrade button navigates to ProScreen.
-      final upgradeBtn = find.byKey(const Key('upgrade_words_per_unlock'));
-      await tester.ensureVisible(upgradeBtn);
-      await tester.tap(upgradeBtn);
-      await tester.pumpAndSettle();
-      expect(find.byType(ProScreen), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    },
-  );
-
-  testWidgets(
-    'Pro user can increment, decrement, and edit multiple words bounded by practice pool',
-    (tester) async {
-      gate.setProAccess(true);
-      expect(gate.canUseMultipleWords, isTrue);
-      expect(gate.maximumWordsPerUnlock, 5);
-
-      await tester.pumpWidget(buildHarness());
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('upgrade_words_per_unlock')), findsNothing);
-
-      // Increment via + button.
-      final plusButton = find.byTooltip('Increase words per unlock');
-      await tester.ensureVisible(plusButton);
-      await tester.runAsync(() async {
-        await tester.tap(plusButton);
-        for (var i = 0; i < 100 && gate.requiredWords != 2; i++) {
-          await Future<void>.delayed(const Duration(milliseconds: 10));
-        }
-      });
-      await tester.pumpAndSettle();
-      expect(gate.requiredWords, 2);
-
-      // Edit via dialog: rejects above pool size (6 > 5), accepts 4.
-      await tester.tap(find.byKey(const Key('edit_unlock_count')));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const Key('unlock_count_input')), '6');
-      await tester.tap(find.text('Save'));
-      await tester.pumpAndSettle();
-      expect(find.text('Enter a number from 1 to 5.'), findsOneWidget);
-
-      await tester.enterText(find.byKey(const Key('unlock_count_input')), '4');
-      await tester.tap(find.text('Save'));
-      await tester.pumpAndSettle();
-      await tester.runAsync(() async {
-        for (var i = 0; i < 100 && gate.requiredWords != 4; i++) {
-          await Future<void>.delayed(const Duration(milliseconds: 10));
-        }
-      });
-      await tester.pumpAndSettle();
-      await drainSql(tester);
-      expect(gate.requiredWords, 4);
-
-      // Decrement via - button.
-      final minusButton = find.byTooltip('Decrease words per unlock');
-      await tester.ensureVisible(minusButton);
-      await tester.runAsync(() async {
-        await tester.tap(minusButton);
-        for (var i = 0; i < 100 && gate.requiredWords != 3; i++) {
-          await Future<void>.delayed(const Duration(milliseconds: 10));
-        }
-      });
-      await tester.pumpAndSettle();
-      expect(gate.requiredWords, 3);
-      expect(tester.takeException(), isNull);
-    },
-  );
-
-  testWidgets(
-    'missing ProProvider in older widget harness keeps free settings working and shows fallback on upsell',
-    (tester) async {
-      await tester.pumpWidget(buildHarness(includePro: false));
-      await tester.pumpAndSettle();
-
-      // Ordinary free settings render and work without crashing.
-      expect(find.text('Practice words'), findsOneWidget);
-      expect(find.text('1'), findsOneWidget);
-      final upgradeButton = tester.widget<TextButton>(
-        find.byKey(const Key('upgrade_words_per_unlock')),
-      );
-      expect(upgradeButton.onPressed, isNull);
-      expect(find.text('Pro upgrades unavailable'), findsOneWidget);
-
-      final pronounceTile = find.widgetWithText(
-        SwitchListTile,
-        'Auto-play pronunciation',
-      );
-      await tester.ensureVisible(pronounceTile);
-      await tester.runAsync(() async {
-        await tester.tap(pronounceTile);
+        await tester.tap(find.byKey(const Key('save_practice_words')));
         await Future<void>.delayed(const Duration(milliseconds: 50));
       });
-      await tester.pumpAndSettle();
-      expect(gate.config.autoPronounce, isTrue);
-
-      // Invoking + without ProProvider shows a clear fallback SnackBar instead of crashing.
-      final plusButton = find.byTooltip('Increase words per unlock');
-      await tester.ensureVisible(plusButton);
-      await tester.tap(plusButton);
-      await tester.pumpAndSettle();
+      await drainSql(tester);
+      expect(gate.practiceWords.single.id, replacement.id);
+      expect(gate.requiredWords, 1);
       expect(find.byType(ProScreen), findsNothing);
-      expect(
-        find.descendant(
-          of: find.byType(SnackBar),
-          matching: find.textContaining('Upgrades are unavailable right now.'),
-        ),
-        findsOneWidget,
-      );
-      expect(tester.takeException(), isNull);
+      expect(find.text('Review 1 word to unlock'), findsOneWidget);
     },
   );
 
   testWidgets(
-    'small 320px dark screen with 200% text scale and keyboard open in count dialog does not overflow',
+    'Pro selection directly becomes the entire challenge and cancellation preserves it',
     (tester) async {
-      tester.view.physicalSize = const Size(320, 568);
+      tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
-
-      // First verify Free upgrade layout at 320px, 200% text, dark mode.
-      await tester.pumpWidget(buildHarness(dark: true, scale: 2));
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(
-        find.byKey(const Key('upgrade_words_per_unlock')),
-      );
-      expect(tester.takeException(), isNull);
-
-      // Next verify Pro numeric dialog with simulated keyboard insets (240px).
       gate.setProAccess(true);
-      await tester.pumpWidget(
-        buildHarness(
-          dark: true,
-          scale: 2,
-          viewInsets: const EdgeInsets.only(bottom: 240),
-        ),
+      await tester.runAsync(() => gate.setPracticeWords(['recipe', 'consent']));
+      await tester.pumpWidget(buildHarness());
+      await tester.pumpAndSettle();
+      expect(find.text('Review 2 words to unlock'), findsOneWidget);
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const Key('edit_unlock_words')));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('practice_word_search')),
+        'resilient',
       );
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.byKey(const Key('edit_unlock_count')));
-      await tester.tap(find.byKey(const Key('edit_unlock_count')));
+      await tester.tap(find.byKey(const ValueKey('practice_word_resilient')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('unlock_count_input')), findsOneWidget);
-      await tester.tap(find.text('Cancel'));
+      expect(find.text('Use 3 words per unlock'), findsOneWidget);
+      await tester.enterText(find.byKey(const Key('practice_word_search')), '');
       await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
+      await capture(tester, 'picker_pro');
+      await tester.tap(find.byKey(const Key('cancel_practice_words')));
+      await tester.pumpAndSettle();
+      expect(gate.requiredWords, 2);
+      await drainSql(tester);
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const Key('edit_unlock_words')));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('practice_word_search')),
+        'resilient',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('practice_word_resilient')));
+      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const Key('save_practice_words')));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await drainSql(tester);
+      expect(gate.practiceWords.map((word) => word.id).toSet(), {
+        'recipe',
+        'consent',
+        'resilient',
+      });
+      expect(gate.requiredWords, 3);
+      expect(find.text('Review 3 words to unlock'), findsOneWidget);
+      expect(find.text('WORDS PER UNLOCK'), findsNothing);
     },
   );
+
+  testWidgets(
+    'Free multiple-word action opens Pro and cancellation keeps the draft word',
+    (tester) async {
+      final original = gate.practiceWords.single.id;
+      await tester.pumpWidget(buildHarness());
+      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const Key('edit_unlock_words')));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('unlock_picker_upgrade')));
+      await tester.pumpAndSettle();
+      expect(find.byType(ProScreen), findsOneWidget);
+      Navigator.of(tester.element(find.byType(ProScreen))).pop();
+      await tester.pumpAndSettle();
+      expect(find.byType(PracticeWordPicker), findsOneWidget);
+      expect(find.text('Use 1 word per unlock'), findsOneWidget);
+      expect(gate.practiceWords.single.id, original);
+      Navigator.of(tester.element(find.byType(PracticeWordPicker))).pop();
+      await tester.pumpAndSettle();
+      await drainSql(tester);
+    },
+  );
+
+  for (final variant in [
+    (false, 1.0, 390.0),
+    (false, 2.0, 320.0),
+    (true, 1.0, 390.0),
+  ]) {
+    testWidgets(
+      'learning selection layout dark=${variant.$1} scale=${variant.$2}',
+      (tester) async {
+        tester.view.physicalSize = Size(variant.$3, 844);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        gate.setProAccess(true);
+        await tester.runAsync(
+          () => gate.setPracticeWords([
+            'recipe',
+            'consent',
+            'resilient',
+            'fluent',
+          ]),
+        );
+        await tester.pumpWidget(
+          buildHarness(dark: variant.$1, scale: variant.$2),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Review 4 words to unlock'), findsOneWidget);
+        await capture(
+          tester,
+          'learning_${variant.$1
+              ? 'dark'
+              : variant.$2 > 1
+              ? 'large_text'
+              : 'pro'}',
+        );
+        await tester.ensureVisible(find.text('Practice challenge'));
+        expect(tester.takeException(), isNull);
+        if (variant.$2 > 1) gate.setProAccess(false);
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.byKey(const Key('edit_unlock_words')));
+        await tester.runAsync(() async {
+          await tester.tap(find.byKey(const Key('edit_unlock_words')));
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        });
+        await tester.pumpAndSettle();
+        expect(find.byType(PracticeWordPicker), findsOneWidget);
+        expect(
+          find.byKey(const Key('save_practice_words')).hitTestable(),
+          findsOneWidget,
+        );
+        await capture(
+          tester,
+          'picker_${variant.$1
+              ? 'dark'
+              : variant.$2 > 1
+              ? 'large_text'
+              : 'pro_full'}',
+        );
+        expect(tester.takeException(), isNull);
+        Navigator.of(tester.element(find.byType(PracticeWordPicker))).pop();
+        await tester.pumpAndSettle();
+        await drainSql(tester);
+      },
+    );
+  }
 }

@@ -10,7 +10,7 @@ On 26 November 2026 the owner replaced the free-first proposal. Free includes
 notebook, dictionary, Listen, ordinary Review, custom lists, one app lock and one
 word per unlock without expiry or an unlock quota. A single non-consumable Pro
 purchase enables BOTH multiple protected apps (existing 50-app safety limit) and
-multiple vocabulary questions per unlock, capped by the available practice pool.
+multiple selected vocabulary words; each unlock reviews the entire selection.
 All default/custom/per-app durations and pronunciation remain free. Target
 Vietnam price: 99,000 VND once, no trial/subscription. Display the actual localized
 StoreKit price, never a hardcoded fallback. Existing verified ownership remains
@@ -128,7 +128,7 @@ clarification on whether this exact feature split is consistent with guideline 4
 Reproduction steps:
 
 1. Add several neutral words with meanings.
-2. Settings → Learning rules: choose the practice pool and words per unlock.
+2. Settings → Learning rules: choose unlock words. One selected word means one question; two selected words mean both questions. Free allows one selected word, Pro allows multiple.
 3. Settings → Manage Apps to Lock: authorize Screen Time, select an app and set
    the unlock duration.
 4. Open the selected app and follow the shield guidance to Veea's challenge.
