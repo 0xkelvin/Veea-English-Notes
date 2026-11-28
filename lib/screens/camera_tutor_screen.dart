@@ -424,7 +424,7 @@ class _CameraTutorScreenState extends State<CameraTutorScreen>
                                     const SizedBox(height: 8),
                                     Text(
                                       _tutor.hasScene
-                                          ? 'Ask in English or Vietnamese. You can keep asking about this photo.'
+                                          ? 'Quick replies with up to 2 word cards. Ask follow-up questions about this photo.'
                                           : 'Point at an object, menu or sign. Take a photo, then ask about it.',
                                     ),
                                     if (_tutor.hasScene) ...[

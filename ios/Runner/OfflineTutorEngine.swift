@@ -52,7 +52,7 @@ final class OfflineTutorLiteRTEngine: OfflineTutorEngineHandle, @unchecked Senda
     // Metal delegate in SDK 0.18.1 cannot prepare. Keep language generation on
     // GPU when available, and run vision with the supported CPU executor.
     // Separate caches from the former all-GPU configuration.
-    let runtimeCacheURL = cacheURL.appendingPathComponent("cpu-vision-v1", isDirectory: true)
+    let runtimeCacheURL = cacheURL.appendingPathComponent("cpu-vision140-v2", isDirectory: true)
     #else
     let runtimeCacheURL = cacheURL
     #endif
@@ -61,6 +61,11 @@ final class OfflineTutorLiteRTEngine: OfflineTutorEngineHandle, @unchecked Senda
       throw OfflineTutorError(.invalidModel)
     }
     let thinking = info.llm?.supportsThinking() ?? false
+
+    // The SDK requires this pinned experimental API to bound Gemma 4's image
+    // tokens. Set it before creating the shared engine, never during a lesson.
+    ExperimentalFlags.optIntoExperimentalAPIs()
+    ExperimentalFlags.visualTokenBudget = OfflineTutorLimits.visualTokenBudget
 
     // GPU first (the manifest's preferred accelerator), CPU as a local fallback.
     for backend in [Backend.gpu, Backend.cpu()] {

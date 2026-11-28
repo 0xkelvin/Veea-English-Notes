@@ -185,7 +185,11 @@ expect(OfflineTutorPrompt.systemInstruction.contains("explanationVi")
 let schema = OfflineTutorPrompt.responseSchema
 expect(JSONSerialization.isValidJSONObject(schema), "schema is valid JSON")
 let vocabSchema = (schema["properties"] as? [String: Any])?["vocabulary"] as? [String: Any]
-expect(vocabSchema?["maxItems"] as? Int == 4, "schema caps vocabulary at 4")
+expect(vocabSchema?["maxItems"] as? Int == 2, "quick replies generate at most two vocabulary cards")
+let quickFields = (vocabSchema?["items"] as? [String: Any])?["properties"] as? [String: Any]
+expect(quickFields?["pronunciation"] == nil, "generation omits IPA; the normal editor can fill it from its dictionary")
+expect((quickFields?["exampleEn"] as? [String: Any])?["maxLength"] as? Int == 100,
+       "generated examples stay short")
 
 // MARK: Output parsing
 

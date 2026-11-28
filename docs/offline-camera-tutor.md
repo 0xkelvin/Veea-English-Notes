@@ -51,7 +51,7 @@ On iPhone, image encoding uses CPU and language generation prefers GPU (with a
 CPU fallback). Physical testing found that SDK 0.18.1's Metal vision delegate
 cannot prepare Gemma 4's composite image operations. Its language model loads,
 but creating the image conversation fails. The CPU image executor resolves this;
-its cache has a separate `cpu-vision-v1` directory so old Metal vision caches are
+its cache has a separate `cpu-vision140-v2` directory so old Metal vision caches are
 not reused. The Mac keeps its working GPU image path.
 
 The iPhone implementation uses Apple's installed on-device Speech recognition
@@ -59,6 +59,34 @@ and speech synthesis instead of Android-only ML Kit services. Recognition always
 sets `requiresOnDeviceRecognition = true`; an unavailable language offers typed
 input. Camera/microphone/audio are stopped on exit/background; completed idle
 lessons can resume. Partial answers and late results cannot become saved cards.
+
+### Quick replies
+
+The default reply now has up to two word cards, shorter Vietnamese/English
+answers and examples, and no model-generated IPA. The existing word editor can
+still fill IPA from Veea's offline dictionary. Follow-up questions retain the
+scene and completed conversation as before. Older four-card replies remain
+parseable; learning rules and Free/Pro limits are unrelated to this change.
+
+Gemma 4's image-token budget is 140 instead of 280. The original captured JPEG
+limit remains 1024 pixels; the runtime processes a smaller image representation.
+Fine print may lose detail. The pinned SDK's experimental visual-token API is
+set before engine initialization, and iPhone caches use `cpu-vision140-v2`.
+
+Matched offline Mac measurements (same synthetic coffee image, GPU language /
+CPU vision, median of three warm rounds after one warm-up):
+
+| Complete reply | Previous | Quick | Reduction |
+|---|---:|---:|---:|
+| New photo question | 3.024 s | 2.370 s | 21.6% |
+| Follow-up | 1.204 s | 0.824 s | 31.5% |
+
+These are Mac measurements, not iPhone timings or guarantees. The first answer
+also includes model/cache startup. The quick profile passed four real paired
+image/follow-up rounds with valid bilingual cards and networking denied.
+Native checks: 259 passed; focused Flutter checks: 44 passed; unsigned iPhone
+Release build and signed local test packaging passed. Device installation and
+timing verification depend on reconnecting the phone.
 
 ## Model provenance and installation
 
