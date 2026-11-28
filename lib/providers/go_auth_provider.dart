@@ -100,6 +100,7 @@ class GoAuthProvider extends AuthProvider {
     final intent = ++_intent;
     await _notebook(() async {
       await _sync.suspend();
+      await store.cleanUpLegacyPurchaseOwner();
       _receipt = await store.readReceipt();
       final saved = await store.readSession();
       if (saved?.refreshState == 'ready') {

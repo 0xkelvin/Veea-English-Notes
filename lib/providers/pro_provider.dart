@@ -116,6 +116,7 @@ class ProProvider extends ChangeNotifier {
       return;
     }
     final epoch = _epoch, owner = _entitlementOwner;
+    final explicit = purchase || restore;
     _busy = true;
     _message = null;
     _notify();
@@ -128,6 +129,7 @@ class ProProvider extends ChangeNotifier {
       _store = configured;
       Map<String, Object?>? server;
       PlatformException? restoreError;
+      String? outcome;
       final signedIn =
           AppConfig.isCloudEnabled && auth.isSignedIn && owner != null;
       if (purchase && signedIn && !configured.hasLifetime) {
@@ -149,10 +151,16 @@ class ProProvider extends ChangeNotifier {
           _message = 'Purchases are not available in this build yet.';
           return;
         }
-        _store = await repository.purchase();
+        final state = await repository.purchase();
+        if (!_current(epoch, owner)) return;
+        _store = state;
+        outcome = state.outcome;
       } else if (restore) {
         try {
-          _store = await repository.restore();
+          final state = await repository.restore();
+          if (!_current(epoch, owner)) return;
+          _store = state;
+          outcome = state.outcome;
         } on PlatformException catch (error) {
           // A StoreKit sync failure can still have a verified account result.
           restoreError = error;
@@ -226,6 +234,8 @@ class ProProvider extends ChangeNotifier {
               !confirmedSandboxAcknowledgement &&
               !_store.localApple &&
               !_store.localSandbox &&
+              outcome != 'revoked' &&
+              !confirmedRevocation &&
               claimError == null) {
             rethrow;
           }
@@ -265,7 +275,6 @@ class ProProvider extends ChangeNotifier {
           pendingTransactions: state.pendingTransactions,
           price: state.price,
           transactions: state.transactions,
-          outcome: _store.outcome,
         );
       }
       if (restore &&
@@ -278,12 +287,19 @@ class ProProvider extends ChangeNotifier {
             : 'Pro restored on this device (Apple Sandbox).';
         return;
       }
-      if (restore && confirmedRevocation) {
+      if (explicit &&
+          !alreadyLifetime &&
+          !confirmedApplePurchase &&
+          !confirmedSandboxAcknowledgement &&
+          !_store.localApple &&
+          !_store.localSandbox &&
+          (outcome == 'revoked' || (outcome == null && confirmedRevocation))) {
         _message =
             'Apple reports that this Pro purchase was refunded or revoked.';
         return;
       }
       if (claimError != null) {
+        if (!explicit && claimError.code == 'purchase_unavailable') return;
         _message =
             (_store.localApple || _store.localSandbox) && claimError.isTransient
             ? 'Pro is available on this device. Account confirmation will retry when you are online.'
@@ -293,12 +309,10 @@ class ProProvider extends ChangeNotifier {
       if (restoreError != null && !verificationPending) throw restoreError;
       _message = alreadyLifetime
           ? 'Lifetime Pro is already available. No purchase needed.'
-          : switch (_store.outcome) {
+          : switch (outcome) {
               'cancelled' => 'Purchase cancelled. You have not been charged.',
               'pending' =>
                 'Waiting for Apple approval. Pro will update when approved.',
-              'revoked' =>
-                'Apple reports that this Pro purchase was refunded or revoked.',
               _ =>
                 restore
                     ? (verificationPending
@@ -309,7 +323,10 @@ class ProProvider extends ChangeNotifier {
                     : null,
             };
     } on ApiException catch (error) {
-      if (_current(epoch, owner)) _message = _purchaseError(error);
+      if (_current(epoch, owner) &&
+          (explicit || error.code != 'purchase_unavailable')) {
+        _message = _purchaseError(error);
+      }
     } on MissingPluginException {
       if (_current(epoch, owner)) {
         _message = 'Purchases are available in the iPhone app.';

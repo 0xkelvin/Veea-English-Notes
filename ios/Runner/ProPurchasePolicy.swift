@@ -27,6 +27,10 @@ enum ProPurchasePolicy {
     !revoked && (deniedAt.map { signedAt > $0 } ?? true)
   }
 
+  static func refundOutcome(hasActivePurchase: Bool, observedRevocation: Bool = false) -> String? {
+    !hasActivePurchase && observedRevocation ? "revoked" : nil
+  }
+
   static func canCommitOwnershipScan(startedIn: String?, currentInstallation: String?) -> Bool {
     // Resolving nil to a supported app-download environment does not change
     // which signed IAPs StoreKit admits. A known unsupported install stays closed.

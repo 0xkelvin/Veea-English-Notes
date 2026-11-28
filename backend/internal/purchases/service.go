@@ -147,11 +147,10 @@ func (s *Service) verify(ctx context.Context, id string, reconcile bool) (applei
 		}
 		return proof, err
 	}
-	probe, allowed := s.reconciliation.acquire(time.Now())
-	if !allowed {
-		return appleiap.Transaction{}, ErrReconcileBackoff
+	probe, err := s.reconciliation.acquire(ctx)
+	if err != nil {
+		return appleiap.Transaction{}, err
 	}
-	var err error
 	completed := false
 	defer func() {
 		// A panic releases the slot without treating a recovery probe as healthy.
@@ -160,7 +159,7 @@ func (s *Service) verify(ctx context.Context, id string, reconcile bool) (applei
 	verifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	proof, err := s.verifier.Verify(verifyCtx, id)
-	if errors.Is(verifyCtx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		err = appleiap.ErrUnavailable
 	}
 	completed = true
@@ -195,7 +194,7 @@ func (s *Service) Reconcile(ctx context.Context, p session.Principal) error {
 		}
 		outcome, err := s.verifyAndClaimOutcome(ctx, p, row.TransactionID, row.Environment)
 		if err != nil {
-			if errors.Is(err, appleiap.ErrUnavailable) || ctx.Err() != nil {
+			if (!errors.Is(err, appleiap.ErrInvalid) && !errors.Is(err, ErrOwnership)) || ctx.Err() != nil {
 				return err
 			}
 			if verificationError == nil {

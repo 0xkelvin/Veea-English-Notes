@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/admin"
@@ -20,6 +22,7 @@ import (
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/entitlements"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity/accounts"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db/sqlc"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/httpx"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/purchases"
@@ -500,12 +503,19 @@ func (h *Handlers) writeMyEntitlements(w http.ResponseWriter, r *http.Request, p
 			if r.Context().Err() != nil {
 				return
 			}
-			manual, manualErr := entitlements.ManualEffective(r.Context(), sqlc.New(h.Pool), p.UserID)
-			// A Sandbox acknowledgement already confirmed the requested proof.
-			// Stored account proofs reconcile independently of that acknowledgement.
-			acknowledged := purchase != nil && (errors.Is(err, appleiap.ErrUnavailable) ||
-				errors.Is(err, appleiap.ErrInvalid) || errors.Is(err, purchases.ErrOwnership))
-			if manualErr != nil || (!acknowledged && manual.Name != entitlements.Premium) {
+			if !errors.Is(err, appleiap.ErrUnavailable) && !errors.Is(err, appleiap.ErrInvalid) &&
+				!errors.Is(err, purchases.ErrOwnership) {
+				h.purchaseFailure(w, r, err)
+				return
+			}
+			manual, manualErr := h.revalidatedManualPlan(r.Context(), p)
+			if manualErr != nil {
+				h.purchaseFailure(w, r, manualErr)
+				return
+			}
+			// A Sandbox acknowledgement already confirmed the requested proof,
+			// independently of any stored account proofs.
+			if purchase == nil && manual.Name != entitlements.Premium {
 				h.purchaseFailure(w, r, err)
 				return
 			}
@@ -540,4 +550,25 @@ func (h *Handlers) writeMyEntitlements(w http.ResponseWriter, r *http.Request, p
 		Limits                      entitlements.Limits `json:"limits"`
 		CheckedAt                   time.Time           `json:"checked_at"`
 	}{environment, recorded, h.Purchases.Available(), verificationPending, revoked, plan.Name, plan.ExpiresAt, entitlements.LimitsFor(plan.Name), plan.CheckedAt})
+}
+
+func (h *Handlers) revalidatedManualPlan(ctx context.Context, p session.Principal) (entitlements.Plan, error) {
+	var plan entitlements.Plan
+	err := (db.Tx{Pool: h.Pool}).Run(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		user, ok, err := accounts.LockForNoKeyUpdate(ctx, tx, p.UserID)
+		if err != nil {
+			return err
+		}
+		if !ok || !accounts.InGoodStanding(user) {
+			return session.ErrUnauthorized
+		}
+		if _, ok, err := session.LockActing(ctx, tx, p.UserID, p.SessionID); err != nil {
+			return err
+		} else if !ok {
+			return session.ErrUnauthorized
+		}
+		plan, err = entitlements.ManualEffective(ctx, sqlc.New(tx), p.UserID)
+		return err
+	})
+	return plan, err
 }

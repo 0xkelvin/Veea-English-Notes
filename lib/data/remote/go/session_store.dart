@@ -86,6 +86,15 @@ class GoTokenStore extends TokenStore {
   }
 
   Future<GoSession?> readSession() => _locked(_read);
+
+  Future<void> cleanUpLegacyPurchaseOwner() => _locked(() async {
+    try {
+      await _secure.delete(key: 'auth.go.purchase-owner.v1');
+    } catch (_) {
+      // A Keychain failure must not prevent session restore. Retry on startup.
+    }
+  });
+
   Future<void> _write(GoSession session) =>
       _secure.write(key: sessionKey, value: jsonEncode(session.data));
 

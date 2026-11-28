@@ -240,6 +240,64 @@ func TestPurchases_ManualGrantSurvivesAppleOutage(t *testing.T) {
 	}
 }
 
+func TestPurchases_ManualFallbackRevalidatesSessionAndClassifiesFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		prepare func(*testing.T, *signupEnv, *purchaseVerifier, string)
+		status  int
+		code    string
+	}{
+		{"session revoked after valid proof", func(t *testing.T, e *signupEnv, f *purchaseVerifier, sessionID string) {
+			f.before = func() {
+				mustExec(t, e.d.Pool, `UPDATE sessions SET revoked_at=clock_timestamp(),revoked_reason='logout' WHERE id=$1`, sessionID)
+			}
+		}, 401, "unauthorized"},
+		{"session revoked during Apple outage", func(t *testing.T, e *signupEnv, f *purchaseVerifier, sessionID string) {
+			f.err = appleiap.ErrUnavailable
+			f.before = func() {
+				mustExec(t, e.d.Pool, `UPDATE sessions SET revoked_at=clock_timestamp(),revoked_reason='logout' WHERE id=$1`, sessionID)
+			}
+		}, 401, "unauthorized"},
+		{"reconciliation database failure", func(t *testing.T, e *signupEnv, f *purchaseVerifier, _ string) {
+			f.before = func() { mustExec(t, e.d.Pool, `ALTER TABLE apple_pro_purchases RENAME TO unavailable_purchases`) }
+		}, 500, "internal_error"},
+		{"manual fallback database failure", func(t *testing.T, e *signupEnv, f *purchaseVerifier, _ string) {
+			f.err = appleiap.ErrUnavailable
+			f.before = func() { mustExec(t, e.d.Pool, `ALTER TABLE entitlement_grants RENAME TO unavailable_grants`) }
+		}, 500, "internal_error"},
+		{"invalid proof", func(_ *testing.T, _ *signupEnv, f *purchaseVerifier, _ string) {
+			f.err = appleiap.ErrInvalid
+		}, 200, ""},
+		{"ownership conflict", func(t *testing.T, e *signupEnv, f *purchaseVerifier, _ string) {
+			other, _ := e.staff(t, "user")
+			f.proof.AccountToken = other.ID
+		}, 200, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e, f := billingEnv(t)
+			u, owner := e.staff(t, "user")
+			_, admin := e.staff(t, "admin")
+			const id = "6101"
+			f.proof = appleiap.Transaction{ID: id, OriginalID: id, ProductID: "app.veea.pro",
+				Environment: "Production", AccountToken: u.ID, PurchasedAt: time.Now().Add(-time.Hour)}
+			wantPlan(t, e.post(t, applePurchasePath, purchaseBody(id), bearer(owner.AccessToken)...), "premium", nil)
+			end := e.dbNow(t).Add(time.Hour)
+			wantStatus(t, e.grantPremium(t, admin.AccessToken, u.ID, end, 0), 200)
+			mustExec(t, e.d.Pool, `UPDATE apple_pro_purchases SET verified_at=clock_timestamp()-interval '6 minutes' WHERE user_id=$1`, u.ID)
+			tc.prepare(t, e, f, owner.SessionID.String())
+			result := e.myPlan(t, owner.AccessToken)
+			if tc.status != http.StatusOK {
+				wantProblem(t, result, tc.status, tc.code)
+				return
+			}
+			wantPlan(t, result, "premium", &end)
+			if result.body["purchase_verification_pending"] != true {
+				t.Fatal("manual fallback did not report pending verification")
+			}
+		})
+	}
+}
+
 func TestPurchases_ObsoleteProofCannotBlockAnotherValidPurchase(t *testing.T) {
 	e, f := billingEnv(t)
 	u, a := e.staff(t, "user")

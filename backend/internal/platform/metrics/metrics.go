@@ -117,7 +117,7 @@ func New() *Metrics {
 
 var applePurchaseResults = [...]string{
 	"production_recorded", "sandbox_recorded", "sandbox_acknowledged",
-	"authentication_failed", "rate_limited", "upstream_failed", "reconcile_backoff", "request_canceled",
+	"authentication_failed", "rate_limited", "upstream_failed", "reconcile_backoff", "reconcile_saturated", "request_canceled",
 	"invalid_proof", "invalid_request", "ownership_conflict", "disabled", "internal_error",
 }
 

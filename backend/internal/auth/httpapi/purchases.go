@@ -75,6 +75,8 @@ func purchaseResult(err error) string {
 		return "authentication_failed"
 	case errors.Is(err, purchases.ErrReconcileBackoff):
 		return "reconcile_backoff"
+	case errors.Is(err, purchases.ErrReconcileSaturated):
+		return "reconcile_saturated"
 	case errors.Is(err, appleiap.ErrUnavailable):
 		return "upstream_failed"
 	case errors.Is(err, appleiap.ErrInvalid):
@@ -91,6 +93,9 @@ func (h *Handlers) purchaseFailure(w http.ResponseWriter, r *http.Request, err e
 		return
 	}
 	switch {
+	case errors.Is(err, purchases.ErrReconcileSaturated):
+		w.Header().Set("Retry-After", "1")
+		httpx.WriteProblem(w, 503, httpx.CodePurchaseUnavailable)
 	case errors.Is(err, appleiap.ErrUnavailable):
 		w.Header().Set("Retry-After", "60")
 		httpx.WriteProblem(w, 503, httpx.CodePurchaseUnavailable)

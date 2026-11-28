@@ -295,7 +295,7 @@ paths:
         "500": { $ref: "#/components/responses/InternalError" }
         "503":
           x-codes: [purchase_unavailable]
-          description: Existing Apple purchase cannot currently be reconciled.
+          description: Existing Apple purchase cannot currently be reconciled. Retry-After is 1 second for slot saturation and 60 seconds for unavailable verification.
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }

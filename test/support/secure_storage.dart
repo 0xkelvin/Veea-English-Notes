@@ -8,6 +8,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 class TestSecureStorage extends FlutterSecureStorage {
   TestSecureStorage({this.file});
   final File? file;
+  String? failingDeleteKey;
   final Map<String, String> _values = {};
   final List<Map<String, String>> writes = [];
   Map<String, String> get values => file != null && file!.existsSync()
@@ -65,6 +66,7 @@ class TestSecureStorage extends FlutterSecureStorage {
     AppleOptions? mOptions,
     WindowsOptions? wOptions,
   }) async {
+    if (key == failingDeleteKey) throw StateError('Synthetic delete failure');
     final data = values;
     data.remove(key);
     await _save(data);

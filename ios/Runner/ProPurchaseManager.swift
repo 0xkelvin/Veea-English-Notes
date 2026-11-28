@@ -21,7 +21,6 @@ final class ProPurchaseManager {
   private var namespace: String? { ProPurchasePolicy.namespace(environment: environment, owner: owner, productID: productID, apiOrigin: apiOrigin) }
   private var listener: Task<Void, Never>?
   private var generation = 0
-  private var outcome: String?
   var onChange: (() -> Void)?
   private let defaults = UserDefaults.standard
   private var lifetimeKey: String? { leaseKey.map { $0 + ".lifetime" } }
@@ -36,7 +35,7 @@ final class ProPurchaseManager {
       diskLifetime: lifetimeKey.map { defaults.bool(forKey: $0) } == true,
       now: Date().timeIntervalSince1970)
   }
-  private func state() -> [String: Any] {
+  private func state(outcome: String? = nil, observedRevocation: Bool = false) -> [String: Any] {
     let local = transactions.values.contains { accepts($0) && $0.environment == .production }
     let sandbox = transactions.values.contains { accepts($0) && $0.environment == .sandbox }
     let account = owner != nil && ProPurchasePolicy.allowsInstallation(environment) && hasActiveServerLease
@@ -53,7 +52,8 @@ final class ProPurchaseManager {
       "localFinishTransactions": localFinishes, "pendingTransactions": pendingClaims,
       "price": product?.displayPrice as Any? ?? NSNull(),
       "transactions": Array(Set(ownedTransactions.values.filter(accepts).map { String($0.id) }).union(pendingClaims)).sorted(),
-      "outcome": outcome as Any? ?? NSNull()]
+      "outcome": (outcome ?? ProPurchasePolicy.refundOutcome(hasActivePurchase: local || sandbox,
+        observedRevocation: observedRevocation)) as Any? ?? NSNull()]
   }
   func configure(_ args: [String: Any]) async throws -> [String: Any] {
     let nextOwner = (args["accountID"] as? String).flatMap(UUID.init(uuidString:))
@@ -69,7 +69,6 @@ final class ProPurchaseManager {
       ownedTransactions = [:]
       pendingTransactions = [:]
       volatileLease.clear()
-      outcome = nil
       product = nil
       owner = nextOwner
       productID = nextProduct
@@ -109,7 +108,6 @@ final class ProPurchaseManager {
         }
       }
     }
-    if outcome == "pending" || outcome == "cancelled" { outcome = nil }
     let epoch = generation
     for await verification in Transaction.unfinished {
       guard epoch == generation else { throw ProPurchaseError.accountChanged }
@@ -136,20 +134,21 @@ final class ProPurchaseManager {
     }
   }
 
-  private func refreshEntitlements() async {
+  @discardableResult
+  private func refreshEntitlements() async -> Bool {
     let epoch = generation, expectedEnvironment = environment
     var current: [String: Transaction] = [:]
     for await verification in Transaction.currentEntitlements {
-      guard epoch == generation else { return }
+      guard epoch == generation else { return false }
       if case .verified(let tx) = verification, accepts(tx), tx.revocationDate == nil {
         current[String(tx.id)] = tx
       }
     }
-    guard epoch == generation else { return }
+    guard epoch == generation else { return false }
     guard ProPurchasePolicy.canCommitOwnershipScan(startedIn: expectedEnvironment, currentInstallation: environment) else {
       transactions = [:]
       ownedTransactions = [:]
-      return
+      return false
     }
     for (id, tx) in pendingTransactions where accepts(tx) {
       if let existing = current[id], existing.signedDate > tx.signedDate { continue }
@@ -159,16 +158,12 @@ final class ProPurchaseManager {
     transactions = current.filter { _, tx in
       ProPurchasePolicy.isActive(revoked: tx.revocationDate != nil, signedAt: tx.signedDate, deniedAt: deniedAt(for: tx))
     }
-    if transactions.isEmpty, current.values.contains(where: { $0.revocationDate != nil }) {
-      outcome = "revoked"
-    } else if !transactions.isEmpty && outcome == "revoked" {
-      outcome = nil
-    }
     // A matching Production purchase needs no duplicate account lease. A
     // Sandbox or differently bound proof must not erase an independent lease.
     if transactions.values.contains(where: {
       $0.environment == .production && ProPurchasePolicy.canClaim(owner: owner, token: $0.appAccountToken)
     }) { clearLifetimeLease() }
+    return current.values.contains { $0.revocationDate != nil }
   }
   func purchase() async throws -> [String: Any] {
     guard ProPurchasePolicy.allowsInstallation(environment), let product else {
@@ -176,7 +171,8 @@ final class ProPurchaseManager {
     }
     let epoch = generation
     let options: Set<Product.PurchaseOption> = owner.map { [.appAccountToken($0)] } ?? []
-    outcome = nil
+    var outcome: String?
+    var observedRevocation = false
     switch try await product.purchase(options: options) {
     case .success(let verification):
       guard case .verified(let tx) = verification else {
@@ -186,29 +182,29 @@ final class ProPurchaseManager {
       guard accepts(tx) else { throw ProPurchaseError.incompatibleInstallation }
       receive(tx)
       await refreshEntitlements()
+      observedRevocation = tx.revocationDate != nil
     case .pending: outcome = "pending"
     case .userCancelled: outcome = "cancelled"
     @unknown default: throw ProPurchaseError.unknownPaymentResult
     }
     guard epoch == generation else { throw ProPurchaseError.accountChanged }
-    return state()
+    return state(outcome: outcome, observedRevocation: observedRevocation)
   }
   func restore() async throws -> [String: Any] {
     guard ProPurchasePolicy.allowsInstallation(environment) else { throw ProPurchaseError.incompatibleInstallation }
     let epoch = generation
-    outcome = nil
     try await AppStore.sync()
     guard epoch == generation else { throw ProPurchaseError.accountChanged }
-    await refreshEntitlements()
+    var hasRevokedProof = await refreshEntitlements()
     guard epoch == generation else { throw ProPurchaseError.accountChanged }
     if transactions.isEmpty, !productID.isEmpty,
        case .verified(let tx)? = await Transaction.latest(for: productID),
        epoch == generation, accepts(tx), tx.revocationDate != nil {
       receive(tx)
-      await refreshEntitlements()
+      hasRevokedProof = await refreshEntitlements()
     }
     guard epoch == generation else { throw ProPurchaseError.accountChanged }
-    return state()
+    return state(observedRevocation: hasRevokedProof)
   }
   private func rememberRevocation(_ tx: Transaction, at date: Date) {
     let key = revokedKey(for: tx)

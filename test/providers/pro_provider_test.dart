@@ -58,6 +58,7 @@ class TestPro extends ProRepository {
     'purchase_revoked': false,
   };
   ProStoreState? purchaseResult;
+  Future<ProStoreState>? pendingPurchase;
   PlatformException? restoreError;
   ApiException? entitlementError;
   void Function()? onPurchase;
@@ -123,6 +124,7 @@ class TestPro extends ProRepository {
   Future<ProStoreState> purchase() async {
     purchased++;
     onPurchase?.call();
+    if (pendingPurchase case final result?) return result;
     return purchaseResult ?? state;
   }
 
@@ -936,4 +938,94 @@ void main() {
       expect(repo.purchased, 1);
     },
   );
+  test(
+    'refund outcomes are only shown for explicit purchase or restore',
+    () async {
+      const revoked = ProStoreState(price: '99.000 ₫', outcome: 'revoked');
+      repo.state = revoked;
+      await pro.refresh();
+      expect(pro.message, isNull);
+
+      await pro.restore();
+      expect(pro.message, contains('refunded or revoked'));
+      await pro.refresh();
+      expect(pro.message, isNull);
+
+      await pro.purchase();
+      expect(pro.message, contains('refunded or revoked'));
+      repo.state = const ProStoreState(
+        localApple: true,
+        hasLifetime: true,
+        hasPro: true,
+      );
+      await pro.refresh();
+      expect(pro.hasLifetime, isTrue);
+      expect(pro.message, isNull);
+    },
+  );
+
+  test('a late refund result cannot affect the next Veea account', () async {
+    repo.state = const ProStoreState(price: '99.000 ₫');
+    auth.select('a');
+    await Future<void>.delayed(Duration.zero);
+    final result = Completer<ProStoreState>();
+    repo.pendingPurchase = result.future;
+    final purchase = pro.purchase();
+    await Future<void>.delayed(Duration.zero);
+    expect(repo.purchased, 1);
+
+    repo.state = const ProStoreState(price: 'new price');
+    auth.select('b');
+    await Future<void>.delayed(Duration.zero);
+    result.complete(
+      const ProStoreState(price: 'old price', outcome: 'revoked'),
+    );
+    await purchase;
+    expect(pro.price, 'new price');
+    expect(pro.message, isNull);
+  });
+
+  test(
+    'background reconciliation unavailability is quiet and preserves access',
+    () async {
+      auth.select('a');
+      await Future<void>.delayed(Duration.zero);
+      const unavailable = ApiException(
+        'Unavailable',
+        statusCode: 503,
+        code: 'purchase_unavailable',
+      );
+      repo.entitlementError = unavailable;
+      repo.state = const ProStoreState(hasPro: true, hasLifetime: true);
+      await pro.refresh();
+      expect(pro.message, isNull);
+      expect(pro.hasLifetime, isTrue);
+      expect(repo.lastClearServer, isFalse);
+
+      repo.state = const ProStoreState(
+        localApple: true,
+        transactions: ['bound'],
+      );
+      repo.claimErrors['bound'] = unavailable;
+      await pro.refresh();
+      expect(pro.message, isNull);
+      expect(pro.hasLocalApple, isTrue);
+      expect(repo.finishedIds, isEmpty);
+    },
+  );
+
+  test('explicit StoreKit refund feedback survives Go unavailability', () async {
+    auth.select('a');
+    await Future<void>.delayed(Duration.zero);
+    repo.state = const ProStoreState(outcome: 'revoked');
+    repo.entitlementError = const ApiException(
+      'Unavailable',
+      statusCode: 503,
+      code: 'purchase_unavailable',
+    );
+    await pro.restore();
+    expect(pro.message, contains('refunded or revoked'));
+    await pro.refresh();
+    expect(pro.message, isNull);
+  });
 }

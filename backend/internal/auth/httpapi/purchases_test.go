@@ -18,6 +18,7 @@ func TestPurchaseFailureMetricClassification(t *testing.T) {
 		{context.DeadlineExceeded, "request_canceled"},
 		{appleiap.ErrUnavailable, "upstream_failed"},
 		{purchases.ErrReconcileBackoff, "reconcile_backoff"},
+		{purchases.ErrReconcileSaturated, "reconcile_saturated"},
 		{appleiap.ErrInvalid, "invalid_proof"},
 		{errors.New("synthetic internal error"), "internal_error"},
 	} {

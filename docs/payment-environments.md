@@ -120,8 +120,10 @@ opens the cooldown without an immediate retry. The lookup releases its slot at
 verifier exit, including cancellation or panic, before database work starts.
 Only a completed verifier response can advance or reset the cooldown.
 
-The gate has no queue, per-owner reservation or cross-replica coordination.
-A busy owner can occupy available slots, and a cooldown affects every owner
+When all four lookup slots are occupied and the gate is healthy, up to four
+requests per replica can wait up to 250 ms. Saturation returns temporary
+unavailability and does not start a cooldown. Requests skip the wait during
+cooldown or a recovery probe. A busy owner can occupy available slots, and a cooldown affects every owner
 routed to that replica who needs a lookup. Different replicas can probe at the
 same time. Explicit purchase claims bypass the gate and keep their existing
 per-user rate limit. Cached, fresh proofs are served without a lookup.

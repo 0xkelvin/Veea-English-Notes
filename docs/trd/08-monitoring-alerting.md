@@ -172,7 +172,9 @@ Successful claim labels describe what committed: `production_recorded`,
 `sandbox_recorded` (dedicated Sandbox), or `sandbox_acknowledged` (device-only
 on Production). They include verified revocation outcomes. `request_canceled`
 tracks request cancellations. `reconcile_backoff` counts requests suppressed by
-a replica's cooldown or concurrency limit, independently of provider failures.
+a replica's cooldown or recovery probe. `reconcile_saturated` counts requests
+that could not obtain a slot within the bounded wait or waiter limit. Both
+are tracked separately from provider failures.
 Internal service failures use `internal_error`.
 
 The upstream-failure and invalid-proof alerts warn when their 15-minute increase

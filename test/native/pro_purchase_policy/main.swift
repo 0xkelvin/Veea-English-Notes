@@ -43,6 +43,9 @@ let refundedAt = Date(timeIntervalSince1970: 100)
 expect(!ProPurchasePolicy.isActive(revoked: true, signedAt: refundedAt, deniedAt: nil), "Revoked proof unlocked")
 expect(!ProPurchasePolicy.isActive(revoked: false, signedAt: refundedAt, deniedAt: refundedAt), "Stale proof reversed refund")
 expect(ProPurchasePolicy.isActive(revoked: false, signedAt: refundedAt.addingTimeInterval(1), deniedAt: refundedAt), "New verified proof could not reflect refund reversal")
+expect(ProPurchasePolicy.refundOutcome(hasActivePurchase: false, observedRevocation: true) == "revoked", "Explicit refund feedback was lost")
+expect(ProPurchasePolicy.refundOutcome(hasActivePurchase: false) == nil, "Ordinary entitlement state repeated a historical refund")
+expect(ProPurchasePolicy.refundOutcome(hasActivePurchase: true, observedRevocation: true) == nil, "A refund hid active or reversed ownership")
 let sandbox = ProPurchasePolicy.namespace(environment: "Sandbox", owner: owner, productID: "app.veea.pro", apiOrigin: "https://accounts.example.test")!
 let production = ProPurchasePolicy.namespace(environment: "Production", owner: owner, productID: "app.veea.pro", apiOrigin: "https://accounts.example.test")!
 expect(sandbox != production, "Sandbox cache leaked into Production")

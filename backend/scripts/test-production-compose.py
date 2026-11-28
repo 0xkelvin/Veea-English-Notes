@@ -30,8 +30,13 @@ def main():
         inspect = root / "Inspect.mk"
         inspect.write_text("inspect-model:\n\t@$(PROD_COMPOSE) config --format json\n")
         make = ["make", "-s", "-C", str(BACKEND), "-f", "Makefile", "-f", str(inspect),
-                f"PROD_ENV_FILE={env_file}"]
-        clean_env = {"PATH": os.environ["PATH"]}
+                f"PROD_ENV_FILE={env_file}", "PROD_PROJECT_NAME=veea-compose-test"]
+        # Keep CLI plugin discovery, while pinning daemon selection to a
+        # nonexistent local socket. Compose config needs no daemon.
+        clean_env = {key: os.environ[key] for key in
+                     ("PATH", "HOME", "DOCKER_CONFIG", "XDG_CONFIG_HOME")
+                     if key in os.environ}
+        clean_env["DOCKER_HOST"] = f"unix://{root / 'unused-docker.sock'}"
 
         for ingress in (None, "camera", "host"):
             for use_secret in (False, True):
@@ -40,7 +45,9 @@ def main():
                     args += ["PROD_IAP_DOCKER_SECRET=true"]
                 subprocess.run(args + ["backend-prod-config"], env=clean_env, check=True)
                 model = json.loads(subprocess.check_output(args + ["inspect-model"], env=clean_env))
+                assert model["name"] == "veea-compose-test"
                 api = model["services"]["api"]
+                assert api["image"] == "veea-backend:compose-test"
                 assert "default" in api["networks"]
                 assert any(str(p["published"]) == "28386" and p["target"] == 18386 and p["host_ip"] == "127.0.0.1"
                            for p in api["ports"])
