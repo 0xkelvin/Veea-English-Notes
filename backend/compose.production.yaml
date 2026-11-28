@@ -86,6 +86,9 @@ services:
       - "127.0.0.1:${VEEA_PROD_METRICS_PORT:-29090}:9090"
     networks:
       default: {}
+      veea-camera:
+        aliases:
+          - veea-production-api
     depends_on:
       postgres: { condition: service_healthy }
       permissions: { condition: service_completed_successfully }
@@ -96,5 +99,9 @@ services:
       timeout: 3s
       retries: 30
       start_period: 5s
+networks:
+  veea-camera:
+    external: true
+    name: veea-camera_default
 volumes:
   postgres_data:
