@@ -20,7 +20,7 @@ import (
 )
 
 // exported scrapes a registry wired like cmd/api and app.New, and returns its metric names.
-func exported(t *testing.T) map[string]bool {
+func exported(t *testing.T) (map[string]bool, string) {
 	t.Helper()
 	m := metrics.New()
 	m.InitEmailSend(notify.TemplateNames())
@@ -37,7 +37,7 @@ func exported(t *testing.T) map[string]bool {
 			names[f[2]] = true
 		}
 	}
-	return names
+	return names, string(body)
 }
 
 // expressions returns the text of every expr in the rule file.
@@ -71,12 +71,12 @@ func expressions(t *testing.T) []string {
 	return out
 }
 
-var serviceMetric = regexp.MustCompile(`\b(?:admin|account|email|auth|db|argon2|learning)_[a-z0-9_]+\b`)
+var serviceMetric = regexp.MustCompile(`\b(?:admin|account|email|auth|db|argon2|learning|apple)_[a-z0-9_]+\b`)
 var nameAlternation = regexp.MustCompile(`__name__=~"([^"]+)"`)
 var resultMatcher = regexp.MustCompile(`result=~?"([^"]+)"`)
 
 func TestRulesReferenceOnlyExportedMetricsAndLabels(t *testing.T) {
-	have := exported(t)
+	have, scrape := exported(t)
 	used := map[string]bool{}
 	for _, expr := range expressions(t) {
 		for _, n := range serviceMetric.FindAllString(expr, -1) {
@@ -89,7 +89,11 @@ func TestRulesReferenceOnlyExportedMetricsAndLabels(t *testing.T) {
 		}
 		for _, m := range resultMatcher.FindAllStringSubmatch(expr, -1) {
 			for _, v := range strings.Split(m[1], "|") {
-				if !slices.Contains(metrics.EmailResults, v) {
+				if strings.Contains(expr, "apple_purchase_verification_total") {
+					if !strings.Contains(scrape, `apple_purchase_verification_total{operation="claim",result="`+v+`"}`) {
+						t.Errorf("purchase metric does not export result=%q", v)
+					}
+				} else if !slices.Contains(metrics.EmailResults, v) {
 					t.Errorf("rule matches result=%q, which email_send_total never carries (%v)", v, metrics.EmailResults)
 				}
 			}
@@ -104,7 +108,7 @@ func TestRulesReferenceOnlyExportedMetricsAndLabels(t *testing.T) {
 		}
 	}
 	for _, want := range []string{"admin_active_super_admins", "admin_super_admin_bootstrapped",
-		"account_deletion_oldest_pending_seconds", "email_outbox_pending", "email_send_total"} {
+		"account_deletion_oldest_pending_seconds", "email_outbox_pending", "email_send_total", "apple_purchase_verification_total"} {
 		if !used[want] {
 			t.Errorf("no rule uses %s", want)
 		}

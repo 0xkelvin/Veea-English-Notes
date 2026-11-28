@@ -355,63 +355,19 @@ precondition(NativeGatePolicy.applicationID(from: "native:\(appA.id)") == appA.i
 precondition(NativeGatePolicy.applicationID(from: "native:bad-id") == nil)
 print("Native gate policy, persistence, handoff, scheduling-failure, stale-callback, and cross-process lock tests passed")
 
-// Plan enforcement is native, independent of paywall widgets.
-// Free means one app; full access requires a verified purchase.
-precondition(!NativeGateReleasePolicy.isFreeLaunch)
-precondition(!NativeGateReleasePolicy.permitsAllLockControls(purchasedPro: false))
-precondition(NativeGateReleasePolicy.permitsAllLockControls(purchasedPro: true))
-for minutes in [5, 7, 47, 1440] {
-  try NativeGatePlanPolicy.requireDuration(minutes, pro: false)
-  precondition(NativeGatePlanPolicy.duration(minutes, pro: false) == minutes)
-}
-for minutes in [0, 4, 1441] {
-  do { try NativeGatePlanPolicy.requireDuration(minutes, pro: false); preconditionFailure("Reject unsupported duration") }
-  catch NativeGateError.invalidDuration {}
-}
-print("Free includes one app; all supported default and per-app times remain free")
-
-// Count enforcement and downgrade preserve personal configuration.
-try NativeGatePlanPolicy.requireAppCount(1, pro: false)
-do { try NativeGatePlanPolicy.requireAppCount(2, pro: false); preconditionFailure("Free must refuse a second app") }
-catch NativeGatePlanError.proRequired {}
-try NativeGatePlanPolicy.requireAppCount(50, pro: true)
-for minutes in [5, 15, 30] { try NativeGatePlanPolicy.requireDuration(minutes, pro: false) }
-try NativeGatePlanPolicy.requireDuration(7, pro: false)
-precondition(NativeGatePlanPolicy.duration(7, pro: false) == 7)
-precondition(NativeGatePlanPolicy.duration(7, pro: true) == 7)
-var downgrade = NativeGateState()
-downgrade.applications = [appA, appB]
-try downgrade.setAllApplicationLocks(true)
-downgrade.applicationMinutes = [appB.id: 7]
-downgrade.passes[appB.id] = aggregatePass
-let stoppedByPlan = NativeGatePlanPolicy.applyFreePlan(to: &downgrade)
-precondition(stoppedByPlan == [aggregatePass.activityName])
-precondition(downgrade.isApplicationLockEnabled(appA.id))
-precondition(!downgrade.isApplicationLockEnabled(appB.id))
-precondition(downgrade.applications == [appA, appB])
-precondition(downgrade.applicationMinutes[appB.id] == 7)
-precondition(NativeGatePlanPolicy.applyFreePlan(to: &downgrade).isEmpty)
-// OFF and removal always remain possible after a downgrade.
-_ = try downgrade.setApplicationLockEnabled(false, for: appA.id)
-_ = try downgrade.removeApplication(appB.id)
-precondition(!downgrade.enabled)
-print("Free/Pro native limits, retained selections, safe downgrade, and unconditional removal checks passed")
-
-var preferredFree = NativeGateState()
-preferredFree.applications = [appA,appB]
-try preferredFree.setAllApplicationLocks(true)
-_ = NativeGatePlanPolicy.applyFreePlan(to:&preferredFree,preferredApplicationID:appB.id)
-precondition(preferredFree.isApplicationLockEnabled(appB.id))
-precondition(!preferredFree.isApplicationLockEnabled(appA.id))
-print("Free downgrade keeps the current challenge app when available")
-
-var earnedFree = NativeGateState()
-earnedFree.applications = [appA, appB]
-try earnedFree.setAllApplicationLocks(true)
-earnedFree.passes[appB.id] = aggregatePass
-_ = NativeGatePlanPolicy.applyFreePlan(to: &earnedFree, at: now)
-precondition(earnedFree.isApplicationLockEnabled(appB.id))
-precondition(earnedFree.passes[appB.id] == aggregatePass)
-precondition(!earnedFree.isApplicationLockEnabled(appA.id))
-precondition(earnedFree.shieldedApplicationIDs(at: now).isEmpty)
-print("Free downgrade preserves the earned pass when no challenge app is pending")
+// App protection has no billing input. Existing technical and authorization
+// behavior is exercised above, including simultaneous monitored passes.
+for count in [1, 2, 50] { try NativeGatePolicy.validateApplicationCount(count) }
+do { try NativeGatePolicy.validateApplicationCount(51); preconditionFailure("Reject selections over the safety limit") }
+catch NativeGateError.tooManyApplications {}
+var freeProtection = NativeGateState()
+freeProtection.applications = [appA, appB]
+try freeProtection.setAllApplicationLocks(true)
+try freeProtection.setApplicationDuration(7, for: appB.id)
+freeProtection.passes[appB.id] = aggregatePass
+freeProtection.reconcile(at: now)
+precondition(freeProtection.isApplicationLockEnabled(appA.id))
+precondition(freeProtection.isApplicationLockEnabled(appB.id))
+precondition(freeProtection.unlockMinutes(for: appB.id) == 7)
+precondition(freeProtection.passes[appB.id] == aggregatePass)
+print("Free multi-app protection preserves app settings and active passes")

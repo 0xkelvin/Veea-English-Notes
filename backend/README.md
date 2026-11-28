@@ -205,7 +205,7 @@ explicit paths/project automatically; preserve the same selection if invoking Co
 docker compose config --quiet
 docker compose up -d --build --wait --wait-timeout 120
 docker compose run --rm --no-deps migrate status
-# Expected: current_version=15 pending=0
+# Expected: current_version=16 pending=0
 curl -fsS http://127.0.0.1:18386/healthz
 curl -fsS http://127.0.0.1:18386/readyz
 docker compose exec -T postgres psql -U veea -d veea \
@@ -288,21 +288,23 @@ Never commit the env file or put values in shell history/logs. Keep application 
 keys and required old key versions with the durable database; do not regenerate on restart.
 
 ```sh
-docker network inspect veea-camera_default >/dev/null # Existing Veea-camera network must exist
 make backend-prod-config         # Validate without printing secrets
 make backend-prod-build          # Build the configured tagged api/migrate/admin image
 make backend-prod-up             # Use prebuilt image, wait for DB -> migrate -> grants -> API
-make backend-prod-migrate-status # Expected: current_version=15 pending=0
+make backend-prod-migrate-status # Expected: current_version=16 pending=0
 make backend-prod-health
 make backend-prod-ps
 make backend-prod-logs            # Ctrl-C stops log following only
 make backend-prod-down            # Preserve the production database volume
 ```
 
-The same targets work with `make -C backend`. Use `PROD_PROJECT_NAME` / `PROD_ENV_FILE` on
-every command to override the selection; relative env paths are backend-relative. Up never
-builds or pulls implicitly. For registry releases, pull the configured image through your
-deployment pipeline before up. There is deliberately **no production volume-wipe target**.
+The same targets work with `make -C backend`. Every production target uses the
+same Compose selection. Keep `PROD_PROJECT_NAME`, `PROD_ENV_FILE`,
+`PROD_INGRESS`, and `PROD_IAP_DOCKER_SECRET` consistent across commands.
+Relative env paths are backend-relative. Up never builds or pulls implicitly.
+For registry releases, pull the selected image through the deployment pipeline
+before up. For inline and file-backed Apple keys, see the
+[payment settings](../docs/payment-environments.md#private-key-delivery).
 
 Fresh-volume initialization creates separate non-superuser migration, API and maintenance
 roles. The migrator owns the database/schema; the API has no schema-creation permission and
@@ -313,22 +315,61 @@ runs only on a **new** volume: editing password env values later does not rotate
 roles. Perform planned SQL/secret rotation instead. This layout cannot adopt an arbitrary
 existing database volume without a reviewed role/grant migration.
 
-PostgreSQL publishes **no host port**. API defaults to `127.0.0.1:28386`, metrics to
-`127.0.0.1:29090` for host checks and internal Prometheus. The API also joins the external
-Docker network `veea-camera_default` with alias `veea-production-api` for shared ingress. The containerized Nginx in `Veea-camera` already
-uses that project's default network and proxies to `http://veea-production-api:18386`.
-PostgreSQL, the migrator and permissions job stay on this project's default network; only the
-API joins both. The camera project owns `veea-camera_default`; backend Compose does not create
-or remove it. On a fresh server, run `docker compose up --no-start --no-deps nginx` from
-`Veea-camera` to create its network/container without starting Nginx before the backend is
-available. Keep the camera project name `veea-camera`; changing it changes the default network
-name. Preserve the existing backend project name, env file and database volume.
+PostgreSQL publishes no host port. The API publishes `127.0.0.1:28386` and
+metrics publishes `127.0.0.1:29090` by default. Select ingress explicitly for
+the host and reuse the same selection when updating, checking, or rolling back.
 
-Start the backend and pass `backend-prod-health` before starting Nginx or reloading its updated
-upstream configuration. No Nginx Compose network change is required. After later API container
-replacements, validate and reload Nginx so its upstream address is refreshed. All other
-upstream names in the shared Nginx config must also resolve on its attached networks.
-See `Veea-camera/nginx/README.md` for proxy-side commands.
+**Containerized Veea-camera Nginx (the default).** The production Make targets
+include `compose.production-camera.yaml` unless the operator selects host
+ingress. Only the API joins the external `veea-camera_default` network, using
+`veea-production-api:18386` as the Nginx upstream. On a fresh deployment,
+create the project network from the Veea-camera checkout using its production
+Compose project name before bringing up the API.
+
+```sh
+# In the Veea-camera checkout, when the proxy network needs to be created
+docker compose -p veea-camera up --no-start --no-deps nginx
+docker network inspect veea-camera_default >/dev/null
+
+# In the Veea-English-Notes checkout for a Docker-secret deployment
+export PROD_INGRESS=camera PROD_IAP_DOCKER_SECRET=true
+make backend-prod-config
+make backend-prod-up
+make backend-prod-migrate-status
+make backend-prod-health
+make backend-prod-ps
+
+# In the Veea-camera checkout, use the deployed proxy's project and Compose files
+docker compose -p veea-camera exec -T nginx wget -qO- http://veea-production-api:18386/readyz
+docker compose -p veea-camera exec -T nginx nginx -t
+docker compose -p veea-camera exec -T nginx nginx -s reload
+```
+
+On initial startup, start Nginx after the backend is healthy. On API
+replacement, reload containerized Nginx after confirming upstream reachability
+so it resolves the current container address. Verify the public HTTPS health
+route through the actual TLS proxy. Use the Veea-camera runbook if the deployed
+proxy has site-specific Compose overlays or health tools.
+
+**Host reverse proxy.** Only select this after confirming the live reverse proxy
+runs on the Docker host and is configured for `http://127.0.0.1:28386`.
+
+```sh
+export PROD_INGRESS=host PROD_IAP_DOCKER_SECRET=true
+make backend-prod-config
+make backend-prod-up
+make backend-prod-migrate-status
+make backend-prod-health
+make backend-prod-ps
+curl -fsS http://127.0.0.1:28386/readyz
+```
+
+Set `PROD_IAP_DOCKER_SECRET=false` for an inline-key or disabled-key deployment.
+Preserve the existing backend project name, env location, and database volume.
+Run `python3 backend/scripts/test-production-compose.py` from the repository
+root to validate both topology selections with synthetic settings.
+Use the matching [IAP rollback procedure](../docs/payment-environments.md#roll-back-apple-iap)
+if a production release must be reverted.
 
 HTTPS termination remains an operator configuration: the existing Nginx stack exposes port
 80 only. Before public traffic, configure TLS and block both `/v1/admin` and the public

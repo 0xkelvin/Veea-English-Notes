@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import '../core/config/app_config.dart';
 
 import '../data/vocabulary_repository.dart';
 import '../models/gate_config.dart';
@@ -17,34 +16,16 @@ class AppGateProvider extends ChangeNotifier {
     required VocabularyRepository repository,
     AppGateService? service,
     DateTime Function()? now,
-    bool hasPro = false,
   }) : _repository = repository,
        _service = service ?? AppGateService(),
-       _now = now ?? DateTime.now,
-       _hasPro = hasPro;
+       _now = now ?? DateTime.now;
 
   final VocabularyRepository _repository;
   final AppGateService _service;
   final DateTime Function() _now;
-  bool _hasPro;
   final Map<String, int> _roundWordCounts = {};
-  bool get canUseMultipleWords => AppConfig.isFreeLaunch || _hasPro;
-  int get maximumWordsPerUnlock => practiceWordCount == 0
-      ? 0
-      : canUseMultipleWords
-      ? practiceWordCount
-      : 1;
+  int get maximumWordsPerUnlock => practiceWordCount;
 
-  /// Effective access changes immediately; preserve the saved Pro preference
-  /// so sign-in/restore does not erase learning settings or personal words.
-  void setProAccess(bool hasPro) {
-    if (_hasPro == hasPro || _isDisposed) return;
-    _hasPro = hasPro;
-    notifyListeners();
-  }
-
-  /// An upgrade changes the next round, not an answer already in progress.
-  /// Downgrades take effect immediately and never require extra paid steps.
   void beginChallengeRound(String targetApp) {
     _roundWordCounts.putIfAbsent(_stateKey(targetApp), () => requiredWords);
   }
@@ -56,7 +37,6 @@ class AppGateProvider extends ChangeNotifier {
   }
 
   int requiredWordsForApp(String targetApp) {
-    if (!canUseMultipleWords) return 1;
     return (_roundWordCounts[_stateKey(targetApp)] ?? requiredWords).clamp(
       1,
       practiceWordCount == 0 ? 1 : practiceWordCount,
@@ -73,7 +53,6 @@ class AppGateProvider extends ChangeNotifier {
   NativeGateStatus _nativeStatus = const NativeGateStatus();
   bool _nativeBusy = false;
   String? _nativeError;
-  bool nativeRequiresPro = false;
   List<VocabularyWord> _notebook = const [];
   Map<String, int> _wordTurns = {};
   final Set<String> _submittingApps = {};
@@ -97,9 +76,8 @@ class AppGateProvider extends ChangeNotifier {
   );
   String? _poolNotice;
   String? get poolNotice => _poolNotice;
-  String _poolAdjustmentNotice(int count) => canUseMultipleWords
-      ? 'Words per unlock adjusted to $count to match your available practice words.'
-      : 'Saved word-count preference adjusted to $count to match your practice pool. Free continues with 1 word per unlock.';
+  String _poolAdjustmentNotice(int count) =>
+      'Words per unlock adjusted to $count to match your available practice words.';
   // Keep learning progress per app while native callbacks remain per opening.
   static String _stateKey(String app) {
     final key = app.trim().toLowerCase();
@@ -200,13 +178,11 @@ class AppGateProvider extends ChangeNotifier {
     if (_nativeBusy) return false;
     _nativeBusy = true;
     _nativeError = null;
-    nativeRequiresPro = false;
     notifyListeners();
     try {
       await operation();
       return true;
     } on PlatformException catch (error) {
-      nativeRequiresPro = error.code == 'PRO_REQUIRED';
       _nativeError =
           error.message ??
           'Screen Time could not be updated. Please try again.';
@@ -516,13 +492,6 @@ class AppGateProvider extends ChangeNotifier {
   }
 
   Future<void> setWordsPerUnlock(int count) async {
-    if (count > 1 && !canUseMultipleWords) {
-      throw PlatformException(
-        code: 'PRO_REQUIRED',
-        message:
-            'Free includes one word per unlock. Pro lets you review more words per unlock.',
-      );
-    }
     await prepareChallenge();
     if (practiceWordCount == 0) {
       throw PlatformException(

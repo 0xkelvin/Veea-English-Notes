@@ -31,19 +31,46 @@ void main() {
   late TestPro store;
   late ProProvider pro;
   late SyncService sync;
+  final protectionWrites = <String>[];
 
   setUp(() async {
     AppConfig.overrideFreeLaunch(null);
     AppConfig.overrideBaseUrl('http://localhost');
     AppConfig.overrideAppleProduct('app.test.pro');
     SharedPreferences.setMockInitialValues({});
+    protectionWrites.clear();
     messenger.setMockMethodCallHandler(
       const MethodChannel('flutter_tts'),
       (_) async => 1,
     );
     messenger.setMockMethodCallHandler(
       const MethodChannel(AppGateService.channelName),
-      (_) async => null,
+      (call) async {
+        if (call.method == 'getScreenTimeStatus') {
+          return {
+            'supported': true,
+            'available': true,
+            'authorized': true,
+            'enabled': true,
+            'configured': true,
+            'passMinutes': 15,
+            'applications': [
+              {'id': 'native:first', 'label': 'First app', 'lockEnabled': true},
+              {
+                'id': 'native:second',
+                'label': 'Second app',
+                'lockEnabled': true,
+                'customPassMinutes': 7,
+              },
+            ],
+          };
+        }
+        if (call.method.startsWith('setScreenTime') ||
+            call.method.startsWith('removeScreenTime')) {
+          protectionWrites.add(call.method);
+        }
+        return null;
+      },
     );
     repo = await SqliteVocabularyRepository.open(
       path: inMemoryDatabasePath,
@@ -89,47 +116,54 @@ void main() {
     );
   });
 
-  testWidgets(
-    'app shell propagates verified Pro and sign-out without changing the notebook',
-    (tester) async {
-      await tester.pumpWidget(
-        VeeaEnglishApp(
-          vocabulary: vocabulary,
-          auth: auth,
-          sync: sync,
-          pro: pro,
-          appGateProvider: gate,
-          pronunciation: PronunciationService(repo.database),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(gate.requiredWords, 1);
-      expect(gate.config.wordsPerUnlock, 3);
+  testWidgets('refund and sign-out preserve protection rules and notebook', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      VeeaEnglishApp(
+        vocabulary: vocabulary,
+        auth: auth,
+        sync: sync,
+        pro: pro,
+        appGateProvider: gate,
+        pronunciation: PronunciationService(repo.database),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(gate.requiredWords, 3);
+    expect(gate.config.wordsPerUnlock, 3);
+    expect(gate.nativeStatus.enabledApplicationCount, 2);
+    expect(gate.nativeStatus.durationFor('native:second'), 7);
 
-      store.state = const ProStoreState(
-        hasPro: true,
-        hasLifetime: true,
-        transactions: ['synthetic-proof'],
-      );
-      await pro.refresh();
-      await tester.pumpAndSettle();
-      expect(pro.hasPro, isTrue);
-      expect(gate.requiredWords, 3);
+    store.state = const ProStoreState(
+      hasPro: true,
+      hasLifetime: true,
+      localApple: true,
+    );
+    await pro.refresh();
+    await tester.pumpAndSettle();
+    expect(pro.hasPro, isTrue);
+    expect(gate.requiredWords, 3);
 
-      auth.select(null);
-      for (var i = 0; i < 12; i++) {
-        await tester.pump();
-        await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 10)),
-        );
-      }
-      await tester.pumpAndSettle();
-      expect(pro.hasPro, isFalse);
-      expect(gate.requiredWords, 1);
-      expect(gate.config.wordsPerUnlock, 3);
-      expect(await tester.runAsync(() => repo.exportAll()), hasLength(3));
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox());
-    },
-  );
+    auth.select(null);
+    for (var i = 0; i < 12; i++) {
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+    }
+    await tester.pumpAndSettle();
+    expect(pro.hasLocalApple, isTrue);
+    store.state = const ProStoreState();
+    await pro.refresh();
+    expect(pro.hasPro, isFalse);
+    expect(gate.requiredWords, 3);
+    expect(gate.config.wordsPerUnlock, 3);
+    expect(gate.nativeStatus.enabledApplicationCount, 2);
+    expect(gate.nativeStatus.durationFor('native:second'), 7);
+    expect(protectionWrites, isEmpty);
+    expect(await tester.runAsync(() => repo.exportAll()), hasLength(3));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
 }

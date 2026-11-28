@@ -1,0 +1,11 @@
+# Default production Make topology for the containerized Veea-camera proxy.
+services:
+  api:
+    networks:
+      veea-camera:
+        aliases: [veea-production-api]
+
+networks:
+  veea-camera:
+    external: true
+    name: veea-camera_default

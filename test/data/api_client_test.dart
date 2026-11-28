@@ -4,10 +4,30 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:veea_english_app/data/remote/api_client.dart';
+import 'package:veea_english_app/data/remote/go/api_client.dart';
 
 import '../support/fake_token_store.dart';
 
 void main() {
+  test('Go preserves supported purchase error codes', () {
+    for (final entry in {
+      'purchase_ownership_conflict': 409,
+      'purchase_invalid': 400,
+      'purchase_unavailable': 503,
+    }.entries) {
+      final error = GoApiClient.problem(
+        http.Response(jsonEncode({'code': entry.key}), entry.value),
+      );
+      expect(error.code, entry.key);
+      expect(error.statusCode, entry.value);
+    }
+    expect(
+      GoApiClient.problem(
+        http.Response('{"code":"purchase_unknown"}', 400),
+      ).code,
+      'request_failed',
+    );
+  });
   const baseUrl = 'https://example.test/api/v1';
   late FakeTokenStore tokens;
 

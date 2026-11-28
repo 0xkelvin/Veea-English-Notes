@@ -159,3 +159,26 @@ groups:
           summary: Email is queued but no worker has called the provider for 30 minutes.
           description: At least one message stayed pending for 20 minutes with zero provider calls, and that lasted 10 more minutes. The worker retries every 4 minutes at most, so a live worker would have called the provider.
           runbook: docs/trd/08-monitoring-alerting.md#56-outbox-backlog-growing-or-stalled
+
+  - name: veea-apple-purchases
+    interval: 1m
+    rules:
+      - alert: VeeaApplePurchaseVerificationUpstreamFailing
+        expr: sum by (job) (increase(apple_purchase_verification_total{job="veea-api",result="upstream_failed"}[15m])) >= 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Repeated App Store purchase verification failures.
+          description: Apple verification failed at least three times in 15 minutes. Check App Store Server API availability and release configuration.
+          runbook: docs/trd/08-monitoring-alerting.md#57-apple-purchase-verification
+
+      - alert: VeeaApplePurchaseInvalidProofSpike
+        expr: sum by (job) (increase(apple_purchase_verification_total{job="veea-api",result="invalid_proof"}[15m])) >= 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: App Store purchase proof refusals increased.
+          description: At least ten purchase proofs were rejected in 15 minutes. Check product, bundle and environment alignment across the current rollout.
+          runbook: docs/trd/08-monitoring-alerting.md#57-apple-purchase-verification

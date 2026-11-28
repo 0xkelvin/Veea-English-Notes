@@ -315,9 +315,7 @@ func (v *Verifier) verify(ctx context.Context, transactionID string) (Transactio
 	var envelope struct {
 		SignedTransactionInfo string `json:"signedTransactionInfo"`
 	}
-	dec := json.NewDecoder(strings.NewReader(string(body)))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&envelope); err != nil || dec.More() || envelope.SignedTransactionInfo == "" {
+	if err := json.Unmarshal(body, &envelope); err != nil || envelope.SignedTransactionInfo == "" {
 		return Transaction{}, fmt.Errorf("%w: malformed response envelope", ErrUnavailable)
 	}
 

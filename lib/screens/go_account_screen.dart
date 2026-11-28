@@ -108,7 +108,7 @@ class _GoAccountScreenState extends State<GoAccountScreen> {
         title: const Text('Permanently delete account?'),
         content: const Text(
           'Access ends immediately after confirmation. There is no grace period. '
-          'Your online account and any previous Pro purchase link will be deleted. Purchases cannot automatically transfer to a new account. '
+          'Your Veea account and its account-linked access will be deleted. A valid Apple purchase stays with your Apple Account. Use Restore Purchases on that Apple Account to use Pro again. '
           'Your notebook stays on this phone. Data cleanup targets 24 hours; the email remains reserved until it finishes.',
         ),
         actions: [

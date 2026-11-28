@@ -15,8 +15,6 @@ Future<UnlockTimeChoice?> showUnlockTimeSheet(
   int? defaultMinutes,
   bool usesDefault = false,
   Widget? applicationLabel,
-  bool allowCustom = true,
-  VoidCallback? onGetPro,
 }) async {
   final selection = await showModalBottomSheet<int>(
     context: context,
@@ -58,7 +56,7 @@ Future<UnlockTimeChoice?> showUnlockTimeSheet(
               ),
             ListTile(
               selected: !usesDefault && ![5, 15, 30].contains(currentMinutes),
-              title: Text(allowCustom ? 'Custom time' : 'Custom time · Pro'),
+              title: const Text('Custom time'),
               subtitle: Text(
                 !usesDefault && ![5, 15, 30].contains(currentMinutes)
                     ? ProtectionDuration.label(currentMinutes)
@@ -66,7 +64,7 @@ Future<UnlockTimeChoice?> showUnlockTimeSheet(
               ),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
-                Navigator.pop(context, allowCustom ? -1 : -2);
+                Navigator.pop(context, -1);
               },
             ),
             const SizedBox(height: 12),
@@ -85,10 +83,6 @@ Future<UnlockTimeChoice?> showUnlockTimeSheet(
     ),
   );
   if (selection == null || !context.mounted) return null;
-  if (selection == -2) {
-    onGetPro?.call();
-    return null;
-  }
   if (selection == 0) return const UnlockTimeChoice(null);
   if (selection != -1) return UnlockTimeChoice(selection);
   final minutes = await showProtectionDurationPicker(

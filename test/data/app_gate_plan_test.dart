@@ -72,27 +72,13 @@ void main() {
   });
 
   test(
-    'production defaults to Free with full rotating practice pool and one word',
+    'Free applies the complete practice pool and configurable count',
     () async {
-      expect(AppConfig.isFreeLaunch, isFalse);
-      expect(gate.canUseMultipleWords, isFalse);
       expect(gate.practiceWordCount, 4);
-      expect(gate.maximumWordsPerUnlock, 1);
-      expect(gate.requiredWords, 1);
-      await expectLater(
-        gate.setWordsPerUnlock(2),
-        throwsA(
-          isA<PlatformException>().having(
-            (e) => e.code,
-            'code',
-            'PRO_REQUIRED',
-          ),
-        ),
-      );
-      expect((await repo.getGateConfig()).wordsPerUnlock, 1);
-      await gate.setPracticeWords(['w0', 'w1', 'w2']);
-      expect(gate.practiceWordCount, 3);
-      expect(gate.requiredWords, 1);
+      expect(gate.maximumWordsPerUnlock, 4);
+      await gate.setWordsPerUnlock(3);
+      expect(gate.requiredWords, 3);
+      expect((await repo.getGateConfig()).wordsPerUnlock, 3);
     },
   );
 
@@ -116,30 +102,7 @@ void main() {
   );
 
   test(
-    'downgrade and cold restart enforce one without erasing paid count',
-    () async {
-      gate.setProAccess(true);
-      await gate.setWordsPerUnlock(3);
-      expect(gate.requiredWords, 3);
-      gate.setProAccess(false);
-      expect(gate.requiredWords, 1);
-      expect(gate.config.wordsPerUnlock, 3);
-      gate.dispose();
-      gate = AppGateProvider(repository: repo, now: () => now);
-      await gate.init();
-      expect(gate.requiredWords, 1);
-      expect(gate.config.wordsPerUnlock, 3);
-      gate.setProAccess(true);
-      expect(gate.requiredWords, 3);
-      await gate.setWordsPerUnlock(999);
-      expect(gate.requiredWords, 4);
-      await gate.setPracticeWords(['w0', 'w1']);
-      expect(gate.requiredWords, 2);
-    },
-  );
-
-  test(
-    'a legacy multiword config is safely effective as one on Free',
+    'previous multiword protection survives restart and remains editable',
     () async {
       await repo.saveGateConfig(
         const GateConfig(wordsPerUnlock: 4, autoPronounce: false),
@@ -147,79 +110,27 @@ void main() {
       gate.dispose();
       gate = AppGateProvider(repository: repo, now: () => now);
       await gate.init();
-      expect(gate.requiredWords, 1);
-      expect(gate.config.autoPronounce, isFalse);
-      expect(gate.practiceWordCount, 4);
-      expect(gate.config.wordsPerUnlock, 4);
-      await gate.completeGateChallenge(
-        wordId: 'w0',
-        targetApp: target,
-        attempts: 1,
-      );
-      expect(grants, 1);
-      gate.setProAccess(true);
       expect(gate.requiredWords, 4);
+      expect(gate.config.autoPronounce, isFalse);
+      await gate.setWordsPerUnlock(999);
+      expect(gate.requiredWords, 4);
+      await gate.setPracticeWords(['w0', 'w1']);
+      expect(gate.requiredWords, 2);
     },
   );
 
-  test(
-    'Free may lower its retained count without needing a purchase',
-    () async {
-      gate.setProAccess(true);
-      await gate.setWordsPerUnlock(3);
-      gate.setProAccess(false);
-      await gate.setWordsPerUnlock(1);
-      expect(gate.config.wordsPerUnlock, 1);
-      expect(gate.canUseMultipleWords, isFalse);
-    },
-  );
-
-  test(
-    'upgrading mid-round keeps the current one-answer challenge stable',
-    () async {
-      gate.setProAccess(true);
-      await gate.setWordsPerUnlock(3);
-      gate.setProAccess(false);
-      gate.beginChallengeRound(target);
-      gate.setProAccess(true);
-      expect(gate.requiredWords, 3);
-      expect(gate.requiredWordsForApp(target), 1);
-      await gate.completeGateChallenge(
-        wordId: 'w0',
-        targetApp: target,
-        attempts: 1,
-      );
-      expect(grants, 1);
-      gate.beginChallengeRound(target);
-      expect(gate.requiredWordsForApp(target), 3);
-    },
-  );
-
-  test(
-    'closing a challenge releases its stale target before a changed rule or upgrade',
-    () async {
-      gate.setProAccess(true);
-      await gate.setWordsPerUnlock(3);
-      gate.beginChallengeRound(target);
-      gate.endChallengeRound(target);
-      await gate.setWordsPerUnlock(2);
-      gate.beginChallengeRound(target);
-      expect(gate.requiredWordsForApp(target), 2);
-      gate.endChallengeRound(target);
-      gate.setProAccess(false);
-      gate.beginChallengeRound(target);
-      expect(gate.requiredWordsForApp(target), 1);
-      gate.endChallengeRound(target);
-      gate.setProAccess(true);
-      gate.beginChallengeRound(target);
-      expect(gate.requiredWordsForApp(target), 2);
-    },
-  );
+  test('a settings change applies to the next challenge', () async {
+    gate.beginChallengeRound(target);
+    await gate.setWordsPerUnlock(3);
+    expect(gate.requiredWordsForApp(target), 1);
+    gate.endChallengeRound(target);
+    gate.beginChallengeRound(target);
+    expect(gate.requiredWordsForApp(target), 3);
+  });
 
   test(
     'closing and restarting retains answers but resumes the current word rule',
     () async {
-      gate.setProAccess(true);
       await gate.setWordsPerUnlock(3);
       gate.beginChallengeRound(target);
       await gate.recordStepCompletion(
@@ -230,7 +141,7 @@ void main() {
       gate.endChallengeRound(target);
       await gate.setWordsPerUnlock(2);
       gate.dispose();
-      gate = AppGateProvider(repository: repo, now: () => now, hasPro: true);
+      gate = AppGateProvider(repository: repo, now: () => now);
       await gate.init();
       gate.beginChallengeRound(target);
       expect(gate.requiredWordsForApp(target), 2);
@@ -244,43 +155,11 @@ void main() {
     },
   );
 
-  test('Free pool adjustment explains the effective one-word rule', () async {
-    gate.setProAccess(true);
+  test('pool reduction adjusts the free multiword rule', () async {
     await gate.setWordsPerUnlock(4);
-    gate.setProAccess(false);
     await gate.setPracticeWords(['w0', 'w1']);
-    expect(gate.requiredWords, 1);
+    expect(gate.requiredWords, 2);
     expect(gate.config.wordsPerUnlock, 2);
-    expect(gate.poolNotice, contains('Free continues with 1 word per unlock'));
+    expect(gate.poolNotice, contains('adjusted to 2'));
   });
-
-  test(
-    'downgrade with saved progress settles once and keeps learning records',
-    () async {
-      gate.setProAccess(true);
-      await gate.setWordsPerUnlock(3);
-      gate.beginChallengeRound(target);
-      await gate.recordStepCompletion(
-        wordId: 'w0',
-        targetApp: target,
-        attempts: 1,
-      );
-      await gate.recordStepCompletion(
-        wordId: 'w1',
-        targetApp: target,
-        attempts: 1,
-      );
-      gate.setProAccess(false);
-      expect(gate.requiredWordsForApp(target), 1);
-      await gate.completeGateChallenge(
-        wordId: 'w1',
-        targetApp: target,
-        attempts: 1,
-      );
-      expect(grants, 1);
-      expect(gate.progressForApp(target), 0);
-      expect(gate.config.wordsPerUnlock, 3);
-      expect((await repo.exportAll()).length, 4);
-    },
-  );
 }

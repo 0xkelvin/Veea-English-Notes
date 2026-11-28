@@ -271,7 +271,12 @@ paths:
       description: |
         Premium while an independent manual grant or recently verified lifetime Apple purchase is active.
         A lifetime purchase has null plan_expires_at. Stored Apple proofs are reconciled after five minutes;
-        Apple outages return an unknown outcome (503), never a fabricated downgrade. Separate from roles.
+        Apple outages return an unknown outcome (503) or an independent manual grant with verification
+        pending. This account plan is separate from roles and from local StoreKit ownership.
+        A confirmed account lifetime purchase can prevent duplicate checkout. If the backend or upstream
+        Apple verification is unavailable and StoreKit shows no local ownership, checkout remains available.
+        This accepts the risk of a duplicate purchase across Apple Accounts when an existing Veea account
+        lifetime purchase cannot be confirmed.
         Both plans keep the same learning limits; export, deletion and reactivation are always available.
       security: [{ bearerAuth: [] }]
       x-error-codes: [invalid_request, unauthorized, rate_limited, purchase_invalid, purchase_unavailable, purchase_ownership_conflict, internal_error]
@@ -290,7 +295,7 @@ paths:
         "500": { $ref: "#/components/responses/InternalError" }
         "503":
           x-codes: [purchase_unavailable]
-          description: Existing Apple purchase cannot currently be reconciled.
+          description: Existing Apple purchase cannot currently be reconciled. Retry-After is 1 second for slot saturation and 60 seconds for unavailable verification.
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
@@ -313,7 +318,8 @@ paths:
         or granting account Premium. Its response plan remains the real Production account plan;
         Sandbox access is provided only by matching Apple-verified device ownership. Production-first
         verification retries Sandbox only for Apple's explicit 4040010 error. Disabled by default.
-        Idempotent retries.
+        This endpoint handles signed-in server claims after StoreKit checkout. Guest transactions carry
+        no appAccountToken and stay local to StoreKit. Idempotent retries.
         A revoked purchase is committed and returns 200 with purchase_revoked true and the resulting
         plan; independent manual grants are preserved. No query parameters or vocabulary content.
       security: [{ bearerAuth: [] }]
@@ -2320,7 +2326,7 @@ components:
       required: [plan, plan_expires_at, limits, checked_at]
       properties:
         plan: { type: string, enum: [free, premium] }
-        plan_expires_at: { type: string, format: date-time, nullable: true }
+        plan_expires_at: { type: string, format: date-time, nullable: true, description: "Null with Premium identifies active account-linked lifetime Apple access. Manual Premium always has a finite expiration. Free also uses null." }
         limits:
           type: object
           additionalProperties: false
@@ -2329,8 +2335,15 @@ components:
             live_words: { type: integer, enum: [50000] }
             content_bytes: { type: integer, enum: [67108864] }
             writers: { type: integer, enum: [20] }
-        apple_purchase_available: { type: boolean, description: True only when server Apple verification is configured. Clients must require true before starting a payment. }
-        purchase_verification_pending: { type: boolean, description: Independent manual access remains active while Apple verification is unavailable. Do not start a new payment. }
+        apple_purchase_available:
+          type: boolean
+          description: True when the server is configured to accept Apple purchase claims. StoreKit determines local checkout availability independently.
+        purchase_verification_pending:
+          type: boolean
+          description: |
+            Informational server status. Stored Apple proofs could not be reconciled, so the plan
+            reflects independent manual access only. An explicit claim outcome still describes the
+            verified transaction in this request. StoreKit checkout and local ownership are independent.
         purchase_revoked: { type: boolean, description: Present only after Apple verification. True for a revoked proof; durable revocation is committed when purchase_recorded is true. }
         purchase_environment: { type: string, enum: [Sandbox, Production], description: "Present after verification; environment from the verified Apple proof, never a client hint." }
         purchase_recorded: { type: boolean, description: Present after verification. False for a Sandbox acknowledgement on Production; it creates no account purchase or Premium grant. }

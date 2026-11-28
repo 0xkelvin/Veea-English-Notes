@@ -58,6 +58,12 @@ tests:
   - eval_time: 59m
     alertname: VeeaEmailOutboxStalled
     exp_alerts: []
+  - eval_time: 59m
+    alertname: VeeaApplePurchaseVerificationUpstreamFailing
+    exp_alerts: []
+  - eval_time: 59m
+    alertname: VeeaApplePurchaseInvalidProofSpike
+    exp_alerts: []
 - name: healthy zeros fire nothing (no traffic at all)
   interval: 1m
   input_series:
@@ -112,6 +118,12 @@ tests:
     exp_alerts: []
   - eval_time: 59m
     alertname: VeeaEmailOutboxStalled
+    exp_alerts: []
+  - eval_time: 59m
+    alertname: VeeaApplePurchaseVerificationUpstreamFailing
+    exp_alerts: []
+  - eval_time: 59m
+    alertname: VeeaApplePurchaseInvalidProofSpike
     exp_alerts: []
 - name: scrape failure fires after 5m and recovers; value rules stay silent while blind
   interval: 1m
@@ -600,6 +612,103 @@ tests:
         severity: critical
         job: veea-api
       exp_annotations: *id002
+- name: Apple upstream and invalid-proof spikes warn, then recover
+  interval: 1m
+  input_series:
+  - series: up{job="veea-api",instance="api-1:9090"}
+    values: 1x70
+  - series: admin_active_super_admins{job="veea-api",instance="api-1:9090"}
+    values: 1x70
+  - series: admin_super_admin_bootstrapped{job="veea-api",instance="api-1:9090"}
+    values: 1x70
+  - series: account_deletion_oldest_pending_seconds{job="veea-api",instance="api-1:9090"}
+    values: '0x70'
+  - series: email_outbox_pending{job="veea-api",instance="api-1:9090"}
+    values: '0x70'
+  - series: email_send_total{job="veea-api",instance="api-1:9090",template="login_code",result="sent"}
+    values: 0+1x70
+  - series: email_send_total{job="veea-api",instance="api-1:9090",template="login_code",result="permanent"}
+    values: '0x70'
+  - series: email_send_total{job="veea-api",instance="api-1:9090",template="login_code",result="ambiguous"}
+    values: '0x70'
+  - series: email_send_total{job="veea-api",instance="api-1:9090",template="login_code",result="retryable"}
+    values: '0x70'
+  - series: apple_purchase_verification_total{job="veea-api",instance="api-1:9090",operation="reconcile",result="upstream_failed"}
+    values: 0+1x10 10x60
+  - series: apple_purchase_verification_total{job="veea-api",instance="api-1:9090",operation="claim",result="invalid_proof"}
+    values: 0+2x10 20x60
+  alert_rule_test:
+  - eval_time: 4m
+    alertname: VeeaApplePurchaseVerificationUpstreamFailing
+    exp_alerts: []
+  - eval_time: 12m
+    alertname: VeeaApplePurchaseVerificationUpstreamFailing
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        job: veea-api
+      exp_annotations:
+        summary: Repeated App Store purchase verification failures.
+        description: Apple verification failed at least three times in 15 minutes. Check App Store Server API availability
+          and release configuration.
+        runbook: docs/trd/08-monitoring-alerting.md#57-apple-purchase-verification
+  - eval_time: 12m
+    alertname: VeeaApplePurchaseInvalidProofSpike
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        job: veea-api
+      exp_annotations:
+        summary: App Store purchase proof refusals increased.
+        description: At least ten purchase proofs were rejected in 15 minutes. Check product, bundle and environment alignment
+          across the current rollout.
+        runbook: docs/trd/08-monitoring-alerting.md#57-apple-purchase-verification
+  - eval_time: 30m
+    alertname: VeeaApplePurchaseVerificationUpstreamFailing
+    exp_alerts: []
+  - eval_time: 30m
+    alertname: VeeaApplePurchaseInvalidProofSpike
+    exp_alerts: []
+- name: auth failures, rate limits, cooldowns, cancellations and isolated upstream errors stay quiet
+  interval: 1m
+  input_series:
+  - series: up{job="veea-api",instance="api-1:9090"}
+    values: 1x70
+  - series: admin_active_super_admins{job="veea-api",instance="api-1:9090"}
+    values: 1x70
+  - series: admin_super_admin_bootstrapped{job="veea-api",instance="api-1:9090"}
+    values: 1x70
+  - series: account_deletion_oldest_pending_seconds{job="veea-api",instance="api-1:9090"}
+    values: '0x70'
+  - series: email_outbox_pending{job="veea-api",instance="api-1:9090"}
+    values: '0x70'
+  - series: email_send_total{job="veea-api",instance="api-1:9090",template="login_code",result="sent"}
+    values: 0+1x70
+  - series: email_send_total{job="veea-api",instance="api-1:9090",template="login_code",result="permanent"}
+    values: '0x70'
+  - series: email_send_total{job="veea-api",instance="api-1:9090",template="login_code",result="ambiguous"}
+    values: '0x70'
+  - series: email_send_total{job="veea-api",instance="api-1:9090",template="login_code",result="retryable"}
+    values: '0x70'
+  - series: apple_purchase_verification_total{job="veea-api",instance="api-1:9090",operation="claim",result="authentication_failed"}
+    values: 0+5x70
+  - series: apple_purchase_verification_total{job="veea-api",instance="api-1:9090",operation="claim",result="rate_limited"}
+    values: 0+5x70
+  - series: apple_purchase_verification_total{job="veea-api",instance="api-1:9090",operation="claim",result="disabled"}
+    values: 0+5x70
+  - series: apple_purchase_verification_total{job="veea-api",instance="api-1:9090",operation="claim",result="reconcile_backoff"}
+    values: 0+5x70
+  - series: apple_purchase_verification_total{job="veea-api",instance="api-1:9090",operation="claim",result="request_canceled"}
+    values: 0+5x70
+  - series: apple_purchase_verification_total{job="veea-api",instance="api-1:9090",operation="claim",result="upstream_failed"}
+    values: 0x10 1x60
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: VeeaApplePurchaseVerificationUpstreamFailing
+    exp_alerts: []
+  - eval_time: 20m
+    alertname: VeeaApplePurchaseInvalidProofSpike
+    exp_alerts: []
 - name: backlog of 20+ that keeps growing warns after 15m; a plateau clears it
   interval: 1m
   input_series:

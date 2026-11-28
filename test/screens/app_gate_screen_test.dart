@@ -603,7 +603,7 @@ void main() {
         await tester.runAsync(() async {
           await repo.insert(secondWord);
           await vocabProvider.init();
-          gateProvider.setProAccess(true);
+
           await gateProvider.setWordsPerUnlock(2);
         });
 

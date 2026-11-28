@@ -23,7 +23,6 @@ class GoAuthProvider extends AuthProvider {
        store = tokens,
        _repo = repository,
        _sync = sync,
-       _goClient = client,
        super(client: client) {
     client.onSessionExpired = _expired;
     // Only the Go transport's generation-fenced callback may end a session.
@@ -40,10 +39,7 @@ class GoAuthProvider extends AuthProvider {
   final GoTokenStore store;
   final VocabularyRepository _repo;
   final SyncService _sync;
-  final GoApiClient _goClient;
   GoSession? _session;
-  String? _purchaseOwner;
-  String? get purchaseOwner => _purchaseOwner;
   GoDeletionReceipt? _receipt;
   AccountProfile? _accountProfile;
   bool _working = false;
@@ -104,7 +100,7 @@ class GoAuthProvider extends AuthProvider {
     final intent = ++_intent;
     await _notebook(() async {
       await _sync.suspend();
-      _purchaseOwner = await store.readPurchaseOwner();
+      await store.cleanUpLegacyPurchaseOwner();
       _receipt = await store.readReceipt();
       final saved = await store.readSession();
       if (saved?.refreshState == 'ready') {
@@ -117,10 +113,6 @@ class GoAuthProvider extends AuthProvider {
         }
       }
       if (intent != _intent) return;
-      if (_session != null) {
-        _purchaseOwner = _session!.userId;
-        await store.savePurchaseOwner(_purchaseOwner!);
-      }
       final pendingForSession =
           _receipt?.submitted == true &&
           _receipt?.userId == _session?.userId &&
@@ -217,9 +209,6 @@ class GoAuthProvider extends AuthProvider {
         if (intent != _intent) return false;
         final saved = await store.establish(result.response);
         if (intent != _intent) return false;
-        await store.savePurchaseOwner(saved.userId);
-        if (intent != _intent) return false;
-        _purchaseOwner = saved.userId;
         _session = saved;
         _accountProfile = AccountProfile.fromJson(
           (result.response['user']! as Map).cast<String, Object?>(),
@@ -246,12 +235,6 @@ class GoAuthProvider extends AuthProvider {
 
   void _expired() {
     ++_intent;
-    // Preserve verified local ownership only for an unknown transport outcome.
-    // A definite server rejection must not retain a suspended/deleted account.
-    if (!_goClient.lastExpiryWasUnknown) {
-      _purchaseOwner = null;
-      unawaited(store.clearPurchaseOwner());
-    }
     _session = null;
     _accountProfile = null;
     _working = false;
@@ -269,8 +252,6 @@ class GoAuthProvider extends AuthProvider {
   @override
   Future<void> signOut() async {
     ++_intent;
-    _purchaseOwner = null;
-    await store.clearPurchaseOwner();
     _working = false;
     final logout = goApi
         .logout(); // invalidates credentials before its HTTP call
@@ -298,8 +279,6 @@ class GoAuthProvider extends AuthProvider {
     } finally {
       if (old != null && await store.clearIf(old.generation)) {
         ++_intent;
-        _purchaseOwner = null;
-        await store.clearPurchaseOwner();
         _session = null;
         _accountProfile = null;
         await _notebook(() async {
@@ -487,10 +466,6 @@ class GoAuthProvider extends AuthProvider {
           _session = null;
           _accountProfile = null;
           await _sync.suspend();
-        }
-        if (_purchaseOwner == receipt.userId) {
-          _purchaseOwner = null;
-          await store.clearPurchaseOwner();
         }
         if (accountNotebooks) await _repo.deleteAll(accountId: receipt.userId);
       });

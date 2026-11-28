@@ -117,15 +117,16 @@ void main() {
     },
   );
   test(
-    'network refresh failure keeps the verified purchase identity, explicit sign-out clears it',
+    'session expiry and sign-out clear account access without clearing local Apple ownership',
     () async {
       // An earlier purchase is restored only when its real product is configured.
       AppConfig.overrideAppleProduct('app.test.pro');
       addTearDown(() => AppConfig.overrideAppleProduct(null));
       var offline = false;
+      final secureStorage = TestSecureStorage();
       final app = GoAccountStack(
         await SqliteVocabularyRepository.open(path: inMemoryDatabasePath),
-        TestSecureStorage(),
+        secureStorage,
         'http://localhost',
         accountNotebooks: false,
         network: MockClient((r) async {
@@ -146,9 +147,19 @@ void main() {
         identifier: 'a@example.test',
         password: 'synthetic',
       );
-      expect(app.auth.purchaseOwner, userA);
+      expect((await app.store.readSession())?.userId, userA);
+      expect(
+        secureStorage.writes.any(
+          (entry) => entry.containsKey('auth.go.purchase-owner.v1'),
+        ),
+        isFalse,
+      );
       final store = TestPro()
-        ..state = const ProStoreState(hasPro: true, hasLifetime: true);
+        ..state = const ProStoreState(
+          hasPro: true,
+          hasLifetime: true,
+          localApple: true,
+        );
       final pro = ProProvider(auth: app.auth, repository: store);
       await pro.initializeDevice();
       offline = true;
@@ -158,20 +169,19 @@ void main() {
       await app.auth.notebookSettled;
       await Future<void>.delayed(Duration.zero);
       expect(app.auth.isSignedIn, isFalse);
-      expect(app.auth.purchaseOwner, userA);
+      expect(await app.store.readSession(), isNull);
       expect(pro.hasPro, isTrue);
-      expect(await app.store.readPurchaseOwner(), userA);
       await app.auth.signOut();
       await Future<void>.delayed(Duration.zero);
-      expect(app.auth.purchaseOwner, isNull);
-      expect(await app.store.readPurchaseOwner(), isNull);
-      expect(pro.hasPro, isFalse);
+      expect(await app.store.readSession(), isNull);
+      expect(pro.hasLocalApple, isTrue);
+      expect(pro.hasServerApple, isFalse);
       pro.dispose();
       await app.close();
     },
   );
   test(
-    'explicit server session refusal clears cached purchase identity',
+    'explicit server session refusal clears the authenticated session',
     () async {
       final app = GoAccountStack(
         await SqliteVocabularyRepository.open(path: inMemoryDatabasePath),
@@ -189,13 +199,13 @@ void main() {
         identifier: 'a@example.test',
         password: 'synthetic',
       );
-      expect(app.auth.purchaseOwner, userA);
+      expect((await app.store.readSession())?.userId, userA);
       try {
         await app.client.get('/v1/me');
       } catch (_) {}
       await app.auth.notebookSettled;
-      expect(app.auth.purchaseOwner, isNull);
-      expect(await app.store.readPurchaseOwner(), isNull);
+      expect(app.auth.isSignedIn, isFalse);
+      expect(await app.store.readSession(), isNull);
       await app.close();
     },
   );
