@@ -116,54 +116,139 @@ void main() {
     );
   });
 
-  testWidgets('refund and sign-out preserve protection rules and notebook', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      VeeaEnglishApp(
-        vocabulary: vocabulary,
-        auth: auth,
-        sync: sync,
-        pro: pro,
-        appGateProvider: gate,
-        pronunciation: PronunciationService(repo.database),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(gate.requiredWords, 3);
-    expect(gate.config.wordsPerUnlock, 3);
-    expect(gate.nativeStatus.enabledApplicationCount, 2);
-    expect(gate.nativeStatus.durationFor('native:second'), 7);
-
-    store.state = const ProStoreState(
-      hasPro: true,
-      hasLifetime: true,
-      localApple: true,
-    );
-    await pro.refresh();
-    await tester.pumpAndSettle();
-    expect(pro.hasPro, isTrue);
-    expect(gate.requiredWords, 3);
-
-    auth.select(null);
-    for (var i = 0; i < 12; i++) {
-      await tester.pump();
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+  testWidgets(
+    'verified guest Pro survives sign-out; refund restores Free without losing rules or words',
+    (tester) async {
+      await tester.pumpWidget(
+        VeeaEnglishApp(
+          vocabulary: vocabulary,
+          auth: auth,
+          sync: sync,
+          pro: pro,
+          appGateProvider: gate,
+          pronunciation: PronunciationService(repo.database),
+        ),
       );
-    }
-    await tester.pumpAndSettle();
-    expect(pro.hasLocalApple, isTrue);
-    store.state = const ProStoreState();
-    await pro.refresh();
-    expect(pro.hasPro, isFalse);
-    expect(gate.requiredWords, 3);
-    expect(gate.config.wordsPerUnlock, 3);
-    expect(gate.nativeStatus.enabledApplicationCount, 2);
-    expect(gate.nativeStatus.durationFor('native:second'), 7);
-    expect(protectionWrites, isEmpty);
-    expect(await tester.runAsync(() => repo.exportAll()), hasLength(3));
-    expect(tester.takeException(), isNull);
-    await tester.pumpWidget(const SizedBox());
-  });
+      await tester.pumpAndSettle();
+      expect(gate.requiredWords, 1);
+      expect(gate.config.wordsPerUnlock, 3);
+      expect(gate.nativeStatus.enabledApplicationCount, 2);
+      expect(gate.nativeStatus.durationFor('native:second'), 7);
+
+      store.state = const ProStoreState(
+        hasPro: true,
+        hasLifetime: true,
+        localApple: true,
+      );
+      await pro.refresh();
+      await tester.pumpAndSettle();
+      expect(pro.hasPro, isTrue);
+      expect(gate.requiredWords, 3);
+
+      auth.select(null);
+      for (var i = 0; i < 12; i++) {
+        await tester.pump();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+      }
+      await tester.pumpAndSettle();
+      expect(pro.hasLocalApple, isTrue);
+      expect(gate.requiredWords, 3);
+      store.state = const ProStoreState();
+      await pro.refresh();
+      expect(pro.hasPro, isFalse);
+      expect(gate.requiredWords, 1);
+      expect(gate.config.wordsPerUnlock, 3);
+      expect(gate.nativeStatus.enabledApplicationCount, 2);
+      expect(gate.nativeStatus.durationFor('native:second'), 7);
+      expect(protectionWrites, isEmpty);
+      expect(await tester.runAsync(() => repo.exportAll()), hasLength(3));
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  for (final action in ['purchase', 'restore']) {
+    testWidgets(
+      'guest $action immediately enables multiple selected unlock words without account claims',
+      (tester) async {
+        auth.select(null);
+        await tester.pumpWidget(
+          VeeaEnglishApp(
+            vocabulary: vocabulary,
+            auth: auth,
+            sync: sync,
+            pro: pro,
+            appGateProvider: gate,
+            pronunciation: PronunciationService(repo.database),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(gate.requiredWords, 1);
+        const owned = ProStoreState(
+          hasPro: true,
+          hasLifetime: true,
+          localSandbox: true,
+        );
+        store.state = owned;
+        store.purchaseResult = owned;
+        if (action == 'purchase') {
+          await pro.purchase();
+        } else {
+          await pro.restore();
+        }
+        await tester.pumpAndSettle();
+        expect(pro.hasLocalSandbox, isTrue);
+        expect(gate.canUseMultipleWords, isTrue);
+        await tester.runAsync(() => gate.setPracticeWords(['w0', 'w1', 'w2']));
+        expect(gate.requiredWords, 3);
+        expect(store.claims, 0);
+        expect(store.entitlementReads, 0);
+        expect(await tester.runAsync(() => repo.exportAll()), hasLength(3));
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+
+  testWidgets(
+    'signed-in Sandbox acknowledgement keeps multiword device Pro without a Production grant',
+    (tester) async {
+      store.state = const ProStoreState(
+        hasPro: true,
+        hasLifetime: true,
+        localSandbox: true,
+        transactions: ['synthetic-sandbox-proof'],
+      );
+      store.claimResult = {
+        'plan': 'free',
+        'plan_expires_at': null,
+        'apple_purchase_available': true,
+        'purchase_environment': 'Sandbox',
+        'purchase_recorded': false,
+        'purchase_revoked': false,
+      };
+      await tester.pumpWidget(
+        VeeaEnglishApp(
+          vocabulary: vocabulary,
+          auth: auth,
+          sync: sync,
+          pro: pro,
+          appGateProvider: gate,
+          pronunciation: PronunciationService(repo.database),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(pro.hasLocalSandbox, isTrue);
+      expect(pro.hasServerApple, isFalse);
+      expect(store.lastServerUntil, isNull);
+      expect(store.lastClearServer, isTrue);
+      expect(gate.requiredWords, 3);
+      expect(gate.config.wordsPerUnlock, 3);
+      expect(store.claimedIds, contains('synthetic-sandbox-proof'));
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 }

@@ -1,25 +1,27 @@
 # Learning rules and unlock words
 
-Open Learning rules and choose the words to review before unlocking an app.
-The picker supports multiple words, search and date filters for everyone.
-Saving a selection sets the next challenge to that exact list. The button shows
-how many words each unlock will require. New notebook words join the list only
-when selected. Listen, Review and their custom lists keep their existing rules.
+Owner decision, 28 November 2026: Free has one selected unlock word; one-time
+Pro enables multiple selected unlock words. Ordinary learning stays free.
 
-Existing configurations keep their active rule until the user saves a new
-selection. This includes automatic pools and explicit pools whose configured
-count is smaller than the pool. The picker starts an automatic pool with a
-suggestion matching the current count. It shows the full saved list for an
-existing explicit pool so the user can confirm or edit it. Cancelling keeps
-both the saved rule and progress.
+The user chooses the actual words, using search and dates. Each unlock reviews
+every active selected word once. One selected word means one answer; four selected
+words means four answers on Pro. There is no independent count over a larger pool.
+Free uses a single-selection picker, and replacing that word is free. Confirming
+the unchanged visible Free word keeps the paused paid list and its unfinished
+answers; explicitly choosing a different word replaces that saved list, as explained
+in Learning rules. Pro uses checkboxes. Cancelling leaves both the saved selection and progress unchanged.
+Listen, ordinary Review, standalone Practice Rounds and custom lists are unrestricted.
 
-The existing SQLite fields store the selection and count. Saving an explicit
-selection makes the count match the list. Deleting a selected word reduces the
-available challenge. If no selected words are available, the user can choose a
-new list. Completed work and pending answers are scoped to each protected app.
-When editing a rule, only work on words retained in the selection is carried
-forward. Preview does not change saved progress.
+An old automatic pool becomes an explicit selection matching its saved count,
+preserving unfinished answers. An old explicit selection uses its full list on
+Pro, even if its former quota was smaller. Free activates one saved word and keeps
+the rest paused. Upgrading restores that saved selection; only deliberately saving
+a replacement changes it. New notebook words never enlarge an existing challenge.
 
-App protection, word selection and multi-word unlock challenges are free.
-Veea Pro Lifetime adds configurable multi-word standalone Practice Rounds from
-Home. See the [offer and acceptance criteria](pro-99k-model.md).
+The existing SQLite selection/count fields are reused; count is synchronized to
+the saved list. Deleting selected words reduces the available challenge. If none
+remain, the user can choose a new list. Answers and interrupted progress belong
+to each protected app. Pending earned answers remain recoverable across plan
+changes. Preview does not record review progress or grant access.
+
+See [the Free/Pro offer](pro-99k-model.md) and [device acceptance](pro-99k-qa.md).

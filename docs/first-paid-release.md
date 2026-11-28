@@ -4,13 +4,14 @@ Branch: `feat/offline-pro-purchase-20261117`, based on `main` `05f66c4`.
 Prepared 17–18 November 2026 with actual agy implementation/review and Claude independent QA.
 No App Store product, payment key, production server setting, TestFlight upload or phone installation was changed by this work.
 
-## Current owner decision — 27 November 2026
+## Current owner decision — 28 November 2026
 
-App protection and all unlock challenge options are free. Pro adds configurable
-multi-word standalone Practice Rounds, separate from app protection. The existing
-non-consumable uses StoreKit-first ownership. Guests can purchase and restore.
-Signed-in transactions keep the existing Go claim and ownership rules. See
-[the product matrix](pro-99k-model.md) and [TRD 11 §7](trd/11-apple-pro-purchases.md#7-storekit-first-ownership-amendment-a).
+Free includes all existing learning, one app lock and one selected word per
+unlock. One Pro purchase enables multiple apps and multiple selected words.
+Standalone Practice Rounds and all unlock durations remain free. Preserve Nin's
+StoreKit-first payment changes: guests purchase/restore without Veea sign-in;
+matching signed-in transactions retain the Go ownership and environment checks.
+See [the product matrix](pro-99k-model.md) and [TRD 11 §7](trd/11-apple-pro-purchases.md#7-storekit-first-ownership-amendment-a).
 
 ## Historical free-first decision — superseded
 
@@ -35,7 +36,7 @@ paid learning features require a new decision.
 ## Release behavior
 
 Guest StoreKit purchase and restore require no account. Locally verified Apple
-ownership enables educational Pro, including after Veea account deletion.
+ownership enables Pro, including after Veea account deletion.
 Only a matching account token can authorize a server Apple claim. Existing
 server verification, bounded leases, refunds and environment isolation remain.
 
@@ -77,7 +78,7 @@ record, localized pricing and signed build independently.
 Use the signed-device [Option A acceptance matrix](pro-99k-qa.md). On the unsigned
 and local test paths, use synthetic data. The exact TestFlight build must
 show the StoreKit price, support guest checkout and restore, and keep Screen
-Time available on Free and after refund. Confirm within App Store Connect
+Time available within the one-app Free limit after refund. Confirm within App Store Connect
 that the intended Vietnamese price is 99,000 VND and Family Sharing is off.
 
 ## Verification evidence and limits

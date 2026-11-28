@@ -90,7 +90,7 @@ void main() {
         ),
       );
     }
-    gate = AppGateProvider(repository: repo);
+    gate = AppGateProvider(repository: repo, hasPro: true);
     await gate.init();
     controller = ShortcutSetupController(
       gate: gate,

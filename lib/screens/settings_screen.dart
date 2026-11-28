@@ -2008,7 +2008,7 @@ class _ProSettingsLink extends StatelessWidget {
           subtitle: Text(
             AppConfig.isFreeLaunch
                 ? 'Restore an earlier purchase record'
-                : 'Multi-word Practice Rounds · One-time purchase',
+                : 'More apps and unlock words · One-time purchase',
           ),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => ProScreen.open(context),

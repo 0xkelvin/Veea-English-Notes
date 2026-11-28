@@ -38,7 +38,7 @@ void main() {
   var defaultMinutes = 15;
   var enabled = true;
   var authorized = true;
-  var pickerFails = false;
+  var pickerRequiresPro = false;
 
   Map<String, Object?> status() => {
     'supported': true,
@@ -70,7 +70,7 @@ void main() {
     defaultMinutes = 15;
     enabled = true;
     authorized = true;
-    pickerFails = false;
+    pickerRequiresPro = false;
 
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
@@ -87,10 +87,10 @@ void main() {
                 authorized = true;
                 return status();
               case 'chooseScreenTimeApplications':
-                if (pickerFails) {
+                if (pickerRequiresPro) {
                   throw PlatformException(
-                    code: 'TOO_MANY_APPS',
-                    message: 'Choose up to 50 individual apps.',
+                    code: 'PRO_REQUIRED',
+                    message: 'Upgrade to Pro to lock more than one app.',
                   );
                 }
                 return true;
@@ -213,15 +213,19 @@ void main() {
   }
 
   testWidgets(
-    'Free user can add apps and can set default and per-app custom times without Pro upsell',
+    'Free user sees single-app summary with Change App and can set default and per-app custom times without Pro upsell',
     (tester) async {
       expect(AppConfig.isFreeLaunch, isFalse);
       expect(pro.hasPro, isFalse);
       await tester.pumpWidget(buildHarness());
       await tester.pumpAndSettle();
 
-      expect(find.text('Add Apps'), findsOneWidget);
-      expect(find.byKey(const Key('plan_summary_upgrade')), findsNothing);
+      expect(find.text('Free · One app lock'), findsOneWidget);
+      expect(
+        find.textContaining('Lock 1 app with 1 word per unlock'),
+        findsOneWidget,
+      );
+      expect(find.text('Change App'), findsOneWidget);
 
       // Both default and per-app custom durations are free with zero Pro upsell.
       for (final key in ['default_unlock_time', 'unlock_time_$appA']) {
@@ -240,6 +244,9 @@ void main() {
         await tapAndWait(tester, find.text('Cancel'));
       }
 
+      // Plan summary Get Pro button opens ProScreen.
+      await tapAndWait(tester, find.byKey(const Key('plan_summary_upgrade')));
+      expect(find.byType(ProScreen), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -256,7 +263,11 @@ void main() {
 
       expect(find.text('Your apps · 2'), findsOneWidget);
       expect(
-        find.textContaining('Locking paused · Enable this app in Settings'),
+        find.textContaining('Extra apps from earlier builds are paused'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Locking paused · Free locks 1 app at a time.'),
         findsOneWidget,
       );
 
@@ -301,40 +312,52 @@ void main() {
   );
 
   testWidgets(
-    'technical picker errors show a snackbar and never open the paywall',
+    'native PRO_REQUIRED from multi-app picker opens ProScreen when ProProvider present and falls back to SnackBar when absent',
     (tester) async {
-      pickerFails = true;
-      await tester.pumpWidget(buildHarness());
+      pickerRequiresPro = true;
+
+      // With ProProvider present -> navigates to ProScreen.
+      await tester.pumpWidget(buildHarness(includePro: true));
+      await tester.pumpAndSettle();
+      await tapAndWait(tester, find.byKey(const Key('add_locked_apps')));
+      expect(find.byType(ProScreen), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      // Without ProProvider -> does not crash, shows clear SnackBar error.
+      await tester.pumpWidget(buildHarness(includePro: false));
       await tester.pumpAndSettle();
       await tapAndWait(tester, find.byKey(const Key('add_locked_apps')));
       expect(find.byType(ProScreen), findsNothing);
       expect(
         find.descendant(
           of: find.byType(SnackBar),
-          matching: find.text('Choose up to 50 individual apps.'),
+          matching: find.text('Upgrade to Pro to lock more than one app.'),
         ),
         findsOneWidget,
       );
+      expect(tester.takeException(), isNull);
     },
   );
 
-  testWidgets('app selection is independent of the Pro entitlement', (
-    tester,
-  ) async {
-    proRepo.state = const ProStoreState(
-      hasPro: true,
-      hasLifetime: true,
-      price: '99.000 ₫',
-    );
-    auth.select('user-1');
-    await tester.pumpWidget(buildHarness());
-    await tester.pumpAndSettle();
+  testWidgets(
+    'Pro user sees Pro plan summary with Add Apps and no Get Pro button',
+    (tester) async {
+      proRepo.state = const ProStoreState(
+        hasPro: true,
+        hasLifetime: true,
+        localApple: true,
+        price: '99.000 ₫',
+      );
+      auth.select('user-1');
+      await tester.pumpWidget(buildHarness());
+      await tester.pumpAndSettle();
 
-    expect(find.text('Pro · Multiple app locks'), findsNothing);
-    expect(find.byKey(const Key('plan_summary_upgrade')), findsNothing);
-    expect(find.text('Add Apps'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
+      expect(find.text('Pro · Multiple app locks'), findsOneWidget);
+      expect(find.byKey(const Key('plan_summary_upgrade')), findsNothing);
+      expect(find.text('Add Apps'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'small 320px dark screen with 200% text scale and keyboard insets does not overflow',

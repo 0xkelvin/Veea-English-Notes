@@ -77,15 +77,25 @@ void main() {
   );
 
   testWidgets(
-    'guest sees educational offer, localized StoreKit price and restore',
+    'guest sees Free/Pro limits, localized StoreKit price and restore',
     (tester) async {
       AppConfig.overrideAppleProduct('app.test.pro');
       repo.state = const ProStoreState(price: '99.000 ₫');
       await pro.refresh();
       await tester.pumpWidget(build());
       expect(find.text('Veea Pro Lifetime'), findsOneWidget);
-      expect(find.textContaining('one-word Practice Round'), findsOneWidget);
-      expect(find.textContaining('multiple protected apps'), findsNothing);
+      expect(
+        find.textContaining('1 app lock and 1 selected word per unlock'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('multiple app locks and multiple selected words'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Practice Rounds and custom lists stay free'),
+        findsOneWidget,
+      );
       expect(find.text('Get Pro · 99.000 ₫'), findsOneWidget);
       expect(
         tester.widget<FilledButton>(find.byKey(const Key('buy_pro'))).onPressed,
@@ -222,6 +232,7 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(build(scale: 2, brightness: Brightness.dark));
     await tester.scrollUntilVisible(find.byKey(const Key('restore_pro')), 150);
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('restore_pro')).hitTestable(), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

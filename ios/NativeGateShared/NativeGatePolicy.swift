@@ -178,3 +178,166 @@ enum NativeGatePolicy {
     return UUID(uuidString: id) == nil ? nil : id
   }
 }
+
+/// Product limits live beside the native protection policy so a platform-channel
+/// caller cannot bypass the Free plan through a second enable path.
+enum NativeGateReleasePolicy {
+  // Owner decision 2026-11-28 (restores 2026-11-26, overrides 2026-11-27):
+  // one free app; multiple apps require verified Pro. All timings stay free.
+  static let isFreeLaunch = false
+  static func permitsAllLockControls(purchasedPro: Bool) -> Bool {
+    isFreeLaunch || purchasedPro
+  }
+}
+
+enum NativeGatePlanError: LocalizedError {
+  case proRequired
+  case checkingPro
+  var errorDescription: String? {
+    switch self {
+    case .proRequired:
+      return "Free includes one app lock and one word per unlock. Pro includes multiple app locks and more words per unlock. All unlock times are free."
+    case .checkingPro:
+      return "Checking your purchase. Please try again in a moment. Your free app lock remains available."
+    }
+  }
+}
+
+enum NativeGatePlanPolicy {
+  static func duration(_ minutes: Int, pro: Bool) -> Int {
+    NativeGatePolicy.normalizedPassMinutes(minutes)
+  }
+  static func requireAppCount(_ count: Int, pro: Bool) throws {
+    if !pro && count > 1 { throw NativeGatePlanError.proRequired }
+  }
+  static func requireDuration(_ minutes: Int, pro: Bool) throws {
+    guard NativeGatePolicy.supportedPassMinutes.contains(minutes) else {
+      throw NativeGateError.invalidDuration
+    }
+  }
+  /// Keep selections and custom rules intact on downgrade. Pause extra locks;
+  /// users can choose a different free app by turning the current one off.
+  static func applyFreePlan(to state: inout NativeGateState, preferredApplicationID: String? = nil, at now: Date = Date()) -> [String] {
+    let active = state.applications.filter { state.isApplicationLockEnabled($0.id) }
+    guard active.count > 1 else { return [] }
+    var stopped: [String] = []
+    let withPass = active.filter { (state.passes[$0.id]?.expiresAt ?? .distantPast) > now }
+      .sorted { (state.passes[$0.id]?.expiresAt ?? .distantPast) > (state.passes[$1.id]?.expiresAt ?? .distantPast) }
+    let keep = active.first { $0.id == preferredApplicationID } ?? withPass.first ?? active[0]
+    for app in active where app.id != keep.id {
+      if let activity = try? state.setApplicationLockEnabled(false, for: app.id) { stopped.append(activity) }
+    }
+    return stopped
+  }
+}
+
+/// Saving the app picker. Returns DeviceActivity names whose passes ended.
+enum NativeGateSelectionPolicy {
+  /// `chosen` is already resolved: a token matching a saved app must reuse
+  /// that saved app (same id, so its custom time and pass stay attached).
+  ///
+  /// - Full picker (opened with Pro), or a Free picker over at most one saved
+  ///   app: the selection replaces the saved list. Unchosen apps are removed
+  ///   deliberately, like before.
+  /// - Free picker over several saved apps (migrated or downgraded Pro list):
+  ///   nothing is removed. The chosen app is added if new. If any lock was on,
+  ///   it becomes the only active app unless Pro is verified at save time;
+  ///   the others are paused with their settings kept. If every lock was off,
+  ///   they all stay off. An empty selection turns every lock off.
+  ///
+  /// `freePicker` is the mode captured when the picker opened, so a Pro change
+  /// while it is open cannot turn a one-app edit into a replacement of hidden
+  /// paused apps. `requireAppCount` is the current-plan check, run here so the
+  /// caller can keep it inside the store lock.
+  static func apply(chosen: [NativeGateApplication], freePicker: Bool, proNow: Bool,
+    to state: inout NativeGateState, at now: Date,
+    requireAppCount: (Int) throws -> Void) throws -> [String] {
+    var seen = Set<String>()
+    let chosen = chosen.filter { seen.insert($0.id).inserted }
+    if freePicker && chosen.count > 1 { throw NativeGatePlanError.proRequired }
+    guard freePicker && state.applications.count > 1 else {
+      try NativeGatePolicy.validateApplicationCount(chosen.count)
+      try requireAppCount(chosen.count)
+      state.applications = chosen.sorted { $0.id < $1.id }
+      let selected = Set(state.applications.map(\.id))
+      let removed = state.passes.filter { !selected.contains($0.key) }.map { $0.value.activityName }
+      state.reconcile(at: now)
+      if chosen.isEmpty { state.enabled = false; state.pendingChallenge = nil }
+      return removed
+    }
+    guard let app = chosen.first else {
+      let ended = state.passes.values.map(\.activityName)
+      try state.setAllApplicationLocks(false)
+      return ended
+    }
+    let wasActive = state.enabled
+    if !state.applications.contains(where: { $0.id == app.id }) {
+      try NativeGatePolicy.validateApplicationCount(state.applications.count + 1)
+      state.applications.append(app)
+      state.applications.sort { $0.id < $1.id }
+      if !wasActive { state.disabledApplicationIDs.insert(app.id) }
+    }
+    var ended: [String] = []
+    if wasActive {
+      // Enabling an already-on app is a no-op and keeps its earned pass.
+      if let activity = try state.setApplicationLockEnabled(true, for: app.id) { ended.append(activity) }
+      if !proNow {
+        for other in state.applications where other.id != app.id && state.isApplicationLockEnabled(other.id) {
+          if let activity = try state.setApplicationLockEnabled(false, for: other.id) { ended.append(activity) }
+        }
+      }
+    }
+    try requireAppCount(state.applications.filter { state.isApplicationLockEnabled($0.id) }.count)
+    state.reconcile(at: now)
+    return ended
+  }
+}
+
+/// How fresh the signed-in account's server plan answer is. An explicit Free
+/// reply stays known for this configuration. A Premium reply is known only
+/// until its bounded offline lease ends; after that the plan is unknown until
+/// the server answers again. This only gates pausing; it never grants Pro.
+struct NativeGateServerPlanFreshness: Equatable {
+  static let maximumLeaseSeconds: TimeInterval = 86400
+  private(set) var confirmedFree = false
+  private(set) var knownUntil: TimeInterval?
+
+  mutating func recordFree() {
+    confirmedFree = true
+    knownUntil = nil
+  }
+
+  mutating func recordLease(until: TimeInterval, now: TimeInterval) {
+    guard until.isFinite, now.isFinite else { return }
+    confirmedFree = false
+    knownUntil = min(until, now + Self.maximumLeaseSeconds)
+  }
+
+  mutating func reset() { self = .init() }
+
+  func isKnown(at now: TimeInterval) -> Bool {
+    if confirmedFree { return true }
+    guard now.isFinite, let knownUntil else { return false }
+    return now < knownUntil
+  }
+}
+
+/// When Free may be enforced destructively (pausing saved extra locks).
+/// Unknown is never treated as a confirmed Free downgrade: the device
+/// ownership scan must have completed, and a signed-in account also needs a
+/// verified purchase or a fresh authoritative server plan. Guests and
+/// unsupported installations rely on StoreKit alone. This never grants Pro.
+enum NativeGatePlanReadiness {
+  static func isReady(scanComplete: Bool, signedIn: Bool, installationSupported: Bool,
+    hasPro: Bool, serverPlanKnown: Bool) -> Bool {
+    guard scanComplete else { return false }
+    if !signedIn || !installationSupported { return true }
+    return hasPro || serverPlanKnown
+  }
+
+  static func isReady(scanComplete: Bool, signedIn: Bool, installationSupported: Bool,
+    hasPro: Bool, serverPlan: NativeGateServerPlanFreshness, now: TimeInterval) -> Bool {
+    isReady(scanComplete: scanComplete, signedIn: signedIn, installationSupported: installationSupported,
+      hasPro: hasPro, serverPlanKnown: serverPlan.isKnown(at: now))
+  }
+}

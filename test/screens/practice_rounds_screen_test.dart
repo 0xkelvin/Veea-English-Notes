@@ -50,6 +50,7 @@ void main() {
     List<VocabularyWord> words, {
     bool pro = false,
     bool fromHome = false,
+    bool includePurchases = true,
   }) async {
     final vocabulary = RoundVocabulary(words);
     final speech = RoundSpeech();
@@ -73,7 +74,8 @@ void main() {
         providers: [
           ChangeNotifierProvider<VocabularyProvider>.value(value: vocabulary),
           ChangeNotifierProvider<TtsService>.value(value: speech),
-          ChangeNotifierProvider<ProProvider>.value(value: purchases),
+          if (includePurchases)
+            ChangeNotifierProvider<ProProvider>.value(value: purchases),
         ],
         child: MaterialApp(
           theme: PixelTheme.light(),
@@ -89,29 +91,34 @@ void main() {
   }
 
   testWidgets(
-    'guest Free can start one word from Home without a gate provider',
+    'guest Free can choose a multiword round from Home without a gate provider',
     (tester) async {
-      await openRounds(tester, [word(1), word(2)], fromHome: true);
+      await openRounds(
+        tester,
+        [word(1), word(2)],
+        fromHome: true,
+        includePurchases: false,
+      );
       expect(find.byType(PracticeRoundsScreen), findsOneWidget);
-      expect(find.byKey(const Key('practice_round_count')), findsNothing);
+      expect(find.byKey(const Key('practice_round_count')), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const Key('practice_round_count')),
+        '2',
+      );
       await tester.tap(find.byKey(const Key('start_practice_round')));
       await tester.pumpAndSettle();
       expect(
         tester.widget<ReviewScreen>(find.byType(ReviewScreen)).roundWords,
-        hasLength(1),
+        hasLength(2),
       );
       expect(find.byKey(const Key('choose_review_words')), findsNothing);
     },
   );
 
-  testWidgets('guest with local Pro can choose multiple eligible words', (
+  testWidgets('Free learning rounds validate eligible words without Pro', (
     tester,
   ) async {
-    await openRounds(tester, [
-      word(1),
-      word(2),
-      word(3, meaning: ''),
-    ], pro: true);
+    await openRounds(tester, [word(1), word(2), word(3, meaning: '')]);
     final count = find.byKey(const Key('practice_round_count'));
     await tester.enterText(count, '3');
     await tester.tap(find.byKey(const Key('start_practice_round')));

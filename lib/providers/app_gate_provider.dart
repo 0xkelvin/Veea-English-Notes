@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../core/config/app_config.dart';
 
 import '../data/vocabulary_repository.dart';
 import '../models/gate_config.dart';
@@ -16,16 +17,34 @@ class AppGateProvider extends ChangeNotifier {
     required VocabularyRepository repository,
     AppGateService? service,
     DateTime Function()? now,
+    bool hasPro = false,
   }) : _repository = repository,
        _service = service ?? AppGateService(),
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now,
+       _hasPro = hasPro;
 
   final VocabularyRepository _repository;
   final AppGateService _service;
   final DateTime Function() _now;
+  bool _hasPro;
   final Map<String, int> _roundWordCounts = {};
-  int get maximumWordsPerUnlock => practiceWordCount;
+  bool get canUseMultipleWords => AppConfig.isFreeLaunch || _hasPro;
+  int get maximumWordsPerUnlock => practiceWordCount == 0
+      ? 0
+      : canUseMultipleWords
+      ? practiceWordCount
+      : 1;
 
+  /// Effective access changes immediately; preserve the saved Pro preference
+  /// so sign-in/restore does not erase learning settings or personal words.
+  void setProAccess(bool hasPro) {
+    if (_hasPro == hasPro || _isDisposed) return;
+    _hasPro = hasPro;
+    notifyListeners();
+  }
+
+  /// An upgrade changes the next round, not an answer already in progress.
+  /// Downgrades take effect immediately and never require extra paid steps.
   void beginChallengeRound(String targetApp) {
     _roundWordCounts.putIfAbsent(_stateKey(targetApp), () => requiredWords);
   }
@@ -37,6 +56,7 @@ class AppGateProvider extends ChangeNotifier {
   }
 
   int requiredWordsForApp(String targetApp) {
+    if (!canUseMultipleWords) return 1;
     return (_roundWordCounts[_stateKey(targetApp)] ?? requiredWords).clamp(
       1,
       practiceWordCount == 0 ? 1 : practiceWordCount,
@@ -53,6 +73,7 @@ class AppGateProvider extends ChangeNotifier {
   NativeGateStatus _nativeStatus = const NativeGateStatus();
   bool _nativeBusy = false;
   String? _nativeError;
+  bool nativeRequiresPro = false;
   List<VocabularyWord> _notebook = const [];
   Map<String, int> _wordTurns = {};
   final Set<String> _submittingApps = {};
@@ -60,28 +81,29 @@ class AppGateProvider extends ChangeNotifier {
   DateTime get now => _now();
 
   List<VocabularyWord> get notebookWords => List.unmodifiable(_notebook);
-  List<VocabularyWord> get practiceWords {
+
+  /// The saved list survives a temporary Pro downgrade; only its first word
+  /// is active on Free. Editing on Free explicitly replaces that saved list.
+  List<VocabularyWord> get savedPracticeWords {
     final ids = _config.practiceWordIds;
-    if (ids == null) return List.unmodifiable(_notebook);
-    final selected = ids.toSet();
-    return _notebook
-        .where((word) => selected.contains(word.id))
-        .toList(growable: false);
+    if (ids == null) {
+      return List.unmodifiable(_notebook.take(_config.wordsPerUnlock));
+    }
+    final available = {for (final word in _notebook) word.id: word};
+    return [for (final id in ids) ?available[id]];
   }
 
-  int get practiceWordCount => practiceWords.length;
-  int get requiredWords => _config.wordsPerUnlock.clamp(
-    1,
-    maximumWordsPerUnlock == 0 ? 1 : maximumWordsPerUnlock,
+  List<VocabularyWord> get practiceWords => List.unmodifiable(
+    canUseMultipleWords ? savedPracticeWords : savedPracticeWords.take(1),
   );
-  bool get usesExactUnlockWords =>
-      _config.practiceWordIds != null &&
-      practiceWordCount > 0 &&
-      requiredWords == practiceWordCount;
+  int get pausedPracticeWordCount =>
+      savedPracticeWords.length - practiceWordCount;
+  int get practiceWordCount => practiceWords.length;
+
+  /// There is one rule: review every active selected word once per unlock.
+  int get requiredWords => practiceWordCount == 0 ? 1 : practiceWordCount;
   String? _poolNotice;
   String? get poolNotice => _poolNotice;
-  String _poolAdjustmentNotice(int count) =>
-      'Words per unlock adjusted to $count to match your available practice words.';
   // Keep learning progress per app while native callbacks remain per opening.
   static String _stateKey(String app) {
     final key = app.trim().toLowerCase();
@@ -104,7 +126,7 @@ class AppGateProvider extends ChangeNotifier {
     final pending = preview ? null : pendingAnswerForApp(targetApp);
     if (pending != null &&
         progressForApp(targetApp) >= requiredWordsForApp(targetApp)) {
-      for (final word in practiceWords) {
+      for (final word in savedPracticeWords) {
         if (word.id == pending.wordId) return word;
       }
     }
@@ -122,12 +144,36 @@ class AppGateProvider extends ChangeNotifier {
   Future<void> prepareChallenge() async {
     _notebook = await _repository.exportAll();
     _wordTurns = await _repository.gateWordTurns();
+    if (_config.practiceWordIds == null && _notebook.isNotEmpty) {
+      // Freeze the old automatic pool to a small explicit list. Keep unfinished
+      // answers eligible so upgrading this rule never discards an earned answer.
+      final progress = await _repository.gateRoundProgress();
+      final pending = await _repository.pendingGateAnswers();
+      final available = _notebook.map((word) => word.id).toSet();
+      final chosen = <String>{
+        for (final ids in progress.values) ...ids.where(available.contains),
+        for (final answer in pending.values)
+          if (available.contains(answer.wordId)) answer.wordId,
+      };
+      for (final word in _notebook) {
+        if (chosen.length >= _config.wordsPerUnlock) break;
+        chosen.add(word.id);
+      }
+      await _save(
+        _config.copyWith(
+          practiceWordIds: chosen.toList(),
+          wordsPerUnlock: chosen.length,
+        ),
+      );
+    }
+    final saved = savedPracticeWords;
     await _repository.pruneGateRoundProgress(
-      practiceWords.map((word) => word.id).toSet(),
+      saved.map((word) => word.id).toSet(),
     );
-    if (practiceWordCount > 0 && _config.wordsPerUnlock > practiceWordCount) {
-      await _save(_config.copyWith(wordsPerUnlock: practiceWordCount));
-      _poolNotice = _poolAdjustmentNotice(practiceWordCount);
+    if (saved.isNotEmpty && _config.wordsPerUnlock != saved.length) {
+      await _save(_config.copyWith(wordsPerUnlock: saved.length));
+      _poolNotice =
+          'Your challenge now includes all ${saved.length} selected ${saved.length == 1 ? 'word' : 'words'}.';
     }
     _progressByApp
       ..clear()
@@ -182,11 +228,13 @@ class AppGateProvider extends ChangeNotifier {
     if (_nativeBusy) return false;
     _nativeBusy = true;
     _nativeError = null;
+    nativeRequiresPro = false;
     notifyListeners();
     try {
       await operation();
       return true;
     } on PlatformException catch (error) {
+      nativeRequiresPro = error.code == 'PRO_REQUIRED';
       _nativeError =
           error.message ??
           'Screen Time could not be updated. Please try again.';
@@ -495,49 +543,66 @@ class AppGateProvider extends ChangeNotifier {
     );
   }
 
+  /// Compatibility for old callers: a count now changes the actual selection,
+  /// never an independent quota over a larger pool. The UI edits words directly.
   Future<void> setWordsPerUnlock(int count) async {
-    await prepareChallenge();
-    if (practiceWordCount == 0) {
+    if (count > 1 && !canUseMultipleWords) {
       throw PlatformException(
-        code: 'EMPTY_PRACTICE_POOL',
-        message: 'Choose your practice words first.',
+        code: 'PRO_REQUIRED',
+        message:
+            'Free includes one selected word. Pro lets you select more words for every unlock.',
       );
     }
-    final clamped = count.clamp(1, practiceWordCount);
-    if (clamped == _config.wordsPerUnlock) return;
-    await _settlePendingAnswers();
-    await _save(_config.copyWith(wordsPerUnlock: clamped));
-    _poolNotice = null;
     await prepareChallenge();
+    if (_notebook.isEmpty) {
+      throw PlatformException(
+        code: 'EMPTY_PRACTICE_POOL',
+        message: 'Choose your unlock words first.',
+      );
+    }
+    final candidates = <String>{
+      ...savedPracticeWords.map((word) => word.id),
+      ..._notebook.map((word) => word.id),
+    };
+    await setPracticeWords(
+      candidates.take(count.clamp(1, candidates.length)).toList(),
+    );
   }
 
   Future<void> setPracticeWords(List<String>? ids) async {
     _notebook = await _repository.exportAll();
     final available = _notebook.map((word) => word.id).toSet();
-    final selected = ids?.where(available.contains).toSet().toList();
-    if (selected != null && selected.isEmpty) {
+    final selected = (ids ?? _notebook.map((word) => word.id))
+        .where(available.contains)
+        .toSet()
+        .toList();
+    if (selected.isEmpty) {
       throw PlatformException(
         code: 'EMPTY_PRACTICE_POOL',
-        message: 'Choose at least one word, or use all saved words.',
+        message: 'Choose at least one word to unlock your apps.',
       );
     }
-    await _settlePendingAnswers(selected?.toSet());
-    final count =
-        selected?.length ??
-        _config.wordsPerUnlock.clamp(
-          1,
-          available.isEmpty ? 1 : available.length,
-        );
-    _poolNotice = count < _config.wordsPerUnlock
-        ? _poolAdjustmentNotice(count)
-        : null;
+    if (selected.length > 1 && !canUseMultipleWords) {
+      throw PlatformException(
+        code: 'PRO_REQUIRED',
+        message:
+            'Free includes one selected word. Upgrade to Pro to review all your selected words at each unlock.',
+      );
+    }
+    // Confirming the visible Free word is not a request to discard the paid
+    // selection hidden behind it, or the unfinished answers for those words.
+    if (_config.practiceWordIds != null &&
+        listEquals(selected, practiceWords.map((word) => word.id).toList())) {
+      return;
+    }
+    await _settlePendingAnswers(selected.toSet());
     await _save(
       _config.copyWith(
         practiceWordIds: selected,
-        useAllWords: ids == null,
-        wordsPerUnlock: count,
+        wordsPerUnlock: selected.length,
       ),
     );
+    _poolNotice = null;
     await prepareChallenge();
   }
 
@@ -629,6 +694,11 @@ class AppGateProvider extends ChangeNotifier {
   }) async {
     _notebook = await _repository.exportAll();
     _wordTurns = await _repository.gateWordTurns();
+    if (targetApp != null &&
+        pendingAnswerForApp(targetApp) != null &&
+        progressForApp(targetApp) >= requiredWordsForApp(targetApp)) {
+      return cachedGateWord(targetApp);
+    }
     return GateWordQueue.selectInRotation(
       practiceWords,
       now: _now(),
@@ -758,11 +828,13 @@ class AppGateProvider extends ChangeNotifier {
             'You already completed this word. Continue with the next word.',
       );
     }
-    if (!practiceWords.any((candidate) => candidate.id == wordId)) {
+    if (!(allowCompleted ? savedPracticeWords : practiceWords).any(
+      (candidate) => candidate.id == wordId,
+    )) {
       throw PlatformException(
         code: 'WORD_OUTSIDE_POOL',
         message:
-            'This word is no longer in your practice pool. Continue with your selected words.',
+            'This word is no longer selected. Continue with your unlock words.',
       );
     }
   }

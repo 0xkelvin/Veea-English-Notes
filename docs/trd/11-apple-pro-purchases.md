@@ -7,7 +7,7 @@
 ## 1. Scope and product rules
 
 1. **Offline-first vocabulary unchanged:** Local notebooks, listening, and review remain unlimited on Free and Pro, and vocabulary remains offline without new word-sync requirements.
-2. **Free app protection:** All Screen Time controls and unlock challenges are free. Pro enables configurable multi-word standalone Practice Rounds. See [§7](#7-storekit-first-ownership-amendment-a).
+2. **Free/Pro unlock limits:** Free includes existing learning, one app lock and one selected unlock word. One Pro purchase enables multiple apps and multiple selected unlock words. Standalone Practice Rounds and all durations stay free. See [§7](#7-storekit-first-ownership-amendment-a).
 3. **One-time non-consumable purchase:** Pro is sold as one App Store **Non-Consumable**, with target Vietnam price 99,000 VND, no trial or recurring subscription. Display Apple's localized price; App Store configuration and guideline 4.10 review remain release gates.
 4. **StoreKit-first and optional account binding:** Guests buy and restore without sign-in. Signed-in purchases use the Veea user UUID as the StoreKit account token and preserve Go claims under [§7](#7-storekit-first-ownership-amendment-a).
 5. **Server configuration is opt-in:** Go purchase verification returns `503 purchase_unavailable` when unconfigured. Device checkout requires the release SKU and StoreKit product availability.
@@ -79,10 +79,13 @@ and isolation rules in §2–§3 continue to apply. See the [Free/Pro model](../
 
 ### 7.1 Product scope
 
-All Screen Time functionality, the existing practice pool and configurable
-unlock questions are free. Standalone Practice Rounds reuse the vocabulary
-review engine. Free rounds contain one word, and Pro can configure a larger
-round from available words. Rounds work without Screen Time or a Veea account.
+Owner correction, 28 November 2026: existing learning (including standalone
+multi-word Practice Rounds) is free. Free supports one app lock and one explicit
+selected word per unlock. The existing one-time Pro purchase enables multiple
+app locks and multiple selected words; every selected word is reviewed once per
+unlock, with no separate quota. All durations, disabling/removal and account
+rights remain free. This changes product scope only; §7's StoreKit-first guest
+ownership, authenticated claims and payment isolation remain intact.
 
 ### 7.2 Selected architecture: Option A (link deferred)
 
@@ -217,7 +220,7 @@ Refund or revocation: StoreKit removes the transaction from `currentEntitlements
 
 | # | Scenario | Expected |
 | --- | --- | --- |
-| 1 | Guest buys | A active; no Go call; transaction finished; extra Pro learning features available |
+| 1 | Guest buys | A active; no Go call; transaction finished; multiple app locks and multiple selected unlock words available |
 | 2 | Guest cancels, gets pending, or gets an unverified result | No access, no finish, accurate message |
 | 3 | Guest restores on a reinstall or a second device with the same Apple Account | `AppStore.sync`, then A; "Pro restored" |
 | 4 | Restore with nothing owned | "No Pro purchase found"; never success from C |
@@ -234,9 +237,9 @@ Refund or revocation: StoreKit removes the transaction from `currentEntitlements
 | 15 | Xcode StoreKit transaction in a release build | Rejected |
 | 16 | TestFlight Sandbox purchase on the Production API | A on the device; server acknowledgement only (unchanged) |
 | 17 | Family-shared ownership (not configured) | Rejected locally and by the server |
-| 18 | Screen Time on Free | Multiple apps (up to 50), all durations, enable, disable and remove, with no Pro check anywhere |
-| 19 | Previous Free downgrade left paused locks | Apps stay paused and user-enableable; nothing re-enabled silently |
-| 20 | Pro learning feature on Free | Paywall without sign-in; free notebook features never blocked |
+| 18 | Screen Time on Free | One app and one selected unlock word; all durations, disable and remove remain free |
+| 19 | Confirmed Free downgrade | Extra locks/words pause, selections and earned passes survive; no silent re-enabling |
+| 20 | More apps/selected unlock words requested on Free | Paywall without sign-in; ordinary learning and standalone multi-word rounds stay free |
 
 ### 7.10 Migration and rollback
 
@@ -247,7 +250,7 @@ Refund or revocation: StoreKit removes the transaction from `currentEntitlements
   - Paused extra locks stay paused (user choice is kept).
   - The saved word-count preference is kept.
 - **Point of no return:** once guest purchases exist in production, going back to account-only ownership would strand those buyers. Treat Amendment A as a **one-way business commitment**.
-- **No re-gating:** once Screen Time features are free, never put them behind payment again. That would also reintroduce the 4.10 risk.
+- **Product correction (28 November):** one free app/word, Pro for multiple apps/words. Describe these limits honestly in App Review notes. Guideline 4.10 review risk remains; do not claim approval.
 - **Server rollback** is unchanged: every client version works with the current API.
 
 ### 7.11 Release acceptance
