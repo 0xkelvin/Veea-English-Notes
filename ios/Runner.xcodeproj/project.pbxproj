@@ -41,6 +41,17 @@
 		3C4752BB1550CA13E3D4E2C3 /* NativeGateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1EEF5767F024ACF0EB8039F /* NativeGateStore.swift */; };
 		B01A8A9849A9D68A7A3FF71F /* NativeGateShielding.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE1E628B9CC02A43786BC1B6 /* NativeGateShielding.swift */; };
 		CC918B953ED3B738C017E8F7 /* GateShieldConfigurationExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 700A2CC0115C03ACD5388C62; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		5E7A00000000000000000200 /* OfflineTutorChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7A00000000000000000100 /* OfflineTutorChannel.swift */; };
+		5E7A00000000000000000201 /* OfflineTutorEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7A00000000000000000101 /* OfflineTutorEngine.swift */; };
+		5E7A00000000000000000202 /* OfflineTutorModelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7A00000000000000000102 /* OfflineTutorModelStore.swift */; };
+		5E7A00000000000000000203 /* OfflineTutorCamera.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7A00000000000000000103 /* OfflineTutorCamera.swift */; };
+		5E7A00000000000000000204 /* OfflineTutorSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7A00000000000000000104 /* OfflineTutorSpeech.swift */; };
+		5E7A00000000000000000205 /* OfflineTutorPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7A00000000000000000105 /* OfflineTutorPolicy.swift */; };
+		5E7A00000000000000000206 /* OfflineTutorDownload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7A00000000000000000106 /* OfflineTutorDownload.swift */; };
+		5E7A00000000000000000207 /* OfflineTutorLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7A00000000000000000107 /* OfflineTutorLifecycle.swift */; };
+		5E7A00000000000000000208 /* OfflineTutorDownloadPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7A00000000000000000108 /* OfflineTutorDownloadPolicy.swift */; };
+		5E7A00000000000000000209 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 5E7A00000000000000000109 /* PrivacyInfo.xcprivacy */; };
+		5E7A00000000000000000003 /* LiteRTLM in Frameworks */ = {isa = PBXBuildFile; productRef = 5E7A00000000000000000002 /* LiteRTLM */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -132,6 +143,16 @@
 		A869F8827B9BC09CE3061552 /* GateShieldConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GateShieldConfiguration.swift; sourceTree = "<group>"; };
 		52678DC1CC67D633B981A3CD /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		9C0240F79D934328296C1A1A /* GateShieldConfiguration.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GateShieldConfiguration.entitlements; sourceTree = "<group>"; };
+		5E7A00000000000000000100 /* OfflineTutorChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineTutorChannel.swift; sourceTree = "<group>"; };
+		5E7A00000000000000000101 /* OfflineTutorEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineTutorEngine.swift; sourceTree = "<group>"; };
+		5E7A00000000000000000102 /* OfflineTutorModelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineTutorModelStore.swift; sourceTree = "<group>"; };
+		5E7A00000000000000000103 /* OfflineTutorCamera.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineTutorCamera.swift; sourceTree = "<group>"; };
+		5E7A00000000000000000104 /* OfflineTutorSpeech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineTutorSpeech.swift; sourceTree = "<group>"; };
+		5E7A00000000000000000105 /* OfflineTutorPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineTutorPolicy.swift; sourceTree = "<group>"; };
+		5E7A00000000000000000106 /* OfflineTutorDownload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineTutorDownload.swift; sourceTree = "<group>"; };
+		5E7A00000000000000000107 /* OfflineTutorLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineTutorLifecycle.swift; sourceTree = "<group>"; };
+		5E7A00000000000000000108 /* OfflineTutorDownloadPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineTutorDownloadPolicy.swift; sourceTree = "<group>"; };
+		5E7A00000000000000000109 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -152,6 +173,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */,
+				5E7A00000000000000000003 /* LiteRTLM in Frameworks */,
 				1D28C9B7C6EA3353CBFA4F79 /* Pods_Runner.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -191,6 +213,7 @@
 				D7158F5BD8B4BB80B13EBE22 /* GateShieldAction */,
 				6208BE9C1A9A4E8422CC75A4 /* GateMonitor */,
 				712E28431760B9E95C2D9045 /* NativeGateShared */,
+				5E7A00000000000000000300 /* OfflineTutorShared */,
 				B59A879F303ABE3C008B8EC0 /* WordOfDayWidget */,
 				97C146EF1CF9000F007C117D /* Products */,
 				331C8082294A63A400263BE5 /* RunnerTests */,
@@ -227,6 +250,13 @@
 				AAF026000000000000000002 /* ProPurchasePolicy.swift */,
 				CAA110000000000000000002 /* CheckVeeaGateIntent.swift */,
 				CAA110000000000000000001 /* GateAccessState.swift */,
+				5E7A00000000000000000100 /* OfflineTutorChannel.swift */,
+				5E7A00000000000000000101 /* OfflineTutorEngine.swift */,
+				5E7A00000000000000000102 /* OfflineTutorModelStore.swift */,
+				5E7A00000000000000000103 /* OfflineTutorCamera.swift */,
+				5E7A00000000000000000104 /* OfflineTutorSpeech.swift */,
+				5E7A00000000000000000106 /* OfflineTutorDownload.swift */,
+				5E7A00000000000000000109 /* PrivacyInfo.xcprivacy */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 			);
 			path = Runner;
@@ -297,6 +327,16 @@
 			path = GateShieldConfiguration;
 			sourceTree = "<group>";
 		};
+		5E7A00000000000000000300 /* OfflineTutorShared */ = {
+			isa = PBXGroup;
+			children = (
+				5E7A00000000000000000105 /* OfflineTutorPolicy.swift */,
+				5E7A00000000000000000107 /* OfflineTutorLifecycle.swift */,
+				5E7A00000000000000000108 /* OfflineTutorDownloadPolicy.swift */,
+			);
+			path = OfflineTutorShared;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -342,6 +382,7 @@
 			name = Runner;
 			packageProductDependencies = (
 				78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */,
+				5E7A00000000000000000002 /* LiteRTLM */,
 			);
 			productName = Runner;
 			productReference = 97C146EE1CF9000F007C117D /* Runner.app */;
@@ -415,6 +456,7 @@
 			mainGroup = 97C146E51CF9000F007C117D;
 			packageReferences = (
 				781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage" */,
+				5E7A00000000000000000001 /* XCRemoteSwiftPackageReference "LiteRT-LM" */,
 			);
 			productRefGroup = 97C146EF1CF9000F007C117D /* Products */;
 			projectDirPath = "";
@@ -445,6 +487,7 @@
 				3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
+				5E7A00000000000000000209 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -554,6 +597,15 @@
 				D46590A02428630AE7F18544 /* NativeGatePolicy.swift in Sources */,
 				CAA120000000000000000002 /* CheckVeeaGateIntent.swift in Sources */,
 				CAA120000000000000000001 /* GateAccessState.swift in Sources */,
+				5E7A00000000000000000200 /* OfflineTutorChannel.swift in Sources */,
+				5E7A00000000000000000201 /* OfflineTutorEngine.swift in Sources */,
+				5E7A00000000000000000202 /* OfflineTutorModelStore.swift in Sources */,
+				5E7A00000000000000000203 /* OfflineTutorCamera.swift in Sources */,
+				5E7A00000000000000000204 /* OfflineTutorSpeech.swift in Sources */,
+				5E7A00000000000000000205 /* OfflineTutorPolicy.swift in Sources */,
+				5E7A00000000000000000206 /* OfflineTutorDownload.swift in Sources */,
+				5E7A00000000000000000207 /* OfflineTutorLifecycle.swift in Sources */,
+				5E7A00000000000000000208 /* OfflineTutorDownloadPolicy.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1216,10 +1268,26 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		5E7A00000000000000000001 /* XCRemoteSwiftPackageReference "LiteRT-LM" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google-ai-edge/LiteRT-LM";
+			requirement = {
+				kind = exactVersion;
+				version = 0.18.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = FlutterGeneratedPluginSwiftPackage;
+		};
+		5E7A00000000000000000002 /* LiteRTLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5E7A00000000000000000001 /* XCRemoteSwiftPackageReference "LiteRT-LM" */;
+			productName = LiteRTLM;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

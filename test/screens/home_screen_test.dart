@@ -58,7 +58,7 @@ void main() {
       findsNothing,
     ); // Using semanticLabels
     expect(find.bySemanticsLabel('Search all words'), findsOneWidget);
-    expect(find.bySemanticsLabel('Scan words with camera'), findsOneWidget);
+    expect(find.bySemanticsLabel('Camera tools'), findsOneWidget);
     expect(find.bySemanticsLabel('Settings'), findsOneWidget);
 
     // Bottom Dock verification (ARCADE is hidden)

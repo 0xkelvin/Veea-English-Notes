@@ -16,6 +16,7 @@ import DeviceActivity
 
   private var applicationLabelsRegistered = false
   private var ocrChannelRegistered = false
+  private var offlineTutor: OfflineTutorPlugin?
 
   override func application(
     _ application: UIApplication,
@@ -27,6 +28,9 @@ import DeviceActivity
       if #available(iOS 16.0, *), !applicationLabelsRegistered,
          let registrar = registrar(forPlugin: "VeeaApplicationLabel") {
         registerApplicationLabels(registrar)
+      }
+      if offlineTutor == nil, let registrar = registrar(forPlugin: "VeeaOfflineTutor") {
+        offlineTutor = OfflineTutorPlugin.register(with: registrar)
       }
     }
 
@@ -371,6 +375,9 @@ import DeviceActivity
     if #available(iOS 16.0, *), !applicationLabelsRegistered,
        let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "VeeaApplicationLabel") {
       registerApplicationLabels(registrar)
+    }
+    if offlineTutor == nil, let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "VeeaOfflineTutor") {
+      offlineTutor = OfflineTutorPlugin.register(with: registrar)
     }
   }
 }

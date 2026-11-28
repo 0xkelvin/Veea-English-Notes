@@ -42,6 +42,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/legal/google-ai-edge-Apache-2.0.txt
     # Bundled IPA dictionary, so pronunciation can be filled in automatically —
     # a phone keyboard cannot type it. Regenerate with
     # tool/build_pronunciation_dictionary.py. See PronunciationService.

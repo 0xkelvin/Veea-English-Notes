@@ -17,7 +17,7 @@ import '../widgets/pixel/pixel_icon.dart';
 import '../widgets/word_row.dart';
 // import 'arcade_screen.dart'; // Arcade / games hidden
 import 'audio_commute_screen.dart';
-import 'pixel_lens_screen.dart';
+import '../widgets/camera_tools_sheet.dart';
 import 'practice_rounds_screen.dart';
 import 'pro_screen.dart' show practiceText;
 import 'review_screen.dart';
@@ -265,8 +265,8 @@ class _TopBar extends StatelessWidget {
           const SizedBox(width: PixelMetrics.space2),
           PixelIconButton(
             glyph: PixelGlyph.camera,
-            semanticLabel: 'Scan words with camera',
-            onPressed: () => _open(context, const PixelLensScreen()),
+            semanticLabel: 'Camera tools',
+            onPressed: () => showCameraTools(context),
           ),
           const SizedBox(width: PixelMetrics.space2),
           PixelIconButton(

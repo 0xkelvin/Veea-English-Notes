@@ -98,7 +98,11 @@
 		</dict>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>Veea English needs camera access to scan and recognize English words from documents, books, and screens.</string>
+	<string>Veea English needs camera access to scan and recognize English words from documents, books, and screens, and to photograph objects around you so the offline camera tutor can teach you their English words. Photos stay on your iPhone.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Veea English uses the microphone only while you use voice input, so you can ask the offline tutor a question by voice. Audio stays on your iPhone.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Veea English turns your spoken question into text using on-device speech recognition. Your voice is not sent to a server.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Veea English needs photo library access to scan and extract words from images or screenshots.</string>
 	<key>LSApplicationQueriesSchemes</key>
