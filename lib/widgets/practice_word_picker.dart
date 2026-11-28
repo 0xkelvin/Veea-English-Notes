@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import '../providers/pro_provider.dart';
+import '../screens/pro_screen.dart';
 
 import '../models/vocabulary_word.dart';
 import '../providers/app_gate_provider.dart';
@@ -11,24 +14,45 @@ class PracticePoolSelection {
 
 Future<bool> choosePracticeWords(
   BuildContext context,
-  AppGateProvider gate,
-) async {
+  AppGateProvider gate, {
+  Future<void> Function()? onUpgrade,
+}) async {
   await gate.prepareChallenge();
   if (!context.mounted) return false;
   final selection = await Navigator.of(context).push<PracticePoolSelection>(
     MaterialPageRoute(
-      builder: (_) => PracticeWordPicker(
-        words: gate.notebookWords,
-        selectedIds:
-            gate.config.practiceWordIds ??
-            gate.practiceWords
-                .take(gate.requiredWords)
-                .map((word) => word.id)
-                .toList(),
-        title: 'Choose unlock words',
-        allowFutureWords: false,
-        confirmAtBottom: true,
-        unlockSelection: true,
+      builder: (pickerContext) => AnimatedBuilder(
+        animation: gate,
+        builder: (_, _) => PracticeWordPicker(
+          words: gate.notebookWords,
+          selectedIds: gate.practiceWords.map((word) => word.id).toList(),
+          title: 'Choose unlock words',
+          allowFutureWords: false,
+          confirmAtBottom: true,
+          unlockSelection: true,
+          selectionLimit: gate.canUseMultipleWords ? null : 1,
+          requestMultiple: () async {
+            if (onUpgrade != null) {
+              await onUpgrade();
+            } else {
+              try {
+                pickerContext.read<ProProvider>();
+                await ProScreen.open(pickerContext);
+              } on ProviderNotFoundException {
+                if (pickerContext.mounted) {
+                  ScaffoldMessenger.of(pickerContext).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Pro upgrades are unavailable right now. Your selected word stays unchanged.',
+                      ),
+                    ),
+                  );
+                }
+              }
+            }
+            return gate.canUseMultipleWords;
+          },
+        ),
       ),
     ),
   );
@@ -47,6 +71,8 @@ class PracticeWordPicker extends StatefulWidget {
     this.allowFutureWords = true,
     this.confirmAtBottom = false,
     this.unlockSelection = false,
+    this.selectionLimit,
+    this.requestMultiple,
   });
   final List<VocabularyWord> words;
   final List<String>? selectedIds;
@@ -55,6 +81,8 @@ class PracticeWordPicker extends StatefulWidget {
   final bool allowFutureWords;
   final bool confirmAtBottom;
   final bool unlockSelection;
+  final int? selectionLimit;
+  final Future<bool> Function()? requestMultiple;
   @override
   State<PracticeWordPicker> createState() => _PracticeWordPickerState();
 }
@@ -71,6 +99,43 @@ class _PracticeWordPickerState extends State<PracticeWordPicker> {
   String? _day;
   final _searchInput = TextEditingController();
   String _search = '';
+  late bool _multipleAllowed;
+  bool _requestingUpgrade = false;
+  bool get _singleChoice => widget.unlockSelection && !_multipleAllowed;
+
+  @override
+  void didUpdateWidget(covariant PracticeWordPicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectionLimit != widget.selectionLimit) {
+      _multipleAllowed = widget.selectionLimit != 1;
+      if (_singleChoice && _selected.length > 1) {
+        final retained = _selected.first;
+        _selected
+          ..clear()
+          ..add(retained);
+      }
+    }
+  }
+
+  Future<void> _requestMultiple([Set<String>? desired]) async {
+    if (_requestingUpgrade) return;
+    setState(() => _requestingUpgrade = true);
+    try {
+      final allowed = await widget.requestMultiple?.call() ?? false;
+      if (mounted && allowed) {
+        setState(() {
+          _multipleAllowed = true;
+          if (desired != null) {
+            _selected
+              ..clear()
+              ..addAll(desired);
+          }
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _requestingUpgrade = false);
+    }
+  }
 
   void _confirm() {
     if (_selected.isEmpty) return;
@@ -87,6 +152,7 @@ class _PracticeWordPickerState extends State<PracticeWordPicker> {
   @override
   void initState() {
     super.initState();
+    _multipleAllowed = widget.selectionLimit != 1;
     _includeNewWords = widget.selectedIds == null;
     _words = List.of(widget.words)
       ..sort((a, b) {
@@ -121,6 +187,10 @@ class _PracticeWordPickerState extends State<PracticeWordPicker> {
   void _toggleWords(Iterable<VocabularyWord> words) {
     final ids = words.map((word) => word.id).toSet();
     if (ids.isEmpty) return;
+    if (_singleChoice && ids.length > 1) {
+      _requestMultiple(ids);
+      return;
+    }
     setState(() {
       if (ids.every(_selected.contains)) {
         _selected.removeAll(ids);
@@ -179,14 +249,30 @@ class _PracticeWordPickerState extends State<PracticeWordPicker> {
         ? 'All ${visible.length} $wordLabel on ${DateFormat.MMMd().format(DateTime.parse(_day!))}'
         : 'All ${_words.length} notebook words';
 
-    final confirmLabel = widget.unlockSelection
+    final confirmation = widget.unlockSelection
         ? 'Use ${_selected.length} ${_selected.length == 1 ? 'word' : 'words'} per unlock'
         : widget.confirmLabel;
     final controls = <Widget>[
       if (widget.unlockSelection)
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Text('Review every word you select here to unlock your apps.'),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _singleChoice
+                    ? 'Free: choose 1 word. Tap another word to replace it.'
+                    : 'Every unlock includes all the words you select here.',
+              ),
+              if (_singleChoice)
+                TextButton.icon(
+                  key: const Key('unlock_picker_upgrade'),
+                  onPressed: _requestingUpgrade ? null : _requestMultiple,
+                  icon: const Icon(Icons.auto_awesome_outlined, size: 18),
+                  label: const Text('Select multiple words with Pro'),
+                ),
+            ],
+          ),
         ),
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -249,26 +335,27 @@ class _PracticeWordPickerState extends State<PracticeWordPicker> {
           ],
         ),
       ),
-      CheckboxListTile(
-        key: const Key('select_visible_practice_words'),
-        controlAffinity: ListTileControlAffinity.leading,
-        dense: true,
-        tristate: true,
-        value: visibleSelected == 0
-            ? false
-            : visibleSelected == visible.length
-            ? true
-            : null,
-        onChanged: visible.isEmpty ? null : (_) => _toggleWords(visible),
-        title: Text(scopeLabel),
-        subtitle: Text(
-          _selected.isEmpty
-              ? 'Select at least one word to continue.'
-              : filtered
-              ? '$visibleSelected selected here · $hiddenSelected selected elsewhere'
-              : 'Select or uncheck any word below.',
+      if (!_singleChoice)
+        CheckboxListTile(
+          key: const Key('select_visible_practice_words'),
+          controlAffinity: ListTileControlAffinity.leading,
+          dense: true,
+          tristate: true,
+          value: visibleSelected == 0
+              ? false
+              : visibleSelected == visible.length
+              ? true
+              : null,
+          onChanged: visible.isEmpty ? null : (_) => _toggleWords(visible),
+          title: Text(scopeLabel),
+          subtitle: Text(
+            _selected.isEmpty
+                ? 'Select at least one word to continue.'
+                : filtered
+                ? '$visibleSelected selected here · $hiddenSelected selected elsewhere'
+                : 'Select or uncheck any word below.',
+          ),
         ),
-      ),
       if (widget.allowFutureWords &&
           allSelected &&
           MediaQuery.viewInsetsOf(context).bottom == 0)
@@ -303,25 +390,33 @@ class _PracticeWordPickerState extends State<PracticeWordPicker> {
                 style: Theme.of(context).textTheme.titleSmall,
               ),
             ),
-          CheckboxListTile(
-            key: ValueKey('practice_word_${word.id}'),
-            controlAffinity: ListTileControlAffinity.leading,
-            value: _selected.contains(word.id),
-            onChanged: (value) => setState(() {
-              if (value == true) {
-                _selected.add(word.id);
-              } else {
-                _selected.remove(word.id);
-              }
-            }),
-            title: Text(word.word),
-            subtitle: Text(word.meaning),
-          ),
+          if (_singleChoice)
+            RadioListTile<String>(
+              key: ValueKey('practice_word_${word.id}'),
+              value: word.id,
+              title: Text(word.word),
+              subtitle: Text(word.meaning),
+            )
+          else
+            CheckboxListTile(
+              key: ValueKey('practice_word_${word.id}'),
+              controlAffinity: ListTileControlAffinity.leading,
+              value: _selected.contains(word.id),
+              onChanged: (value) => setState(() {
+                if (value == true) {
+                  _selected.add(word.id);
+                } else {
+                  _selected.remove(word.id);
+                }
+              }),
+              title: Text(word.word),
+              subtitle: Text(word.meaning),
+            ),
         ],
       );
     }
 
-    return Scaffold(
+    final page = Scaffold(
       appBar: AppBar(
         leading: IconButton(
           key: const Key('cancel_practice_words'),
@@ -335,7 +430,11 @@ class _PracticeWordPickerState extends State<PracticeWordPicker> {
             key: const Key('practice_selection_options'),
             tooltip: 'Selection options',
             onSelected: (action) => setState(() {
-              if (action == _SelectionAction.selectNotebook) {
+              if (action == _SelectionAction.selectNotebook &&
+                  _singleChoice &&
+                  _words.length > 1) {
+                _requestMultiple(_words.map((word) => word.id).toSet());
+              } else if (action == _SelectionAction.selectNotebook) {
                 _selected.addAll(_words.map((word) => word.id));
               } else {
                 _selected.clear();
@@ -357,8 +456,10 @@ class _PracticeWordPickerState extends State<PracticeWordPicker> {
           if (!widget.confirmAtBottom)
             TextButton(
               key: const Key('save_practice_words'),
-              onPressed: _selected.isEmpty ? null : _confirm,
-              child: Text(confirmLabel),
+              onPressed: _selected.isEmpty || _requestingUpgrade
+                  ? null
+                  : _confirm,
+              child: Text(confirmation),
             ),
         ],
         bottom: PreferredSize(
@@ -425,10 +526,12 @@ class _PracticeWordPickerState extends State<PracticeWordPicker> {
                   width: double.infinity,
                   child: FilledButton(
                     key: const Key('save_practice_words'),
-                    onPressed: _selected.isEmpty ? null : _confirm,
+                    onPressed: _selected.isEmpty || _requestingUpgrade
+                        ? null
+                        : _confirm,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Text(confirmLabel, textAlign: TextAlign.center),
+                      child: Text(confirmation, textAlign: TextAlign.center),
                     ),
                   ),
                 ),
@@ -436,6 +539,19 @@ class _PracticeWordPickerState extends State<PracticeWordPicker> {
           ],
         ),
       ),
+    );
+    return RadioGroup<String>(
+      groupValue: _singleChoice ? _selected.firstOrNull : null,
+      onChanged: (id) {
+        if (id != null && !_requestingUpgrade) {
+          setState(
+            () => _selected
+              ..clear()
+              ..add(id),
+          );
+        }
+      },
+      child: page,
     );
   }
 }

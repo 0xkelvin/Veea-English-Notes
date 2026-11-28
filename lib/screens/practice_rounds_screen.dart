@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/vocabulary_word.dart';
-import '../providers/pro_provider.dart';
 import '../providers/vocabulary_provider.dart';
 import 'pro_screen.dart';
 import 'review_screen.dart';
@@ -37,8 +36,6 @@ class _PracticeRoundsScreenState extends State<PracticeRoundsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final pro = context.watch<ProProvider?>();
-    final hasPro = pro?.hasPro ?? false;
     return Scaffold(
       appBar: AppBar(
         title: Text(practiceText(context, 'Practice Rounds', 'Lượt luyện tập')),
@@ -96,7 +93,7 @@ class _PracticeRoundsScreenState extends State<PracticeRoundsScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                if (hasPro && words.length > 1)
+                if (words.length > 1)
                   TextField(
                     key: const Key('practice_round_count'),
                     controller: _count,
@@ -119,7 +116,7 @@ class _PracticeRoundsScreenState extends State<PracticeRoundsScreen> {
                       'Mỗi lượt một từ',
                     ),
                   ),
-                if (hasPro && words.length == 1)
+                if (words.length == 1)
                   Text(
                     practiceText(
                       context,
@@ -131,9 +128,7 @@ class _PracticeRoundsScreenState extends State<PracticeRoundsScreen> {
                 FilledButton(
                   key: const Key('start_practice_round'),
                   onPressed: () {
-                    final canConfigure =
-                        context.read<ProProvider?>()?.hasPro == true;
-                    final count = canConfigure && words.length > 1
+                    final count = words.length > 1
                         ? int.tryParse(_count.text)
                         : 1;
                     if (count == null || count < 1 || count > words.length) {
@@ -161,17 +156,6 @@ class _PracticeRoundsScreenState extends State<PracticeRoundsScreen> {
                   },
                   child: Text(practiceText(context, 'Start round', 'Bắt đầu')),
                 ),
-                if (!hasPro && words.length > 1 && pro != null)
-                  TextButton(
-                    onPressed: () => ProScreen.open(context),
-                    child: Text(
-                      practiceText(
-                        context,
-                        'Choose more words with Pro',
-                        'Chọn nhiều từ hơn với Pro',
-                      ),
-                    ),
-                  ),
               ],
             );
           },

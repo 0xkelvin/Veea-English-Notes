@@ -139,7 +139,7 @@ a refund or revocation if no active Apple entitlement was confirmed.
 
 ### StoreKit-first guest purchases
 
-StoreKit provides local educational Pro for the purchasing Apple Account.
+StoreKit provides local Pro for the purchasing Apple Account.
 Guests buy and restore without Veea sign-in. Guest purchases have no account
 token and never go to Go. A matching signed-in purchase may be claimed using
 the existing authenticated route. A different or deleted account's token can

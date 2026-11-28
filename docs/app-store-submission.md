@@ -1,6 +1,6 @@
 # Veea English App Store submission
 
-Release preparation for the approved 27 November 2026 model.
+Release preparation for the owner-selected 28 November 2026 model.
 See the [product matrix](pro-99k-model.md) and [release instructions](first-paid-release.md).
 
 ## App Store metadata
@@ -8,42 +8,39 @@ See the [product matrix](pro-99k-model.md) and [release instructions](first-paid
 - Product: **Veea Pro Lifetime**. Non-Consumable, `com.nintran.veeaEnglishApp.pro`.
 - Bundle: `com.nintran.veeaEnglishApp`. Vietnam target: 99,000 VND. Confirm
   the storefront price and use StoreKit to display it. Disable Family Sharing.
-- English: “Save, listen to and review your own words. Protect multiple apps
-  or start a one-word Practice Round for free. Veea Pro Lifetime is a one-time
-  purchase that lets you choose more words in standalone Practice Rounds.
+- English: “Save, listen to and review your own words for free. Lock one app
+  and review one selected word to unlock it. Veea Pro Lifetime is a one-time
+  purchase for multiple app locks and multiple selected words per unlock.
   Purchase and Restore Purchases work without a Veea account.”
-- Vietnamese: “Lưu, nghe lại và ôn từ vựng của bạn. Khóa nhiều ứng dụng hoặc
-  bắt đầu Lượt luyện tập một từ miễn phí. Veea Pro trọn đời là gói mua một lần
-  giúp bạn tự chọn nhiều từ hơn trong mỗi Lượt luyện tập riêng. Không cần
-  tài khoản Veea để mua hoặc khôi phục giao dịch.”
+- Vietnamese: “Lưu, nghe và ôn từ vựng miễn phí. Khóa 1 ứng dụng và ôn 1 từ đã
+  chọn để mở khóa. Mua Veea Pro trọn đời một lần để khóa nhiều ứng dụng và ôn
+  nhiều từ đã chọn mỗi lần mở khóa. Không cần tài khoản Veea để mua hoặc khôi phục.”
 
 ## Screenshot capture list
 
-Capture real signed-build screenshots in each release language. Show Home,
-one-word Practice Rounds, the Pro multi-word configuration and the localized
-paywall with Restore Purchases. Use neutral vocabulary and remove account
-and notification details. If showing app protection, label it as free and
-separate from the paywall.
+Capture real signed-build screenshots in each release language: free learning,
+one app/word on Free, multiple apps/selected words on Pro, and localized checkout
+with Restore Purchases. Remove private account and notification details.
 
 ## App Review notes
 
-Veea English is an offline vocabulary notebook with optional Screen Time
-protection. Authorization, shields, all timers, multiple apps and multi-word
-unlock challenges are free. Veea Pro Lifetime enables customizable multi-word
-standalone Practice Rounds from Home. This feature works without Screen Time
-permission or protected apps. Guests can purchase and restore through StoreKit.
-Optional sign-in supports Veea account features and deletion.
+Veea English stores and reviews vocabulary offline. Notebook, dictionary,
+Listen, ordinary Review, standalone multi-word Practice Rounds and custom lists
+are free. Optional Screen Time protection supports one app and one selected
+word per unlock on Free. The existing non-consumable Pro purchase enables
+multiple apps and multiple selected words per unlock. All timers, disabling
+and removal remain free. StoreKit purchase and restore work without Veea sign-in.
+Optional sign-in supports account features and deletion. State these actual paid
+limits openly; an educational category does not resolve guideline 4.10 review
+risk, and implementation/tests are not Apple approval.
 
-1. Open Home without signing in or authorizing Screen Time. Add sample words
-   with meanings and start a one-word Practice Round.
-2. Test Free behavior before purchasing, or use a separate eligible Sandbox
-   Apple Account without the Pro purchase. In Settings, authorize Screen Time,
-   protect multiple apps and set multiple words per unlock. Review the separation
-   under guideline 4.10.
-3. Use the Sandbox purchase flow, then choose multiple words and start a
-   standalone round. Check Restore Purchases while signed out of Veea.
-4. Exercise optional sign-in and deletion if reviewing the account features.
-   Use the App Store Connect private review field for any access instructions.
+1. Add sample words and use the free learning features without Screen Time.
+2. Without Pro, authorize Screen Time and choose one app/word. Replacing them
+   and setting custom times are free. Selecting more offers Pro.
+3. Complete a Sandbox purchase and choose multiple apps/words. Every selected
+   word is required per unlock. Test Restore Purchases while signed out of Veea.
+4. Exercise optional sign-in/deletion and confirm device vocabulary survives.
+   Use App Store Connect's private review field for actual access instructions.
 
 ## App Privacy checklist
 
@@ -88,7 +85,7 @@ Suggested operator: Nin. Record actual configuration/evidence, not private keys.
   Add the first in-app purchase and app version to the same review submission.
   [Apple purchase submission instructions](https://developer.apple.com/help/app-store-connect/manage-submissions-to-app-review/submit-an-in-app-purchase/).
 - Run signed-device checks for five-minute background relock, two independent
-  protected apps and multiple words per unlock on Free, native sheet labels,
+  protected apps and multiple words per unlock on Pro, one app/word on Free, native sheet labels,
   custom/per-app times without sign-in, account
   deletion and offline notebook preservation. Record device/OS, exact build and
   expected/observed outcomes. Earlier-purchase restore/refund scenarios remain

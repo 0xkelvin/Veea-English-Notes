@@ -11,7 +11,8 @@ import 'package:flutter/foundation.dart';
 class AppConfig {
   AppConfig._();
 
-  // The paid release offers standalone educational Pro. This test override
+  // Free allows one app lock and one selected unlock word; Pro enables multiple.
+  // Learning features remain free. This test override
   // suppresses checkout while keeping previously owned purchases restorable.
   static bool? _freeLaunchOverride;
   static bool get isFreeLaunch => _freeLaunchOverride ?? false;

@@ -151,7 +151,7 @@ void main() {
     for (final word in words) {
       await repo.insert(word);
     }
-    gate = AppGateProvider(repository: repo, now: () => now);
+    gate = AppGateProvider(repository: repo, now: () => now, hasPro: true);
     await gate.init();
     vocab = VocabularyProvider(repo, now: () => now);
     await vocab.init();
@@ -194,7 +194,7 @@ void main() {
       await gate.setWordsPerUnlock(3);
       await gate.recordStepCompletion(wordId: 'a', targetApp: 'X', attempts: 0);
       gate.dispose();
-      gate = AppGateProvider(repository: repo, now: () => now);
+      gate = AppGateProvider(repository: repo, now: () => now, hasPro: true);
       await gate.init();
       expect(gate.progressForApp(' x '), 1);
       expect(gate.solvedWordIdsForApp('X'), {'a'});
@@ -264,7 +264,7 @@ void main() {
       await gate.refreshNativeScreenTime();
       expect(gate.unlockedUntilFor(target), expiry);
       gate.dispose();
-      gate = AppGateProvider(repository: repo, now: () => now);
+      gate = AppGateProvider(repository: repo, now: () => now, hasPro: true);
       await gate.init();
       expect(gate.unlockedUntilFor(target), expiry);
       now = expiry!;
@@ -283,7 +283,7 @@ void main() {
         throwsA(isA<PlatformException>()),
       );
       gate.dispose();
-      gate = AppGateProvider(repository: repo, now: () => now);
+      gate = AppGateProvider(repository: repo, now: () => now, hasPro: true);
       await gate.init();
       expect(gate.progressForApp('X'), 2);
       expect(gate.cachedGateWord('X')!.id, 'b');
@@ -928,7 +928,7 @@ void main() {
         ),
       );
       gate.dispose();
-      gate = AppGateProvider(repository: repo, now: () => now);
+      gate = AppGateProvider(repository: repo, now: () => now, hasPro: true);
       await gate.init();
       expect(gate.config.practiceWordIds!.toSet(), {'b', 'c'});
       expect(gate.practiceWordCount, 2);
@@ -1020,7 +1020,7 @@ void main() {
           attempts: 0,
         );
         gate.dispose();
-        gate = AppGateProvider(repository: repo, now: () => now);
+        gate = AppGateProvider(repository: repo, now: () => now, hasPro: true);
         await gate.init();
         final second = (await gate.selectGateWord(targetApp: app))!;
         expect(seen.add(second.id), isTrue);
@@ -1410,7 +1410,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 50));
     });
     await tester.pumpAndSettle();
-    final current = gate.practiceWords.first.id;
+    final current = gate.practiceWords.single.id;
     final other = words.firstWhere((word) => word.id != current);
     await tester.tap(find.byKey(ValueKey('practice_word_${other.id}')));
     await tester.pumpAndSettle();
@@ -1427,9 +1427,8 @@ void main() {
   testWidgets(
     'choosing words from an empty challenge replaces its stale one-word target',
     (tester) async {
-      final deleted = gate.practiceWords.first.id;
+      final deleted = gate.practiceWords.single.id;
       await tester.runAsync(() async {
-        await gate.setPracticeWords([deleted]);
         await repo.softDelete(deleted, now);
         await gate.prepareChallenge();
       });
@@ -1544,7 +1543,7 @@ void main() {
       );
       calls.clear();
       gate.dispose();
-      gate = AppGateProvider(repository: repo, now: () => now);
+      gate = AppGateProvider(repository: repo, now: () => now, hasPro: true);
       await gate.init();
       final saved = await repo.getGateConfig();
       expect(saved.enabled, isFalse);
@@ -1594,7 +1593,7 @@ void main() {
       expect(gate.nativeStatus.passMinutes, 90);
       expect(gate.unlockedUntilFor(target), expiry);
       gate.dispose();
-      gate = AppGateProvider(repository: repo, now: () => now);
+      gate = AppGateProvider(repository: repo, now: () => now, hasPro: true);
       await gate.init();
       expect(gate.nativeStatus.passMinutes, 90);
       expect(gate.unlockedUntilFor(target), expiry);

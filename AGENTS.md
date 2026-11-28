@@ -208,12 +208,18 @@ See `docs/payment-environments.md`.
 Payments are disabled by default; never simulate paid success in production. Full purge removes
 Apple rows, export includes five retained proof periods, manual grants remain independent.
 
-## Current offer: free app protection and one-time educational Pro (2026-11-27)
+## Current offer: free learning and one-time Pro unlocks (2026-11-28)
 
-All Screen Time controls and unlock challenges are free, including up to 50 apps,
-all timings, the existing practice pool, and multiple words per unlock. Pro
-adds configurable multi-word standalone Practice Rounds from Home. All existing
-learning features and one-word standalone rounds are free.
+Explicit owner decision supersedes the 27 November free-protection/paid-rounds
+model. Free includes existing learning, standalone multi-word Practice Rounds,
+1 app lock and 1 selected unlock word. One Pro purchase enables multiple apps
+and multiple selected words. Each unlock reviews every active selected word;
+there is no independent quota. All durations, disable/remove and account rights
+stay free. Preserve saved paid selections and earned passes on downgrade; pause
+extras only after ownership status is known. An expired offline account lease is
+unknown, not confirmed Free. Free picker edits over retained multi-app settings
+keep paused apps/times. Confirming an unchanged Free word keeps the paused word
+selection and unfinished answers. See `docs/pro-99k-model.md`.
 
 Veea Pro Lifetime is the existing Apple non-consumable
 `com.nintran.veeaEnglishApp.pro` for `com.nintran.veeaEnglishApp`. Its Vietnam
@@ -225,7 +231,8 @@ Guest transactions carry no account token and are never claimed by Go. Signed-in
 purchases keep the existing account token and authenticated claim. Deletion purges
 the Veea account data and server proof while valid StoreKit ownership stays with
 the Apple Account. No linking or transfer. Refunds update local access when
-StoreKit learns of them. Free/Pro changes never alter protection settings.
+StoreKit learns of them. A confirmed Free plan pauses extra locks without deleting their settings or passes.
+Unknown ownership must not trigger a destructive downgrade.
 
 Account-only Go builds must not call retired config/feedback routes.
 `VEEA_FEEDBACK_DELIVERY_ENABLED` defaults off independently of the API URL.

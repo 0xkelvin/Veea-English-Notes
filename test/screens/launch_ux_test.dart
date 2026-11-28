@@ -130,7 +130,7 @@ void main() {
     await vocabulary.init();
     gate = AppGateProvider(repository: repo, now: () => now);
     await gate.init();
-    await gate.setPracticeWords(['a', 'b']);
+    await gate.setPracticeWords(['a']);
     tts = TtsService();
     commute = AudioCommuteService(ttsService: tts);
     playlists = CommutePlaylistService(

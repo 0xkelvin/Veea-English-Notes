@@ -21,6 +21,12 @@ final class ProPurchaseManager {
   private var namespace: String? { ProPurchasePolicy.namespace(environment: environment, owner: owner, productID: productID, apiOrigin: apiOrigin) }
   private var listener: Task<Void, Never>?
   private var generation = 0
+  // Protection bridge only (read-only for NativeScreenTimeManager). Neither
+  // value grants Pro; they only say whether Free may pause saved extra locks.
+  private var ownershipScanComplete = false
+  // A granted lease is known only until it ends (bounded like the lease);
+  // an explicit Free reply stays known for this configuration.
+  private var serverPlan = NativeGateServerPlanFreshness()
   var onChange: (() -> Void)?
   private let defaults = UserDefaults.standard
   private var lifetimeKey: String? { leaseKey.map { $0 + ".lifetime" } }
@@ -35,10 +41,21 @@ final class ProPurchaseManager {
       diskLifetime: lifetimeKey.map { defaults.bool(forKey: $0) } == true,
       now: Date().timeIntervalSince1970)
   }
+  private var localPro: Bool { transactions.values.contains { accepts($0) && $0.environment == .production } }
+  private var sandboxPro: Bool { transactions.values.contains { accepts($0) && $0.environment == .sandbox } }
+  private var accountPro: Bool { owner != nil && ProPurchasePolicy.allowsInstallation(environment) && hasActiveServerLease }
+  /// Same verified sources as `hasPro` (guest/signed-in StoreKit, Sandbox
+  /// StoreKit, account lease incl. manual grants).
+  var isPro: Bool { localPro || sandboxPro || accountPro }
+  var isReady: Bool {
+    NativeGatePlanReadiness.isReady(scanComplete: ownershipScanComplete, signedIn: owner != nil,
+      installationSupported: ProPurchasePolicy.allowsInstallation(environment),
+      hasPro: isPro, serverPlan: serverPlan, now: Date().timeIntervalSince1970)
+  }
   private func state(outcome: String? = nil, observedRevocation: Bool = false) -> [String: Any] {
-    let local = transactions.values.contains { accepts($0) && $0.environment == .production }
-    let sandbox = transactions.values.contains { accepts($0) && $0.environment == .sandbox }
-    let account = owner != nil && ProPurchasePolicy.allowsInstallation(environment) && hasActiveServerLease
+    let local = localPro
+    let sandbox = sandboxPro
+    let account = accountPro
     let lifetime = account && serverLifetime
     let localFinishes = pendingTransactions.values.filter {
       accepts($0) && !ProPurchasePolicy.canClaim(owner: owner, token: $0.appAccountToken) &&
@@ -69,6 +86,8 @@ final class ProPurchaseManager {
       ownedTransactions = [:]
       pendingTransactions = [:]
       volatileLease.clear()
+      ownershipScanComplete = false
+      serverPlan.reset()
       product = nil
       owner = nextOwner
       productID = nextProduct
@@ -76,6 +95,7 @@ final class ProPurchaseManager {
     }
     startEnvironmentLookupIfNeeded()
     if args["clearServer"] as? Bool == true {
+      serverPlan.recordFree()
       volatileLease.clear()
     }
     if ProPurchasePolicy.replacesServerLease(clearServer: args["clearServer"] as? Bool == true,
@@ -84,6 +104,7 @@ final class ProPurchaseManager {
     }
     if let until = args["serverUntil"] as? Double {
       volatileLease.grant(until: until, lifetime: args["serverLifetime"] as? Bool, now: Date().timeIntervalSince1970)
+      serverPlan.recordLease(until: until, now: Date().timeIntervalSince1970)
     }
     if let key = leaseKey {
       if let until = args["serverUntil"] as? Double, until.isFinite {
@@ -117,6 +138,7 @@ final class ProPurchaseManager {
     }
     await refreshEntitlements()
     guard epoch == generation else { throw ProPurchaseError.accountChanged }
+    ownershipScanComplete = true
     if ProPurchasePolicy.allowsInstallation(environment) && args["loadProduct"] as? Bool != false && !productID.isEmpty && product == nil {
       let products = (try? await Product.products(for: [productID])) ?? []
       guard epoch == generation else { throw ProPurchaseError.accountChanged }

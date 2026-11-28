@@ -73,8 +73,8 @@ class ProScreen extends StatelessWidget {
                 Text(
                   practiceText(
                     context,
-                    'Choose how many words to practise',
-                    'Tự chọn số từ muốn ôn',
+                    'Unlock more apps with your vocabulary',
+                    'Mở khóa nhiều ứng dụng bằng vốn từ của bạn',
                   ),
                   style: theme.textTheme.headlineSmall,
                 ),
@@ -82,8 +82,16 @@ class ProScreen extends StatelessWidget {
                 Text(
                   practiceText(
                     context,
-                    'Start a one-word Practice Round from Home for free. Pro lets you choose more words per round from your notebook.',
-                    'Bắt đầu Lượt luyện tập một từ miễn phí từ Trang chủ. Với Pro, bạn có thể chọn nhiều từ hơn trong sổ từ cho mỗi lượt.',
+                    'Free includes your learning features, 1 app lock and 1 selected word per unlock. One Pro purchase enables multiple app locks and multiple selected words per unlock.',
+                    'Miễn phí các tính năng học từ, khóa 1 ứng dụng và ôn 1 từ đã chọn mỗi lần mở khóa. Mua Pro một lần để khóa nhiều ứng dụng và ôn nhiều từ đã chọn mỗi lần mở khóa.',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  practiceText(
+                    context,
+                    'Notebook, dictionary, Listen, Review, Practice Rounds and custom lists stay free. All unlock times, turning locks off and removing apps stay free.',
+                    'Sổ từ, từ điển, Nghe, Ôn tập, Lượt luyện tập và danh sách tùy chọn luôn miễn phí. Mọi thời gian mở khóa, tắt khóa và xóa ứng dụng khỏi danh sách khóa đều miễn phí.',
                   ),
                 ),
                 const SizedBox(height: 12),

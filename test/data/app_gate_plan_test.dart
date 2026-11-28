@@ -72,23 +72,42 @@ void main() {
   });
 
   test(
-    'Free applies the complete practice pool and configurable count',
+    'Free starts with one fixed selected word and rejects multiple selections',
     () async {
-      expect(gate.practiceWordCount, 4);
-      expect(gate.maximumWordsPerUnlock, 4);
-      await gate.setWordsPerUnlock(3);
-      expect(gate.requiredWords, 3);
-      expect((await repo.getGateConfig()).wordsPerUnlock, 3);
+      expect(AppConfig.isFreeLaunch, isFalse);
+      expect(gate.canUseMultipleWords, isFalse);
+      expect(gate.practiceWordCount, 1);
+      expect(gate.maximumWordsPerUnlock, 1);
+      expect(gate.requiredWords, 1);
+      await expectLater(
+        gate.setWordsPerUnlock(2),
+        throwsA(
+          isA<PlatformException>().having(
+            (e) => e.code,
+            'code',
+            'PRO_REQUIRED',
+          ),
+        ),
+      );
+      expect((await repo.getGateConfig()).wordsPerUnlock, 1);
+      await expectLater(
+        gate.setPracticeWords(['w0', 'w1', 'w2']),
+        throwsA(isA<PlatformException>()),
+      );
+      await gate.setPracticeWords(['w2']);
+      expect(gate.practiceWords.single.id, 'w2');
+      expect(gate.practiceWordCount, 1);
+      expect(gate.requiredWords, 1);
     },
   );
 
   test(
-    'one answer earns a free pass and later sessions rotate words',
+    'every Free unlock reviews the exact same selected word until changed',
     () async {
       final ids = <String>{};
       for (var i = 0; i < 4; i++) {
         final word = (await gate.selectGateWord(targetApp: target))!;
-        expect(ids.add(word.id), isTrue);
+        ids.add(word.id);
         await gate.completeGateChallenge(
           wordId: word.id,
           targetApp: target,
@@ -96,22 +115,28 @@ void main() {
         );
         expect(gate.progressForApp(target), 0);
       }
+      expect(ids.length, 1);
       expect(grants, 4);
       expect((await repo.exportAll()).length, 4);
     },
   );
 
   test(
-    'previous multiword protection survives restart and remains editable',
+    'downgrade and cold restart enforce one without erasing paid count',
     () async {
-      await repo.saveGateConfig(
-        const GateConfig(wordsPerUnlock: 4, autoPronounce: false),
-      );
+      gate.setProAccess(true);
+      await gate.setWordsPerUnlock(3);
+      expect(gate.requiredWords, 3);
+      gate.setProAccess(false);
+      expect(gate.requiredWords, 1);
+      expect(gate.config.wordsPerUnlock, 3);
       gate.dispose();
       gate = AppGateProvider(repository: repo, now: () => now);
       await gate.init();
-      expect(gate.requiredWords, 4);
-      expect(gate.config.autoPronounce, isFalse);
+      expect(gate.requiredWords, 1);
+      expect(gate.config.wordsPerUnlock, 3);
+      gate.setProAccess(true);
+      expect(gate.requiredWords, 3);
       await gate.setWordsPerUnlock(999);
       expect(gate.requiredWords, 4);
       await gate.setPracticeWords(['w0', 'w1']);
@@ -119,18 +144,89 @@ void main() {
     },
   );
 
-  test('a settings change applies to the next challenge', () async {
-    gate.beginChallengeRound(target);
-    await gate.setWordsPerUnlock(3);
-    expect(gate.requiredWordsForApp(target), 1);
-    gate.endChallengeRound(target);
-    gate.beginChallengeRound(target);
-    expect(gate.requiredWordsForApp(target), 3);
-  });
+  test(
+    'a legacy multiword config is safely effective as one on Free',
+    () async {
+      await repo.saveGateConfig(
+        const GateConfig(wordsPerUnlock: 4, autoPronounce: false),
+      );
+      gate.dispose();
+      gate = AppGateProvider(repository: repo, now: () => now);
+      await gate.init();
+      expect(gate.requiredWords, 1);
+      expect(gate.config.autoPronounce, isFalse);
+      expect(gate.practiceWordCount, 1);
+      expect(gate.config.wordsPerUnlock, 4);
+      await gate.completeGateChallenge(
+        wordId: 'w0',
+        targetApp: target,
+        attempts: 1,
+      );
+      expect(grants, 1);
+      gate.setProAccess(true);
+      expect(gate.requiredWords, 4);
+    },
+  );
+
+  test(
+    'legacy Free count confirmation keeps its saved paid selection',
+    () async {
+      gate.setProAccess(true);
+      await gate.setWordsPerUnlock(3);
+      gate.setProAccess(false);
+      await gate.setWordsPerUnlock(1);
+      expect(gate.requiredWords, 1);
+      expect(gate.config.wordsPerUnlock, 3);
+      expect(gate.canUseMultipleWords, isFalse);
+    },
+  );
+
+  test(
+    'upgrading mid-round keeps the current one-answer challenge stable',
+    () async {
+      gate.setProAccess(true);
+      await gate.setWordsPerUnlock(3);
+      gate.setProAccess(false);
+      gate.beginChallengeRound(target);
+      gate.setProAccess(true);
+      expect(gate.requiredWords, 3);
+      expect(gate.requiredWordsForApp(target), 1);
+      await gate.completeGateChallenge(
+        wordId: 'w0',
+        targetApp: target,
+        attempts: 1,
+      );
+      expect(grants, 1);
+      gate.beginChallengeRound(target);
+      expect(gate.requiredWordsForApp(target), 3);
+    },
+  );
+
+  test(
+    'closing a challenge releases its stale target before a changed rule or upgrade',
+    () async {
+      gate.setProAccess(true);
+      await gate.setWordsPerUnlock(3);
+      gate.beginChallengeRound(target);
+      gate.endChallengeRound(target);
+      await gate.setWordsPerUnlock(2);
+      gate.beginChallengeRound(target);
+      expect(gate.requiredWordsForApp(target), 2);
+      gate.endChallengeRound(target);
+      gate.setProAccess(false);
+      gate.beginChallengeRound(target);
+      expect(gate.requiredWordsForApp(target), 1);
+      gate.endChallengeRound(target);
+      gate.setProAccess(true);
+      gate.beginChallengeRound(target);
+      expect(gate.requiredWordsForApp(target), 2);
+    },
+  );
 
   test(
     'closing and restarting retains answers but resumes the current word rule',
     () async {
+      gate.setProAccess(true);
       await gate.setWordsPerUnlock(3);
       gate.beginChallengeRound(target);
       await gate.recordStepCompletion(
@@ -141,7 +237,7 @@ void main() {
       gate.endChallengeRound(target);
       await gate.setWordsPerUnlock(2);
       gate.dispose();
-      gate = AppGateProvider(repository: repo, now: () => now);
+      gate = AppGateProvider(repository: repo, now: () => now, hasPro: true);
       await gate.init();
       gate.beginChallengeRound(target);
       expect(gate.requiredWordsForApp(target), 2);
@@ -155,43 +251,149 @@ void main() {
     },
   );
 
-  test('pool reduction adjusts the free multiword rule', () async {
-    await gate.setWordsPerUnlock(4);
-    await gate.setPracticeWords(['w0', 'w1']);
-    expect(gate.requiredWords, 2);
-    expect(gate.config.wordsPerUnlock, 2);
-    expect(gate.poolNotice, contains('adjusted to 2'));
-  });
+  test(
+    'Free keeps a paid selection paused, and editing replaces it with one explicit word',
+    () async {
+      gate.setProAccess(true);
+      await gate.setPracticeWords(['w0', 'w1', 'w2', 'w3']);
+      gate.setProAccess(false);
+      expect(gate.requiredWords, 1);
+      expect(gate.pausedPracticeWordCount, 3);
+      expect(gate.config.wordsPerUnlock, 4);
+      await expectLater(
+        gate.setPracticeWords(['w0', 'w1']),
+        throwsA(isA<PlatformException>()),
+      );
+      await gate.setPracticeWords(['w3']);
+      expect(gate.practiceWords.single.id, 'w3');
+      expect(gate.config.wordsPerUnlock, 1);
+      expect(gate.pausedPracticeWordCount, 0);
+    },
+  );
 
   test(
-    'legacy selected pool retains its count and progress until save',
+    'downgrade with saved progress settles once and keeps learning records',
+    () async {
+      gate.setProAccess(true);
+      await gate.setWordsPerUnlock(3);
+      gate.beginChallengeRound(target);
+      await gate.recordStepCompletion(
+        wordId: 'w0',
+        targetApp: target,
+        attempts: 1,
+      );
+      await gate.recordStepCompletion(
+        wordId: 'w1',
+        targetApp: target,
+        attempts: 1,
+      );
+      gate.setProAccess(false);
+      expect(gate.requiredWordsForApp(target), 1);
+      await gate.completeGateChallenge(
+        wordId: 'w1',
+        targetApp: target,
+        attempts: 1,
+      );
+      expect(grants, 1);
+      expect(gate.progressForApp(target), 0);
+      expect(gate.config.wordsPerUnlock, 3);
+      expect((await repo.exportAll()).length, 4);
+    },
+  );
+  test(
+    'legacy four-word selection overrides the old one-word quota and requires all four',
     () async {
       await repo.saveGateConfig(
         const GateConfig(
           practiceWordIds: ['w0', 'w1', 'w2', 'w3'],
-          wordsPerUnlock: 2,
+          wordsPerUnlock: 1,
         ),
       );
-      await repo.recordGateCompletion(
-        wordId: 'w0',
+      gate.dispose();
+      gate = AppGateProvider(repository: repo, now: () => now, hasPro: true);
+      await gate.init();
+      expect(gate.requiredWords, 4);
+      expect(gate.config.wordsPerUnlock, 4);
+      await expectLater(
+        gate.completeGateChallenge(
+          wordId: 'w0',
+          targetApp: target,
+          attempts: 0,
+        ),
+        throwsA(isA<PlatformException>()),
+      );
+      expect(grants, 0);
+      expect(await repo.gateWordTurns(), isEmpty);
+      for (final id in ['w0', 'w1', 'w2']) {
+        await gate.recordStepCompletion(
+          wordId: id,
+          targetApp: target,
+          attempts: 0,
+        );
+        expect(grants, 0);
+      }
+      await gate.completeGateChallenge(
+        wordId: 'w3',
         targetApp: target,
         attempts: 0,
-        now: now,
-        completesRound: false,
       );
-      gate.dispose();
-      gate = AppGateProvider(repository: repo, now: () => now);
-      await gate.init();
+      expect(grants, 1);
+      expect((await repo.gateWordTurns()).keys.toSet(), {
+        'w0',
+        'w1',
+        'w2',
+        'w3',
+      });
+    },
+  );
 
-      expect(gate.practiceWordCount, 4);
+  test(
+    'new notebook words do not silently enlarge a selected challenge',
+    () async {
+      gate.setProAccess(true);
+      await gate.setPracticeWords(['w1', 'w3']);
+      await repo.insert(
+        VocabularyWord.create(
+          id: 'later',
+          word: 'later',
+          meaning: 'sau',
+          date: '2026-11-27',
+          now: now,
+        ),
+      );
+      await gate.prepareChallenge();
       expect(gate.requiredWords, 2);
-      expect(gate.usesExactUnlockWords, isFalse);
-      expect(gate.progressForApp(target), 1);
+      expect(gate.practiceWords.map((word) => word.id).toSet(), {'w1', 'w3'});
+      gate.dispose();
+      gate = AppGateProvider(repository: repo, now: () => now, hasPro: true);
+      await gate.init();
+      expect(gate.requiredWords, 2);
+      expect(gate.config.practiceWordIds, ['w1', 'w3']);
+    },
+  );
 
-      await gate.setPracticeWords(['w0', 'w1', 'w2', 'w3']);
-      expect(gate.requiredWords, 4);
-      expect(gate.usesExactUnlockWords, isTrue);
-      expect(gate.progressForApp(target), 1);
+  test(
+    'confirming the unchanged Free word preserves paused selection and unfinished answers across restart',
+    () async {
+      gate.setProAccess(true);
+      await gate.setPracticeWords(['w0', 'w1', 'w2']);
+      await gate.recordStepCompletion(
+        wordId: 'w1',
+        targetApp: target,
+        attempts: 1,
+      );
+      gate.setProAccess(false);
+      await gate.setPracticeWords(['w0']);
+      expect(gate.requiredWords, 1);
+      expect(gate.config.practiceWordIds, ['w0', 'w1', 'w2']);
+      expect(gate.pausedPracticeWordCount, 2);
+      expect((await repo.gateRoundProgress())[target], contains('w1'));
+      gate.dispose();
+      gate = AppGateProvider(repository: repo, now: () => now, hasPro: true);
+      await gate.init();
+      expect(gate.requiredWords, 3);
+      expect(gate.config.practiceWordIds, ['w0', 'w1', 'w2']);
+      expect(gate.solvedWordIdsForApp(target), contains('w1'));
     },
   );
 }

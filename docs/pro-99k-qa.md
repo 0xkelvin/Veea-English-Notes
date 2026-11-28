@@ -1,28 +1,40 @@
-# QA: free app protection and StoreKit-first educational Pro
+# QA: one free app/word and StoreKit-first one-time Pro
 
-Run on the signed TestFlight build and record the build, device, StoreKit
-environment, actual price, and outcome. The [TRD 11 matrix](trd/11-apple-pro-purchases.md#79-edge-case-and-acceptance-matrix)
-covers guest and signed-in StoreKit ownership and server isolation.
+Run on the exact signed TestFlight build. Record build, device, StoreKit
+environment, actual price and observed result. Use Sandbox with no real charge.
+[TRD 11](trd/11-apple-pro-purchases.md#79-edge-case-and-acceptance-matrix)
+retains the guest/signed-in ownership and server-isolation matrix.
 
-1. As a guest or Free user, protect multiple apps, configure multiple unlock
-   words and verify existing timers, shielding, removal and relocking. Refund
-   a Sandbox purchase and confirm that the locked apps and configuration stay.
-2. Start a one-word Practice Round from Home without authorizing Screen Time.
-   Include zero and one eligible word. Buy Pro as a guest, choose a multi-word
-   standalone round and verify the available-word bound.
-3. Cancel, defer via Ask to Buy, then accept. Verify guest restore, reinstall,
-   and device replacement on the same Apple Account. Confirm a different
-   Apple Account cannot restore that purchase.
-4. Sign in after a guest purchase and verify that device Pro remains, with
-   no account claim. For a separately purchased signed-in transaction verify
-   the matching authenticated claim, retry after termination and outage,
-   sign-out and account switching, and deletion followed by account recreation.
-5. Verify refund/reversal updates after StoreKit learns of the change, no restore
-   success from manual access alone, and TestFlight Sandbox creates no
-   Production account purchase row. Check rejected Family Shared and unverified
-   transactions using synthetic fixtures where Apple cannot supply the scenario.
+1. As a guest on Free, use notebook, dictionary, Listen, ordinary Review,
+   standalone multi-word Practice Rounds and custom lists without a purchase.
+2. Lock one app and select one unlock word. Replace either for free. Request
+   additional apps or words: offer Pro without changing saved settings. Custom
+   times, disabling protection, removal and account rights stay free.
+3. Cancel/defer a purchase: remain Free. Complete a verified guest purchase:
+   multiple app locks and multiple selected words become available immediately.
+   No Veea sign-in required. Four selected words require four distinct answers;
+   no independent word-count control. New notebook words do not join silently.
+4. Verify each app's timer, relock, interrupted challenge, preview and return flow.
+   Restore after reinstall/device replacement on the purchasing Apple Account;
+   a different Apple Account cannot restore it. Do not infer Screen Time behavior
+   from a simulator, unsigned build or fake platform channel.
+5. Veea sign-out/account deletion keeps the offline notebook and valid local
+   StoreKit Pro. Guest proofs never go to Go. Matching signed-in proofs retain
+   existing authenticated account-token checks; no account transfer.
+6. Refund/revoke and refresh StoreKit: Free activates one app/word, retaining
+   extra selections/settings and the retained Free app’s earned pass. Unknown purchase/server status
+   must not erase or destructively downgrade them. Upgrade again restores saved
+   words; paused app locks remain off until deliberately enabled. Confirm an
+   unchanged Free word keeps paused word progress, and switching the Free app
+   keeps paused app selections/custom times. An expired offline account lease
+   is unknown until a fresh server reply, never an automatic confirmed downgrade.
+7. TestFlight Sandbox acknowledgement creates no Production purchase row or
+   server Premium grant. Restore must not claim Apple lifetime ownership from a
+   manual grant alone. Exercise offline, outage, retry and account-switch races.
+   Family Shared/unverified transactions stay rejected (synthetic cases as needed).
 
-## Baselines
+## Latest main baseline, 28 November 2026
 
-The five macOS Flutter goldens and the version-6 migration-index assertion
-failed on clean `66f8dd2`. Keep results distinct from IAP or protection regressions.
+Before this correction, unchanged `87a0b37` ran 827 Flutter tests successfully,
+with 8 skips and two existing Home light/dark golden failures. Do not regenerate
+unrelated goldens to hide them. Host tests do not replace signed-device acceptance.
