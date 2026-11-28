@@ -86,6 +86,30 @@ void main() {
   }
 
   test(
+    'startup removes only the legacy purchase owner and can retry',
+    () async {
+      const key = 'auth.go.purchase-owner.v1';
+      final saved = await app.store.establish(tokens());
+      await app.store.saveReceipt(receipt().withValues({'state': 'expired'}));
+      await secure.write(key: 'unrelated', value: 'keep');
+      final expected = secure.values;
+      await secure.write(key: key, value: userB);
+
+      secure.failingDeleteKey = key;
+      await app.auth.restore();
+      expect(app.auth.accountId, saved.userId);
+      expect(secure.values[key], userB);
+
+      secure.failingDeleteKey = null;
+      await app.auth.restore();
+      await app.auth.restore();
+      expect(secure.values, expected);
+      expect((await app.store.readSession())?.generation, saved.generation);
+      expect(app.auth.deletionReceipt?.operationId, operation);
+    },
+  );
+
+  test(
     'Go user.id selects the notebook; email is never the cache key',
     () async {
       await word('guest');

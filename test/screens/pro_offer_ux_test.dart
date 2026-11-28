@@ -100,6 +100,7 @@ void main() {
         store.state = ProStoreState(
           hasPro: variant.paid,
           hasLifetime: variant.paid,
+          localApple: variant.paid,
           price: '99.000 ₫',
           transactions: variant.paid ? ['synthetic-layout-proof'] : const [],
         );
@@ -139,7 +140,7 @@ void main() {
           await tester.pumpAndSettle();
           expect(buy.hitTestable(), findsOneWidget);
           expect(tester.widget<FilledButton>(buy).onPressed, isNotNull);
-          expect(find.text('Get lifetime Pro · 99.000 ₫'), findsOneWidget);
+          expect(find.text('Get Pro · 99.000 ₫'), findsOneWidget);
         } else {
           expect(find.byKey(const Key('buy_pro')), findsNothing);
         }

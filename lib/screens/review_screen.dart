@@ -16,14 +16,21 @@ import '../widgets/pixel/pixel_button.dart';
 import '../widgets/pixel/pixel_icon.dart';
 import '../widgets/practice_word_picker.dart';
 import 'audio_commute_screen.dart';
+import 'pro_screen.dart' show practiceText;
 import 'word_editor_screen.dart';
 
 /// Spaced Repetition (SM-2) Flashcard Review Screen.
 class ReviewScreen extends StatefulWidget {
-  const ReviewScreen({super.key, this.practiceAll = false});
+  const ReviewScreen({super.key, this.practiceAll = false}) : roundWords = null;
+  const ReviewScreen.practiceRound({
+    super.key,
+    required List<VocabularyWord> words,
+  }) : roundWords = words,
+       practiceAll = false;
 
   /// If true, review recent words even if none are technically due yet.
   final bool practiceAll;
+  final List<VocabularyWord>? roundWords;
 
   @override
   State<ReviewScreen> createState() => _ReviewScreenState();
@@ -69,9 +76,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
     });
     try {
       final provider = context.read<VocabularyProvider>();
-      final words = widget.practiceAll
-          ? await provider.allWords(limit: 50)
-          : await provider.wordsDueForReview(limit: 20);
+      final words =
+          widget.roundWords ??
+          (widget.practiceAll
+              ? await provider.allWords(limit: 50)
+              : await provider.wordsDueForReview(limit: 20));
       if (!mounted) return;
       _startSession(words);
     } catch (_) {
@@ -347,7 +356,16 @@ class _ReviewScreenState extends State<ReviewScreen> {
                 ),
                 const SizedBox(width: PixelMetrics.space2),
                 Expanded(
-                  child: Text('Review', style: theme.textTheme.titleMedium),
+                  child: Text(
+                    widget.roundWords == null
+                        ? 'Review'
+                        : practiceText(
+                            context,
+                            'Practice Round',
+                            'Lượt luyện tập',
+                          ),
+                    style: theme.textTheme.titleMedium,
+                  ),
                 ),
                 const SizedBox(width: PixelMetrics.space2),
                 PixelIconButton(
@@ -383,7 +401,13 @@ class _ReviewScreenState extends State<ReviewScreen> {
                     runSpacing: 2,
                     children: [
                       Text(
-                        _selectionLabel ??
+                        (widget.roundWords == null
+                                ? _selectionLabel
+                                : practiceText(
+                                    context,
+                                    'Practice words',
+                                    'Từ luyện tập',
+                                  )) ??
                             (widget.practiceAll ? 'Recent words' : 'Due words'),
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: palette.inkMuted,
@@ -407,31 +431,34 @@ class _ReviewScreenState extends State<ReviewScreen> {
                       ],
                     ],
                   ),
-                  TextButton.icon(
-                    key: const Key('choose_review_words'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: palette.accent,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: PixelMetrics.space2,
-                        vertical: PixelMetrics.space1,
+                  if (widget.roundWords == null)
+                    TextButton.icon(
+                      key: const Key('choose_review_words'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: palette.accent,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: PixelMetrics.space2,
+                          vertical: PixelMetrics.space1,
+                        ),
+                        minimumSize: const Size(0, PixelMetrics.tapTarget),
+                        tapTargetSize: MaterialTapTargetSize.padded,
                       ),
-                      minimumSize: const Size(0, PixelMetrics.tapTarget),
-                      tapTargetSize: MaterialTapTargetSize.padded,
+                      onPressed:
+                          _isLoading ||
+                              _isSubmitting ||
+                              _isChoosingWords ||
+                              context
+                                      .watch<VocabularyProvider>()
+                                      .stats
+                                      .totalWords ==
+                                  0
+                          ? null
+                          : _chooseWords,
+                      icon: const Icon(Icons.checklist_rounded, size: 18),
+                      label: Text(
+                        _isChoosingWords ? 'Loading…' : 'Choose words',
+                      ),
                     ),
-                    onPressed:
-                        _isLoading ||
-                            _isSubmitting ||
-                            _isChoosingWords ||
-                            context
-                                    .watch<VocabularyProvider>()
-                                    .stats
-                                    .totalWords ==
-                                0
-                        ? null
-                        : _chooseWords,
-                    icon: const Icon(Icons.checklist_rounded, size: 18),
-                    label: Text(_isChoosingWords ? 'Loading…' : 'Choose words'),
-                  ),
                 ],
               ),
             ),

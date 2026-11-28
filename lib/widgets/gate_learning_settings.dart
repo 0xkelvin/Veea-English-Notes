@@ -2,12 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../core/config/app_config.dart';
 import '../providers/app_gate_provider.dart';
-import '../providers/auth_provider.dart';
-import '../providers/pro_provider.dart';
 import '../screens/app_gate_screen.dart';
-import '../screens/pro_screen.dart';
 import '../screens/selected_practice_words_screen.dart';
 import 'pixel/pixel_box.dart';
 import 'pixel/pixel_button.dart';
@@ -29,36 +25,6 @@ class GateLearningSettings extends StatefulWidget {
 
 class _GateLearningSettingsState extends State<GateLearningSettings> {
   bool _saving = false;
-
-  bool _hasProSupport(BuildContext context, {bool listen = false}) {
-    try {
-      if (listen) {
-        context.watch<ProProvider>();
-        context.watch<AuthProvider>();
-      } else {
-        context.read<ProProvider>();
-        context.read<AuthProvider>();
-      }
-      return true;
-    } on ProviderNotFoundException {
-      return false;
-    }
-  }
-
-  Future<void> _openProUpgrade(BuildContext context) async {
-    if (_hasProSupport(context)) {
-      await ProScreen.open(context);
-      return;
-    }
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Upgrade to Veea Pro to require multiple words per unlock. Upgrades are unavailable right now.',
-        ),
-      ),
-    );
-  }
 
   Future<void> _practice() async {
     setState(() => _saving = true);
@@ -98,10 +64,6 @@ class _GateLearningSettingsState extends State<GateLearningSettings> {
       await action();
     } on PlatformException catch (error) {
       if (!mounted) return;
-      if (error.code == 'PRO_REQUIRED' && !AppConfig.isFreeLaunch) {
-        await _openProUpgrade(context);
-        return;
-      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -133,8 +95,9 @@ class _GateLearningSettingsState extends State<GateLearningSettings> {
       final colors = theme.colorScheme;
       final words = widget.gate.practiceWords;
       final count = words.length;
-      final wordLabel = count == 1 ? 'word' : 'words';
-      final multiple = widget.gate.canUseMultipleWords;
+      final required = widget.gate.requiredWords;
+      final exact = widget.gate.usesExactUnlockWords;
+      final wordLabel = required == 1 ? 'word' : 'words';
       return PixelBox(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -145,7 +108,7 @@ class _GateLearningSettingsState extends State<GateLearningSettings> {
             Text(
               count == 0
                   ? 'Choose your first word'
-                  : 'Review $count $wordLabel to unlock',
+                  : 'Review $required $wordLabel to unlock',
               key: const Key('unlock_rule_summary'),
               style: theme.textTheme.headlineSmall,
             ),
@@ -153,7 +116,9 @@ class _GateLearningSettingsState extends State<GateLearningSettings> {
             Text(
               count == 0
                   ? 'Pick a word from your notebook to get started.'
-                  : 'Every unlock includes every word selected below.',
+                  : exact
+                  ? 'Every unlock includes every word selected below.'
+                  : 'Your existing practice rule still applies. Save a selection to review every selected word at each unlock.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: colors.onSurfaceVariant,
               ),
@@ -200,11 +165,7 @@ class _GateLearningSettingsState extends State<GateLearningSettings> {
                 onPressed: _saving || widget.totalWords == 0
                     ? null
                     : () => _save(() async {
-                        await choosePracticeWords(
-                          context,
-                          widget.gate,
-                          onUpgrade: () => _openProUpgrade(context),
-                        );
+                        await choosePracticeWords(context, widget.gate);
                       }),
                 icon: const Icon(Icons.edit_outlined),
                 label: Padding(
@@ -213,24 +174,6 @@ class _GateLearningSettingsState extends State<GateLearningSettings> {
                 ),
               ),
             ),
-            if (!multiple) ...[
-              const SizedBox(height: 12),
-              Text(
-                'Free includes 1 selected word. Choose more words with a one-time Pro upgrade.',
-                style: theme.textTheme.bodySmall,
-              ),
-              if (widget.gate.pausedPracticeWordCount > 0)
-                Text(
-                  '${widget.gate.pausedPracticeWordCount} more saved ${widget.gate.pausedPracticeWordCount == 1 ? 'word is' : 'words are'} paused on Free. Pro restores the full selection.',
-                  style: theme.textTheme.bodySmall,
-                ),
-              TextButton.icon(
-                key: const Key('upgrade_words_per_unlock'),
-                onPressed: _saving ? null : () => _openProUpgrade(context),
-                icon: const Icon(Icons.auto_awesome_outlined, size: 18),
-                label: const Text('Choose more words with Pro'),
-              ),
-            ],
             const Divider(height: 32),
             Material(
               type: MaterialType.transparency,
@@ -255,7 +198,9 @@ class _GateLearningSettingsState extends State<GateLearningSettings> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Preview this exact word list. Your learning progress stays unchanged.',
+              exact
+                  ? 'Preview this exact word list. Your learning progress stays unchanged.'
+                  : 'Preview your current challenge without changing your learning progress.',
               style: theme.textTheme.bodySmall,
             ),
             const SizedBox(height: 8),

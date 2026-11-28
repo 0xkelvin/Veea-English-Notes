@@ -208,41 +208,27 @@ See `docs/payment-environments.md`.
 Payments are disabled by default; never simulate paid success in production. Full purge removes
 Apple rows, export includes five retained proof periods, manual grants remain independent.
 
-## Current offer: one free app and word, one-time Pro (2026-11-26)
+## Current offer: free app protection and one-time educational Pro (2026-11-27)
 
-The owner explicitly replaced the 24 November free-first offer. Production
-`AppConfig.isFreeLaunch` and `NativeGateReleasePolicy.isFreeLaunch` are false.
-Free includes unlimited local vocabulary, dictionary, Listen, Review, custom
-lists, one app lock and one word per unlock. Owner UX update (27 November):
-selecting words is the only learning-rule control. Every unlock reviews every
-active selected word once; there is no separate count or rotating larger pool.
-Free selects one replaceable word. Pro selects multiple words and reviews all of
-them. New notebook words do not join automatically. A single non-consumable Pro
-purchase enables BOTH multiple app locks (existing 50-app safety limit) and
-multiple selected unlock words.
-The target Vietnam price is 99,000 VND once, with no trial or subscription; show
-only StoreKit's actual localized price. Never invent a price or paid success.
-All default/custom/per-app unlock durations, pronunciation, OFF and removal are
-free. Preserve verified purchase ownership, account/environment isolation,
-refund handling and offline ownership. Sign in before checkout/restore; free
-usage does not require sign-in. Notebook transport remains disabled.
+All Screen Time controls and unlock challenges are free, including up to 50 apps,
+all timings, the existing practice pool, and multiple words per unlock. Pro
+adds configurable multi-word standalone Practice Rounds from Home. All existing
+learning features and one-word standalone rounds are free.
 
-Saved extra apps are paused on Free without deleting their selections/times;
-the saved Pro word list remains intact while only its first word is active on Free.
-Explicitly editing Free selection replaces it with one word. Retain the legacy
-words_per_unlock column for compatibility, synchronized to the saved selection;
-never expose it as an independent user control.
-Restoring Pro does not silently re-enable paused locks; the user can turn them
-on again. Upgrading mid-challenge affects the next opening; closing releases
-the temporary target but retains saved answers. Downgrades immediately
-permit the one-word Free rule. Apple guideline 4.10 remains an unresolved review
-gate: educational positioning is not an exemption. Describe both paid benefits
-explicitly; do not hide them or claim Apple approval. See
-`docs/pro-99k-model.md` and `docs/app-store-submission.md`.
+Veea Pro Lifetime is the existing Apple non-consumable
+`com.nintran.veeaEnglishApp.pro` for `com.nintran.veeaEnglishApp`. Its Vietnam
+target is 99,000 VND once. Use the StoreKit localized price in checkout. Family
+Sharing is disabled and Server Notifications V2 is deferred.
+
+Use TRD 11 §7 Option A. StoreKit local entitlement works without a Veea account.
+Guest transactions carry no account token and are never claimed by Go. Signed-in
+purchases keep the existing account token and authenticated claim. Deletion purges
+the Veea account data and server proof while valid StoreKit ownership stays with
+the Apple Account. No linking or transfer. Refunds update local access when
+StoreKit learns of them. Free/Pro changes never alter protection settings.
 
 Account-only Go builds must not call retired config/feedback routes.
 `VEEA_FEEDBACK_DELIVERY_ENABLED` defaults off independently of the API URL.
-Feedback uses local drafts and explicit share/copy; a share handoff is not proof
-of receipt. Support email, public HTTPS privacy-policy URL and Zalo community
-must be real team-provided destinations, never invented. See
+Feedback uses local drafts and explicit share/copy. Support email, public HTTPS
+privacy URL and Zalo community must be real team-provided destinations. See
 `docs/app-store-submission.md` and `docs/account-feedback-rollout.md`.

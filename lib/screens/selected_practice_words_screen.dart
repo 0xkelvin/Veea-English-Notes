@@ -5,7 +5,7 @@ import '../core/theme/pixel_metrics.dart';
 import '../providers/app_gate_provider.dart';
 import '../widgets/practice_word_picker.dart';
 
-/// Shows the exact words required for each unlock without changing progress.
+/// Shows the saved unlock words without changing progress.
 class SelectedPracticeWordsScreen extends StatefulWidget {
   const SelectedPracticeWordsScreen({super.key, required this.gate});
   final AppGateProvider gate;
@@ -97,7 +97,7 @@ class _SelectedPracticeWordsScreenState
               child: Text(
                 MediaQuery.textScalerOf(context).scale(14) > 18
                     ? '${words.length} selected'
-                    : '${words.length} ${words.length == 1 ? 'word' : 'words'} per unlock',
+                    : '${words.length} ${words.length == 1 ? 'word' : 'words'} ${widget.gate.usesExactUnlockWords ? 'per unlock' : 'in practice'}',
                 key: const Key('selected_practice_word_count'),
               ),
             ),

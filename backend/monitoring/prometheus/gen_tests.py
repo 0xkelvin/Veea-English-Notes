@@ -181,6 +181,27 @@ tests = [
         + [s("email_send_total", f'{J},{I1},template="login_code",result="ambiguous"', "0x10 1x10 2x10 3x40")],
         [check("40m", "VeeaEmailDeliveryFailingLowVolume", firing("VeeaEmailDeliveryFailingLowVolume", **job))],
     ),
+    # --- Apple purchase verification -------------------------------------------------------
+    test(
+        "Apple upstream and invalid-proof spikes warn, then recover",
+        healthy() + [
+            s("apple_purchase_verification_total", f'{J},{I1},operation="reconcile",result="upstream_failed"', "0+1x10 10x60"),
+            s("apple_purchase_verification_total", f'{J},{I1},operation="claim",result="invalid_proof"', "0+2x10 20x60"),
+        ],
+        [check("4m", "VeeaApplePurchaseVerificationUpstreamFailing"),
+         check("12m", "VeeaApplePurchaseVerificationUpstreamFailing", firing("VeeaApplePurchaseVerificationUpstreamFailing", **job)),
+         check("12m", "VeeaApplePurchaseInvalidProofSpike", firing("VeeaApplePurchaseInvalidProofSpike", **job)),
+         check("30m", "VeeaApplePurchaseVerificationUpstreamFailing"),
+         check("30m", "VeeaApplePurchaseInvalidProofSpike")],
+    ),
+    test(
+        "auth failures, rate limits, cooldowns, cancellations and isolated upstream errors stay quiet",
+        healthy() + [
+            s("apple_purchase_verification_total", f'{J},{I1},operation="claim",result="{result}"', "0+5x70")
+            for result in ["authentication_failed", "rate_limited", "disabled", "reconcile_backoff", "request_canceled"]
+        ] + [s("apple_purchase_verification_total", f'{J},{I1},operation="claim",result="upstream_failed"', "0x10 1x60")],
+        none_at("20m", ["VeeaApplePurchaseVerificationUpstreamFailing", "VeeaApplePurchaseInvalidProofSpike"]),
+    ),
     # --- outbox -----------------------------------------------------------------------------
     test(
         "backlog of 20+ that keeps growing warns after 15m; a plateau clears it",

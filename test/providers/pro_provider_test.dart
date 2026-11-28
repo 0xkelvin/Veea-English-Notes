@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:veea_english_app/core/config/app_config.dart';
 import 'package:veea_english_app/data/pro_repository.dart';
@@ -45,10 +46,21 @@ class TestPro extends ProRepository {
   ProStoreState state = const ProStoreState();
   Map<String, Object?> plan = {
     'plan': 'free',
+    'plan_expires_at': null,
     'apple_purchase_available': true,
   };
-  Map<String, Object?> claimResult = {'plan': 'premium'};
+  Map<String, Object?> claimResult = {
+    'plan': 'premium',
+    'plan_expires_at': null,
+    'apple_purchase_available': true,
+    'purchase_environment': 'Production',
+    'purchase_recorded': true,
+    'purchase_revoked': false,
+  };
   ProStoreState? purchaseResult;
+  Future<ProStoreState>? pendingPurchase;
+  PlatformException? restoreError;
+  ApiException? entitlementError;
   void Function()? onPurchase;
   int configurations = 0;
   int purchased = 0, restored = 0, claims = 0, finished = 0;
@@ -59,6 +71,10 @@ class TestPro extends ProRepository {
   final Map<String, ApiException> claimErrors = {};
   final List<String> claimedIds = [];
   final List<String> finishedIds = [];
+  final List<String> localFinishedIds = [];
+  String? boundOwner;
+  String? configuredOwner;
+  int entitlementReads = 0;
   Completer<Map<String, Object?>>? waiting;
   @override
   void listen() {}
@@ -71,24 +87,36 @@ class TestPro extends ProRepository {
     bool loadProduct = true,
   }) async {
     configurations++;
+    configuredOwner = owner;
     lastServerUntil = serverUntil;
     lastClearServer = clearServer;
     lastServerLifetime = serverLifetime;
-    return owner == null
-        ? const ProStoreState()
-        : ProStoreState(
-            hasPro: state.hasPro || serverUntil != null,
-            hasLifetime: state.hasLifetime || serverLifetime == true,
-            price: state.price,
-            transactions: state.transactions,
-            pendingTransactions: state.pendingTransactions,
-            outcome: state.outcome,
-          );
+    final local = state.localApple || state.localSandbox;
+    final canClaim =
+        owner != null && (boundOwner == null || boundOwner == owner);
+    return ProStoreState(
+      hasPro: local || (owner != null && (state.hasPro || serverUntil != null)),
+      hasLifetime:
+          local ||
+          (owner != null && (state.hasLifetime || serverLifetime == true)),
+      localApple: state.localApple,
+      localSandbox: state.localSandbox,
+      serverApple: owner != null && serverLifetime == true,
+      manualPremium:
+          owner != null && serverUntil != null && serverLifetime != true,
+      localFinishTransactions: state.localFinishTransactions,
+      price: state.price,
+      transactions: canClaim ? state.transactions : const [],
+      pendingTransactions: canClaim ? state.pendingTransactions : const [],
+      outcome: state.outcome,
+    );
   }
 
   @override
   Future<Map<String, Object?>> entitlement(String owner) {
+    entitlementReads++;
     if (offline) throw const OfflineException();
+    if (entitlementError case final error?) throw error;
     return waiting?.future ?? Future.value(plan);
   }
 
@@ -96,12 +124,23 @@ class TestPro extends ProRepository {
   Future<ProStoreState> purchase() async {
     purchased++;
     onPurchase?.call();
+    if (pendingPurchase case final result?) return result;
     return purchaseResult ?? state;
   }
 
   @override
   Future<ProStoreState> restore() async {
     restored++;
+    if (restoreError case final error?) throw error;
+    if (boundOwner != null && boundOwner != configuredOwner) {
+      return ProStoreState(
+        hasPro: state.hasPro,
+        hasLifetime: state.hasLifetime,
+        localApple: state.localApple,
+        localSandbox: state.localSandbox,
+        price: state.price,
+      );
+    }
     return state;
   }
 
@@ -115,13 +154,30 @@ class TestPro extends ProRepository {
   }
 
   @override
-  Future<void> recordVerification(String id, {required bool revoked}) async {
+  Future<void> recordVerification(
+    String id, {
+    required bool revoked,
+    required bool recorded,
+  }) async {
     if (revoked) {
       state = ProStoreState(
         price: state.price,
         transactions: state.transactions,
       );
     }
+  }
+
+  @override
+  Future<void> finishLocal(String id) async {
+    localFinishedIds.add(id);
+    state = ProStoreState(
+      hasPro: state.hasPro,
+      hasLifetime: state.hasLifetime,
+      localApple: state.localApple,
+      localSandbox: state.localSandbox,
+      price: state.price,
+      transactions: state.transactions,
+    );
   }
 
   @override
@@ -163,6 +219,21 @@ void main() {
       expect(pro.hasPro, isFalse);
       expect(pro.hasLifetime, isFalse);
       expect(pro.message, contains('No purchase is needed'));
+      expect(
+        pro.localizedMessage(vietnamese: true),
+        'Phiên bản này miễn phí. Bạn không cần mua.',
+      );
+    },
+  );
+  test(
+    'unavailable checkout tells Vietnamese users that buying is unavailable',
+    () async {
+      await pro.purchase();
+      expect(repo.purchased, 0);
+      expect(
+        pro.localizedMessage(vietnamese: true),
+        'Phiên bản này hiện chưa hỗ trợ mua Pro.',
+      );
     },
   );
   test('free launch starts without a configured Apple product', () async {
@@ -207,6 +278,7 @@ void main() {
       };
       repo.claimResult = {
         'plan': 'free',
+        'plan_expires_at': null,
         'apple_purchase_available': true,
         'purchase_environment': 'Sandbox',
         'purchase_recorded': false,
@@ -234,6 +306,7 @@ void main() {
       );
       repo.claimResult = {
         'plan': 'free',
+        'plan_expires_at': null,
         'apple_purchase_available': true,
         'purchase_environment': 'Sandbox',
         'purchase_recorded': false,
@@ -245,7 +318,7 @@ void main() {
       expect(pro.hasLifetime, isTrue);
       expect(repo.lastServerUntil, isNull);
       expect(repo.lastClearServer, isTrue);
-      expect(pro.message, 'Pro restored.');
+      expect(pro.message, 'Pro restored on this device (Apple Sandbox).');
       // A later Production account read remains Free, without removing native
       // ownership that StoreKit supplies only in this test installation.
       await pro.refresh();
@@ -269,6 +342,7 @@ void main() {
       );
       repo.claimResult = {
         'plan': 'free',
+        'plan_expires_at': null,
         'apple_purchase_available': true,
         'purchase_environment': 'Sandbox',
         'purchase_recorded': false,
@@ -280,14 +354,112 @@ void main() {
       expect(repo.lastServerUntil, isNull);
     },
   );
-  test('signed out cannot buy or restore', () async {
-    await pro.purchase();
-    await pro.restore();
-    expect(repo.purchased, 0);
-    expect(repo.restored, 0);
-    expect(pro.hasPro, isFalse);
-    expect(pro.message, contains('Sign in'));
-  });
+  test(
+    'guest buys and restores through StoreKit without an account claim',
+    () async {
+      AppConfig.overrideBaseUrl('');
+      repo.state = const ProStoreState(price: '99.000 ₫');
+      repo.onPurchase = () {
+        repo.state = const ProStoreState(
+          hasPro: true,
+          hasLifetime: true,
+          localApple: true,
+          localFinishTransactions: ['guest'],
+        );
+      };
+      await pro.refresh();
+      expect(pro.canPurchase, isTrue);
+      await pro.purchase();
+      expect(pro.hasLocalApple, isTrue);
+      expect(repo.localFinishedIds, ['guest']);
+      expect(repo.finished, 0);
+      expect(repo.claims, 0);
+      expect(repo.entitlementReads, 0);
+      await pro.restore();
+      expect(repo.restored, 1);
+      expect(pro.message, 'Pro restored.');
+    },
+  );
+
+  test(
+    'sign-in after a guest purchase does not link it to the account',
+    () async {
+      repo.state = const ProStoreState(
+        hasPro: true,
+        hasLifetime: true,
+        localApple: true,
+      );
+      await pro.refresh();
+      auth.select('a');
+      await Future<void>.delayed(Duration.zero);
+      expect(pro.hasLocalApple, isTrue);
+      expect(pro.hasServerApple, isFalse);
+      expect(repo.claims, 0);
+    },
+  );
+
+  test(
+    'deletion, sign-out and account recreation retain local purchase without transferring the claim',
+    () async {
+      repo.boundOwner = 'original';
+      repo.state = const ProStoreState(
+        hasPro: true,
+        hasLifetime: true,
+        localApple: true,
+        transactions: ['bound'],
+      );
+      auth.select('original');
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.claims, 1);
+      auth.select(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(pro.hasLocalApple, isTrue);
+      expect(pro.hasServerApple, isFalse);
+      auth.select('recreated');
+      await Future<void>.delayed(Duration.zero);
+      await pro.restore();
+      expect(pro.hasLocalApple, isTrue);
+      expect(pro.hasServerApple, isFalse);
+      expect(repo.claims, 1);
+      expect(pro.message, 'Pro restored.');
+    },
+  );
+
+  test(
+    'matching unfinished claim recovers after provider restart and network recovery',
+    () async {
+      repo.boundOwner = 'a';
+      repo.state = const ProStoreState(price: '99.000 ₫');
+      repo.offline = true;
+      repo.onPurchase = () {
+        repo.state = const ProStoreState(
+          hasPro: true,
+          hasLifetime: true,
+          localApple: true,
+          transactions: ['bound'],
+          pendingTransactions: ['bound'],
+        );
+      };
+      auth.select('a');
+      await Future<void>.delayed(Duration.zero);
+      await pro.purchase();
+      expect(pro.hasLocalApple, isTrue);
+      expect(repo.claimedIds, ['bound']);
+      expect(repo.finishedIds, isEmpty);
+      expect(
+        pro.localizedMessage(vietnamese: true),
+        'Bạn có thể dùng Pro trên thiết bị này. Veea sẽ thử xác nhận giao dịch cho tài khoản của bạn khi có mạng.',
+      );
+      pro.dispose();
+      repo.offline = false;
+      pro = ProProvider(auth: auth, repository: repo);
+      await pro.refresh();
+      expect(repo.claimedIds, ['bound', 'bound']);
+      expect(repo.finishedIds, ['bound']);
+      expect(pro.hasLocalApple, isTrue);
+    },
+  );
+
   test(
     'a refused transaction does not block another owned transaction',
     () async {
@@ -317,7 +489,7 @@ void main() {
       repo.claimErrors['123'] = const ApiException(
         'Not accepted',
         statusCode: 409,
-        code: 'purchase_ownership',
+        code: 'purchase_ownership_conflict',
       );
       auth.select('a');
       await Future<void>.delayed(Duration.zero);
@@ -353,13 +525,175 @@ void main() {
       expect(pro.message, 'Pro restored.');
     },
   );
-  test('unknown outcome does not open the Apple payment sheet', () async {
-    repo.offline = true;
+  test('restore does not report a manual grant as an Apple purchase', () async {
+    repo.plan = {
+      'plan': 'premium',
+      'plan_expires_at': DateTime.now()
+          .add(const Duration(hours: 1))
+          .toIso8601String(),
+    };
     auth.select('a');
     await Future<void>.delayed(Duration.zero);
-    await pro.purchase();
-    expect(repo.purchased, 0);
-    expect(pro.hasPro, isFalse);
+    await pro.restore();
+    expect(pro.hasPro, isTrue);
+    expect(repo.claims, 0);
+    expect(pro.message, 'No Pro purchase found to restore.');
+  });
+
+  test('restore reports pending verification even with manual Pro', () async {
+    repo.plan = {
+      'plan': 'premium',
+      'plan_expires_at': DateTime.now()
+          .add(const Duration(hours: 1))
+          .toIso8601String(),
+      'purchase_verification_pending': true,
+    };
+    auth.select('a');
+    await Future<void>.delayed(Duration.zero);
+    await pro.restore();
+    expect(pro.hasPro, isTrue);
+    expect(repo.finished, 0);
+    expect(pro.message, contains('try restoring again later'));
+    expect(
+      pro.localizedMessage(vietnamese: true),
+      'Tạm thời không thể xác minh giao dịch. Vui lòng thử khôi phục lại sau.',
+    );
+  });
+
+  test('restore does not report a revoked purchase as restored', () async {
+    repo.state = const ProStoreState(hasPro: true, transactions: ['123']);
+    repo.claimResult = {
+      'plan': 'premium',
+      'plan_expires_at': DateTime.now()
+          .add(const Duration(hours: 1))
+          .toIso8601String(),
+      'purchase_environment': 'Production',
+      'purchase_recorded': true,
+      'purchase_revoked': true,
+    };
+    auth.select('a');
+    await Future<void>.delayed(Duration.zero);
+    await pro.restore();
+    expect(pro.hasPro, isTrue);
+    expect(repo.finishedIds, isNotEmpty);
+    expect(pro.message, contains('refunded or revoked'));
+  });
+
+  test(
+    'restore recognizes verified server lifetime without StoreKit IDs',
+    () async {
+      repo.plan = {
+        'plan': 'premium',
+        'plan_expires_at': null,
+        'apple_purchase_available': true,
+      };
+      auth.select('a');
+      await Future<void>.delayed(Duration.zero);
+      await pro.restore();
+      expect(repo.claims, 0);
+      expect(pro.hasLifetime, isTrue);
+      expect(pro.message, 'Pro restored.');
+    },
+  );
+
+  test(
+    'restore recognizes a Sandbox claim despite unrelated pending server proofs',
+    () async {
+      repo.state = const ProStoreState(
+        hasPro: true,
+        hasLifetime: true,
+        transactions: ['123'],
+      );
+      repo.claimResult = {
+        'plan': 'free',
+        'plan_expires_at': null,
+        'apple_purchase_available': true,
+        'purchase_environment': 'Sandbox',
+        'purchase_recorded': false,
+        'purchase_revoked': false,
+        'purchase_verification_pending': true,
+      };
+      auth.select('a');
+      await Future<void>.delayed(Duration.zero);
+      await pro.restore();
+      expect(repo.finishedIds, isNotEmpty);
+      expect(repo.lastClearServer, isFalse);
+      expect(repo.lastServerUntil, isNull);
+      expect(repo.lastServerLifetime, isNull);
+      expect(pro.hasLifetime, isTrue);
+      expect(pro.message, 'Pro restored on this device (Apple Sandbox).');
+    },
+  );
+
+  test(
+    'restore can confirm server lifetime when StoreKit sync fails',
+    () async {
+      repo.plan = {
+        'plan': 'premium',
+        'plan_expires_at': null,
+        'apple_purchase_available': true,
+      };
+      repo.restoreError = PlatformException(code: 'storekit_unavailable');
+      auth.select('a');
+      await Future<void>.delayed(Duration.zero);
+      await pro.restore();
+      expect(repo.claims, 0);
+      expect(pro.message, 'Pro restored.');
+    },
+  );
+
+  test(
+    'StoreKit sync failure without confirmed ownership cannot restore',
+    () async {
+      repo.restoreError = PlatformException(
+        code: 'storekit_unavailable',
+        message: 'StoreKit could not sync purchases.',
+      );
+      auth.select('a');
+      await Future<void>.delayed(Duration.zero);
+      await pro.restore();
+      expect(repo.restored, 1);
+      expect(repo.claims, 0);
+      expect(pro.hasPro, isFalse);
+      expect(pro.hasLifetime, isFalse);
+      expect(
+        pro.message,
+        'Apple could not restore your purchases. Please try again.',
+      );
+      expect(
+        pro.localizedMessage(vietnamese: true),
+        'Apple không thể khôi phục giao dịch của bạn. Vui lòng thử lại.',
+      );
+    },
+  );
+
+  test(
+    'restore reports ownership conflict and leaves the proof unfinished',
+    () async {
+      repo.state = const ProStoreState(transactions: ['123']);
+      repo.claimErrors['123'] = const ApiException(
+        'Conflict',
+        statusCode: 409,
+        code: 'purchase_ownership_conflict',
+      );
+      repo.entitlementError = const ApiException(
+        'Unavailable',
+        statusCode: 503,
+        code: 'purchase_unavailable',
+      );
+      auth.select('a');
+      await Future<void>.delayed(Duration.zero);
+      await pro.restore();
+      expect(repo.finished, 0);
+      expect(pro.message, contains('original purchase'));
+    },
+  );
+
+  test('restore reports no purchase for a verified Free plan', () async {
+    auth.select('a');
+    await Future<void>.delayed(Duration.zero);
+    await pro.restore();
+    expect(pro.message, 'No Pro purchase found to restore.');
   });
   test(
     'late response for previous account cannot unlock signed out user',
@@ -372,21 +706,25 @@ void main() {
       auth.select(null);
       await Future<void>.delayed(Duration.zero);
       expect(pro.hasPro, isFalse);
-      pending.complete({'plan': 'premium'});
+      pending.complete({'plan': 'premium', 'plan_expires_at': null});
       await Future<void>.delayed(Duration.zero);
       expect(pro.hasPro, isFalse);
       expect(repo.finished, 0);
     },
   );
-  test('restoring a different account never activates Pro', () async {
-    repo.state = const ProStoreState(outcome: 'account_mismatch');
-    auth.select('b');
-    await Future<void>.delayed(Duration.zero);
-    await pro.restore();
-    expect(pro.hasPro, isFalse);
-    expect(pro.message, contains('different Veea account'));
-    expect(repo.claims, 0);
-  });
+  test(
+    'a proof bound to another account cannot fabricate device access',
+    () async {
+      repo.boundOwner = 'a';
+      repo.state = const ProStoreState(transactions: ['bound']);
+      auth.select('b');
+      await Future<void>.delayed(Duration.zero);
+      await pro.restore();
+      expect(pro.hasPro, isFalse);
+      expect(pro.message, 'No Pro purchase found to restore.');
+      expect(repo.claims, 0);
+    },
+  );
   test(
     'restore waits behind sign-in refresh instead of disappearing',
     () async {
@@ -396,7 +734,7 @@ void main() {
       await pro.restore();
       expect(repo.restored, 0);
       repo.waiting = null;
-      pending.complete({'plan': 'free'});
+      pending.complete({'plan': 'free', 'plan_expires_at': null});
       await Future<void>.delayed(const Duration(milliseconds: 10));
       expect(repo.restored, 1);
       expect(pro.message, contains('No Pro purchase'));
@@ -477,6 +815,8 @@ void main() {
         'plan_expires_at': DateTime.now()
             .add(const Duration(days: 1))
             .toIso8601String(),
+        'purchase_environment': 'Production',
+        'purchase_recorded': true,
         'purchase_revoked': true,
       };
       auth.select('a');
@@ -500,7 +840,7 @@ void main() {
       );
       repo.onChange?.call();
       repo.waiting = null;
-      pending.complete({'plan': 'free'});
+      pending.complete({'plan': 'free', 'plan_expires_at': null});
       await Future<void>.delayed(const Duration(milliseconds: 10));
       expect(repo.claims, 1);
       expect(repo.finished, 1);
@@ -514,7 +854,7 @@ void main() {
     await pro.restore();
     repo.waiting = null;
     auth.select(null);
-    pending.complete({'plan': 'free'});
+    pending.complete({'plan': 'free', 'plan_expires_at': null});
     await Future<void>.delayed(const Duration(milliseconds: 10));
     expect(repo.restored, 0);
     expect(pro.hasPro, isFalse);
@@ -528,13 +868,13 @@ void main() {
     );
     auth.select('a');
     await Future<void>.delayed(Duration.zero);
-    repo.plan = {'plan': 'free'};
+    repo.plan = {'plan': 'free', 'plan_expires_at': null};
     await pro.purchase();
     expect(repo.purchased, 0);
     expect(pro.hasPro, isTrue);
   });
   test(
-    'checkout uncertainty still applies the independent manual grant',
+    'checkout can proceed locally while an independent manual grant is pending',
     () async {
       repo.state = const ProStoreState(price: '99.000 ₫');
       auth.select('a');
@@ -548,26 +888,21 @@ void main() {
         'purchase_verification_pending': true,
       };
       await pro.purchase();
-      expect(repo.purchased, 0);
+      expect(repo.purchased, 1);
       expect(pro.hasPro, isTrue);
-      expect(pro.message, contains('temporarily unavailable'));
       expect(repo.lastServerLifetime, isFalse);
       expect(pro.hasLifetime, isFalse);
     },
   );
-  test(
-    'backend disabled or older backend never opens a payment sheet',
-    () async {
-      repo.state = const ProStoreState(price: '99.000 ₫');
-      repo.plan = {'plan': 'free'};
-      auth.select('a');
-      await Future<void>.delayed(Duration.zero);
-      await pro.purchase();
-      expect(repo.purchased, 0);
-      expect(pro.purchasesReady, isFalse);
-      expect(pro.message, contains('not available yet'));
-    },
-  );
+  test('backend disabled leaves StoreKit checkout available', () async {
+    repo.state = const ProStoreState(price: '99.000 ₫');
+    repo.plan = {'plan': 'free', 'plan_expires_at': null};
+    auth.select('a');
+    await Future<void>.delayed(Duration.zero);
+    await pro.purchase();
+    expect(repo.purchased, 1);
+    expect(pro.purchasesReady, isFalse);
+  });
   test(
     'finite manual fallback cannot inherit uncertain lifetime metadata',
     () async {
@@ -587,17 +922,110 @@ void main() {
       expect(repo.lastServerLifetime, isFalse);
     },
   );
-  test('uncertain Free response cannot create a paid offline lease', () async {
+  test(
+    'unavailable owner verification cannot create a paid offline lease',
+    () async {
+      repo.state = const ProStoreState(price: '99.000 ₫');
+      auth.select('a');
+      await Future<void>.delayed(Duration.zero);
+      repo.entitlementError = const ApiException(
+        'Unavailable',
+        statusCode: 503,
+        code: 'purchase_unavailable',
+      );
+      await pro.purchase();
+      expect(pro.hasPro, isFalse);
+      expect(repo.purchased, 1);
+    },
+  );
+  test(
+    'refund outcomes are only shown for explicit purchase or restore',
+    () async {
+      const revoked = ProStoreState(price: '99.000 ₫', outcome: 'revoked');
+      repo.state = revoked;
+      await pro.refresh();
+      expect(pro.message, isNull);
+
+      await pro.restore();
+      expect(pro.message, contains('refunded or revoked'));
+      await pro.refresh();
+      expect(pro.message, isNull);
+
+      await pro.purchase();
+      expect(pro.message, contains('refunded or revoked'));
+      repo.state = const ProStoreState(
+        localApple: true,
+        hasLifetime: true,
+        hasPro: true,
+      );
+      await pro.refresh();
+      expect(pro.hasLifetime, isTrue);
+      expect(pro.message, isNull);
+    },
+  );
+
+  test('a late refund result cannot affect the next Veea account', () async {
     repo.state = const ProStoreState(price: '99.000 ₫');
     auth.select('a');
     await Future<void>.delayed(Duration.zero);
-    repo.plan = {
-      'plan': 'free',
-      'apple_purchase_available': true,
-      'purchase_verification_pending': true,
-    };
-    await pro.purchase();
-    expect(pro.hasPro, isFalse);
-    expect(repo.purchased, 0);
+    final result = Completer<ProStoreState>();
+    repo.pendingPurchase = result.future;
+    final purchase = pro.purchase();
+    await Future<void>.delayed(Duration.zero);
+    expect(repo.purchased, 1);
+
+    repo.state = const ProStoreState(price: 'new price');
+    auth.select('b');
+    await Future<void>.delayed(Duration.zero);
+    result.complete(
+      const ProStoreState(price: 'old price', outcome: 'revoked'),
+    );
+    await purchase;
+    expect(pro.price, 'new price');
+    expect(pro.message, isNull);
+  });
+
+  test(
+    'background reconciliation unavailability is quiet and preserves access',
+    () async {
+      auth.select('a');
+      await Future<void>.delayed(Duration.zero);
+      const unavailable = ApiException(
+        'Unavailable',
+        statusCode: 503,
+        code: 'purchase_unavailable',
+      );
+      repo.entitlementError = unavailable;
+      repo.state = const ProStoreState(hasPro: true, hasLifetime: true);
+      await pro.refresh();
+      expect(pro.message, isNull);
+      expect(pro.hasLifetime, isTrue);
+      expect(repo.lastClearServer, isFalse);
+
+      repo.state = const ProStoreState(
+        localApple: true,
+        transactions: ['bound'],
+      );
+      repo.claimErrors['bound'] = unavailable;
+      await pro.refresh();
+      expect(pro.message, isNull);
+      expect(pro.hasLocalApple, isTrue);
+      expect(repo.finishedIds, isEmpty);
+    },
+  );
+
+  test('explicit StoreKit refund feedback survives Go unavailability', () async {
+    auth.select('a');
+    await Future<void>.delayed(Duration.zero);
+    repo.state = const ProStoreState(outcome: 'revoked');
+    repo.entitlementError = const ApiException(
+      'Unavailable',
+      statusCode: 503,
+      code: 'purchase_unavailable',
+    );
+    await pro.restore();
+    expect(pro.message, contains('refunded or revoked'));
+    await pro.refresh();
+    expect(pro.message, isNull);
   });
 }

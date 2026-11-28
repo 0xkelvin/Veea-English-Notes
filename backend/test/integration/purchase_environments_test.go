@@ -4,6 +4,9 @@ package integration
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -95,6 +98,19 @@ func TestPurchases_SandboxAcknowledgementPreservesRealPurchaseAndManualGrant(t *
 	f.proof.OriginalID = "82001"
 	f.proof.RevokedAt = nil
 	wantProblem(t, e.myPlan(t, a.AccessToken), 400, "purchase_invalid")
+	r = e.post(t, applePurchasePath, purchaseBody("82001"), bearer(a.AccessToken)...)
+	wantPlan(t, r, "free", nil)
+	if r.body["purchase_verification_pending"] != true || r.body["purchase_recorded"] != false || r.body["purchase_revoked"] != false {
+		t.Fatal("pending stored proof masked the valid Sandbox acknowledgement", r.raw)
+	}
+	if rowCount(t, e.d.Pool, `SELECT count(*) FROM apple_pro_purchases WHERE user_id=$1 AND environment='Sandbox'`, u.ID) != 0 {
+		t.Fatal("pending account reconciliation persisted a Sandbox acknowledgement in Production")
+	}
+	rec := httptest.NewRecorder()
+	e.metrics.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if !strings.Contains(rec.Body.String(), `apple_purchase_verification_total{operation="claim",result="sandbox_acknowledged"} 8`+"\n") {
+		t.Fatal("Sandbox acknowledgements were not counted separately")
+	}
 	// Independent manual grants still work if real-purchase verification is uncertain.
 	_, admin := e.staff(t, "admin")
 	end := e.dbNow(t).Add(time.Hour)

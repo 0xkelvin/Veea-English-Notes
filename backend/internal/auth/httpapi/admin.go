@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -11,13 +13,16 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/admin"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/appleiap"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/session"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/entitlements"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity/accounts"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/db/sqlc"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/platform/httpx"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/purchases"
@@ -490,8 +495,27 @@ func (h *Handlers) writeMyEntitlements(w http.ResponseWriter, r *http.Request, p
 	var manualFallback *entitlements.Plan
 	if h.Purchases != nil && (purchase == nil || !purchase.Recorded) {
 		if err := h.Purchases.Reconcile(r.Context(), p); err != nil {
-			manual, manualErr := entitlements.ManualEffective(r.Context(), sqlc.New(h.Pool), p.UserID)
-			if manualErr != nil || manual.Name != entitlements.Premium {
+			result := purchaseResult(err)
+			if !h.Purchases.Available() && result == "upstream_failed" {
+				result = "disabled"
+			}
+			h.Metrics.ApplePurchaseVerification("reconcile", result)
+			if r.Context().Err() != nil {
+				return
+			}
+			if !errors.Is(err, appleiap.ErrUnavailable) && !errors.Is(err, appleiap.ErrInvalid) &&
+				!errors.Is(err, purchases.ErrOwnership) {
+				h.purchaseFailure(w, r, err)
+				return
+			}
+			manual, manualErr := h.revalidatedManualPlan(r.Context(), p)
+			if manualErr != nil {
+				h.purchaseFailure(w, r, manualErr)
+				return
+			}
+			// A Sandbox acknowledgement already confirmed the requested proof,
+			// independently of any stored account proofs.
+			if purchase == nil && manual.Name != entitlements.Premium {
 				h.purchaseFailure(w, r, err)
 				return
 			}
@@ -499,13 +523,16 @@ func (h *Handlers) writeMyEntitlements(w http.ResponseWriter, r *http.Request, p
 			verificationPending = true
 		}
 	}
-	plan, err := entitlements.Effective(r.Context(), sqlc.New(h.Pool), p.UserID)
-	if err != nil {
-		h.fail(w, r, err)
-		return
-	}
+	var plan entitlements.Plan
 	if manualFallback != nil {
 		plan = *manualFallback
+	} else {
+		var err error
+		plan, err = entitlements.Effective(r.Context(), sqlc.New(h.Pool), p.UserID)
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
 	}
 	var revoked, recorded *bool
 	var environment string
@@ -523,4 +550,25 @@ func (h *Handlers) writeMyEntitlements(w http.ResponseWriter, r *http.Request, p
 		Limits                      entitlements.Limits `json:"limits"`
 		CheckedAt                   time.Time           `json:"checked_at"`
 	}{environment, recorded, h.Purchases.Available(), verificationPending, revoked, plan.Name, plan.ExpiresAt, entitlements.LimitsFor(plan.Name), plan.CheckedAt})
+}
+
+func (h *Handlers) revalidatedManualPlan(ctx context.Context, p session.Principal) (entitlements.Plan, error) {
+	var plan entitlements.Plan
+	err := (db.Tx{Pool: h.Pool}).Run(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		user, ok, err := accounts.LockForNoKeyUpdate(ctx, tx, p.UserID)
+		if err != nil {
+			return err
+		}
+		if !ok || !accounts.InGoodStanding(user) {
+			return session.ErrUnauthorized
+		}
+		if _, ok, err := session.LockActing(ctx, tx, p.UserID, p.SessionID); err != nil {
+			return err
+		} else if !ok {
+			return session.ErrUnauthorized
+		}
+		plan, err = entitlements.ManualEffective(ctx, sqlc.New(tx), p.UserID)
+		return err
+	})
+	return plan, err
 }

@@ -5,10 +5,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/netip"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -192,13 +194,24 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 
 	if enabled := get("VEEA_APPLE_IAP_ENABLED", "false"); enabled == "true" {
 		cfg.AppleEnvironment = get("VEEA_APPLE_IAP_ENVIRONMENT", "")
+		privateKey := get("VEEA_APPLE_IAP_PRIVATE_KEY", "")
+		if keyFile := get("VEEA_APPLE_IAP_PRIVATE_KEY_FILE", ""); keyFile != "" {
+			if privateKey != "" {
+				errs = append(errs, errors.New("set only one of VEEA_APPLE_IAP_PRIVATE_KEY and VEEA_APPLE_IAP_PRIVATE_KEY_FILE"))
+			} else if pem, err := readApplePrivateKey(keyFile); err != nil {
+				errs = append(errs, err)
+			} else {
+				privateKey = pem
+			}
+		}
 		verifier, err := appleiap.New(appleiap.Config{
 			IssuerID: get("VEEA_APPLE_IAP_ISSUER_ID", ""), KeyID: get("VEEA_APPLE_IAP_KEY_ID", ""),
-			PrivateKey: get("VEEA_APPLE_IAP_PRIVATE_KEY", ""), BundleID: get("VEEA_APPLE_IAP_BUNDLE_ID", ""),
+			PrivateKey: privateKey, BundleID: get("VEEA_APPLE_IAP_BUNDLE_ID", ""),
 			AllowSandbox: cfg.AppleAllowSandbox, Environment: cfg.AppleEnvironment, ProductIDs: strings.Split(get("VEEA_APPLE_IAP_PRODUCT_IDS", ""), ","),
 		})
 		if err != nil {
-			errs = append(errs, errors.New("Apple IAP configuration is incomplete or invalid"))
+			// appleiap.New returns fixed messages naming the failed field, never its value.
+			errs = append(errs, fmt.Errorf("Apple IAP configuration is incomplete or invalid:\n%w", err))
 		} else {
 			cfg.AppleVerifier = verifier
 		}
@@ -209,6 +222,35 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		return Config{}, errors.Join(errs...)
 	}
 	return cfg, nil
+}
+
+const maxApplePrivateKeyFileBytes = 16 << 10
+
+func readApplePrivateKey(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", errors.New("VEEA_APPLE_IAP_PRIVATE_KEY_FILE could not be read")
+	}
+	if !info.Mode().IsRegular() {
+		return "", errors.New("VEEA_APPLE_IAP_PRIVATE_KEY_FILE must be a regular file")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", errors.New("VEEA_APPLE_IAP_PRIVATE_KEY_FILE could not be read")
+	}
+	defer file.Close()
+	info, err = file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return "", errors.New("VEEA_APPLE_IAP_PRIVATE_KEY_FILE must be a regular file")
+	}
+	pem, err := io.ReadAll(io.LimitReader(file, maxApplePrivateKeyFileBytes+1))
+	if err != nil {
+		return "", errors.New("VEEA_APPLE_IAP_PRIVATE_KEY_FILE could not be read")
+	}
+	if len(pem) > maxApplePrivateKeyFileBytes {
+		return "", errors.New("VEEA_APPLE_IAP_PRIVATE_KEY_FILE exceeds 16 KiB")
+	}
+	return string(pem), nil
 }
 
 // validateMetricsAddr requires host:port with an IP address, localhost or an empty host (all

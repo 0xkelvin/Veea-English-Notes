@@ -108,8 +108,7 @@ Future<void> main() async {
       auth: auth,
       repository: ProRepository(client: apiClient),
     );
-    // Resolve the device's verified entitlement before any challenge can grant
-    // access. This uses cached StoreKit data and does not wait on the account API.
+    // Restore device educational Pro from StoreKit without waiting on the account API.
     await pro.initializeDevice();
     final themeProvider = ThemeProvider();
     await themeProvider.init();
@@ -117,10 +116,7 @@ Future<void> main() async {
     final widgetProvider = WidgetProvider();
     await widgetProvider.init();
 
-    final appGateProvider = AppGateProvider(
-      repository: repository,
-      hasPro: pro.hasPro,
-    );
+    final appGateProvider = AppGateProvider(repository: repository);
     await appGateProvider.init();
 
     runApp(
@@ -230,13 +226,6 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
   String? _lastAccount;
   int _accountViewVersion = 0;
   Timer? _syncDebounce;
-
-  void _proChanged() {
-    if (mounted) {
-      _appGateProvider.setProAccess(widget.pro?.hasPro ?? false);
-      unawaited(_appGateProvider.refreshNativeScreenTime());
-    }
-  }
 
   void _authChanged() {
     final owner = widget.auth.accountId;
@@ -352,10 +341,6 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
         widget.appGateProvider ??
         (AppGateProvider(repository: widget.vocabulary.repository)..init());
     _lastAccount = widget.auth.accountId;
-    if (widget.pro case final pro?) {
-      _appGateProvider.setProAccess(pro.hasPro);
-    }
-    widget.pro?.addListener(_proChanged);
     unawaited(widget.pro?.refresh() ?? Future.value());
     widget.auth.addListener(_authChanged);
     widget.vocabulary.addListener(_wordsChanged);
@@ -442,7 +427,6 @@ class _VeeaEnglishAppState extends State<VeeaEnglishApp> {
     _friendChallengeService.dispose();
     _lifecycleListener.dispose();
     _ttsService.dispose();
-    widget.pro?.removeListener(_proChanged);
     widget.pro?.dispose();
     super.dispose();
   }

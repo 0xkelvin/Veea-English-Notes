@@ -23,13 +23,29 @@ expect(!ProPurchasePolicy.canCommitOwnershipScan(startedIn: nil, currentInstalla
 
 let owner = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
 let otherOwner = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
-expect(!ProPurchasePolicy.planReady(owner: owner, installation: nil, hasOwnership: false, hasLease: false, serverPlanKnown: false), "Initial unresolved account paused paid locks as Free")
-expect(!ProPurchasePolicy.planReady(owner: owner, installation: "Production", hasOwnership: false, hasLease: false, serverPlanKnown: false), "Verified app download was mistaken for a verified account plan")
-expect(ProPurchasePolicy.planReady(owner: owner, installation: nil, hasOwnership: true, hasLease: false, serverPlanKnown: false), "Offline StoreKit owner could not reconcile its plan")
-expect(ProPurchasePolicy.planReady(owner: owner, installation: nil, hasOwnership: false, hasLease: true, serverPlanKnown: false), "Fresh server-only Pro grant could not reconcile its plan")
-expect(ProPurchasePolicy.planReady(owner: owner, installation: nil, hasOwnership: false, hasLease: false, serverPlanKnown: true), "Authoritative Free reply could not pause extra locks")
-expect(ProPurchasePolicy.planReady(owner: nil, installation: nil, hasOwnership: false, hasLease: false, serverPlanKnown: false), "Signed-out Free plan never settled")
-expect(ProPurchasePolicy.planReady(owner: owner, installation: "Xcode", hasOwnership: false, hasLease: false, serverPlanKnown: false), "Unsupported release installation never settled")
+expect(!ProPurchasePolicy.canClaim(owner: nil, token: nil), "Guest purchase became claimable")
+expect(!ProPurchasePolicy.canClaim(owner: owner, token: nil), "Sign-in linked a guest purchase")
+expect(!ProPurchasePolicy.canClaim(owner: nil, token: owner), "Signed-out ownership authorized a claim")
+expect(!ProPurchasePolicy.canClaim(owner: otherOwner, token: owner), "Recreated account claimed the old token")
+expect(ProPurchasePolicy.canClaim(owner: owner, token: owner), "Matching proof cannot recover a claim")
+let sku = ProPurchasePolicy.productID
+func accepts(verified: Bool = true, product: String = sku, configured: String = sku,
+             nonConsumable: Bool = true, purchased: Bool = true, upgraded: Bool = false,
+             environment: String = "Production") -> Bool {
+  ProPurchasePolicy.acceptsProduct(verified: verified, productID: product,
+    configuredProductID: configured, nonConsumable: nonConsumable, purchased: purchased,
+    upgraded: upgraded, installation: nil, transaction: environment)
+}
+expect(accepts() && accepts(environment: "Sandbox"), "Verified anonymous device ownership rejected")
+expect(!accepts(verified: false) && !accepts(purchased: false) && !accepts(nonConsumable: false), "Invalid or Family Shared proof unlocked")
+expect(!accepts(product: "other") && !accepts(configured: "other") && !accepts(upgraded: true) && !accepts(environment: "Xcode"), "Unrelated product, upgrade, or Xcode proof unlocked")
+let refundedAt = Date(timeIntervalSince1970: 100)
+expect(!ProPurchasePolicy.isActive(revoked: true, signedAt: refundedAt, deniedAt: nil), "Revoked proof unlocked")
+expect(!ProPurchasePolicy.isActive(revoked: false, signedAt: refundedAt, deniedAt: refundedAt), "Stale proof reversed refund")
+expect(ProPurchasePolicy.isActive(revoked: false, signedAt: refundedAt.addingTimeInterval(1), deniedAt: refundedAt), "New verified proof could not reflect refund reversal")
+expect(ProPurchasePolicy.refundOutcome(hasActivePurchase: false, observedRevocation: true) == "revoked", "Explicit refund feedback was lost")
+expect(ProPurchasePolicy.refundOutcome(hasActivePurchase: false) == nil, "Ordinary entitlement state repeated a historical refund")
+expect(ProPurchasePolicy.refundOutcome(hasActivePurchase: true, observedRevocation: true) == nil, "A refund hid active or reversed ownership")
 let sandbox = ProPurchasePolicy.namespace(environment: "Sandbox", owner: owner, productID: "app.veea.pro", apiOrigin: "https://accounts.example.test")!
 let production = ProPurchasePolicy.namespace(environment: "Production", owner: owner, productID: "app.veea.pro", apiOrigin: "https://accounts.example.test")!
 expect(sandbox != production, "Sandbox cache leaked into Production")

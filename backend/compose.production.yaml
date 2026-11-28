@@ -6,9 +6,9 @@ x-backend: &backend
     context: .
     dockerfile: Dockerfile
   read_only: true
-  tmpfs: [/tmp]
-  cap_drop: [ALL]
-  security_opt: [no-new-privileges:true]
+  tmpfs: [ /tmp ]
+  cap_drop: [ ALL ]
+  security_opt: [ no-new-privileges:true ]
   logging:
     driver: local
     options:
@@ -29,19 +29,19 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./ops/production/init-roles.sql:/docker-entrypoint-initdb.d/01-roles.sql:ro
     healthcheck:
-      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U postgres -d veea']
+      test: [ CMD-SHELL, 'pg_isready -h 127.0.0.1 -U postgres -d veea' ]
       interval: 3s
       timeout: 3s
       retries: 40
   migrate:
     <<: *backend
-    entrypoint: [/app/bin/migrate]
-    command: [up]
+    entrypoint: [ /app/bin/migrate ]
+    command: [ up ]
     restart: "no"
     environment:
       VEEA_DATABASE_URL: postgres://veea_migrator:${VEEA_PROD_MIGRATION_PASSWORD:?Set migration password}@postgres:5432/veea?sslmode=disable
     depends_on:
-      postgres: {condition: service_healthy}
+      postgres: { condition: service_healthy }
   permissions:
     image: postgres:17-alpine
     user: postgres
@@ -53,13 +53,13 @@ services:
       PGPASSWORD: ${VEEA_PROD_MIGRATION_PASSWORD:?Set migration password}
     volumes:
       - ./ops/production/grants.sql:/ops/grants.sql:ro
-    entrypoint: [psql, -X, -v, ON_ERROR_STOP=1, -f, /ops/grants.sql]
+    entrypoint: [ psql, -X, -v, ON_ERROR_STOP=1, -f, /ops/grants.sql ]
     depends_on:
-      migrate: {condition: service_completed_successfully}
+      migrate: { condition: service_completed_successfully }
   api:
     <<: *backend
     restart: unless-stopped
-    command: [/app/bin/api]
+    command: [ /app/bin/api ]
     environment:
       VEEA_DATABASE_URL: postgres://veea_api:${VEEA_PROD_API_PASSWORD:?Set API database password}@postgres:5432/veea?sslmode=disable
       VEEA_MAINTENANCE_DATABASE_URL: postgres://veea_maintenance:${VEEA_PROD_MAINTENANCE_PASSWORD:?Set maintenance password}@postgres:5432/veea?sslmode=disable
@@ -77,6 +77,7 @@ services:
       VEEA_APPLE_IAP_ISSUER_ID: ${VEEA_APPLE_IAP_ISSUER_ID:-}
       VEEA_APPLE_IAP_KEY_ID: ${VEEA_APPLE_IAP_KEY_ID:-}
       VEEA_APPLE_IAP_PRIVATE_KEY: ${VEEA_APPLE_IAP_PRIVATE_KEY:-}
+      VEEA_APPLE_IAP_PRIVATE_KEY_FILE: ${VEEA_APPLE_IAP_PRIVATE_KEY_FILE:-}
       VEEA_APPLE_IAP_BUNDLE_ID: ${VEEA_APPLE_IAP_BUNDLE_ID:-}
       VEEA_APPLE_IAP_PRODUCT_IDS: ${VEEA_APPLE_IAP_PRODUCT_IDS:-}
       VEEA_TRUSTED_PROXIES: ${VEEA_TRUSTED_PROXIES:-}
@@ -89,11 +90,11 @@ services:
         aliases:
           - veea-production-api
     depends_on:
-      postgres: {condition: service_healthy}
-      permissions: {condition: service_completed_successfully}
+      postgres: { condition: service_healthy }
+      permissions: { condition: service_completed_successfully }
     stop_grace_period: 45s
     healthcheck:
-      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:18386/readyz]
+      test: [ CMD, wget, -q, -O, /dev/null, http://127.0.0.1:18386/readyz ]
       interval: 3s
       timeout: 3s
       retries: 30

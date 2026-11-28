@@ -11,9 +11,8 @@ import 'package:flutter/foundation.dart';
 class AppConfig {
   AppConfig._();
 
-  // Owner decision 2026-11-26: Free includes one app and one word per unlock;
-  // verified one-time Pro adds multiple apps and words. Timers stay free.
-  // The override retains compatibility tests for the earlier free-first build.
+  // The paid release offers standalone educational Pro. This test override
+  // suppresses checkout while keeping previously owned purchases restorable.
   static bool? _freeLaunchOverride;
   static bool get isFreeLaunch => _freeLaunchOverride ?? false;
   @visibleForTesting
