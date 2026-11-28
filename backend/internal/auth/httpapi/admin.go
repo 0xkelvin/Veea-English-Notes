@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -14,6 +15,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/admin"
+	"github.com/0xkelvin/Veea-English-Notes/backend/internal/appleiap"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/auth/session"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/entitlements"
 	"github.com/0xkelvin/Veea-English-Notes/backend/internal/identity"
@@ -490,8 +492,20 @@ func (h *Handlers) writeMyEntitlements(w http.ResponseWriter, r *http.Request, p
 	var manualFallback *entitlements.Plan
 	if h.Purchases != nil && (purchase == nil || !purchase.Recorded) {
 		if err := h.Purchases.Reconcile(r.Context(), p); err != nil {
+			result := purchaseResult(err)
+			if !h.Purchases.Available() && result == "upstream_failed" {
+				result = "disabled"
+			}
+			h.Metrics.ApplePurchaseVerification("reconcile", result)
+			if r.Context().Err() != nil {
+				return
+			}
 			manual, manualErr := entitlements.ManualEffective(r.Context(), sqlc.New(h.Pool), p.UserID)
-			if manualErr != nil || manual.Name != entitlements.Premium {
+			// A Sandbox acknowledgement already confirmed the requested proof.
+			// Stored account proofs reconcile independently of that acknowledgement.
+			acknowledged := purchase != nil && (errors.Is(err, appleiap.ErrUnavailable) ||
+				errors.Is(err, appleiap.ErrInvalid) || errors.Is(err, purchases.ErrOwnership))
+			if manualErr != nil || (!acknowledged && manual.Name != entitlements.Premium) {
 				h.purchaseFailure(w, r, err)
 				return
 			}
@@ -499,13 +513,16 @@ func (h *Handlers) writeMyEntitlements(w http.ResponseWriter, r *http.Request, p
 			verificationPending = true
 		}
 	}
-	plan, err := entitlements.Effective(r.Context(), sqlc.New(h.Pool), p.UserID)
-	if err != nil {
-		h.fail(w, r, err)
-		return
-	}
+	var plan entitlements.Plan
 	if manualFallback != nil {
 		plan = *manualFallback
+	} else {
+		var err error
+		plan, err = entitlements.Effective(r.Context(), sqlc.New(h.Pool), p.UserID)
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
 	}
 	var revoked, recorded *bool
 	var environment string

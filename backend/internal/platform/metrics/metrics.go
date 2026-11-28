@@ -46,6 +46,7 @@ type Metrics struct {
 	learningItems   *prometheus.CounterVec
 	learningReset   *prometheus.CounterVec
 	adminActions    *prometheus.CounterVec
+	applePurchases  *prometheus.CounterVec
 }
 
 // New registers every TRD 11.3 metric plus the Go runtime and process collectors.
@@ -102,8 +103,35 @@ func New() *Metrics {
 	m.adminActions = f(prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "admin_actions_total", Help: "Admin API requests that reached their transaction, by action and result (TRD 06)."},
 		[]string{"action", "result"})).(*prometheus.CounterVec)
+	m.applePurchases = f(prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "apple_purchase_verification_total", Help: "Purchase claim outcomes and owner reconciliation failures, by operation and result."},
+		[]string{"operation", "result"})).(*prometheus.CounterVec)
+	for _, operation := range []string{"claim", "reconcile"} {
+		for _, result := range applePurchaseResults {
+			m.applePurchases.WithLabelValues(operation, result)
+		}
+	}
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	return m
+}
+
+var applePurchaseResults = [...]string{
+	"production_recorded", "sandbox_recorded", "sandbox_acknowledged",
+	"authentication_failed", "rate_limited", "upstream_failed", "reconcile_backoff", "request_canceled",
+	"invalid_proof", "invalid_request", "ownership_conflict", "disabled", "internal_error",
+}
+
+// ApplePurchaseVerification accepts only fixed operation and result labels.
+func (m *Metrics) ApplePurchaseVerification(operation, result string) {
+	if m == nil || (operation != "claim" && operation != "reconcile") {
+		return
+	}
+	for _, allowed := range applePurchaseResults {
+		if result == allowed {
+			m.applePurchases.WithLabelValues(operation, result).Inc()
+			return
+		}
+	}
 }
 
 // Handler serves the registry in the Prometheus text format.

@@ -120,8 +120,20 @@ check: fmt vet test ## Everything that needs no database or network
 # Production is a separate file/project/env: no Mailpit, no local-key generator, no wipe target.
 PROD_PROJECT_NAME ?= veea-production
 PROD_ENV_FILE ?= .env.production
+PROD_INGRESS ?= camera
+PROD_IAP_DOCKER_SECRET ?= false
 PROD_ENV_PATH = $(if $(filter /%,$(PROD_ENV_FILE)),$(PROD_ENV_FILE),$(BACKEND_DIR)/$(PROD_ENV_FILE))
-PROD_COMPOSE = docker compose --project-directory "$(BACKEND_DIR)" --env-file "$(PROD_ENV_PATH)" -p "$(PROD_PROJECT_NAME)" -f "$(BACKEND_DIR)/compose.production.yaml"
+ifeq ($(PROD_INGRESS),camera)
+PROD_INGRESS_OVERLAY = -f "$(BACKEND_DIR)/compose.production-camera.yaml"
+else ifneq ($(PROD_INGRESS),host)
+PROD_INGRESS_OVERLAY = $(error PROD_INGRESS must be camera or host)
+endif
+ifeq ($(PROD_IAP_DOCKER_SECRET),true)
+PROD_SECRET_OVERLAY = -f "$(BACKEND_DIR)/compose.iap-secret.yaml"
+else ifneq ($(PROD_IAP_DOCKER_SECRET),false)
+PROD_SECRET_OVERLAY = $(error PROD_IAP_DOCKER_SECRET must be true or false)
+endif
+PROD_COMPOSE = docker compose --project-directory "$(BACKEND_DIR)" --env-file "$(PROD_ENV_PATH)" -p "$(PROD_PROJECT_NAME)" -f "$(BACKEND_DIR)/compose.production.yaml" $(PROD_INGRESS_OVERLAY) $(PROD_SECRET_OVERLAY)
 .PHONY: backend-prod-config backend-prod-build backend-prod-up backend-prod-down backend-prod-logs backend-prod-ps backend-prod-migrate-status backend-prod-health
 
 backend-prod-config: ## Validate production settings without printing secrets

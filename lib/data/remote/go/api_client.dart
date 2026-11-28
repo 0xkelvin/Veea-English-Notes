@@ -62,10 +62,8 @@ class GoApiClient extends ApiClient {
     }
   }
 
-  bool lastExpiryWasUnknown = false;
-  Future<Never> _expire(GoSession expected, {bool unknown = false}) async {
+  Future<Never> _expire(GoSession expected) async {
     if (await store.clearIf(expected.generation)) {
-      lastExpiryWasUnknown = unknown;
       onSessionExpired?.call();
     }
     throw const FreshSignInRequired();
@@ -115,7 +113,7 @@ class GoApiClient extends ApiClient {
           .timeout(_timeout);
     } on Exception {
       await store.refuseRefresh(expected, unknown: true);
-      return _expire(expected, unknown: true);
+      return _expire(expected);
     }
     await _same(expected);
     if (response.statusCode == 429 ||
@@ -127,7 +125,7 @@ class GoApiClient extends ApiClient {
     }
     if (response.statusCode != 200) {
       await store.refuseRefresh(expected, unknown: response.statusCode != 401);
-      return _expire(expected, unknown: response.statusCode != 401);
+      return _expire(expected);
     }
     try {
       final body = decode(response);
@@ -144,10 +142,10 @@ class GoApiClient extends ApiClient {
       rethrow;
     } on ApiException {
       await store.refuseRefresh(expected, unknown: true);
-      return _expire(expected, unknown: true);
+      return _expire(expected);
     } on Exception {
       await store.refuseRefresh(expected, unknown: true);
-      return _expire(expected, unknown: true);
+      return _expire(expected);
     }
   }
 
@@ -229,6 +227,9 @@ class GoApiClient extends ApiClient {
     'invalid_code': 'The code is invalid or expired.',
     'code_attempts_exceeded': 'Too many code attempts. Request a new code.',
     'rate_limited': 'Too many attempts. Please wait and try again.',
+    'purchase_ownership_conflict': 'This purchase belongs to another account.',
+    'purchase_invalid': 'Apple purchase verification was not accepted.',
+    'purchase_unavailable': 'Purchase verification is temporarily unavailable.',
     'invalid_email': 'Enter a valid email address.',
     'password_policy_violation': 'Use a stronger password (12–128 characters).',
     'signup_unavailable': 'This signup cannot complete. Try signing in.',

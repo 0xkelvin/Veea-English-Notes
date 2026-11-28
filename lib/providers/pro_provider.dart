@@ -5,7 +5,6 @@ import '../core/config/app_config.dart';
 import '../data/pro_repository.dart';
 import '../data/remote/api_client.dart';
 import 'auth_provider.dart';
-import 'go_auth_provider.dart';
 
 class ProProvider extends ChangeNotifier {
   ProProvider({required this.auth, required this.repository}) {
@@ -19,9 +18,7 @@ class ProProvider extends ChangeNotifier {
   final ProRepository repository;
   String? _owner;
   late bool _signedIn;
-  String? get _entitlementOwner => auth is GoAuthProvider
-      ? (auth as GoAuthProvider).purchaseOwner
-      : auth.accountId;
+  String? get _entitlementOwner => auth.isSignedIn ? auth.accountId : null;
   int _epoch = 0;
   bool _disposed = false, _busy = false;
   bool _refreshRequested = false, _restoreRequested = false;
@@ -34,19 +31,21 @@ class ProProvider extends ChangeNotifier {
   bool get purchasesReady => _serverPurchaseAvailable;
   bool get hasPro => _store.hasPro;
   bool get hasLifetime => _store.hasLifetime;
+  bool get hasLocalApple => _store.localApple;
+  bool get hasLocalSandbox => _store.localSandbox;
+  bool get hasServerApple => _store.serverApple;
+  bool get hasManualPremium => _store.manualPremium;
   bool get isBusy => _busy;
   String? get price => _store.price;
   String? get message => _message;
-  bool get isConfigured =>
-      AppConfig.isCloudEnabled && AppConfig.appleProProductId.isNotEmpty;
+  bool get isConfigured => AppConfig.appleProProductId.isNotEmpty;
   bool get canPurchase =>
       !AppConfig.isFreeLaunch &&
       isConfigured &&
-      auth.isSignedIn &&
       price != null &&
       !_busy &&
-      !hasLifetime &&
-      _serverPurchaseAvailable;
+      !hasLifetime;
+
   void _notify() {
     if (!_disposed) notifyListeners();
   }
@@ -58,7 +57,14 @@ class ProProvider extends ChangeNotifier {
     _restoreRequested = false;
     _refreshRequested = false;
     ++_epoch;
-    _store = const ProStoreState();
+    final local = _store.localApple || _store.localSandbox;
+    _store = ProStoreState(
+      hasPro: local,
+      hasLifetime: local,
+      localApple: _store.localApple,
+      localSandbox: _store.localSandbox,
+      price: _store.price,
+    );
     _confirmedAt.clear();
     _serverPurchaseAvailable = false;
     _serverChecked = false;
@@ -110,11 +116,6 @@ class ProProvider extends ChangeNotifier {
       return;
     }
     final epoch = _epoch, owner = _entitlementOwner;
-    if ((purchase || restore) && (!auth.isSignedIn || owner == null)) {
-      _message = 'Sign in to link Pro to your Veea account.';
-      _notify();
-      return;
-    }
     _busy = true;
     _message = null;
     _notify();
@@ -126,60 +127,52 @@ class ProProvider extends ChangeNotifier {
       if (!_current(epoch, owner)) return;
       _store = configured;
       Map<String, Object?>? server;
-      if (purchase &&
-          AppConfig.isCloudEnabled &&
-          auth.isSignedIn &&
-          owner != null) {
-        // Confirm account availability BEFORE displaying Apple's payment sheet.
-        server = await repository.entitlement(owner);
-        if (!_current(epoch, owner)) return;
-        _serverPurchaseAvailable = server['apple_purchase_available'] == true;
-        _serverChecked = true;
+      PlatformException? restoreError;
+      final signedIn =
+          AppConfig.isCloudEnabled && auth.isSignedIn && owner != null;
+      if (purchase && signedIn && !configured.hasLifetime) {
+        // Account status can prevent a duplicate lifetime purchase. Failure
+        // here must not prevent StoreKit from delivering a local purchase.
+        try {
+          server = await repository.entitlement(owner);
+          if (!_current(epoch, owner)) return;
+          _serverPurchaseAvailable = server['apple_purchase_available'] == true;
+          _serverChecked = true;
+        } on ApiException {
+          if (!_current(epoch, owner)) return;
+        }
       }
       final alreadyLifetime =
-          purchase &&
-          (_store.hasLifetime ||
-              (server?['plan'] == 'premium' &&
-                  server?['plan_expires_at'] == null));
-      if (purchase && server?['purchase_verification_pending'] == true) {
-        if (server?['plan'] != 'premium') {
-          _message =
-              'Purchase verification is temporarily unavailable. Please try again later.';
-          return;
-        }
-        final expiry = DateTime.tryParse(
-          server?['plan_expires_at']?.toString() ?? '',
-        );
-        var until = DateTime.now().toUtc().add(const Duration(hours: 24));
-        if (expiry != null && expiry.isBefore(until)) until = expiry;
-        final state = await repository.configure(
-          owner,
-          serverUntil: until,
-          serverLifetime: expiry != null ? false : null,
-        );
-        if (!_current(epoch, owner)) return;
-        _store = state;
-        _message =
-            'Your Pro access is active. Purchase verification is temporarily unavailable; try again later.';
-        return;
-      }
+          purchase && (_store.hasLifetime || _serverHasLifetimeApple(server));
       if (purchase && !alreadyLifetime) {
-        if (!_serverPurchaseAvailable) {
-          _message =
-              'Pro purchases are not available yet. Your free features remain available.';
-          return;
-        }
         if (!isConfigured || _store.price == null) {
           _message = 'Purchases are not available in this build yet.';
           return;
         }
         _store = await repository.purchase();
       } else if (restore) {
-        _store = await repository.restore();
+        try {
+          _store = await repository.restore();
+        } on PlatformException catch (error) {
+          // A StoreKit sync failure can still have a verified account result.
+          restoreError = error;
+        }
+      }
+      if (!_current(epoch, owner)) return;
+      // Publish StoreKit delivery before finishing. An interruption is
+      // recoverable through StoreKit's unfinished transaction sequence.
+      _notify();
+      for (final id in _store.localFinishTransactions) {
+        await repository.finishLocal(id);
+        if (!_current(epoch, owner)) return;
       }
       if (!_current(epoch, owner)) return;
       ApiException? claimError;
-      if (owner != null && auth.isSignedIn) {
+      var confirmedApplePurchase = false;
+      var confirmedSandboxAcknowledgement = false;
+      var confirmedRevocation = false;
+      var verificationPending = false;
+      if (signedIn) {
         for (final id in _store.transactions) {
           final confirmed = _confirmedAt[id];
           if (!purchase &&
@@ -193,9 +186,24 @@ class ProProvider extends ChangeNotifier {
           try {
             server = await repository.claim(owner, id);
             if (!_current(epoch, owner)) return;
+            final pending = server['purchase_verification_pending'] == true;
+            verificationPending |= pending;
+            final revoked = server['purchase_revoked'];
+            final environment = server['purchase_environment'];
+            final recorded = server['purchase_recorded'];
+            if (revoked is! bool ||
+                !(environment == 'Production' && recorded == true ||
+                    environment == 'Sandbox' && recorded is bool)) {
+              verificationPending = true;
+              continue;
+            }
+            confirmedApplePurchase |= !revoked && recorded == true;
+            confirmedSandboxAcknowledgement |= !revoked && recorded == false;
+            confirmedRevocation |= revoked;
             await repository.recordVerification(
               id,
-              revoked: server['purchase_revoked'] == true,
+              revoked: revoked,
+              recorded: recorded == true,
             );
             if (!_current(epoch, owner)) return;
             await repository.finish(id);
@@ -209,14 +217,25 @@ class ProProvider extends ChangeNotifier {
           }
         }
       }
-      if (server == null &&
-          AppConfig.isCloudEnabled &&
-          auth.isSignedIn &&
-          owner != null) {
-        server = await repository.entitlement(owner);
+      if (server == null && signedIn) {
+        try {
+          server = await repository.entitlement(owner);
+        } on ApiException {
+          // Preserve a specific claim refusal if the separate account read fails.
+          if (!confirmedApplePurchase &&
+              !confirmedSandboxAcknowledgement &&
+              !_store.localApple &&
+              !_store.localSandbox &&
+              claimError == null) {
+            rethrow;
+          }
+        }
         if (!_current(epoch, owner)) return;
       }
       if (server != null) {
+        final pending = server['purchase_verification_pending'] == true;
+        verificationPending |= pending;
+        confirmedApplePurchase |= _serverHasLifetimeApple(server);
         _serverPurchaseAvailable = server['apple_purchase_available'] == true;
         _serverChecked = true;
         final premium = server['plan'] == 'premium';
@@ -230,38 +249,61 @@ class ProProvider extends ChangeNotifier {
         final state = await repository.configure(
           owner,
           serverUntil: premium ? until : null,
-          clearServer: !premium,
-          serverLifetime: server['purchase_verification_pending'] == true
+          clearServer: !premium && !pending,
+          serverLifetime: pending
               ? (expiry != null ? false : null)
-              : premium && server['plan_expires_at'] == null,
+              : _serverHasLifetimeApple(server),
         );
         if (!_current(epoch, owner)) return;
         _store = ProStoreState(
           hasPro: state.hasPro,
           hasLifetime: state.hasLifetime,
+          localApple: state.localApple,
+          localSandbox: state.localSandbox,
+          serverApple: state.serverApple,
+          manualPremium: state.manualPremium,
           pendingTransactions: state.pendingTransactions,
           price: state.price,
           transactions: state.transactions,
           outcome: _store.outcome,
         );
       }
-      if (claimError != null) {
-        _message = _purchaseError(claimError);
+      if (restore &&
+          (confirmedApplePurchase ||
+              confirmedSandboxAcknowledgement ||
+              _store.localApple ||
+              _store.localSandbox)) {
+        _message = confirmedApplePurchase || _store.localApple
+            ? 'Pro restored.'
+            : 'Pro restored on this device (Apple Sandbox).';
         return;
       }
+      if (restore && confirmedRevocation) {
+        _message =
+            'Apple reports that this Pro purchase was refunded or revoked.';
+        return;
+      }
+      if (claimError != null) {
+        _message =
+            (_store.localApple || _store.localSandbox) && claimError.isTransient
+            ? 'Pro is available on this device. Account confirmation will retry when you are online.'
+            : _purchaseError(claimError);
+        return;
+      }
+      if (restoreError != null && !verificationPending) throw restoreError;
       _message = alreadyLifetime
-          ? 'Lifetime Pro is already linked to your account. No purchase needed.'
+          ? 'Lifetime Pro is already available. No purchase needed.'
           : switch (_store.outcome) {
               'cancelled' => 'Purchase cancelled. You have not been charged.',
               'pending' =>
                 'Waiting for Apple approval. Pro will update when approved.',
-              'account_mismatch' when purchase || restore =>
-                'This purchase belongs to a different Veea account. Sign in to that account to restore it.',
+              'revoked' =>
+                'Apple reports that this Pro purchase was refunded or revoked.',
               _ =>
                 restore
-                    ? (hasPro
-                          ? 'Pro restored.'
-                          : 'No Pro purchase found for this account.')
+                    ? (verificationPending
+                          ? 'Purchase verification is temporarily unavailable. Please try restoring again later.'
+                          : 'No Pro purchase found to restore.')
                     : purchase && hasPro
                     ? 'Pro is ready. Thank you for supporting Veea!'
                     : null,
@@ -274,9 +316,7 @@ class ProProvider extends ChangeNotifier {
       }
     } on PlatformException catch (e) {
       if (_current(epoch, owner)) {
-        _message =
-            e.message ??
-            'Apple could not complete this request. Please try again.';
+        _message = _storeKitError(e, purchase: purchase, restore: restore);
       }
     } catch (_) {
       if (_current(epoch, owner)) {
@@ -300,8 +340,17 @@ class ProProvider extends ChangeNotifier {
     }
   }
 
+  // The owner entitlement API reserves a null Premium expiry for Apple's
+  // lifetime proof. Its pending fallback reports manual access only.
+  bool _serverHasLifetimeApple(Map<String, Object?>? server) =>
+      server != null &&
+      server['plan'] == 'premium' &&
+      server.containsKey('plan_expires_at') &&
+      server['plan_expires_at'] == null &&
+      server['purchase_verification_pending'] != true;
+
   String _purchaseError(ApiException error) => switch (error.code) {
-    'purchase_ownership' =>
+    'purchase_ownership_conflict' =>
       'This purchase could not be linked to this Veea account. Sign in to the account used for the original purchase or contact support.',
     'purchase_invalid' =>
       'Apple purchase verification was not accepted by the account service. Please contact support before trying to buy again.',
@@ -315,6 +364,87 @@ class ProProvider extends ChangeNotifier {
           ? 'Pro is available on this device. Account confirmation will retry when you are online.'
           : 'Could not check your purchase. Please connect to the internet and try again.',
   };
+
+  String _storeKitError(
+    PlatformException error, {
+    required bool purchase,
+    required bool restore,
+  }) => switch (error.code) {
+    'STORE_UNAVAILABLE' => 'Connect to the App Store before purchasing.',
+    'UNVERIFIED_PURCHASE' =>
+      'Apple could not verify the purchase. Please try restoring purchases.',
+    'UNKNOWN_PAYMENT_RESULT' =>
+      'Apple returned an unknown payment result. Try restoring purchases.',
+    'ACCOUNT_CHANGED' => 'Your account changed. Open Pro again to continue.',
+    'INCOMPATIBLE_INSTALLATION' =>
+      'The App Store could not verify this installation. Please try again or restore purchases.',
+    _ when restore =>
+      'Apple could not restore your purchases. Please try again.',
+    _ when purchase =>
+      'Apple could not complete the purchase. Please try again.',
+    _ => 'Apple could not complete this request. Please try again.',
+  };
+
+  String? localizedMessage({required bool vietnamese}) {
+    if (!vietnamese) return message;
+    return switch (message) {
+      null => null,
+      'Pro restored.' => 'Đã khôi phục Pro.',
+      'Pro restored on this device (Apple Sandbox).' =>
+        'Đã khôi phục Pro trên thiết bị này (Apple Sandbox).',
+      'No Pro purchase found to restore.' =>
+        'Không tìm thấy giao dịch Pro để khôi phục.',
+      'Purchase cancelled. You have not been charged.' =>
+        'Đã hủy giao dịch. Bạn chưa bị tính phí.',
+      'Waiting for Apple approval. Pro will update when approved.' =>
+        'Đang chờ Apple phê duyệt. Quyền Pro sẽ được cập nhật sau khi phê duyệt.',
+      'Pro is ready. Thank you for supporting Veea!' =>
+        'Bạn đã có Pro. Cảm ơn bạn đã ủng hộ Veea!',
+      'Lifetime Pro is already available. No purchase needed.' =>
+        'Bạn đã có Pro trọn đời. Không cần mua lại.',
+      'Apple reports that this Pro purchase was refunded or revoked.' =>
+        'Apple cho biết giao dịch Pro đã được hoàn tiền hoặc bị thu hồi.',
+      'Pro is available on this device. Account confirmation will retry when you are online.' =>
+        'Bạn có thể dùng Pro trên thiết bị này. Veea sẽ thử xác nhận giao dịch cho tài khoản của bạn khi có mạng.',
+      'This release is free. No purchase is needed.' =>
+        'Phiên bản này miễn phí. Bạn không cần mua.',
+      'Purchases are not available in this build yet.' =>
+        'Phiên bản này hiện chưa hỗ trợ mua Pro.',
+      'Purchases are available in the iPhone app.' =>
+        'Bạn có thể mua Pro trong ứng dụng trên iPhone.',
+      'Purchase verification is temporarily unavailable. Please try restoring again later.' =>
+        'Tạm thời không thể xác minh giao dịch. Vui lòng thử khôi phục lại sau.',
+      'Purchase verification is temporarily unavailable. Please try again later.' =>
+        'Tạm thời không thể xác minh giao dịch. Vui lòng thử lại sau.',
+      'Could not check your purchase. Please connect to the internet and try again.' =>
+        'Không thể kiểm tra giao dịch. Vui lòng kết nối Internet rồi thử lại.',
+      'This purchase could not be linked to this Veea account. Sign in to the account used for the original purchase or contact support.' =>
+        'Không thể liên kết giao dịch này với tài khoản Veea hiện tại. Hãy đăng nhập vào tài khoản đã dùng khi mua hoặc liên hệ bộ phận hỗ trợ.',
+      'Apple purchase verification was not accepted by the account service. Please contact support before trying to buy again.' =>
+        'Hệ thống tài khoản Veea không chấp nhận kết quả xác minh giao dịch Apple. Vui lòng liên hệ bộ phận hỗ trợ trước khi mua lại.',
+      'Sign in again to manage your purchase.' =>
+        'Hãy đăng nhập lại để quản lý giao dịch của bạn.',
+      'The account service could not verify this purchase. Please contact support before trying to buy again.' =>
+        'Hệ thống tài khoản Veea không thể xác minh giao dịch này. Vui lòng liên hệ bộ phận hỗ trợ trước khi mua lại.',
+      'Connect to the App Store before purchasing.' =>
+        'Hãy kết nối với App Store trước khi mua.',
+      'Apple could not verify the purchase. Please try restoring purchases.' =>
+        'Apple không thể xác minh giao dịch. Vui lòng thử khôi phục giao dịch.',
+      'Apple returned an unknown payment result. Try restoring purchases.' =>
+        'Chưa rõ kết quả thanh toán từ Apple. Hãy thử khôi phục giao dịch.',
+      'Your account changed. Open Pro again to continue.' =>
+        'Tài khoản của bạn đã thay đổi. Hãy mở lại màn hình Pro để tiếp tục.',
+      'The App Store could not verify this installation. Please try again or restore purchases.' =>
+        'App Store không thể xác minh bản cài đặt này. Vui lòng thử lại hoặc khôi phục giao dịch.',
+      'Apple could not restore your purchases. Please try again.' =>
+        'Apple không thể khôi phục giao dịch của bạn. Vui lòng thử lại.',
+      'Apple could not complete the purchase. Please try again.' =>
+        'Apple không thể hoàn tất giao dịch mua. Vui lòng thử lại.',
+      'Apple could not complete this request. Please try again.' =>
+        'Apple không thể hoàn tất yêu cầu này. Vui lòng thử lại.',
+      _ => 'Không thể hoàn tất yêu cầu Pro lúc này. Vui lòng thử lại.',
+    };
+  }
 
   @override
   void dispose() {

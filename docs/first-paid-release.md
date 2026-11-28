@@ -4,16 +4,13 @@ Branch: `feat/offline-pro-purchase-20261117`, based on `main` `05f66c4`.
 Prepared 17–18 November 2026 with actual agy implementation/review and Claude independent QA.
 No App Store product, payment key, production server setting, TestFlight upload or phone installation was changed by this work.
 
-## Current owner decision — 26 November 2026
+## Current owner decision — 27 November 2026
 
-The owner replaced the free-first offer with permanent Free access to one app
-lock and one vocabulary word per unlock. One non-consumable Pro purchase enables
-multiple apps and a configurable number of words, bounded by the practice pool.
-The Vietnam price target is99,000 VND once. All supported timers, including
-custom/per-app times, stay free. See [current product specification](pro-99k-model.md)
-and [App Store submission](app-store-submission.md) for current wording and gates.
-Verified StoreKit/account ownership, restoration and offline handling below are
-retained. No live billing or Apple policy approval is established by local tests.
+App protection and all unlock challenge options are free. Pro adds configurable
+multi-word standalone Practice Rounds, separate from app protection. The existing
+non-consumable uses StoreKit-first ownership. Guests can purchase and restore.
+Signed-in transactions keep the existing Go claim and ownership rules. See
+[the product matrix](pro-99k-model.md) and [TRD 11 §7](trd/11-apple-pro-purchases.md#7-storekit-first-ownership-amendment-a).
 
 ## Historical free-first decision — superseded
 
@@ -35,43 +32,61 @@ paid learning features require a new decision.
 - Device JSON/CSV backups are portable and do not need account sign-in. Restoring a user-selected file is local only. Word upload, cloud sync/import prompts and remote cartridge installations are disabled in production; cloud account/payment operations stay independent.
 - Disabling/removing locks, reading/exporting words and account rights are never paywalled. Extra locks are paused on Free without deleting their selections or custom rules. The current challenge app is preferred when applying a downgrade.
 
-## What is implemented
+## Release behavior
 
-1. Settings → Veea Pro: free/paid benefits, actual localized Apple price, sign-in entry, restore, cancelled/pending/error outcomes. Temporary manual Premium grants can buy lifetime; an already-paid account cannot start another payment.
-2. StoreKit 2 verifies local transactions and account tokens. Pending purchases/refunds survive unfinished-transaction recovery; transactions are finished only after the server commits the ownership proof. A local StoreKit lifetime entitlement does not depend on a redundant server lifetime lease.
-3. An unknown network refresh outcome keeps the last verified purchase identity solely for local StoreKit verification. It is not an API credential. Explicit sign-out, definite server rejection or confirmed applicable account deletion clears it. Switching accounts never transfers its entitlement.
-4. Go `POST /v1/me/purchases/apple`: bearer auth, strict input, per-user verification rate limit, fresh authenticated Apple lookup, pinned Apple certificate chain/JWS checks, bundle/product/environment checks, account-token ownership, session revalidation under lock, durable retry-safe proof and committed refunds.
-5. Manual grants are independent of Apple purchases. Apple outages preserve a valid manual grant and prevent a new checkout during uncertainty. Owner reads reconcile stale proofs; other server consumers accept an unrevoked proof for at most 24 hours without re-verification.
-6. Migration 16 isolates Sandbox/Production namespaces and the database billing environment. Apple proofs participate in export and full account purge; the five retained proof periods keep the worst-case export header within 16 KiB. Admin UI distinguishes an Apple lifetime purchase from a temporary manual grant.
+Guest StoreKit purchase and restore require no account. Locally verified Apple
+ownership enables educational Pro, including after Veea account deletion.
+Only a matching account token can authorize a server Apple claim. Existing
+server verification, bounded leases, refunds and environment isolation remain.
 
 ## Nin: configuration needed before TestFlight payment testing
 
-GitHub's tracked app configuration contains no confirmed Pro product ID or public account API URL. GitHub cannot prove whether the App Store Connect product already exists; check that service separately.
+The release product is Veea Pro Lifetime (`com.nintran.veeaEnglishApp.pro`), a
+Non-Consumable for bundle `com.nintran.veeaEnglishApp`. Confirm the App Store Connect
+record, localized pricing and signed build independently.
 
 1. In App Store Connect, confirm the correct Veea app/team/bundle ID. Create or identify **one non-consumable** lifetime Pro product. Keep Family Sharing disabled for this first implementation; shared-family transaction ownership is intentionally not accepted. Complete its metadata and select the Vietnamese price.
-2. For the final TestFlight/review candidate, set `VEEA_API_BASE_URL` to the public release API and `VEEA_APPLE_PRO_PRODUCT_ID` to the exact product ID. No provider/private keys go into the app or GitHub.
+2. Build the final TestFlight/review IPA from the repository root. Replace the example API URL with the release origin. The script rejects missing or invalid inputs before invoking Flutter. Existing development builds can continue to use the ordinary Flutter commands.
+
+   ```sh
+   VEEA_API_BASE_URL=https://api.example.test \
+     VEEA_APPLE_PRO_PRODUCT_ID=com.nintran.veeaEnglishApp.pro \
+     bash tool/build_ios_release.sh --build-number 42
+   ```
+   The script accepts `--build-number`, `--build-name`, `--export-method`,
+   `--export-options-plist`, `--split-debug-info`, `--obfuscate`, and `--no-pub`.
+   Give valued options as separate arguments or with `=`. The API URL must be
+   a root HTTPS origin with a DNS hostname. Python 3 removes trailing slashes
+   and the default HTTPS port. The script rejects localhost, IP literals,
+   paths, credentials, queries, and fragments. Check that the release hostname
+   resolves to the intended ingress before distribution.
+
+   An explicit build number accepts one to three numeric `CFBundleVersion`
+   components. The major must be positive with one to four digits. Optional
+   minor and patch components accept one or two digits each. Choose an unused
+   build number for the release version. The script rejects extra Dart defines
+   and alternate entry points. [Apple bundle version rules](https://developer.apple.com/documentation/BundleResources/Information-Property-List/CFBundleVersion) · [Flutter iOS build numbering](https://docs.flutter.dev/deployment/ios)
+
 3. Run migration 16 and apply the existing database permissions before deploying the billing API. Keep the release database's `apple_iap_control.environment` as `Production` (its default); do not switch it to Sandbox for review. This environment-handling fix adds no new migration.
-4. In the release server's private configuration, set `VEEA_APPLE_IAP_ENABLED=true`, `VEEA_APPLE_IAP_ENVIRONMENT=Production`, `VEEA_APPLE_IAP_ALLOW_SANDBOX=true`, `VEEA_APPLE_IAP_ISSUER_ID`, `VEEA_APPLE_IAP_KEY_ID`, `VEEA_APPLE_IAP_PRIVATE_KEY` (Apple In-App Purchase P-256 private key), `VEEA_APPLE_IAP_BUNDLE_ID` and `VEEA_APPLE_IAP_PRODUCT_IDS` (the same SKU). Keep the existing email/account service working. Default/missing billing configuration does not allow checkout. Deploy this backend before distributing the candidate.
+4. Follow the [private server configuration and key delivery instructions](payment-environments.md#nin-deployment-settings). Keep the existing email/account service working and deploy it before distributing the candidate. Leave App Store Server Notifications V2 deferred. Use the [payment rollback procedure](payment-environments.md#roll-back-apple-iap) if checkout must be disabled or the API image reverted.
 5. Build/upload through the paid Veea team with the existing Screen Time/App Groups entitlements. A personal-profile installation is not a valid substitute for this signed-device test.
 6. The release API acknowledges Apple review/TestFlight Sandbox purchases without storing test proofs or granting Production account Pro. If a dedicated staging API is used instead, give it a separate database pinned to `Sandbox`, `VEEA_APPLE_IAP_ENVIRONMENT=Sandbox` and `VEEA_APPLE_IAP_ALLOW_SANDBOX=false`. Follow [payment environment deployment and acceptance](payment-environments.md). Do not direct automated tests at deployed services.
 
 ## No-charge phone acceptance
 
-[Apple confirms that TestFlight purchases use sandbox and do not charge testers](https://developer.apple.com/in-app-purchase/). They do not become real purchases after App Store release. Xcode's local StoreKit simulation is separate and its transactions are deliberately not accepted by this production verifier.
-
-On a signed TestFlight build pointing at its intended API (prefer the release API for the final review candidate):
-
-1. Start Free without an account: save words, Listen/Review, select an unlimited practice pool, protect one app and answer one word per unlock. Custom/default/per-app times stay free. A second active app or multiple words per unlock should explain Pro. Confirm OFF/remove/export always work.
-2. Sign in: the same words, dates and practice choices stay visible. Buy Pro using the sandbox payment sheet. Verify the account-linked Premium response, multiple apps and multiple words. Display the actual localized Apple price; Vietnam must be configured at 99,000 VND.
-3. Complete challenges for two apps; each timer/relock stays independent. Reopen/restart offline and confirm paid access and local words remain available.
-4. Cancel a purchase; test pending approval and later approval; cancel messages must not reappear on passive refresh. No repeated payment sheet for an already-paid account.
-5. Restore after reinstall (export notebook first, because reinstall removes local words). Verify the same account restores Pro; a different account cannot claim that purchase. Restore queued during sign-in must actually run.
-6. Test a refund/revocation: native owned access is removed, a current manual grant remains independent, and a fresh server verification records the refund. An older proof cannot override a newer refund or reinstatement. Verify that a newer Apple refund reversal restores Pro. Server-only access has the documented bounded offline lease.
-7. Disconnect the network during session refresh: verified local ownership persists. Explicit sign-out/definite server rejection clears account-bound access; the notebook stays. Test confirmed account deletion with an exported notebook backup.
-
-These device/payment checks remain unperformed. Local tests do not prove App Store configuration, Apple review acceptance, or real-device Screen Time enforcement.
+Use the signed-device [Option A acceptance matrix](pro-99k-qa.md). On the unsigned
+and local test paths, use synthetic data. The exact TestFlight build must
+show the StoreKit price, support guest checkout and restore, and keep Screen
+Time available on Free and after refund. Confirm within App Store Connect
+that the intended Vietnamese price is 99,000 VND and Family Sharing is off.
 
 ## Verification evidence and limits
+
+- The full integration suite has a known baseline failure in
+  `TestMigrations_UpgradeFromVersion6KeepsDataAndAddsIndexes`, reproduced on
+  clean `HEAD` (`66f8dd2`). The full Flutter suite has five baseline pixel
+  differences in `test/golden/screens_golden_test.dart`, also reproduced on
+  that snapshot. Focused IAP acceptance runs separately from those baselines.
 
 Logs are in `/tmp/veea-pro-20261117/` on the development Mac.
 
@@ -82,4 +97,4 @@ Logs are in `/tmp/veea-pro-20261117/` on the development Mac.
 - Admin console: 43 tests passed, 10 environment-dependent E2E cases skipped, analyzer clean. The broad Flutter suite still has unrelated failures reproduced on unchanged `main` `05f66c4`: dictionary/context expectation mismatches, a Settings fixture missing AuthProvider, and phone-feedback flow failures/timeouts. Do not call the entire app's baseline green or treat this draft as launch approval.
 - Worst-case account export header with manual grants, cartridge watermarks and five Apple proofs: **15,915 / 16,384 bytes**, checked in a unit test.
 
-Before public release, finish the no-charge device checklist, resolve the baseline feedback/launch findings, update customer-facing privacy/account-deletion wording and explain account-linked Pro to App Review. Requiring sign-in for a local-feature purchase may need review discussion under [Apple's account-sign-in guideline](https://developer.apple.com/app-store/review/guidelines/#account-sign-in); this implementation follows the user's explicit sign-in-before-purchase decision.
+Before public release, finish the no-charge device checklist, resolve the baseline feedback/launch findings, update customer-facing privacy/account-deletion wording and explain account-linked Pro to App Review. The submitted build must demonstrate guest purchase and restore.

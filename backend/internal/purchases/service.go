@@ -28,11 +28,12 @@ type Verifier interface {
 	Verify(context.Context, string) (appleiap.Transaction, error)
 }
 type Service struct {
-	pool         *pgxpool.Pool
-	tx           db.Tx
-	verifier     Verifier
-	environment  string
-	allowSandbox bool
+	pool           *pgxpool.Pool
+	tx             db.Tx
+	verifier       Verifier
+	environment    string
+	allowSandbox   bool
+	reconciliation reconciliationGate
 }
 
 func New(pool *pgxpool.Pool, verifier Verifier, environment string, retry func(string)) *Service {
@@ -74,7 +75,7 @@ func (s *Service) verifyAndClaimOutcome(ctx context.Context, p session.Principal
 		return Outcome{}, appleiap.ErrInvalid
 	}
 	// External I/O never runs while database locks are held.
-	proof, err := s.verifier.Verify(ctx, id)
+	proof, err := s.verify(ctx, id, expectedEnvironment != "")
 	if err != nil {
 		return Outcome{}, err
 	}
@@ -132,6 +133,43 @@ func (s *Service) verifyAndClaimOutcome(ctx context.Context, p session.Principal
 	return outcome, err
 }
 
+func (s *Service) verify(ctx context.Context, id string, reconcile bool) (appleiap.Transaction, error) {
+	if err := ctx.Err(); err != nil {
+		return appleiap.Transaction{}, err
+	}
+	if !reconcile {
+		proof, err := s.verifier.Verify(ctx, id)
+		if ctx.Err() != nil {
+			return appleiap.Transaction{}, ctx.Err()
+		}
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return appleiap.Transaction{}, appleiap.ErrUnavailable
+		}
+		return proof, err
+	}
+	probe, allowed := s.reconciliation.acquire(time.Now())
+	if !allowed {
+		return appleiap.Transaction{}, ErrReconcileBackoff
+	}
+	var err error
+	completed := false
+	defer func() {
+		// A panic releases the slot without treating a recovery probe as healthy.
+		s.reconciliation.done(time.Now(), probe, !completed || ctx.Err() != nil, err)
+	}()
+	verifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	proof, err := s.verifier.Verify(verifyCtx, id)
+	if errors.Is(verifyCtx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		err = appleiap.ErrUnavailable
+	}
+	completed = true
+	if requestErr := ctx.Err(); requestErr != nil {
+		return appleiap.Transaction{}, requestErr
+	}
+	return proof, err
+}
+
 // Reconcile refreshes old proofs before serving an owner plan. On Apple outages
 // the HTTP request is unknown (503), never a fabricated Free downgrade. Other
 // server consumers stop accepting unverified proofs after the 24-hour SQL lease.
@@ -157,6 +195,9 @@ func (s *Service) Reconcile(ctx context.Context, p session.Principal) error {
 		}
 		outcome, err := s.verifyAndClaimOutcome(ctx, p, row.TransactionID, row.Environment)
 		if err != nil {
+			if errors.Is(err, appleiap.ErrUnavailable) || ctx.Err() != nil {
+				return err
+			}
 			if verificationError == nil {
 				verificationError = err
 			}

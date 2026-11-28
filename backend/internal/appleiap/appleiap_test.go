@@ -301,7 +301,10 @@ func TestVerifySuccessAndRevokedAndServerJWT(t *testing.T) {
 			t.Fatalf("unexpected jwt claims: %v", claims)
 		}
 
-		body, _ := json.Marshal(map[string]string{"signedTransactionInfo": currentSignedJWS})
+		body, _ := json.Marshal(map[string]any{
+			"signedTransactionInfo": currentSignedJWS,
+			"futureMetadata":        map[string]any{"schemaVersion": 2},
+		})
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
@@ -519,7 +522,10 @@ func TestVerifyUpstreamAndUnconfiguredClassification(t *testing.T) {
 		{"500 internal upstream", http.StatusInternalServerError, `{}`, ErrUnavailable},
 		{"503 unavailable upstream", http.StatusServiceUnavailable, `{}`, ErrUnavailable},
 		{"200 empty json", http.StatusOK, `{}`, ErrUnavailable},
-		{"200 unknown field", http.StatusOK, `{"signedTransactionInfo":"a.b.c","extra":1}`, ErrUnavailable},
+		{"200 unknown field without proof", http.StatusOK, `{"extra":1}`, ErrUnavailable},
+		{"200 empty proof", http.StatusOK, `{"signedTransactionInfo":"","extra":1}`, ErrUnavailable},
+		{"200 trailing JSON", http.StatusOK, `{"signedTransactionInfo":"a.b.c"}{}`, ErrUnavailable},
+		{"200 invalid proof with unknown field", http.StatusOK, `{"signedTransactionInfo":"a.b.c","extra":1}`, ErrInvalid},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			v.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -536,11 +542,11 @@ func TestVerifyUpstreamAndUnconfiguredClassification(t *testing.T) {
 		})
 	}
 
-	// Network failure maps to ErrUnavailable.
+	// Transport errors are upstream unavailability.
 	v.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return nil, errors.New("synthetic network failure")
 	})
 	if _, err := v.Verify(context.Background(), "20000001"); !errors.Is(err, ErrUnavailable) {
-		t.Fatalf("network error: got %v, want ErrUnavailable", err)
+		t.Fatalf("network error: got %v, want unavailability", err)
 	}
 }

@@ -3,13 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-import '../core/config/app_config.dart';
 import '../core/theme/pixel_metrics.dart';
 import '../providers/app_gate_provider.dart';
-import '../providers/auth_provider.dart';
-import '../providers/pro_provider.dart';
 import '../screens/app_gate_screen.dart';
-import '../screens/pro_screen.dart';
 import '../screens/selected_practice_words_screen.dart';
 import 'pixel/pixel_box.dart';
 import 'pixel/pixel_button.dart';
@@ -32,43 +28,9 @@ class GateLearningSettings extends StatefulWidget {
 class _GateLearningSettingsState extends State<GateLearningSettings> {
   bool _saving = false;
 
-  bool _hasProSupport(BuildContext context, {bool listen = false}) {
-    try {
-      if (listen) {
-        context.watch<ProProvider>();
-        context.watch<AuthProvider>();
-      } else {
-        context.read<ProProvider>();
-        context.read<AuthProvider>();
-      }
-      return true;
-    } on ProviderNotFoundException {
-      return false;
-    }
-  }
-
-  Future<void> _openProUpgrade(BuildContext context) async {
-    if (_hasProSupport(context)) {
-      await ProScreen.open(context);
-      return;
-    }
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Upgrade to Veea Pro to require multiple words per unlock. Upgrades are unavailable right now.',
-        ),
-      ),
-    );
-  }
-
   Future<void> _editCount() async {
     final poolCount = widget.gate.practiceWordCount;
     if (poolCount == 0) return;
-    if (!widget.gate.canUseMultipleWords && poolCount >= 2) {
-      await _openProUpgrade(context);
-      return;
-    }
     final maximum = widget.gate.maximumWordsPerUnlock;
     if (maximum == 0) return;
     final count = await showDialog<int>(
@@ -121,10 +83,6 @@ class _GateLearningSettingsState extends State<GateLearningSettings> {
       await action();
     } on PlatformException catch (error) {
       if (!mounted) return;
-      if (error.code == 'PRO_REQUIRED' && !AppConfig.isFreeLaunch) {
-        await _openProUpgrade(context);
-        return;
-      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -150,23 +108,15 @@ class _GateLearningSettingsState extends State<GateLearningSettings> {
 
   @override
   Widget build(BuildContext context) {
-    final hasProSupport = _hasProSupport(context, listen: true);
     return AnimatedBuilder(
       animation: widget.gate,
       builder: (context, _) {
         final theme = Theme.of(context);
-        final colorScheme = theme.colorScheme;
         final config = widget.gate.config;
         final poolCount = widget.gate.practiceWordCount;
-        final canUseMultiple = widget.gate.canUseMultipleWords;
         final maximumWords = widget.gate.maximumWordsPerUnlock;
         final requiredWords = widget.gate.requiredWords;
-        final canIncrease =
-            !_saving &&
-            poolCount > 0 &&
-            (canUseMultiple
-                ? requiredWords < maximumWords
-                : poolCount >= 2);
+        final canIncrease = !_saving && requiredWords < maximumWords;
         final selectedWords = widget.gate.practiceWords.toList()
           ..sort((a, b) {
             final date = b.date.compareTo(a.date);
@@ -263,17 +213,11 @@ class _GateLearningSettingsState extends State<GateLearningSettings> {
                   IconButton(
                     tooltip: 'Increase words per unlock',
                     onPressed: canIncrease
-                        ? () {
-                            if (!canUseMultiple) {
-                              _openProUpgrade(context);
-                            } else {
-                              _save(
-                                () => widget.gate.setWordsPerUnlock(
-                                  requiredWords + 1,
-                                ),
-                              );
-                            }
-                          }
+                        ? () => _save(
+                            () => widget.gate.setWordsPerUnlock(
+                              requiredWords + 1,
+                            ),
+                          )
                         : null,
                     icon: const Icon(Icons.add),
                   ),
@@ -282,80 +226,8 @@ class _GateLearningSettingsState extends State<GateLearningSettings> {
               Text(
                 poolCount == 0
                     ? 'Choose at least one practice word to set your challenge.'
-                    : canUseMultiple
-                    ? 'Review $requiredWords ${requiredWords == 1 ? 'word' : 'words'} each time. Tap the number to change it.'
-                    : poolCount >= 2
-                    ? 'Review 1 word each time on Free. Tap + or the number to upgrade for multiple words.'
-                    : 'Review 1 word each time on Free. Add more practice words to require multiple words with Pro.',
+                    : 'Review $requiredWords ${requiredWords == 1 ? 'word' : 'words'} each time. Tap the number to change it.',
               ),
-              if (!canUseMultiple && !AppConfig.isFreeLaunch) ...[
-                const SizedBox(height: PixelMetrics.space2),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(PixelMetrics.space3),
-                  decoration: BoxDecoration(
-                    color: colorScheme.primary.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(PixelMetrics.radius),
-                    border: Border.all(
-                      color: colorScheme.primary.withValues(alpha: 0.25),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: ExcludeSemantics(
-                              child: Icon(
-                                Icons.auto_awesome_outlined,
-                                size: 18,
-                                color: colorScheme.primary,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: PixelMetrics.space2),
-                          Expanded(
-                            child: Text(
-                              'More words per unlock with Pro',
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                color: colorScheme.onSurface,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: PixelMetrics.space1),
-                      Text(
-                        'Free includes 1 word per unlock and unlimited practice words. Pay once for Pro to require multiple words and lock multiple apps.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: PixelMetrics.space1),
-                      TextButton(
-                        key: const Key('upgrade_words_per_unlock'),
-                        onPressed: !_saving && hasProSupport
-                            ? () => _openProUpgrade(context)
-                            : null,
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: PixelMetrics.space2,
-                            vertical: PixelMetrics.space1,
-                          ),
-                        ),
-                        child: Text(
-                          hasProSupport
-                              ? 'Upgrade to Pro'
-                              : 'Pro upgrades unavailable',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
               const SizedBox(height: PixelMetrics.space2),
               const Text(
                 'Veea cycles through your selected words before repeating them. Interrupted progress is saved for each app.',

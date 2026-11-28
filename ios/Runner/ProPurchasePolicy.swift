@@ -3,6 +3,8 @@ import Foundation
 /// Purchase environments are distinct ownership and cache namespaces. Unknown
 /// environments (including Xcode simulation) cannot unlock a release build.
 enum ProPurchasePolicy {
+  static let productID = "com.nintran.veeaEnglishApp.pro"
+
   static func supports(_ environment: String?) -> Bool {
     environment == "Production" || environment == "Sandbox"
   }
@@ -11,9 +13,18 @@ enum ProPurchasePolicy {
     environment == nil || supports(environment)
   }
 
-  static func planReady(owner: UUID?, installation: String?, hasOwnership: Bool, hasLease: Bool, serverPlanKnown: Bool) -> Bool {
-    if owner == nil || !allowsInstallation(installation) { return true }
-    return hasOwnership || hasLease || serverPlanKnown
+  static func canClaim(owner: UUID?, token: UUID?) -> Bool {
+    owner != nil && owner == token
+  }
+
+  static func acceptsProduct(verified: Bool, productID: String, configuredProductID: String,
+    nonConsumable: Bool, purchased: Bool, upgraded: Bool, installation: String?, transaction: String?) -> Bool {
+    verified && productID == self.productID && productID == configuredProductID &&
+      nonConsumable && purchased && !upgraded && accepts(installation: installation, transaction: transaction)
+  }
+
+  static func isActive(revoked: Bool, signedAt: Date, deniedAt: Date?) -> Bool {
+    !revoked && (deniedAt.map { signedAt > $0 } ?? true)
   }
 
   static func canCommitOwnershipScan(startedIn: String?, currentInstallation: String?) -> Bool {

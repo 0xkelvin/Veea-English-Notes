@@ -1,15 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../core/config/app_config.dart';
 import '../models/gate_config.dart';
 import '../models/native_gate_status.dart';
 import '../models/protection_duration.dart';
 import '../providers/app_gate_provider.dart';
-import '../providers/auth_provider.dart';
-import '../providers/pro_provider.dart';
 import '../screens/app_gate_screen.dart';
-import '../screens/pro_screen.dart';
 import 'native_application_label.dart';
 import 'pixel/pixel_box.dart';
 import 'unlock_time_sheet.dart';
@@ -80,36 +76,8 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
     super.dispose();
   }
 
-  bool _hasProSupport(BuildContext context) {
-    try {
-      context.read<ProProvider>();
-      context.read<AuthProvider>();
-      return true;
-    } on ProviderNotFoundException {
-      return false;
-    }
-  }
-
-  ProProvider? _maybeWatchPro(BuildContext context) {
-    try {
-      return context.watch<ProProvider>();
-    } on ProviderNotFoundException {
-      return null;
-    }
-  }
-
-  void _reportFailure(
-    BuildContext context,
-    bool success, {
-    bool allowProRedirect = true,
-  }) {
+  void _reportFailure(BuildContext context, bool success) {
     if (success || !context.mounted || gate.nativeError == null) return;
-    if (allowProRedirect && gate.nativeRequiresPro && !AppConfig.isFreeLaunch) {
-      if (_hasProSupport(context)) {
-        unawaited(ProScreen.open(context));
-        return;
-      }
-    }
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(gate.nativeError!)));
@@ -117,13 +85,10 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
 
   Future<void> _runAction(
     BuildContext context,
-    Future<bool> Function() action, {
-    bool allowProRedirect = true,
-  }) async {
+    Future<bool> Function() action,
+  ) async {
     final success = await action();
-    if (context.mounted) {
-      _reportFailure(context, success, allowProRedirect: allowProRedirect);
-    }
+    if (context.mounted) _reportFailure(context, success);
   }
 
   Future<void> _editDuration(
@@ -138,7 +103,6 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
           : status.durationFor(app.id),
       defaultMinutes: app == null ? null : status.passMinutes,
       usesDefault: app != null && app.customPassMinutes == null,
-      allowCustom: true,
       applicationLabel: app == null
           ? null
           : NativeApplicationLabel(application: app),
@@ -148,7 +112,7 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
         ? await gate.setNativeDuration(choice.minutes!)
         : await gate.setNativeApplicationDuration(app.id, choice.minutes);
     if (context.mounted) {
-      _reportFailure(context, success, allowProRedirect: false);
+      _reportFailure(context, success);
     }
   }
 
@@ -187,7 +151,7 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
     if (confirmed == true) {
       final success = await gate.removeNativeApplication(app.id);
       if (context.mounted) {
-        _reportFailure(context, success, allowProRedirect: false);
+        _reportFailure(context, success);
       }
     }
   }
@@ -218,8 +182,6 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
 
   @override
   Widget build(BuildContext context) {
-    final pro = _maybeWatchPro(context);
-    final isFreeTier = !AppConfig.isFreeLaunch && pro != null && !pro.hasPro;
     return AnimatedBuilder(
       animation: gate,
       builder: (context, _) {
@@ -228,7 +190,6 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
         final theme = Theme.of(context);
         final secondary = theme.colorScheme.onSurfaceVariant;
         final canEnable = gate.canEnable(totalWords);
-        final isSingleFreeChange = isFreeTier && status.applications.isNotEmpty;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -236,7 +197,6 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
               'Choose your apps and how long each stays unlocked after reviewing your words.',
             ),
             const SizedBox(height: 20),
-            _PlanSummary(status: status),
             if (!status.available)
               const _SettingsCard(
                 child: Text(
@@ -246,14 +206,8 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
             else ...[
               FilledButton.icon(
                 key: const Key('add_locked_apps'),
-                icon: Icon(isSingleFreeChange ? Icons.swap_horiz : Icons.add),
-                label: Text(
-                  busy
-                      ? 'Updating…'
-                      : isSingleFreeChange
-                      ? 'Change App'
-                      : 'Add Apps',
-                ),
+                icon: const Icon(Icons.add),
+                label: Text(busy ? 'Updating…' : 'Add Apps'),
                 onPressed: busy
                     ? null
                     : () => _runAction(context, gate.chooseNativeApplications),
@@ -342,9 +296,7 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
                           Padding(
                             padding: const EdgeInsets.only(top: 4),
                             child: Text(
-                              isFreeTier && status.applications.length > 1
-                                  ? 'Locking paused · Free locks 1 app at a time. Remove an app, switch in Settings, or upgrade to Pro.'
-                                  : 'Locking paused · Enable this app in Settings',
+                              'Locking paused · Enable this app in Settings',
                               style: theme.textTheme.bodySmall,
                             ),
                           ),
@@ -414,11 +366,7 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
                 TextButton(
                   onPressed: busy
                       ? null
-                      : () => _runAction(
-                          context,
-                          gate.disableNativeProtection,
-                          allowProRedirect: false,
-                        ),
+                      : () => _runAction(context, gate.disableNativeProtection),
                   child: const Text('Turn off app locking'),
                 ),
               ],
@@ -461,11 +409,7 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
                               ),
                             );
                           } else {
-                            _runAction(
-                              context,
-                              gate.disableNativeProtection,
-                              allowProRedirect: false,
-                            );
+                            _runAction(context, gate.disableNativeProtection);
                           }
                         },
                 ),
@@ -479,11 +423,8 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
                     label: const Text('Turn off all locks'),
                     onPressed: busy
                         ? null
-                        : () => _runAction(
-                            context,
-                            gate.disableNativeProtection,
-                            allowProRedirect: false,
-                          ),
+                        : () =>
+                              _runAction(context, gate.disableNativeProtection),
                   ),
                 ),
               if (status.enabled &&
@@ -520,11 +461,7 @@ class _NativeGateSettingsState extends State<NativeGateSettings> {
               TextButton(
                 onPressed: busy
                     ? null
-                    : () => _runAction(
-                        context,
-                        gate.disableNativeProtection,
-                        allowProRedirect: false,
-                      ),
+                    : () => _runAction(context, gate.disableNativeProtection),
                 child: const Text('Reset protection'),
               ),
             ],
@@ -560,74 +497,4 @@ class _SettingsCard extends StatelessWidget {
       child: child,
     ),
   );
-}
-
-class _PlanSummary extends StatelessWidget {
-  const _PlanSummary({required this.status});
-  final NativeGateStatus status;
-
-  bool _hasAuth(BuildContext context) {
-    try {
-      context.read<AuthProvider>();
-      return true;
-    } on ProviderNotFoundException {
-      return false;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (AppConfig.isFreeLaunch) return const SizedBox.shrink();
-    ProProvider? pro;
-    try {
-      pro = context.watch<ProProvider>();
-    } on ProviderNotFoundException {
-      return const SizedBox.shrink();
-    }
-    final theme = Theme.of(context);
-    final secondary = theme.colorScheme.onSurfaceVariant;
-    final hasExtraSelections = !pro.hasPro && status.applications.length > 1;
-    final canOpenPro = _hasAuth(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: _SettingsCard(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              pro.hasPro ? 'Pro · Multiple app locks' : 'Free · One app lock',
-              style: theme.textTheme.titleSmall,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              pro.hasPro
-                  ? 'Lock multiple apps and require multiple words per unlock. All custom unlock times are included.'
-                  : hasExtraSelections
-                  ? 'Lock 1 app with 1 word per unlock, with any custom unlock time. Extra apps from earlier builds are paused and kept — you can change your app, turn off locks, or remove apps anytime.'
-                  : 'Lock 1 app with 1 word per unlock, with any custom unlock time. You can change your app anytime, or upgrade to Pro for multiple apps and multiple words.',
-              style: theme.textTheme.bodySmall?.copyWith(color: secondary),
-            ),
-            if (!pro.hasPro) ...[
-              const SizedBox(height: 4),
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: TextButton(
-                  key: const Key('plan_summary_upgrade'),
-                  onPressed: canOpenPro ? () => ProScreen.open(context) : null,
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                  ),
-                  child: const Text('Get Pro'),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
 }

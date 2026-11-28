@@ -7,6 +7,11 @@ class ProStoreState {
   const ProStoreState({
     this.hasPro = false,
     this.hasLifetime = false,
+    this.localApple = false,
+    this.localSandbox = false,
+    this.serverApple = false,
+    this.manualPremium = false,
+    this.localFinishTransactions = const [],
     this.price,
     this.transactions = const [],
     this.pendingTransactions = const [],
@@ -14,6 +19,11 @@ class ProStoreState {
   });
   final bool hasPro;
   final bool hasLifetime;
+  final bool localApple;
+  final bool localSandbox;
+  final bool serverApple;
+  final bool manualPremium;
+  final List<String> localFinishTransactions;
   final String? price;
   final List<String> transactions;
   final List<String> pendingTransactions;
@@ -21,6 +31,14 @@ class ProStoreState {
   factory ProStoreState.fromMap(Map<dynamic, dynamic>? data) => ProStoreState(
     hasPro: data?['hasPro'] == true,
     hasLifetime: data?['hasLifetime'] == true,
+    localApple: data?['localApple'] == true,
+    localSandbox: data?['localSandbox'] == true,
+    serverApple: data?['serverApple'] == true,
+    manualPremium: data?['manualPremium'] == true,
+    localFinishTransactions:
+        (data?['localFinishTransactions'] as List? ?? const [])
+            .whereType<String>()
+            .toList(),
     pendingTransactions: (data?['pendingTransactions'] as List? ?? const [])
         .whereType<String>()
         .toList(),
@@ -77,13 +95,19 @@ class ProRepository {
   Future<ProStoreState> restore() async => ProStoreState.fromMap(
     await channel.invokeMapMethod<dynamic, dynamic>('restore'),
   );
-  Future<void> recordVerification(String id, {required bool revoked}) =>
-      channel.invokeMethod<void>('recordVerification', {
-        'transactionID': id,
-        'revoked': revoked,
-      });
+  Future<void> recordVerification(
+    String id, {
+    required bool revoked,
+    required bool recorded,
+  }) => channel.invokeMethod<void>('recordVerification', {
+    'transactionID': id,
+    'revoked': revoked,
+    'recorded': recorded,
+  });
   Future<void> finish(String id) =>
       channel.invokeMethod<void>('finish', {'transactionID': id});
+  Future<void> finishLocal(String id) =>
+      channel.invokeMethod<void>('finishLocal', {'transactionID': id});
   Future<Map<String, Object?>> entitlement(String owner) async =>
       GoApiClient.decode(
         await client.raw('GET', '/v1/me/entitlements', expectedUserId: owner),

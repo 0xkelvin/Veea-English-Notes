@@ -124,11 +124,10 @@ void main() {
   }
 
   testWidgets(
-    'Free user sees 1 word per unlock, can edit unlimited practice pool & pronunciation, and plus/edit/upgrade surface Pro',
+    'Free can edit the practice pool and pronunciation without an upsell',
     (tester) async {
       expect(AppConfig.isFreeLaunch, isFalse);
-      expect(gate.canUseMultipleWords, isFalse);
-      expect(gate.maximumWordsPerUnlock, 1);
+      expect(gate.maximumWordsPerUnlock, 5);
       expect(gate.requiredWords, 1);
 
       await tester.pumpWidget(buildHarness());
@@ -140,8 +139,8 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('1'), findsOneWidget);
-      expect(find.text('More words per unlock with Pro'), findsOneWidget);
-      expect(find.byKey(const Key('upgrade_words_per_unlock')), findsOneWidget);
+      expect(find.byType(ProScreen), findsNothing);
+      expect(find.byKey(const Key('upgrade_words_per_unlock')), findsNothing);
 
       // Opening practice pool editor stays free.
       await tester.ensureVisible(find.text('Edit practice words'));
@@ -171,39 +170,13 @@ void main() {
       await drainSql(tester);
       expect(gate.config.autoPronounce, isTrue);
 
-      // Tapping + with pool >= 2 surfaces ProScreen (does not silently do nothing).
-      final plusButton = find.byTooltip('Increase words per unlock');
-      await tester.ensureVisible(plusButton);
-      await tester.tap(plusButton);
-      await tester.pumpAndSettle();
-      expect(find.byType(ProScreen), findsOneWidget);
-      Navigator.of(tester.element(find.byType(ProScreen))).pop();
-      await tester.pumpAndSettle();
-
-      // Tapping the count number with pool >= 2 also surfaces ProScreen.
-      final editCount = find.byKey(const Key('edit_unlock_count'));
-      await tester.ensureVisible(editCount);
-      await tester.tap(editCount);
-      await tester.pumpAndSettle();
-      expect(find.byType(ProScreen), findsOneWidget);
-      Navigator.of(tester.element(find.byType(ProScreen))).pop();
-      await tester.pumpAndSettle();
-
-      // Tapping the inline upgrade button navigates to ProScreen.
-      final upgradeBtn = find.byKey(const Key('upgrade_words_per_unlock'));
-      await tester.ensureVisible(upgradeBtn);
-      await tester.tap(upgradeBtn);
-      await tester.pumpAndSettle();
-      expect(find.byType(ProScreen), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
 
   testWidgets(
-    'Pro user can increment, decrement, and edit multiple words bounded by practice pool',
+    'Free can increment, decrement, and edit multiple words bounded by practice pool',
     (tester) async {
-      gate.setProAccess(true);
-      expect(gate.canUseMultipleWords, isTrue);
       expect(gate.maximumWordsPerUnlock, 5);
 
       await tester.pumpWidget(buildHarness());
@@ -258,49 +231,27 @@ void main() {
     },
   );
 
-  testWidgets(
-    'missing ProProvider in older widget harness keeps free settings working and shows fallback on upsell',
-    (tester) async {
-      await tester.pumpWidget(buildHarness(includePro: false));
-      await tester.pumpAndSettle();
+  testWidgets('settings work without a Pro provider', (tester) async {
+    await tester.pumpWidget(buildHarness(includePro: false));
+    await tester.pumpAndSettle();
 
-      // Ordinary free settings render and work without crashing.
-      expect(find.text('Practice words'), findsOneWidget);
-      expect(find.text('1'), findsOneWidget);
-      final upgradeButton = tester.widget<TextButton>(
-        find.byKey(const Key('upgrade_words_per_unlock')),
-      );
-      expect(upgradeButton.onPressed, isNull);
-      expect(find.text('Pro upgrades unavailable'), findsOneWidget);
+    // Ordinary free settings render and work without crashing.
+    expect(find.text('Practice words'), findsOneWidget);
+    expect(find.text('1'), findsOneWidget);
+    final pronounceTile = find.widgetWithText(
+      SwitchListTile,
+      'Auto-play pronunciation',
+    );
+    await tester.ensureVisible(pronounceTile);
+    await tester.runAsync(() async {
+      await tester.tap(pronounceTile);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpAndSettle();
+    expect(gate.config.autoPronounce, isTrue);
 
-      final pronounceTile = find.widgetWithText(
-        SwitchListTile,
-        'Auto-play pronunciation',
-      );
-      await tester.ensureVisible(pronounceTile);
-      await tester.runAsync(() async {
-        await tester.tap(pronounceTile);
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-      });
-      await tester.pumpAndSettle();
-      expect(gate.config.autoPronounce, isTrue);
-
-      // Invoking + without ProProvider shows a clear fallback SnackBar instead of crashing.
-      final plusButton = find.byTooltip('Increase words per unlock');
-      await tester.ensureVisible(plusButton);
-      await tester.tap(plusButton);
-      await tester.pumpAndSettle();
-      expect(find.byType(ProScreen), findsNothing);
-      expect(
-        find.descendant(
-          of: find.byType(SnackBar),
-          matching: find.textContaining('Upgrades are unavailable right now.'),
-        ),
-        findsOneWidget,
-      );
-      expect(tester.takeException(), isNull);
-    },
-  );
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'small 320px dark screen with 200% text scale and keyboard open in count dialog does not overflow',
@@ -310,16 +261,14 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      // First verify Free upgrade layout at 320px, 200% text, dark mode.
+      // First verify Free settings layout at 320px, 200% text, dark mode.
       await tester.pumpWidget(buildHarness(dark: true, scale: 2));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(
-        find.byKey(const Key('upgrade_words_per_unlock')),
-      );
+      await tester.ensureVisible(find.byKey(const Key('edit_unlock_count')));
       expect(tester.takeException(), isNull);
 
-      // Next verify Pro numeric dialog with simulated keyboard insets (240px).
-      gate.setProAccess(true);
+      // Next verify the numeric dialog with simulated keyboard insets (240px).
+
       await tester.pumpWidget(
         buildHarness(
           dark: true,

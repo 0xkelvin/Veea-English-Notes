@@ -18,6 +18,8 @@ import '../widgets/word_row.dart';
 // import 'arcade_screen.dart'; // Arcade / games hidden
 import 'audio_commute_screen.dart';
 import 'pixel_lens_screen.dart';
+import 'practice_rounds_screen.dart';
+import 'pro_screen.dart' show practiceText;
 import 'review_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
@@ -150,6 +152,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     const DateBar(),
                     const StatusLine(),
                     const _DailyWordGoal(),
+                    TextButton.icon(
+                      key: const Key('home_practice_rounds'),
+                      onPressed: () =>
+                          _open(context, const PracticeRoundsScreen()),
+                      icon: const Icon(Icons.style_outlined),
+                      label: Text(
+                        practiceText(
+                          context,
+                          'Practice Rounds',
+                          'Lượt luyện tập',
+                        ),
+                      ),
+                    ),
                     if (_detectedWord != null)
                       ClipboardDetectorToast(
                         word: _detectedWord!,

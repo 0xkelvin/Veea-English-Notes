@@ -330,7 +330,7 @@ void main() {
     expect(pro.hasPro, isFalse);
     await open(tester);
     await tap(tester, find.text('Manage Apps to Lock'));
-    expect(find.text('Free · One app lock'), findsOneWidget);
+    expect(find.text('Add Apps'), findsOneWidget);
     for (final key in ['default_unlock_time', 'unlock_time_$a']) {
       await tap(tester, find.byKey(ValueKey(key)));
       expect(find.text('Custom time · Pro'), findsNothing);
@@ -467,7 +467,6 @@ void main() {
   test(
     'pausing retains completed vocabulary steps for the next challenge',
     () async {
-      gate.setProAccess(true);
       await gate.setWordsPerUnlock(2);
       await gate.recordStepCompletion(
         wordId: 'recipe',

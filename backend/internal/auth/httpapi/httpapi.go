@@ -67,7 +67,9 @@ func (h *Handlers) Mount(mux httpx.Router) {
 	mux.HandleFunc("POST /v1/auth/token/refresh", h.refresh)
 	mux.HandleFunc("POST /v1/auth/logout", h.authenticated(h.logout))
 	mux.HandleFunc("GET /v1/me", h.authenticated(h.me))
-	mux.HandleFunc("POST /v1/me/purchases/apple", h.authenticated(h.applePurchase))
+	mux.HandleFunc("POST /v1/me/purchases/apple", h.authenticated(h.applePurchase, func(err error) {
+		h.Metrics.ApplePurchaseVerification("claim", purchaseResult(err))
+	}))
 	mux.HandleFunc("GET /v1/me/entitlements", h.authenticated(h.meEntitlements))
 	mux.HandleFunc("GET /v1/cartridges", h.authenticated(h.cartridgeCatalog))
 	mux.HandleFunc("GET /v1/cartridges/{cartridge_id}/versions/{version}/content", h.authenticated(h.cartridgeContent))
@@ -409,15 +411,18 @@ func (h *Handlers) me(w http.ResponseWriter, r *http.Request, p session.Principa
 
 // authenticated is the bearer middleware (TRD 5.1, 8.1): every protected route goes through it,
 // and nothing protected runs without a Principal.
-func (h *Handlers) authenticated(next func(http.ResponseWriter, *http.Request, session.Principal)) http.HandlerFunc {
+func (h *Handlers) authenticated(next func(http.ResponseWriter, *http.Request, session.Principal), onFailure ...func(error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token, ok := bearerToken(r)
-		if !ok {
-			h.fail(w, r, session.ErrUnauthorized)
-			return
+		var p session.Principal
+		err := session.ErrUnauthorized
+		if ok {
+			p, err = h.Sessions.Authenticate(r.Context(), token, h.sessionClient(w, r))
 		}
-		p, err := h.Sessions.Authenticate(r.Context(), token, h.sessionClient(w, r))
 		if err != nil {
+			for _, observe := range onFailure {
+				observe(err)
+			}
 			h.fail(w, r, err)
 			return
 		}
