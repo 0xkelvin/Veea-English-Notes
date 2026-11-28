@@ -105,6 +105,15 @@ The release payment build script, backend/account configuration, SKU and Screen
 Time entitlements remain unchanged. Use the existing paid team for any signed
 candidate. Do not treat an unsigned build as phone acceptance.
 
+For a local camera-only build, use a separate bundle ID and notebook; do not
+replace the user's TestFlight app or register its `veea` URL scheme. Back up any
+test data before device file operations. **Never use `devicectl device copy to
+--remove-existing-content` against an app container:** the empty-directory
+cleanup attempted during this preview cleared the whole test container despite
+a nested destination. Its model and five starter words were subsequently
+restored. Leave imported-model source files in place or remove them individually
+through Files instead; never apply this cleanup flag to the production app.
+
 ## Privacy and offline boundary
 
 Tutor inference never uses the account API, online dictionary APIs or a hosted
