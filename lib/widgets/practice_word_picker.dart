@@ -19,7 +19,16 @@ Future<bool> choosePracticeWords(
     MaterialPageRoute(
       builder: (_) => PracticeWordPicker(
         words: gate.notebookWords,
-        selectedIds: gate.config.practiceWordIds,
+        selectedIds:
+            gate.config.practiceWordIds ??
+            gate.practiceWords
+                .take(gate.requiredWords)
+                .map((word) => word.id)
+                .toList(),
+        title: 'Choose unlock words',
+        allowFutureWords: false,
+        confirmAtBottom: true,
+        unlockSelection: true,
       ),
     ),
   );
@@ -37,6 +46,7 @@ class PracticeWordPicker extends StatefulWidget {
     this.confirmLabel = 'Save',
     this.allowFutureWords = true,
     this.confirmAtBottom = false,
+    this.unlockSelection = false,
   });
   final List<VocabularyWord> words;
   final List<String>? selectedIds;
@@ -44,6 +54,7 @@ class PracticeWordPicker extends StatefulWidget {
   final String confirmLabel;
   final bool allowFutureWords;
   final bool confirmAtBottom;
+  final bool unlockSelection;
   @override
   State<PracticeWordPicker> createState() => _PracticeWordPickerState();
 }
@@ -168,7 +179,15 @@ class _PracticeWordPickerState extends State<PracticeWordPicker> {
         ? 'All ${visible.length} $wordLabel on ${DateFormat.MMMd().format(DateTime.parse(_day!))}'
         : 'All ${_words.length} notebook words';
 
+    final confirmLabel = widget.unlockSelection
+        ? 'Use ${_selected.length} ${_selected.length == 1 ? 'word' : 'words'} per unlock'
+        : widget.confirmLabel;
     final controls = <Widget>[
+      if (widget.unlockSelection)
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Text('Review every word you select here to unlock your apps.'),
+        ),
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
         child: TextField(
@@ -339,7 +358,7 @@ class _PracticeWordPickerState extends State<PracticeWordPicker> {
             TextButton(
               key: const Key('save_practice_words'),
               onPressed: _selected.isEmpty ? null : _confirm,
-              child: Text(widget.confirmLabel),
+              child: Text(confirmLabel),
             ),
         ],
         bottom: PreferredSize(
@@ -409,10 +428,7 @@ class _PracticeWordPickerState extends State<PracticeWordPicker> {
                     onPressed: _selected.isEmpty ? null : _confirm,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Text(
-                        widget.confirmLabel,
-                        textAlign: TextAlign.center,
-                      ),
+                      child: Text(confirmLabel, textAlign: TextAlign.center),
                     ),
                   ),
                 ),

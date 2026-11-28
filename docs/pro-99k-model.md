@@ -11,6 +11,8 @@ Screen Time, or selecting protected apps.
 | Unlock practice pool and configurable words per unlock | Included | Included |
 | Standalone Practice Rounds | One word | Configurable multi-word rounds, bounded by eligible vocabulary |
 
+See [Learning rules](selected-unlock-words.md) for selecting words and how existing unlock settings carry over.
+
 Use the existing non-consumable `com.nintran.veeaEnglishApp.pro` for
 `com.nintran.veeaEnglishApp`. Target 99,000 VND in Vietnam. Display the
 localized StoreKit price. Purchase is one-time, with Family Sharing off.

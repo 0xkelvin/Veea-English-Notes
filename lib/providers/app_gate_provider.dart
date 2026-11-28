@@ -74,6 +74,10 @@ class AppGateProvider extends ChangeNotifier {
     1,
     maximumWordsPerUnlock == 0 ? 1 : maximumWordsPerUnlock,
   );
+  bool get usesExactUnlockWords =>
+      _config.practiceWordIds != null &&
+      practiceWordCount > 0 &&
+      requiredWords == practiceWordCount;
   String? _poolNotice;
   String? get poolNotice => _poolNotice;
   String _poolAdjustmentNotice(int count) =>
@@ -518,9 +522,13 @@ class AppGateProvider extends ChangeNotifier {
       );
     }
     await _settlePendingAnswers(selected?.toSet());
-    final maximum = selected?.length ?? available.length;
-    final count = _config.wordsPerUnlock.clamp(1, maximum == 0 ? 1 : maximum);
-    _poolNotice = count != _config.wordsPerUnlock
+    final count =
+        selected?.length ??
+        _config.wordsPerUnlock.clamp(
+          1,
+          available.isEmpty ? 1 : available.length,
+        );
+    _poolNotice = count < _config.wordsPerUnlock
         ? _poolAdjustmentNotice(count)
         : null;
     await _save(

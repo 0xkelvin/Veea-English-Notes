@@ -162,4 +162,36 @@ void main() {
     expect(gate.config.wordsPerUnlock, 2);
     expect(gate.poolNotice, contains('adjusted to 2'));
   });
+
+  test(
+    'legacy selected pool retains its count and progress until save',
+    () async {
+      await repo.saveGateConfig(
+        const GateConfig(
+          practiceWordIds: ['w0', 'w1', 'w2', 'w3'],
+          wordsPerUnlock: 2,
+        ),
+      );
+      await repo.recordGateCompletion(
+        wordId: 'w0',
+        targetApp: target,
+        attempts: 0,
+        now: now,
+        completesRound: false,
+      );
+      gate.dispose();
+      gate = AppGateProvider(repository: repo, now: () => now);
+      await gate.init();
+
+      expect(gate.practiceWordCount, 4);
+      expect(gate.requiredWords, 2);
+      expect(gate.usesExactUnlockWords, isFalse);
+      expect(gate.progressForApp(target), 1);
+
+      await gate.setPracticeWords(['w0', 'w1', 'w2', 'w3']);
+      expect(gate.requiredWords, 4);
+      expect(gate.usesExactUnlockWords, isTrue);
+      expect(gate.progressForApp(target), 1);
+    },
+  );
 }

@@ -180,7 +180,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               leading: const Icon(Icons.school_outlined),
                               title: const Text('Learning rules'),
                               subtitle: const Text(
-                                'Practice words and words per unlock',
+                                'Choose the words to review before unlocking',
                               ),
                               trailing: const Icon(Icons.chevron_right),
                               onTap: () async {
