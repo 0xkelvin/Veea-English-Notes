@@ -47,6 +47,13 @@ There is no stubbed runtime or cloud inference fallback. Source models, wrapper
 APIs and actual linker/build output were checked. The SDK is loaded lazily when
 needed. Installed model data is separate from the app download.
 
+On iPhone, image encoding uses CPU and language generation prefers GPU (with a
+CPU fallback). Physical testing found that SDK 0.18.1's Metal vision delegate
+cannot prepare Gemma 4's composite image operations. Its language model loads,
+but creating the image conversation fails. The CPU image executor resolves this;
+its cache has a separate `cpu-vision-v1` directory so old Metal vision caches are
+not reused. The Mac keeps its working GPU image path.
+
 The iPhone implementation uses Apple's installed on-device Speech recognition
 and speech synthesis instead of Android-only ML Kit services. Recognition always
 sets `requiresOnDeviceRecognition = true`; an unavailable language offers typed
@@ -145,6 +152,12 @@ Verification on 28 November 2026:
   failures and one unrelated cartridge-screen timing failure. All five tests in
   that cartridge file passed on an isolated rerun. Goldens were not regenerated.
 - Compact light/dark and 200% text layouts were rendered and inspected.
+- Signed local test on iPhone 17 Pro, iOS 27.2.1: app/model installation and camera
+  capture succeeded. The user confirmed a Vietnamese/English explanation and
+  vocabulary cards after the CPU-vision fix. The same GPU-language/CPU-vision
+  configuration also passed real Mac inference, follow-up, cancellation and
+  scene reset with networking denied. Phone voice, follow-up, save, interruption
+  and memory-pressure acceptance remain pending.
 
 Claude CLI independently reviewed and implemented the native integration, and
 reviewed the Flutter flow. No deployed service, customer data or account/payment

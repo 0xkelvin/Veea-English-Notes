@@ -47,7 +47,16 @@ final class OfflineTutorLiteRTEngine: OfflineTutorEngineHandle, @unchecked Senda
     guard OfflineTutorDevicePolicy.hasLoadHeadroom(availableBytes: available) else {
       throw OfflineTutorError(.insufficientMemory)
     }
-    try? FileManager.default.createDirectory(at: cacheURL, withIntermediateDirectories: true)
+    #if os(iOS)
+    // Gemma 4's image encoder contains composite operations that the iPhone
+    // Metal delegate in SDK 0.18.1 cannot prepare. Keep language generation on
+    // GPU when available, and run vision with the supported CPU executor.
+    // Separate caches from the former all-GPU configuration.
+    let runtimeCacheURL = cacheURL.appendingPathComponent("cpu-vision-v1", isDirectory: true)
+    #else
+    let runtimeCacheURL = cacheURL
+    #endif
+    try? FileManager.default.createDirectory(at: runtimeCacheURL, withIntermediateDirectories: true)
     guard let info = ModelInfo(modelPath: modelURL.path), info.isLlmModel(), info.inputModalities.vision else {
       throw OfflineTutorError(.invalidModel)
     }
@@ -56,9 +65,14 @@ final class OfflineTutorLiteRTEngine: OfflineTutorEngineHandle, @unchecked Senda
     // GPU first (the manifest's preferred accelerator), CPU as a local fallback.
     for backend in [Backend.gpu, Backend.cpu()] {
       do {
+        #if os(iOS)
+        let visionBackend = Backend.cpu()
+        #else
+        let visionBackend = backend
+        #endif
         let config = try EngineConfig(
-          modelPath: modelURL.path, backend: backend, visionBackend: backend,
-          maxNumTokens: OfflineTutorLimits.maxContextTokens, cacheDir: cacheURL.path)
+          modelPath: modelURL.path, backend: backend, visionBackend: visionBackend,
+          maxNumTokens: OfflineTutorLimits.maxContextTokens, cacheDir: runtimeCacheURL.path)
         let candidate = Engine(engineConfig: config)
         try await candidate.initialize()
         logger.info("Tutor engine ready on \(backend.rawValue, privacy: .public)")
